@@ -470,9 +470,12 @@ export class ReefscapeRules implements SeasonRules {
       const point = C.branchPoint(p.alliance, p.face, p.branch, p.level);
       if (p.level === 1) {
         const k = this.placements.filter((o) => o.level === 1 && o.alliance === p.alliance && o.face === p.face).indexOf(p);
-        point.z = C.LEVEL_HEIGHTS[1] - 0.05 + Math.floor(k / 5) * 0.10;
-        point.x += Math.cos(point.yaw) * 0.01; point.y += Math.sin(point.yaw) * 0.01;
-        mesh.rotation.set(0, -point.yaw, Math.PI / 2);
+        const center = C.reefCenter(p.alliance), r = C.REEF_APOTHEM - 0.14;
+        const tangent = ((k % 2) - 0.5) * (C.CORAL_LENGTH + 0.02);
+        point.x = center.x + Math.cos(point.yaw) * r - Math.sin(point.yaw) * tangent;
+        point.y = center.y + Math.sin(point.yaw) * r + Math.cos(point.yaw) * tangent;
+        point.z = C.LEVEL_HEIGHTS[1] - 0.14 * (0.14 - 0.02) / (0.25 - 0.02) + C.CORAL_RADIUS + Math.floor(k / 2) * C.CORAL_RADIUS * 2;
+        mesh.rotation.set(0, -point.yaw - Math.PI / 2, Math.PI / 2);
       } else {
         const direction = p.level === 4 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(Math.cos(point.yaw) * Math.cos(35 * Math.PI / 180), Math.sin(35 * Math.PI / 180), -Math.sin(point.yaw) * Math.cos(35 * Math.PI / 180));
         mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);

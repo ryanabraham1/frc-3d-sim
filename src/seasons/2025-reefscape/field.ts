@@ -70,8 +70,18 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
     const center = C.reefCenter(a);
     const verts: Vec3[] = [];
     const radius = C.REEF_APOTHEM / Math.cos(Math.PI / 6);
-    for (const z of [0, C.LEVEL_HEIGHTS[1] - 0.10]) for (let k = 0; k < 6; k++) verts.push([radius * Math.cos(Math.PI / 6 + k * Math.PI / 3), radius * Math.sin(Math.PI / 6 + k * Math.PI / 3), z]);
+    const troughBottom = C.LEVEL_HEIGHTS[1] - 0.14;
+    for (const z of [0, troughBottom - 0.02]) for (let k = 0; k < 6; k++) verts.push([radius * Math.cos(Math.PI / 6 + k * Math.PI / 3), radius * Math.sin(Math.PI / 6 + k * Math.PI / 3), z]);
     b.convex([center.x, center.y, 0], verts, { color: C.COLORS.reef });
+    // Manual Fig. 5-7: a sloped trough, front edge at 18 in and a vertical
+    // inner wall. Radial sections meet at hex corners instead of overlapping bars.
+    const innerApothem = C.REEF_APOTHEM - 0.25;
+    const deck: Vec3[] = [];
+    for (const z of [troughBottom - 0.02, C.LEVEL_HEIGHTS[1] + 0.025]) for (let k = 0; k < 6; k++) {
+      const r = (innerApothem - 0.02) / Math.cos(Math.PI / 6), t = Math.PI / 6 + k * Math.PI / 3;
+      deck.push([r * Math.cos(t), r * Math.sin(t), z]);
+    }
+    b.convex([center.x, center.y, 0], deck, { color, roughness: 0.85 });
     for (let f = 0; f < 6; f++) {
       const angle = f * Math.PI / 3;
       const zoneR = C.REEF_ZONE_APOTHEM / Math.cos(Math.PI / 6);
@@ -79,7 +89,12 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
       const p1 = C.side(a, C.REEF_X + zoneR * Math.cos(angle + Math.PI / 6), C.REEF_Y + zoneR * Math.sin(angle + Math.PI / 6));
       b.tape(p0.x, p0.y, p1.x, p1.y, 0.05, color);
       const faceMid = C.side(a, C.REEF_X + C.REEF_APOTHEM * Math.cos(angle), C.REEF_Y + C.REEF_APOTHEM * Math.sin(angle));
-      b.box([faceMid.x, faceMid.y, C.LEVEL_HEIGHTS[1]], [0.12, radius, 0.09], { color: 0x8a939b, yaw: C.sideYaw(a, angle) });
+      const section = (profile: [number, number][], name: string, shade: number) => {
+        const points: Vec3[] = profile.flatMap(([r, z]) => [-1, 1].map((sign): Vec3 => [r, sign * r * Math.tan(Math.PI / 6), z]));
+        b.convex([center.x, center.y, 0], points, { color: shade, yaw: C.sideYaw(a, angle), name: `${a}-trough-${f}-${name}`, roughness: 0.75 });
+      };
+      section([[innerApothem, troughBottom - 0.02], [C.REEF_APOTHEM, troughBottom - 0.02], [C.REEF_APOTHEM, C.LEVEL_HEIGHTS[1]], [C.REEF_APOTHEM - 0.02, C.LEVEL_HEIGHTS[1]], [innerApothem, troughBottom]], 'slope', 0x8a939b);
+      section([[innerApothem - 0.02, troughBottom - 0.02], [innerApothem, troughBottom - 0.02], [innerApothem, C.LEVEL_HEIGHTS[1] + 0.025], [innerApothem - 0.02, C.LEVEL_HEIGHTS[1] + 0.025]], 'inner-wall', C.COLORS.steel);
       const tagId = (a === 'blue' ? [21, 20, 19, 18, 17, 22] : [10, 11, 6, 7, 8, 9])[f];
       tags.push({ id: tagId, x: faceMid.x, y: faceMid.y, z: inch(6.875) + inch(10.5) / 2, yaw: C.sideYaw(a, angle) });
       for (let branch = 0; branch < 2; branch++) {
