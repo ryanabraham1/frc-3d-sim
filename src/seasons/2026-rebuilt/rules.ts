@@ -20,6 +20,8 @@ import { stageFuel } from './staging';
 import { feedTarget, rowClearances } from './passing';
 
 const CHUTE_TAG = (a: Alliance) => `chute-${a}`;
+/** FUEL that left the FIELD is put back on the carpet this far inside the edge it crossed (m, [EST]). */
+const OUT_OF_BOUNDS_INSET = 0.35;
 const HUB_TAG = (a: Alliance) => `hub-${a}`;
 const HP_RELEASE_INTERVAL = 0.14;
 
@@ -299,15 +301,23 @@ export class RebuiltRules implements SeasonRules {
         continue;
       }
 
-      // CORRAL (behind an OUTPOST) → human player loads it into the CHUTE.
-      if (f.x < -C.WALL_THICK || f.x > C.FIELD_LENGTH + C.WALL_THICK) {
+      // [M 5.9.2] CORRAL: FUEL pushed through the floor opening at the base of the OUTPOST lands in the
+      // CORRAL behind the wall → its human player can load it into the CHUTE. Only FUEL physically in the
+      // CORRAL counts — nothing else ever reaches a CHUTE.
+      const behind = f.x < -C.WALL_THICK || f.x > C.FIELD_LENGTH + C.WALL_THICK;
+      if (behind) {
         const a: Alliance = f.x < 0 ? 'blue' : 'red';
-        pool.reserve(i, CHUTE_TAG(a));
-        continue;
+        if (Math.abs(f.y - side(a, 0, C.OUTPOST_CENTER_Y).y) < C.CORRAL_WIDTH / 2 && f.z < C.CORRAL_WALL_H) {
+          pool.reserve(i, CHUTE_TAG(a));
+          continue;
+        }
       }
-      // Out of bounds (over a guardrail or fell through) → returned via nearest human player.
-      if (f.y < -0.25 || f.y > C.FIELD_WIDTH + 0.25 || f.z < -0.3) {
-        pool.reserve(i, CHUTE_TAG(f.x < C.CENTER_X ? 'blue' : 'red'));
+      // [M 6.8] FUEL that leaves the FIELD any other way (over a guardrail or the ALLIANCE WALL, or through a
+      // gap) is placed back into the FIELD by FIELD STAFF approximately at the point of exit — NOT given to a
+      // human player.
+      if (behind || f.y < -0.25 || f.y > C.FIELD_WIDTH + 0.25 || f.z < -0.3) {
+        const m = OUT_OF_BOUNDS_INSET;
+        pool.placeField(i, Math.min(C.FIELD_LENGTH - m, Math.max(m, f.x)), Math.min(C.FIELD_WIDTH - m, Math.max(m, f.y)));
       }
     }
 
