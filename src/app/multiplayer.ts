@@ -58,7 +58,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
             </div>
             <div class="mp-or"><span>or join a friend</span></div>
             <div class="mp-row">
-              <input class="mp-code" data-mp="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"/>
+              <input class="mp-code" data-mp="code" aria-label="Room code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false"/>
               <button class="bbtn mp-grow" data-mp="join" ${busy ? 'disabled' : ''}>Join</button>
             </div>
             ${busy ? `<div class="mp-hint">${lobby.serverState === 'waking' ? 'Connecting as soon as the server is up…' : 'Connecting…'}</div>` : ''}
@@ -173,17 +173,22 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   const code = q<HTMLInputElement>('code');
   const join = q('join');
   if (join && code) {
-    code.oninput = () => (code.value = code.value.toUpperCase().replace(/[^A-Z]/g, ''));
     const go = () => {
-      if (code.value.length !== 4) {
+      const room = code.value.trim().toUpperCase();
+      if (!/^[A-Z]{4}$/.test(room)) {
         lobby.error = 'Enter the 4-letter room code';
         ctx.rerender();
         return;
       }
-      void lobby.join(code.value, name());
+      void lobby.join(room, name());
     };
     join.onclick = go;
-    code.onkeydown = (e) => e.key === 'Enter' && go();
+    code.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        go();
+      }
+    };
   }
   el.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) => (b.onclick = () => lobby.pickSlot((b.dataset.slot || null) as SlotId | null)));
   el.querySelectorAll<HTMLElement>('[data-hp]').forEach((b) => (b.onclick = () => lobby.setAutoHumanPlayer(b.dataset.hp === '1')));
