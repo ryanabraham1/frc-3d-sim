@@ -396,18 +396,65 @@ export class Robot {
     this.body.setAngvel({ x: 0, y: nw, z: 0 }, true);
   }
 
-  /** Is a world-space point inside this robot's intake capture zone? */
-  intakeContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
-    const c = this.config;
-    if (!c.intake.enabled || this.climbPhase !== 'none') return false;
+  /** World point → robot-local { f: forward, l: left, h: height above the robot origin }. */
+  toLocal(p: { x: number; y: number; z: number }): { f: number; l: number; h: number } {
     const t = this.body.translation();
     const yaw = yawFromQuat(this.body.rotation());
     const dx = p.x - t.x;
     const dz = p.z - t.z;
-    const f = dx * Math.cos(yaw) - dz * Math.sin(yaw);
-    const l = -dx * Math.sin(yaw) - dz * Math.cos(yaw);
+    return { f: dx * Math.cos(yaw) - dz * Math.sin(yaw), l: -dx * Math.sin(yaw) - dz * Math.cos(yaw), h: p.y - t.y };
+  }
+
+  /** Is a world-space point inside this robot's GROUND intake capture zone? (false without a ground intake) */
+  intakeContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
+    const c = this.config;
+    if (!c.intake.enabled || c.intake.ground === false || this.climbPhase !== 'none') return false;
+    const { f, l, h } = this.toLocal(p);
     const front = this.fp.length / 2;
-    return f > front - 0.06 && f < front + c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2 && p.y - t.y < c.intake.maxHeight;
+    return f > front - 0.06 && f < front + c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2 && h < c.intake.maxHeight;
+  }
+
+  /**
+   * Is a world-space point inside the robot's STATION intake (funnel / hopper mouth / shooter intake at the top of
+   * the chosen side)? Only pieces in the air (above `minHeight`) are caught — a piece on the carpet needs a ground
+   * intake.
+   */
+  stationContains(p: { x: number; y: number; z: number }, pieceRadius: number, minHeight = 0.25): boolean {
+    const c = this.config;
+    if (!c.intake.enabled || !c.intake.station || this.climbPhase !== 'none') return false;
+    const { f, l, h } = this.toLocal(p);
+    const s = c.intake.stationSide === 'back' ? -1 : 1;
+    const out = s * f - this.fp.length / 2; // + = outside the bumper on that side
+    const halfW = Math.max(c.intake.width, 0.5) / 2 + 0.04;
+    // The mouth is at the bumper face: a piece must come out of the station (not be caught through its wall).
+    return out > -0.4 && out < 0.06 + pieceRadius && Math.abs(l) < halfW && h > Math.max(minHeight, c.height * 0.55) && h < c.height + 0.35;
+  }
+
+  /** Heading error (rad) to the shot target, updated by `autoAlign()`. */
+  alignError = 0;
+
+  /**
+   * Chassis auto-align: for a robot WITHOUT a turret that has `autoAlign`, while it shoots/passes the heading is
+   * servoed onto the target (lead-compensated for its own motion); the driver keeps translation. Returns the
+   * command to drive with. Robots with a turret, or without auto-align, are returned unchanged.
+   */
+  autoAlign(cmd: RobotCommand, target: AimTarget | null): RobotCommand {
+    const c = this.config;
+    this.alignError = 0;
+    if (!target || c.launcher.turret || !c.autoAlign || !c.launcher.enabled || this.held.length === 0) return cmd;
+    if (!cmd.shoot && !cmd.pass) return cmd;
+    const t = this.body.translation();
+    const v = this.body.linvel();
+    const dist = Math.hypot(target.point.x - t.x, target.point.z - t.z);
+    const tof = dist / Math.max(4, c.launcher.maxSpeed * 0.6);
+    const desired = Math.atan2(-(target.point.z - v.z * tof - t.z), target.point.x - v.x * tof - t.x);
+    const yaw = this.pose.yaw;
+    this.alignError = wrapAngle(desired - yaw);
+    // P-control plus a static-friction feedforward (kS), like a real heading controller: without it, small
+    // corrections are absorbed by carpet friction and the heading stalls a few degrees off.
+    const e = this.alignError;
+    const omega = clamp(e * 7 + (Math.abs(e) > 0.01 ? Math.sign(e) * 0.8 : 0), -c.maxOmega, c.maxOmega);
+    return { ...cmd, omega };
   }
 
   /** Point turret at a world target (visual + used for launches). */
@@ -551,6 +598,8 @@ export class Robot {
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
     const c = this.config.launcher;
     if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none') return null;
+    // Auto-align robots hold fire until the chassis points at the target (~3°).
+    if (target && !c.turret && this.config.autoAlign && Math.abs(this.alignError) > 0.05) return null;
     if (!this.projectileSet && !Robot.warnedProjectile && typeof console !== 'undefined') {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');

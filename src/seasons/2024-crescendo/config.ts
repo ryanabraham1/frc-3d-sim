@@ -1,5 +1,6 @@
 import type { Alliance, FieldPose } from '@engine/coords';
 import type { MatchPeriod } from '@engine/match/clock';
+import type { RobotOption } from '@engine/core/season';
 import { cloneConfig, DEFAULT_ROBOT, sanitizeConfig, type RobotConfig } from '@engine/robot/config';
 import { deg, inch } from '@engine/units';
 import * as C from './constants';
@@ -29,7 +30,8 @@ export function crescendoRobotDefaults(): RobotConfig {
   c.bumperTop = inch(5.75);
   c.hopperCapacity = 1; // G409: one NOTE at a time
   c.preload = 1; // [M 6.3.4 D] one preload per ROBOT
-  c.intake = { enabled: true, width: inch(20), reach: inch(4), maxHeight: inch(5) };
+  // Under-the-bumper ground intake plus SOURCE intake (catching NOTES out of the CHUTE) at the front.
+  c.intake = { enabled: true, width: inch(20), reach: inch(4), maxHeight: inch(5), ground: true, station: true, stationSide: 'front' };
   c.maxSpeed = 4.6;
   c.maxAccel = 9;
   c.launcher = {
@@ -41,12 +43,15 @@ export function crescendoRobotDefaults(): RobotConfig {
     minSpeed: 3,
     maxSpeed: 20,
     height: inch(22),
-    turret: true,
+    turret: false, // most 2024 shooters were fixed to the chassis and aimed by rotating the robot
     spread: 0.0035,
     speedError: 0.006,
     manualSpeed: 13,
   };
-  c.climber = { maxLevel: 2, secondsPerLevel: 2.2 };
+  c.climber = { maxLevel: 1, secondsPerLevel: 2.2 };
+  c.autoAlign = true;
+  c.aimAssist = 'full';
+  c.options = { amp: true, shooter: 'pivot' };
   return c;
 }
 
@@ -57,7 +62,86 @@ export function normalizeCrescendoConfig(config: RobotConfig): RobotConfig {
   c.preload = Math.min(1, Math.max(0, c.preload));
   c.climber.maxLevel = Math.round(Math.min(2, Math.max(0, c.climber.maxLevel)));
   c.intake.maxHeight = Math.max(c.intake.maxHeight, inch(3));
+  c.intake.ground ??= true;
+  c.intake.station ??= true;
+  c.intake.stationSide ??= 'front';
+  c.intake.enabled = c.intake.ground || c.intake.station;
+  c.options = { amp: true, shooter: c.launcher.enabled ? 'pivot' : 'none', ...c.options };
+  if (!c.launcher.enabled) c.options.shooter = 'none';
+  else if (c.options.shooter === 'none') c.options.shooter = 'pivot';
+  if (c.options.shooter === 'fixed') {
+    // Fixed hood, limited flywheel speed: only reliable from against the SUBWOOFER (the 2024 KitBot shot).
+    c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle = FIXED_ANGLE;
+    c.launcher.maxSpeed = Math.min(c.launcher.maxSpeed, FIXED_MAX_SPEED);
+    c.launcher.turret = false;
+  }
+  c.autoAlign ??= !c.launcher.turret;
   return c;
+}
+
+/** Fixed-shooter hood angle and flywheel speed cap [EST — tuned so shots only go in from near the SUBWOOFER]. */
+export const FIXED_ANGLE = deg(60);
+export const FIXED_MAX_SPEED = 8.5;
+
+type Build = {
+  ground: boolean; source: boolean; shooter: 'none' | 'fixed' | 'pivot'; aim: 'turret' | 'align' | 'driver'; amp: boolean; climb: 0 | 1 | 2;
+};
+function build(b: Build): RobotConfig {
+  const c = crescendoRobotDefaults();
+  c.intake.ground = b.ground;
+  c.intake.station = b.source;
+  c.launcher.enabled = b.shooter !== 'none';
+  c.options = { ...c.options, shooter: b.shooter, amp: b.amp };
+  c.launcher.turret = b.aim === 'turret';
+  c.autoAlign = b.aim === 'align';
+  c.climber.maxLevel = b.climb;
+  return normalizeCrescendoConfig(c);
+}
+
+/** Archetypes seen across 2024 events (docs/ROBOT-ARCHETYPES.md). */
+export function crescendoRobotPresets() {
+  return [
+    { id: 'pivot', label: 'Under-bumper pivot shooter', description: 'Full-width ground intake, pivoting shooter that scores from anywhere in the WING, AMPs with the shooter, chassis auto-aim, chain climb. The dominant 2024 design.', config: build({ ground: true, source: true, shooter: 'pivot', aim: 'align', amp: true, climb: 1 }) },
+    { id: 'turret', label: 'Turret shooter', description: 'Ground intake + turreted pivot shooter: shoots while driving in any direction. Rare (heavy and complex) but strong.', config: build({ ground: true, source: true, shooter: 'pivot', aim: 'turret', amp: true, climb: 1 }) },
+    { id: 'source-pivot', label: 'SOURCE-fed shooter', description: 'Pivot shooter that only takes NOTES from the SOURCE CHUTE (no ground intake): relies on SOURCE human players.', config: build({ ground: false, source: true, shooter: 'pivot', aim: 'align', amp: true, climb: 1 }) },
+    { id: 'kitbot', label: 'KitBot (SUBWOOFER shooter)', description: 'Fixed-angle shooter fed at the SOURCE: scores from against the SUBWOOFER and in the AMP, no ground intake, no climber, driver-aimed.', config: build({ ground: false, source: true, shooter: 'fixed', aim: 'driver', amp: true, climb: 0 }) },
+    { id: 'amp-trap', label: 'AMP + TRAP specialist', description: 'Ground intake and an AMP/TRAP arm, no SPEAKER shooter: feeds AMPLIFICATION and scores the TRAP from the chain.', config: build({ ground: true, source: true, shooter: 'none', aim: 'driver', amp: true, climb: 2 }) },
+  ];
+}
+
+const opt = (id: string, label: string, choices: [string, string, string?][], get: (c: RobotConfig) => string, set: (c: RobotConfig, v: string) => void, hint?: string): RobotOption =>
+  ({ id, label, hint, choices: choices.map(([cid, l, title]) => ({ id: cid, label: l, title })), get, set: (c, v) => { set(c, v); Object.assign(c, normalizeCrescendoConfig(c)); } });
+
+export const crescendoRobotOptions: RobotOption[] = [
+  opt('intake', 'NOTE intake', [['both', 'Ground + SOURCE'], ['ground', 'Ground only'], ['source', 'SOURCE only', 'Only catches NOTES sliding out of the SOURCE CHUTE']],
+    (c) => (c.intake.ground && c.intake.station ? 'both' : c.intake.ground ? 'ground' : 'source'),
+    (c, v) => { c.intake.ground = v !== 'source'; c.intake.station = v !== 'ground'; },
+    'Without a ground intake you can only collect at the SOURCE (and not the staged NOTES in AUTO).'),
+  opt('shooter', 'SPEAKER shooter', [['pivot', 'Pivot', 'Adjustable angle: scores from most of the WING'], ['fixed', 'Fixed (SUBWOOFER)', 'One angle, limited speed: scores from against the SUBWOOFER'], ['none', 'None']],
+    (c) => String(c.options?.shooter ?? 'pivot'),
+    (c, v) => {
+      c.launcher.enabled = v !== 'none';
+      const d = crescendoRobotDefaults().launcher;
+      if (v === 'pivot') Object.assign(c.launcher, { angle: d.angle, minAngle: d.minAngle, maxAngle: d.maxAngle, maxSpeed: d.maxSpeed });
+      c.options = { ...c.options, shooter: v };
+    }),
+  opt('aim', 'Aiming', [['align', 'Chassis auto-align', 'Holding Space rotates the robot onto the SPEAKER, then fires'], ['turret', 'Turret'], ['driver', 'Driver aims']],
+    (c) => (c.launcher.turret ? 'turret' : c.autoAlign ? 'align' : 'driver'),
+    (c, v) => { c.launcher.turret = v === 'turret' && c.options?.shooter !== 'fixed'; c.autoAlign = v === 'align'; }),
+  opt('amp', 'AMP scoring', [['yes', 'Yes'], ['no', 'No']], (c) => (c.options?.amp === false ? 'no' : 'yes'), (c, v) => { c.options = { ...c.options, amp: v === 'yes' }; }),
+  opt('climb', 'Climber', [['0', 'None'], ['1', 'Chain'], ['2', 'Chain + TRAP']], (c) => String(c.climber.maxLevel), (c, v) => { c.climber.maxLevel = Number(v); },
+    'ONSTAGE 3 (SPOTLIT 4) · HARMONY +2 · TRAP 5.'),
+];
+
+export function crescendoSpecBars(config: RobotConfig) {
+  const c = normalizeCrescendoConfig(config);
+  const intake = c.intake.ground && c.intake.station ? 'ground + SOURCE' : c.intake.ground ? 'ground' : 'SOURCE only';
+  const shooter = !c.launcher.enabled ? 'None' : `${c.options?.shooter === 'fixed' ? 'Fixed' : 'Pivot'} · ${c.launcher.turret ? 'turret' : c.autoAlign ? 'auto-align' : 'driver aim'}`;
+  return [
+    { label: 'Intake', value: intake, frac: (Number(c.intake.ground) * 2 + Number(c.intake.station)) / 3 },
+    { label: 'SPEAKER', value: shooter, frac: !c.launcher.enabled ? 0 : c.options?.shooter === 'fixed' ? 0.35 : c.launcher.turret ? 1 : 0.8 },
+    { label: 'AMP', value: c.options?.amp === false ? 'No' : 'Yes', frac: c.options?.amp === false ? 0 : 1 },
+  ];
 }
 
 /** DRIVER STATION center (y) for station 1–3 (DS 1 on the AMP side [EST]). */

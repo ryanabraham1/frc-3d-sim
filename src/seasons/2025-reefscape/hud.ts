@@ -20,11 +20,18 @@ export class ReefscapeHud implements SeasonHud {
     const coral = held.some((i) => i < C.CORAL_COUNT), algae = held.some((i) => i >= C.CORAL_COUNT);
     const m = this.rules.mechanisms.get(r.id);
     const target = this.rules.placementTarget(r, m?.level ?? 4);
-    const point = target?.point;
-    const near = point && Math.hypot(point.x - r.pose.x, point.y - r.pose.y) <= this.rules.coralReach(r);
-    const blockedFace = C.nearestFace(r.alliance, r.pose);
+    const app = target?.approach.pos;
+    const reefC = C.reefCenter(r.alliance);
+    const near = !!app && Math.hypot(reefC.x - r.pose.x, reefC.y - r.pose.y) < C.REEF_APOTHEM + 2.2;
+    const face = C.nearestFace(r.alliance, r.pose);
     const knock = !r.config.intake.secondary || algae ? ' · J: knock staged ALGAE off' : ' · J: remove ALGAE';
-    const reef = coral ? !r.config.placement!.enabled ? 'CORAL scorer disabled · G ejects CORAL' : !target ? `<span class="bad">Branch blocked${this.rules.reefAlgae(r.alliance, blockedFace) ? knock : ''} · or choose another level / face</span>` : near ? '<span class="ok">Space: place CORAL · 1–4: reef level</span>' : 'Drive to your REEF · Space places within reach' : r.config.intake.primary ? 'CORAL: back into a station with intake on, or from carpet · ALGAE: J at reef' : 'ALGAE: intake on carpet or J at reef';
+    const blocked = this.rules.reefAlgae(r.alliance, face) && (m?.level ?? 4) === (face % 2 === 0 ? 3 : 2);
+    const lateral = app ? (-(app.x - r.pose.x) * Math.sin(r.pose.yaw) + (app.y - r.pose.y) * Math.cos(r.pose.yaw)) / 0.0254 : 0;
+    const align = r.config.autoAlign ? 'hold Space: auto-align + place' : `Space: release · line up the BRANCH (${lateral >= 0 ? 'left' : 'right'} ${Math.abs(lateral).toFixed(1)} in)`;
+    const intakeHint = !r.config.intake.primary ? 'ALGAE: intake on carpet or J at reef'
+      : r.config.intake.ground && r.config.intake.station ? 'CORAL: from the carpet, or back up to a CORAL STATION (H drops one)'
+      : r.config.intake.ground ? 'CORAL: from the carpet (no funnel — H drops one onto the floor)' : 'CORAL: back your funnel up to a CORAL STATION (H drops one)';
+    const reef = coral ? !r.config.placement!.enabled ? 'No CORAL scorer · G ejects CORAL' : blocked ? `<span class="bad">L${m?.level} blocked by ALGAE${knock}</span>` : near ? `<span class="ok">L${m?.level ?? 4} · ${align}</span>` : 'Drive to your REEF · 1–4 selects the level' : intakeHint;
     const depth = this.rules.climberDepth(r)?.toUpperCase();
     const slot = r.climbSlot ?? -1;
     const climb = r.isClimbing ? `${r.climbPhase === 'hanging' ? 'Hanging' : 'Climbing'} · ${(this.rules.refs.cageDepth[r.alliance][slot] ?? depth ?? 'DEEP').toUpperCase()} CAGE · X to descend` : depth ? `C: climb any of your ${depth} cages (${this.rules.refs.cageDepth[r.alliance].filter((d) => d.toUpperCase() === depth).length}) · park in your BARGE ZONE for 2` : 'No cage climber · park in your BARGE ZONE for 2';

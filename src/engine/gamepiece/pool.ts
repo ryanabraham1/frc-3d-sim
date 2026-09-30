@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { GROUPS, PhysicsWorld } from '../physics/world';
+import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { FieldFrame } from '../coords';
 
 export interface GamePieceSpec {
@@ -13,6 +13,12 @@ export interface GamePieceSpec {
   innerRadius?: number;
   /** Ring only: number of equidistant white tape bands (e.g. 3 for a 2024 HIGH NOTE). */
   stripes?: number;
+  /**
+   * Tube only: a real hollow collider (a ring of staves around the bore) so a pipe can pass through it — e.g. a 2025
+   * CORAL sliding onto a BRANCH. `colliderInnerRadius` sets the bore (default `innerRadius`).
+   */
+  hollow?: boolean;
+  colliderInnerRadius?: number;
   /** Additional piece types use stable index ranges in the same synchronized pool. */
   variants?: { start: number; spec: Omit<GamePieceSpec, 'variants'> }[];
   name: string;
@@ -139,6 +145,34 @@ export class GamePiecePool {
           .setCanSleep(true)
           .setEnabled(false),
       );
+      if (piece.shape === 'tube' && piece.hollow) {
+        // Staves around the tube axis (body-local +X): a polygonal bore a pipe can pass through.
+        const n = 10;
+        const half = (piece.length ?? piece.radius * 2) / 2;
+        const rIn = piece.colliderInnerRadius ?? piece.innerRadius ?? piece.radius * 0.8;
+        const wall = Math.max(piece.radius - rIn, 0.004);
+        const rMid = rIn + wall / 2;
+        const chord = 2 * piece.radius * Math.tan(Math.PI / n);
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);
+          const stave = R.ColliderDesc.cuboid(half, wall / 2, chord / 2)
+            .setTranslation(0, rMid * Math.cos(a), rMid * Math.sin(a))
+            .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+            .setMass(piece.mass / n)
+            .setRestitution(piece.restitution)
+            .setFriction(piece.friction)
+            .setCollisionGroups(GROUPS.piece);
+          physics.world.createCollider(stave, body);
+        }
+        this.bodies.push(body);
+        this.state.push('reserve');
+        this.owner.push(-1);
+        this.tag.push(null);
+        this.airborne.push(false);
+        this.mesh.setMatrixAt(i, HIDDEN);
+        continue;
+      }
       const col = (piece.shape === 'tube'
         ? R.ColliderDesc.cylinder((piece.length ?? piece.radius * 2) / 2, piece.radius).setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
         : piece.shape === 'ring'
@@ -187,6 +221,16 @@ export class GamePiecePool {
   /** Put piece i on the field at a FIELD position (x, y, z-up), resting on the carpet if z omitted. */
   placeField(i: number, x: number, y: number, z?: number): void {
     this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.restHeight(i) + 0.001, this.tmpP));
+  }
+
+  /**
+   * Let piece i pass through robots (true) or collide with them again (false) — for a piece released from inside
+   * a robot's mechanism (it starts overlapping that robot's collision box).
+   */
+  setIgnoreRobots(i: number, ignore: boolean): void {
+    const b = this.bodies[i];
+    const groups = ignore ? collisionGroups(Group.PIECE, Group.FIELD | Group.PIECE | Group.PIECE_ONLY) : GROUPS.piece;
+    for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);
   }
 
   hold(i: number, ownerId: number): void {

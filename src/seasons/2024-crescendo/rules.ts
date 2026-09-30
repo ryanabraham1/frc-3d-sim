@@ -182,7 +182,8 @@ export class CrescendoRules implements SeasonRules {
     }
     const note = this.heldNote(robot);
     if (cmd.pass && !cmd.shoot && note !== undefined && this.nearAmp(robot)) {
-      if (robot.fireCooldown <= 0) this.scoreAmp(robot, note);
+      if (robot.config.options?.amp === false) this.tell(robot, 'This robot has no AMP mechanism');
+      else if (robot.fireCooldown <= 0) this.scoreAmp(robot, note);
       return true;
     }
     return false;
@@ -195,8 +196,9 @@ export class CrescendoRules implements SeasonRules {
       const launched = this.launches.get(i);
       if (launched?.robotId === robot.id && this.now - launched.t < 0.6) continue;
       const p = pool.position(i);
-      if (p.y > 0.2) continue;
-      if (robot.intakeContains(p, C.NOTE_OUTER_RADIUS * 0.6)) {
+      // Ground intake: NOTES on the carpet. SOURCE intake: NOTES falling out of the CHUTE in front of the robot.
+      const ground = p.y <= 0.2 && robot.intakeContains(p, C.NOTE_OUTER_RADIUS * 0.6);
+      if (ground || robot.stationContains(p, C.NOTE_OUTER_RADIUS * 0.6)) {
         pool.hold(i, robot.id);
         robot.held.push(i);
       }
@@ -218,7 +220,7 @@ export class CrescendoRules implements SeasonRules {
     if (!this.amplified(a)) this.bank[a] = Math.min(2, this.bank[a] + 1);
     robot.fireCooldown = 0.45;
     this.ampAnim[a] = 0.45;
-    this.ctx.toast(`AMP +${ampPoints(auto)}${this.bank[a] >= 2 && !this.amplified(a) ? ' · AMPLIFY ready (H)' : ''}`, 'good', a, robot);
+    this.ctx.toast(`AMP +${ampPoints(auto)}${this.bank[a] >= 2 && !this.amplified(a) ? ' · AMPLIFY ready (B)' : ''}`, 'good', a, robot);
   }
 
   /** Assisted TRAP deposit while ONSTAGE on the chain below it [M 6.5.1]. */
@@ -315,12 +317,14 @@ export class CrescendoRules implements SeasonRules {
   // ─────────────────────────── human players ───────────────────────────
 
   /**
-   * AMP human player buttons: 1 (H) = AMP button (AMPLIFY with 2 banked NOTES), 2 (B) = Coopertition button,
-   * 3 (N) = throw a HIGH NOTE at a MICROPHONE (last 20 s only, G430).
+   * Human player buttons: 1 (H) = SOURCE human player drops a NOTE down the CHUTE toward your robot,
+   * 2 (B) = AMP button (AMPLIFY with 2 banked NOTES), 3 (N) = Coopertition button,
+   * 4 (M) = throw a HIGH NOTE at a MICROPHONE (last 20 s only, G430).
    */
   humanPlayerAction(a: Alliance, button = 1): void {
-    if (button === 2) this.pressCoop(a, true);
-    else if (button === 3) this.throwHighNote(a, true);
+    if (button === 1) this.dropNote(a, true);
+    else if (button === 3) this.pressCoop(a, true);
+    else if (button === 4) this.throwHighNote(a, true);
     else this.pressAmplify(a, true);
   }
 
@@ -377,34 +381,68 @@ export class CrescendoRules implements SeasonRules {
     return true;
   }
 
-  /** SOURCE human player drops a NOTE through the opening toward a robot waiting in the SOURCE ZONE area. */
-  private feedSource(a: Alliance, dt: number): void {
-    this.sourceTimer[a] -= dt;
-    if (this.sourceTimer[a] > 0 || !this.isTeleop()) return;
+  /** A NOTE still sliding down / sitting in front of this alliance's SOURCE. */
+  private noteAtSource(a: Alliance): boolean {
     const { pool, frame } = this.ctx;
     const mid = C.sourcePoint(a, 0.5, 0);
-    const robot = this.ctx.robots.find((r) => r.alliance === a && r.capacityLeft > 0 && !r.isClimbing && Math.hypot(r.pose.x - mid.x, r.pose.y - mid.y) < 2.2);
-    if (!robot) return;
-    const waiting = pool.indices('field').some((i) => {
+    return pool.indices('field').some((i) => {
       const q = frame.toField(pool.position(i));
       return Math.hypot(q.x - mid.x, q.y - mid.y) < 1.4;
     });
-    if (waiting) return;
+  }
+
+  /** The alliance robot the SOURCE human player feeds: the one nearest the SOURCE (player's robot first). */
+  private sourceRobot(a: Alliance, maxDist = Infinity): Robot | undefined {
+    const mid = C.sourcePoint(a, 0.5, 0);
+    const d = (r: Robot) => Math.hypot(r.pose.x - mid.x, r.pose.y - mid.y);
+    return this.ctx.robots.filter((r) => r.alliance === a && !r.isClimbing && d(r) < maxDist).sort((x, y) => d(x) - d(y))[0];
+  }
+
+  /**
+   * SOURCE human player [M 5.4]: put a NOTE into the top of the 50° CHUTE, on the part of the 75¼ in opening nearest
+   * the robot. It slides down and out of the opening; physics decides whether a SOURCE intake catches it or it
+   * lands on the carpet.
+   */
+  dropNote(a: Alliance, verbose = false, robot = this.sourceRobot(a)): boolean {
+    const say = (m: string) => verbose && this.ctx.toast(m, 'info', a);
+    if (!this.isTeleop()) return say('SOURCE human players feed NOTES in TELEOP'), false;
+    if (this.noteAtSource(a)) return say('A NOTE is already in the CHUTE'), false;
+    const { pool, frame } = this.ctx;
     const idx = pool.indices('reserve', `source:${a}`)[0];
-    if (idx === undefined) return;
-    // Drop point: the part of the 75¼ in opening closest to the robot.
-    const n = C.sideYaw(C.sourceEnd(a), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x));
-    let best = 0.5, bestD = Infinity;
-    for (let t = 0.05; t <= 0.95; t += 0.05) {
-      const q = C.sourcePoint(a, t, 0);
-      const d = Math.hypot(q.x - robot.pose.x, q.y - robot.pose.y);
-      if (d < bestD) { bestD = d; best = t; }
+    if (idx === undefined) return say('The SOURCE is empty'), false;
+    let t = 0.5;
+    if (robot) {
+      let bestD = Infinity;
+      for (let k = 0.05; k <= 0.95; k += 0.025) {
+        const q = C.sourcePoint(a, k, 0);
+        const dd = Math.hypot(q.x - robot.pose.x, q.y - robot.pose.y);
+        if (dd < bestD) { bestD = dd; t = k; }
+      }
     }
-    const span = C.SOURCE_OPENING_WIDTH / C.SOURCE_WALL_LENGTH / 2;
-    const t = clamp(best, 0.5 - span + 0.08, 0.5 + span - 0.08);
-    const q = C.sourcePoint(a, t, C.NOTE_OUTER_RADIUS + inch(1));
-    pool.placeWorld(idx, frame.toWorld(q.x, q.y, C.SOURCE_OPENING_BOTTOM + C.NOTE_THICKNESS), frame.velToWorld(Math.cos(n) * 1.1, Math.sin(n) * 1.1, 0));
+    const span = (C.SOURCE_OPENING_WIDTH / 2 - C.NOTE_OUTER_RADIUS - inch(1)) / C.SOURCE_WALL_LENGTH;
+    t = clamp(t, 0.5 - span, 0.5 + span);
+    const n = C.sideYaw(C.sourceEnd(a), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x));
+    const nrm = { x: Math.cos(n) * Math.sin(C.CHUTE_ANGLE), y: Math.sin(n) * Math.sin(C.CHUTE_ANGLE), z: Math.cos(C.CHUTE_ANGLE) };
+    const q = C.chutePoint(a, t, C.CHUTE_LENGTH - C.NOTE_OUTER_RADIUS + inch(2));
+    const lift = C.NOTE_THICKNESS / 2 + 0.006;
+    const down = 0.4; // released with a small push down the slope
+    const dv = { x: Math.cos(n) * Math.cos(C.CHUTE_ANGLE) * down, y: Math.sin(n) * Math.cos(C.CHUTE_ANGLE) * down, z: -Math.sin(C.CHUTE_ANGLE) * down };
+    pool.placeWorld(idx, frame.toWorld(q.x + nrm.x * lift, q.y + nrm.y * lift, q.z + nrm.z * lift), frame.velToWorld(dv.x, dv.y, dv.z));
+    // Lay the NOTE flat on the CHUTE floor (its axis along the slope normal).
+    const axis = frame.velToWorld(nrm.x, nrm.y, nrm.z).normalize();
+    const rot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+    pool.bodies[idx].setRotation({ x: rot.x, y: rot.y, z: rot.z, w: rot.w }, true);
     this.sourceTimer[a] = 1.2;
+    return true;
+  }
+
+  /** Automatic SOURCE human player: feeds a robot of ours waiting near the SOURCE without a NOTE. */
+  private feedSource(a: Alliance, dt: number): void {
+    this.sourceTimer[a] -= dt;
+    if (this.sourceTimer[a] > 0 || !this.isTeleop() || !this.ctx.humanPlayerIsAuto(a)) return;
+    const robot = this.sourceRobot(a, 2.2);
+    if (!robot || robot.capacityLeft <= 0) return;
+    this.dropNote(a, false, robot);
   }
 
   /** Automatic AMP human player: Coopertition early, AMPLIFY when 2 NOTES are banked, HIGH NOTES in END GAME. */

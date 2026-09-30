@@ -289,12 +289,32 @@ export function buildCrescendoField(ctx: SeasonContext): CrescendoFieldRefs {
     const len = C.SOURCE_WALL_LENGTH;
     const sBelow = C.SOURCE_OPENING_BOTTOM, sAbove = sBelow + C.SOURCE_OPENING_HEIGHT;
     b.box([mid.x + back.x, mid.y + back.y, sBelow / 2], [len, inch(2), sBelow], { color: 0x5d646c, yaw: srcYaw, metalness: 0.4 });
-    b.box([mid.x + back.x, mid.y + back.y, (sAbove + C.SOURCE_WALL_HEIGHT) / 2], [len, inch(2), C.SOURCE_WALL_HEIGHT - sAbove], { color: C.COLORS.poly, opacity: 0.35, yaw: srcYaw });
+    // Wall above the opening: a thin polycarbonate edge at the FIELD face, so a NOTE sliding down the 50° CHUTE clears
+    // the 6 in opening (a 2 in thick edge would leave < 2½ in perpendicular clearance for a 2 in NOTE).
+    const thin = wallOff(-inch(0.25));
+    b.box([mid.x + thin.x, mid.y + thin.y, (sAbove + C.SOURCE_WALL_HEIGHT) / 2], [len, inch(0.5), C.SOURCE_WALL_HEIGHT - sAbove], { color: C.COLORS.poly, opacity: 0.35, yaw: srcYaw });
     b.box([mid.x + back.x, mid.y + back.y, (sBelow + sAbove) / 2], [len, inch(2), sAbove - sBelow], { visible: false, collide: 'robots', yaw: srcYaw });
     b.box([mid.x + back.x, mid.y + back.y, sBelow - inch(1)], [C.SOURCE_OPENING_WIDTH, inch(2.4), inch(2)], { color: ownerColor, collide: false, yaw: srcYaw });
-    // 50° CHUTE sloping up away from the field.
-    const chute = wallOff(-inch(14));
-    b.box([mid.x + chute.x, mid.y + chute.y, sAbove + inch(10)], [C.SOURCE_OPENING_WIDTH, inch(30), inch(1)], { color: 0x8c96a0, yaw: srcYaw, roll: (blue ? 1 : -1) * (50 * Math.PI) / 180, collide: false, opacity: 0.8 });
+    // 50° CHUTE [M 5.4]: a real sloped floor NOTES slide down (human player button drops them in at the top),
+    // with side walls and a roof 6 in (vertical) above the floor.
+    {
+      const tMid = 0.5;
+      const along = C.CHUTE_LENGTH + inch(6); // a little extra floor inside the SOURCE AREA
+      const floorMid = C.chutePoint(owner, tMid, along / 2);
+      const nrm = { x: Math.cos(nIn), y: Math.sin(nIn) };
+      // The floor plate's center sits half its thickness below the slope surface (along the slope normal).
+      const th = inch(0.5);
+      const off = (d: number): Vec3 => [floorMid.x - nrm.x * Math.sin(C.CHUTE_ANGLE) * d, floorMid.y - nrm.y * Math.sin(C.CHUTE_ANGLE) * d, floorMid.z + Math.cos(C.CHUTE_ANGLE) * d];
+      const roll = (blue ? -1 : 1) * C.CHUTE_ANGLE;
+      b.box(off(-th / 2), [C.SOURCE_OPENING_WIDTH, along, th], { color: 0x8c96a0, yaw: srcYaw, roll, collide: 'pieces', roughness: 0.4 });
+      const roof = C.SOURCE_OPENING_HEIGHT * Math.cos(C.CHUTE_ANGLE);
+      b.box(off(roof + th / 2), [C.SOURCE_OPENING_WIDTH, along, th], { color: C.COLORS.poly, yaw: srcYaw, roll, collide: 'pieces', opacity: 0.25 });
+      for (const sgn of [-1, 1]) {
+        const e = C.chutePoint(owner, tMid + sgn * (C.SOURCE_OPENING_WIDTH / 2 + inch(0.5)) / C.SOURCE_WALL_LENGTH, along / 2);
+        const eo: Vec3 = [e.x - nrm.x * Math.sin(C.CHUTE_ANGLE) * roof / 2, e.y - nrm.y * Math.sin(C.CHUTE_ANGLE) * roof / 2, e.z + Math.cos(C.CHUTE_ANGLE) * roof / 2];
+        b.box(eo, [inch(1), along, roof], { color: 0x8c96a0, yaw: srcYaw, roll, collide: 'pieces', opacity: 0.5 });
+      }
+    }
     const lblP = wallOff(inch(0.5));
     b.label([mid.x + lblP.x, mid.y + lblP.y, C.SOURCE_WALL_HEIGHT - inch(10)], `${owner.toUpperCase()} SOURCE`, 0.14, nIn, owner === 'blue' ? '#9cc0ff' : '#ffb3b3');
     // SOURCE AprilTags: bottom 4 ft ⅛ in, 1 ft 7⅜ in either side of the SOURCE center [M 5.8].

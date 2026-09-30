@@ -98,12 +98,14 @@ export class HeadlessSim {
     const { robot, pool, rules, physics } = this;
     const dt = physics.dt;
     robot.enabled = true;
+    if (rules.adjustCommand) cmd = rules.adjustCommand(robot, cmd, dt);
+    const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
+    cmd = robot.autoAlign(cmd, target);
     robot.lastCommand = cmd;
     robot.drive(cmd, dt);
     if (cmd.descend && robot.isClimbing) rules.requestDescend(robot);
     else if (cmd.climb !== null && !robot.isClimbing && robot.config.climber.maxLevel > 0) rules.requestClimb(robot, cmd.climb);
     robot.tick(dt);
-    const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
     robot.aimTurretAt(target, dt);
     const handled = rules.handleMechanisms?.(robot, cmd, dt);
     if (!handled && (cmd.shoot || cmd.pass)) {
@@ -121,7 +123,7 @@ export class HeadlessSim {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);
-        if (p.y < 0.4 && robot.intakeContains(p, pool.radius)) {
+        if ((p.y < 0.4 && robot.intakeContains(p, pool.radius)) || robot.stationContains(p, pool.radius)) {
           pool.hold(i, robot.id);
           robot.held.push(i);
           if (robot.capacityLeft <= 0) break;

@@ -2,7 +2,7 @@ import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import * as C from './constants';
 import { AUTO_ROUTINES, CrescendoAutoPilot } from './autopilot';
-import { CLIMBER_LABELS, crescendoRobotDefaults, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
+import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
 import { buildCrescendoField, type CrescendoFieldRefs } from './field';
 import { CrescendoHud } from './hud';
 import { CrescendoRules } from './rules';
@@ -47,6 +47,10 @@ export const crescendo2024: SeasonDefinition = {
   robotLimits: { capacity: 1, preload: 1 },
   robotHint: 'R104: 4 ft starting height / 120 in perimeter · under 27⅞ in drives beneath the STAGE · G409: 1 NOTE',
   normalizeRobotConfig: normalizeCrescendoConfig,
+  robotPresets: crescendoRobotPresets(),
+  robotOptions: crescendoRobotOptions,
+  robotSpecBars: crescendoSpecBars,
+  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'rate', 'acc', 'cspd'],
   configureRobot(robot) {
     robot.projectile = { radius: C.NOTE_OUTER_RADIUS, airDamping: 0.03, halfHeight: C.NOTE_THICKNESS / 2 };
   },
@@ -59,10 +63,10 @@ export const crescendo2024: SeasonDefinition = {
     { kind: 'depot', points: pts(C.ampZone('blue')) },
     { kind: 'outpost', points: pts(C.sourceZone('red')) },
   ],
-  humanPlayerButtons: 3,
+  humanPlayerButtons: 4,
   humanPlayerHint: {
-    auto: 'SOURCE human players drop NOTES for you; your AMP human player uses Coopertition, AMPLIFIES at 2 NOTES and throws HIGH NOTES in the last 20 s.',
-    manual: 'SOURCE drops stay automatic. You press the AMP buttons: H = AMPLIFY, B = Coopertition, N = throw a HIGH NOTE (last 20 s).',
+    auto: 'Your SOURCE human player drops a NOTE down the CHUTE whenever you wait at the SOURCE; your AMP human player uses Coopertition, AMPLIFIES at 2 NOTES and throws HIGH NOTES in the last 20 s.',
+    manual: 'You are the human players: H = drop a NOTE down the SOURCE CHUTE toward your robot, B = AMPLIFY, N = Coopertition, M = throw a HIGH NOTE (last 20 s).',
   },
   startPose,
   driverEye,
@@ -82,13 +86,14 @@ export const crescendo2024: SeasonDefinition = {
   },
   controlsHelp: [
     ...DEFAULT_CONTROLS_HELP.filter(([key]) => !['Space', 'G', 'C / X', '1 2 3  or  [ ]', 'H', 'Gamepad'].includes(key)),
-    ['Space / RT', 'Shoot the held NOTE into your SPEAKER (hold) · while ONSTAGE: place it in the TRAP'],
+    ['Space / RT', 'Shoot the held NOTE into your SPEAKER (hold; chassis auto-align turns the robot onto the SPEAKER first) · while ONSTAGE: place it in the TRAP'],
     ['G / RB', 'At your AMP: score the NOTE in the AMP · elsewhere: pass toward your WING'],
     ['C / A · X / B', 'Climb the STAGE chain you are under (TELEOP) · descend'],
-    ['H / gamepad X', 'AMP human player: AMPLIFY (needs 2 banked AMP NOTES)'],
-    ['B / gamepad LB', 'AMP human player: Coopertition (first 45 s of TELEOP, 1 banked NOTE)'],
-    ['N', 'AMP human player: throw a HIGH NOTE at a MICROPHONE (last 20 s)'],
-    ['Gamepad', 'LS drive · RS rotate · RT shoot · RB amp/pass · LT intake · A climb · B descend · X amplify · LB coopertition · Y camera'],
+    ['H / gamepad X', 'SOURCE human player: drop a NOTE down the CHUTE toward your robot (TELEOP)'],
+    ['B / gamepad LB', 'AMP human player: AMPLIFY (needs 2 banked AMP NOTES)'],
+    ['N', 'AMP human player: Coopertition (first 45 s of TELEOP, 1 banked NOTE)'],
+    ['M', 'AMP human player: throw a HIGH NOTE at a MICROPHONE (last 20 s)'],
+    ['Gamepad', 'LS drive · RS rotate · RT shoot (auto-aligns without a turret) · RB amp/pass · LT intake · A climb · B descend · X SOURCE drop · LB amplify · Y camera'],
   ],
   rulesSummary: [
     { title: 'AUTO / TELEOP', detail: '15 s AUTO (robots on their own), 3 s scoring pause, 2:15 TELEOP. SPEAKER NOTES still count for 3 s after each 0:00; the STAGE is assessed 5 s after the end.', value: '2:30', tag: 'TIME' },
@@ -99,7 +104,7 @@ export const crescendo2024: SeasonDefinition = {
     { title: 'MELODY / ENSEMBLE RP', detail: 'MELODY: 18 AMP + SPEAKER NOTES (15 with the Coopertition Bonus). ENSEMBLE: 10 STAGE points and 2 ONSTAGE robots. Win 2 RP, tie 1 RP.', value: '1 each', tag: 'RP' },
     { title: 'Coopertition', detail: 'Both alliances press Coopertition with a banked AMP NOTE in the first 45 s of TELEOP: 1 Coopertition point each and MELODY drops to 15.', tag: 'COOP' },
     { title: 'Fouls enforced', detail: 'FOUL 2 / TECH FOUL 5. G404 AUTO shots from outside the WING · G405 AUTO contact past the CENTER LINE · G414 full-court shots · G422 PODIUM · G423 SOURCE/AMP ZONE · G424 STAGE protection (2 TECH FOULS + opponent ENSEMBLE).', tag: 'FOUL' },
-    { title: 'Simulation model', detail: 'SPEAKER shots, passes, SOURCE drops and HIGH NOTE throws are physical. AMP deposits, chain climbs and TRAP placement are assisted. Positions not dimensioned in the manual were measured from its figures (see docs/CRESCENDO.md).', tag: 'SIM' },
+    { title: 'Simulation model', detail: 'SPEAKER shots, passes, SOURCE CHUTE drops and HIGH NOTE throws are physical; intakes, shooter type and aiming (turret / chassis auto-align / driver) are robot options. AMP deposits, chain climbs and TRAP placement are assisted. Positions not dimensioned in the manual were measured from its figures (see docs/CRESCENDO.md).', tag: 'SIM' },
   ],
   testing: {
     scatterCount: 5, // a CENTER LINE's worth of loose NOTES

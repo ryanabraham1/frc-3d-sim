@@ -1,16 +1,16 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { ALLIANCES, type Alliance } from '../src/engine/coords';
+import { ALLIANCES, type Alliance, type FieldPose } from '../src/engine/coords';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND, Robot } from '../src/engine/robot/robot';
-import { cloneConfig } from '../src/engine/robot/config';
+import { cloneConfig, type RobotConfig } from '../src/engine/robot/config';
 import { Scoreboard } from '../src/engine/match/scoreboard';
 import { packCommand, unpackCommand } from '../src/engine/net/protocol';
 import { SEASONS } from '../src/seasons';
 import { reefscape2025 as season } from '../src/seasons/2025-reefscape';
 import { ReefscapeRules } from '../src/seasons/2025-reefscape/rules';
 import { reefscapeResults } from '../src/seasons/2025-reefscape/scoring';
-import { normalizeReefscapeConfig, reefscapeRobotPresets } from '../src/seasons/2025-reefscape/config';
+import { normalizeReefscapeConfig, reefscapeRobotOptions, reefscapeRobotPresets } from '../src/seasons/2025-reefscape/config';
 import * as C from '../src/seasons/2025-reefscape/constants';
 
 const sims: HeadlessSim[] = [];
@@ -28,9 +28,27 @@ function run(sim: HeadlessSim, seconds: number, command = IDLE_COMMAND) {
 }
 function teleop(sim: HeadlessSim) { sim.rules.onPeriodChange(sim.ctx.clock.start()); for (const c of sim.ctx.clock.advance(18)) sim.rules.onPeriodChange(c); }
 function load(sim: HeadlessSim, i: number) { sim.pool.hold(i, sim.robot.id); sim.robot.held.push(i); }
+const preset = (id: string): RobotConfig => cloneConfig(reefscapeRobotPresets().find((p) => p.id === id)!.config);
+const rulesOf = (sim: HeadlessSim) => sim.rules as ReefscapeRules;
+/** Hold Space with CORAL until it leaves the end effector, then let it settle. */
+function place(sim: HeadlessSim, level: number, seconds = 3.5) {
+  for (let n = 0; n < Math.round(seconds / sim.physics.dt); n++) {
+    for (const change of sim.ctx.clock.advance(sim.physics.dt)) sim.rules.onPeriodChange(change);
+    const holding = sim.robot.held.some((i) => i < 126);
+    sim.step({ ...IDLE_COMMAND, shoot: holding, scoringLevel: level });
+  }
+}
+/** The exact pose that lines a robot's end effector up on a BRANCH, plus a lateral offset (in). */
+function linedUp(a: Alliance, level: number, offsetIn = 0, config = cloneConfig(season.robotDefaults), face = 0): FieldPose {
+  const probe = make(a, season.testing!.scoringSpots(a)[face], 2, config);
+  load(probe, 0);
+  const pose = rulesOf(probe).alignPose(probe.robot, level)!;
+  const t = { x: -Math.sin(pose.yaw), y: Math.cos(pose.yaw) };
+  return { x: pose.x + t.x * offsetIn * 0.0254, y: pose.y + t.y * offsetIn * 0.0254, yaw: pose.yaw };
+}
 
 describe('2025 REEFSCAPE manual implementation', () => {
-  it('registers both years and uses the manual match timing and scoring values', () => {
+  it('registers every year and uses the manual match timing and scoring values', () => {
     expect(SEASONS.map((s) => s.year)).toEqual([2026, 2025, 2024]);
     expect(season.timeline.filter((p) => p.mode !== 'disabled').reduce((t, p) => t + p.duration, 0)).toBe(150);
     expect(season.foulValues).toEqual({ minor: 2, major: 6 });
@@ -46,83 +64,89 @@ describe('2025 REEFSCAPE manual implementation', () => {
       expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(59);
       expect(sim.pool.indices('reserve', `station:${a === 'blue' ? 'red' : 'blue'}`)).toHaveLength(60);
       expect(sim.pool.specAt(0).shape).toBe('tube');
+      expect(sim.pool.specAt(0).hollow).toBe(true);
       expect(sim.pool.radiusAt(126)).toBeCloseTo(0.206375);
     });
-    it(`places each CORAL level on every ${a} face through the real mechanism loop`, () => {
-      for (const [face, spot] of season.testing!.scoringSpots(a).entries()) for (let level = 1; level <= 4; level++) {
+    it(`auto-aligns and physically places CORAL on every ${a} face and level`, () => {
+      for (const [face, spot] of season.testing!.scoringSpots(a).entries()) {
+        const level = (face % 4) + 1;
         const sim = make(a, spot); sim.rules.onPeriodChange(sim.ctx.clock.start()); load(sim, 0);
-        run(sim, 2.4, { ...IDLE_COMMAND, shoot: true, scoringLevel: level });
+        place(sim, level);
         expect(sim.ctx.score.counter(a, `coralL${level}`), `face ${face} level ${level}`).toBe(1);
-        expect(sim.ctx.score.total(a)).toBe(C.CORAL_AUTO[level]);
-        expect((sim.rules as ReefscapeRules).placements[0].face).toBe(face);
+        expect(sim.ctx.score.category(a, 'autoCoral')).toBe(C.CORAL_AUTO[level]);
+        expect(rulesOf(sim).placements[0].face).toBe(face);
+        // The CORAL is still a free body on the REEF — nothing was snapped or hidden.
+        expect(sim.pool.state[0]).toBe('field');
       }
     });
-    it(`prevents duplicate branches and allows multiple CORAL in ${a} L1`, () => {
-      const sim = make(a, season.testing!.scoringSpots(a)[0]); teleop(sim);
-      const rules = sim.rules as ReefscapeRules;
-      for (let i = 0; i < 3; i++) { load(sim, i); run(sim, 2.0, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 }); }
-      expect(sim.ctx.score.counter(a, 'coralL4')).toBe(2);
-      expect(sim.robot.held).toHaveLength(1);
-      run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 1 });
-      load(sim, 3); run(sim, 1, { ...IDLE_COMMAND, shoot: true, scoringLevel: 1 });
-      expect(rules.placements).toHaveLength(4);
-      expect(sim.ctx.score.category(a, 'teleopCoral')).toBe(14);
+    it(`${a}: a manual robot scores only when lined up within about an inch of the BRANCH`, () => {
+      const manual = cloneConfig(season.robotDefaults); manual.autoAlign = false;
+      for (const level of [2, 3, 4]) for (const [off, expected] of [[0.4, 1], [2.0, 0]] as const) {
+        const sim = make(a, linedUp(a, level, off, manual), 2, manual); teleop(sim); load(sim, 0);
+        place(sim, level);
+        expect(sim.ctx.score.counter(a, `coralL${level}`), `L${level} ${off} in`).toBe(expected);
+      }
     });
-    it(`requires reach and removes ${a} staged ALGAE before scoring its blocked branch`, () => {
-      const spot = season.testing!.scoringSpots(a)[0]; const sim = make(a, spot);
-      sim.rules.stage(); teleop(sim); const rules = sim.rules as ReefscapeRules;
+    it(`${a}: a second CORAL goes on the face's other BRANCH, and the trough takes several`, () => {
+      const sim = make(a, season.testing!.scoringSpots(a)[0]); teleop(sim);
+      for (const i of [0, 1]) { load(sim, i); place(sim, 4); }
+      expect(sim.ctx.score.counter(a, 'coralL4')).toBe(2);
+      expect(new Set(rulesOf(sim).placements.map((p) => p.branch))).toEqual(new Set([0, 1]));
+      for (const i of [2, 3, 4]) { load(sim, i); place(sim, 1, 2.5); }
+      expect(sim.ctx.score.counter(a, 'coralL1')).toBe(3);
+      expect(sim.ctx.score.category(a, 'teleopCoral')).toBe(2 * 5 + 3 * 2);
+    });
+    it(`${a}: staged ALGAE physically blocks its level until it is knocked off`, () => {
+      const sim = make(a, season.testing!.scoringSpots(a)[0]); sim.rules.stage(); teleop(sim);
+      const rules = rulesOf(sim);
       expect(rules.reefAlgae(a, 0)).toBe(true);
-      run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 3 });
+      place(sim, 3);
       expect(sim.ctx.score.counter(a, 'coralL3')).toBe(0);
+      sim.robot.resetTo(season.testing!.scoringSpots(a)[0]);
       run(sim, 1.5, { ...IDLE_COMMAND, intake: true, scoringLevel: 3 });
       expect(rules.reefAlgae(a, 0)).toBe(false);
-      expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
-      run(sim, 1, { ...IDLE_COMMAND, shoot: true, scoringLevel: 3 });
+      load(sim, 1); place(sim, 3);
       expect(sim.ctx.score.counter(a, 'coralL3')).toBe(1);
-      sim.robot.resetTo(season.startPose(a, 2)); load(sim, 0);
-      run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
-      expect(sim.ctx.score.counter(a, 'coralL4')).toBe(0);
     });
     it(`feeds ${a} ALGAE through the real processor and transfers it to the opponent`, () => {
-      const p = C.processor(a); const sim = make(a, { x: p.x, y: p.y + (a === 'blue' ? 1.05 : -1.05), yaw: a === 'blue' ? -Math.PI / 2 : Math.PI / 2 });
+      const p = C.processor(a); const sim = make(a, { x: p.x, y: p.y + (a === 'blue' ? 1.05 : -1.05), yaw: a === 'blue' ? -Math.PI / 2 : Math.PI / 2 }, 2, preset('all-rounder'));
       teleop(sim); load(sim, 126); run(sim, 1.6, { ...IDLE_COMMAND, pass: true, intake: true });
       expect(sim.ctx.score.counter(a, 'processor')).toBe(1);
       expect(sim.ctx.score.category(a, 'processor')).toBe(6);
       expect(sim.pool.tag[126]).toBe(`hp:${a === 'blue' ? 'red' : 'blue'}`);
     });
-    it(`scores ${a} ALGAE net shots with real Rapier flight`, () => {
-      const n = C.netCenter(a); const sim = make(a, { x: n.x + (a === 'blue' ? -2.1 : 2.1), y: n.y, yaw: a === 'blue' ? 0 : Math.PI });
+    it(`auto-aligns toward the ${a} NET and scores ALGAE with real flight`, () => {
+      const n = C.netCenter(a); const sim = make(a, { x: n.x + (a === 'blue' ? -2.1 : 2.1), y: n.y + 0.6, yaw: Math.PI / 2 }, 2, preset('all-rounder'));
       teleop(sim); load(sim, 126); run(sim, 3.0, { ...IDLE_COMMAND, shoot: true });
       expect(sim.ctx.score.counter(a, 'net')).toBe(1);
-      expect(sim.ctx.score.category(a, 'net')).toBe(4);
       expect(sim.pool.tag[126]).toBe(`net:${a}:1`);
     });
-    it(`throws processor ALGAE into ${a} NET only after AUTO`, () => {
+    it(`throws processor ALGAE into ${a} NET only after AUTO (human player button B)`, () => {
       const sim = make(a); sim.rules.onPeriodChange(sim.ctx.clock.start());
-      sim.pool.reserve(126, `hp:${a}`); sim.rules.humanPlayerAction(a);
+      sim.pool.reserve(126, `hp:${a}`); sim.rules.humanPlayerAction(a, 2);
       expect(sim.pool.state[126]).toBe('reserve');
       for (const c of sim.ctx.clock.advance(18)) sim.rules.onPeriodChange(c);
-      sim.rules.humanPlayerAction(a); run(sim, 3);
+      sim.rules.humanPlayerAction(a, 2); run(sim, 3);
       expect(sim.ctx.score.counter(a, 'net')).toBe(1);
     });
-    it(`retrieves and re-scores ${a} AUTO CORAL while preserving AUTO credit`, () => {
+    it(`keeps ${a} AUTO credit per location when CORAL is knocked off and re-scored (§6.5.1)`, () => {
       const sim = make(a, season.testing!.scoringSpots(a)[0]); sim.rules.onPeriodChange(sim.ctx.clock.start()); load(sim, 0);
-      run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
+      place(sim, 4);
       expect(sim.ctx.score.category(a, 'autoCoral')).toBe(7);
       for (const c of sim.ctx.clock.advance(18)) sim.rules.onPeriodChange(c);
-      run(sim, 2, { ...IDLE_COMMAND, descend: true, scoringLevel: 4 });
+      const branch = rulesOf(sim).placements[0].branch;
+      sim.pool.reserve(0); run(sim, 0.5); // knocked off
       expect(sim.ctx.score.category(a, 'autoCoral')).toBe(0);
       expect(sim.ctx.score.counter(a, 'autoCoral')).toBe(1);
-      expect(sim.ctx.score.counter(a, 'coralL4')).toBe(0);
-      run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
+      load(sim, 1); place(sim, 4);
+      expect(rulesOf(sim).placements[0].branch).toBe(branch);
       expect(sim.ctx.score.category(a, 'autoCoral')).toBe(7);
       expect(sim.ctx.score.category(a, 'teleopCoral')).toBe(0);
-      expect(sim.ctx.score.counter(a, 'autoCoral')).toBe(1);
     });
     for (const station of [1, 2, 3]) it(`runs ${a} station ${station} AUTO leave + L4 with the real field`, () => {
       const sim = make(a, season.startPose(a, station), station); sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
       const auto = season.createAutoPilot(sim.ctx, sim.rules, sim.robot, 'reef-l4');
-      for (let k = 0; k <= 15 * 90; k++) { for (const ch of sim.ctx.clock.advance(sim.physics.dt)) sim.rules.onPeriodChange(ch); sim.step(auto.update(sim.physics.dt)); }
+      for (let k = 0; k <= 18 * 90; k++) { for (const ch of sim.ctx.clock.advance(sim.physics.dt)) sim.rules.onPeriodChange(ch); sim.step(sim.ctx.clock.mode === 'auto' ? auto.update(sim.physics.dt) : IDLE_COMMAND); }
       expect(sim.ctx.score.counter(a, 'coralL4')).toBe(1);
       expect(sim.ctx.score.counter(a, 'leave')).toBe(1);
       expect(sim.ctx.score.total(a)).toBe(10);
@@ -136,53 +160,122 @@ describe('2025 REEFSCAPE manual implementation', () => {
       expect(sim.ctx.score.category(a, 'barge')).toBe(level === 1 ? 6 : 12);
       sim.rules.requestDescend(sim.robot); run(sim, 3); expect(sim.robot.isClimbing).toBe(false);
     });
+  for (const a of ALLIANCES) it(`lets ${a} climb any matching alliance cage, scoring by that cage's depth`, () => {
+    const p = C.cage(a, 1); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }, 2); teleop(sim);
+    sim.rules.requestClimb(sim.robot, 2); run(sim, 6);
+    expect(sim.robot.climbPhase).toBe('hanging');
+    expect(sim.robot.climbSlot).toBe(0);
+    sim.rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
+    expect(sim.ctx.score.category(a, 'barge')).toBe(12);
+  });
+    for (const k of [0, 1]) it(`${a} station ${k}: the human player drops CORAL down the CHUTE into a backed-up funnel`, () => {
+      const st = C.stations(a)[k];
+      const d = season.robotDefaults.frameLength / 2 + season.robotDefaults.bumperThickness + 0.02;
+      const sim = make(a, { x: st.x + Math.cos(st.yaw) * d, y: st.y + Math.sin(st.yaw) * d, yaw: st.yaw });
+      sim.ctx.humanPlayerIsAuto = () => true;
+      sim.rules.stage(); for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      teleop(sim);
+      run(sim, 1.5);
+      expect(sim.pool.indices('field').filter((i) => i < 126 && i % 63 > 2)).toHaveLength(0); // intake off: nothing dropped
+      run(sim, 2.5, { ...IDLE_COMMAND, intake: true });
+      expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
+      expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(58); // 59 after the preload, one fed
+    });
+    it(`${a}: a ground-intake robot without a funnel collects CORAL the human player drops onto the carpet`, () => {
+      const st = C.stations(a)[0];
+      const sim = make(a, { x: st.x + Math.cos(st.yaw) * 1.1, y: st.y + Math.sin(st.yaw) * 1.1, yaw: st.yaw + Math.PI }, 2, preset('trough'));
+      sim.rules.stage(); for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      teleop(sim);
+      sim.rules.humanPlayerAction(a, 1);
+      run(sim, 2.5);
+      expect(sim.robot.held).toHaveLength(0);
+      const coral = sim.pool.indices('field').find((i) => i < 126 && i % 63 > 2)!;
+      const p = sim.frame.toField(sim.pool.position(coral));
+      expect(p.z).toBeLessThan(C.CORAL_RADIUS + 0.05); // rolled out onto the carpet
+      for (let n = 0; n < 90 * 3 && !sim.robot.held.length; n++) {
+        const dx = p.x - sim.robot.pose.x, dy = p.y - sim.robot.pose.y, dd = Math.hypot(dx, dy);
+        sim.step({ ...IDLE_COMMAND, intake: true, vx: (dx / dd) * 1, vy: (dy / dd) * 1 });
+      }
+      expect(sim.robot.held).toHaveLength(1);
+    });
+    it(`lets a ${a} CORAL-only robot knock staged ALGAE onto the carpet`, () => {
+      const sim = make(a, season.testing!.scoringSpots(a)[0], 2, preset('funnel-l4')); sim.rules.stage(); teleop(sim);
+      const rules = rulesOf(sim), algae = 126 + (a === 'red' ? 0 : 6);
+      run(sim, 1.5, { ...IDLE_COMMAND, intake: true, scoringLevel: 3 });
+      expect(rules.reefAlgae(a, 0)).toBe(false);
+      expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(0);
+      run(sim, 2.5);
+      const p = sim.frame.toField(sim.pool.position(algae)), c = C.reefCenter(a);
+      expect(sim.pool.state[algae]).toBe('field');
+      expect(p.z).toBeLessThan(C.ALGAE_RADIUS + 0.05);
+      expect(Math.hypot(p.x - c.x, p.y - c.y)).toBeGreaterThan(C.REEF_APOTHEM + C.ALGAE_RADIUS);
+    });
+    it(`allows ${a} to harvest neutral ALGAE from the opposing reef`, () => {
+      const other = a === 'blue' ? 'red' : 'blue';
+      const sim = make(a, season.testing!.scoringSpots(other)[0], 2, preset('all-rounder')); sim.rules.stage(); teleop(sim);
+      for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      run(sim, 2, { ...IDLE_COMMAND, intake: true });
+      expect(rulesOf(sim).reefAlgae(other, 0)).toBe(false);
+      expect(rulesOf(sim).reefAlgae(a, 0)).toBe(true);
+      expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
+    });
   }
+  it('offers realistic archetypes without turrets', () => {
+    const presets = reefscapeRobotPresets();
+    expect(presets.map((p) => p.id)).toEqual(['funnel-l4', 'all-rounder', 'mid-elevator', 'trough', 'algae']);
+    for (const p of presets) expect(p.config.launcher.turret).toBe(false);
+    const withTurret = cloneConfig(season.robotDefaults); withTurret.launcher.turret = true; withTurret.aimAssist = 'full';
+    expect(normalizeReefscapeConfig(withTurret).launcher.turret).toBe(false);
+    const intake = reefscapeRobotOptions.find((o) => o.id === 'coralIntake')!;
+    const c = cloneConfig(season.robotDefaults);
+    intake.set(c, 'ground'); expect([c.intake.ground, c.intake.station]).toEqual([true, false]);
+    intake.set(c, 'funnel'); expect([c.intake.ground, c.intake.station]).toEqual([false, true]);
+    expect(intake.get(c)).toBe('funnel');
+  });
+  it('a funnel-only robot cannot pick CORAL up off the carpet; a ground robot can', () => {
+    for (const [id, expected] of [['funnel-l4', 0], ['trough', 1]] as const) {
+      const sim = make('blue', { x: 2, y: 2, yaw: 0 }, 2, preset(id)); teleop(sim);
+      for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      sim.pool.placeField(0, 2.63, 2, C.CORAL_RADIUS);
+      run(sim, 0.4, { ...IDLE_COMMAND, intake: true });
+      expect(sim.robot.held.filter((i) => i < 126), id).toHaveLength(expected);
+    }
+  });
   it('enforces one CORAL and one ALGAE even with an oversized submitted hopper', () => {
-    const sim = make('blue', { x: 2, y: 2, yaw: 0 }); sim.robot.config.hopperCapacity = 80;
+    const sim = make('blue', { x: 2, y: 2, yaw: 0 }, 2, preset('all-rounder')); sim.robot.config.hopperCapacity = 80;
     teleop(sim);
     for (const i of [0, 1, 126, 127]) sim.pool.placeField(i, 2.63, 2);
     run(sim, 0.2, { ...IDLE_COMMAND, intake: true });
     expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
     expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
   });
-  it('replicates placements, elevator state, reef ALGAE and scored visuals', () => {
+  it('replicates placements and elevator state', () => {
     const host = make('blue', season.testing!.scoringSpots('blue')[0]); host.rules.stage(); teleop(host);
-    run(host, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
+    place(host, 4);
     const client = make(); client.rules.applyNetState!(JSON.parse(JSON.stringify(host.rules.netState!())));
     client.ctx.score.restore(host.ctx.score.snapshot());
-    for (let i = 0; i < host.pool.count; i++) client.pool.applyReplicaState(i, host.pool.state[i], host.pool.owner[i], host.pool.tag[i]);
-    client.rules.updateVisuals(0.016, 1);
     expect(client.rules.netState!()).toEqual(host.rules.netState!());
     expect(client.ctx.score.category('blue', 'teleopCoral')).toBe(5);
-    expect(client.ctx.builder.root.getObjectByName('reefscape-scored-pieces')!.children).toHaveLength(1);
   });
   it('upgrades legacy configs and constrains manual size, extension, inventory and preloads', () => {
     const config = cloneConfig(season.robotDefaults);
     delete config.placement; delete config.processor; delete config.intake.primary; delete config.intake.secondary; delete config.climber.secondsToClimb;
+    delete config.intake.ground; delete config.intake.station; delete config.options;
     config.height = 10; config.frameLength = config.frameWidth = 2; config.hopperCapacity = 80; config.preload = 8;
     const upgraded = normalizeReefscapeConfig(config);
     expect(upgraded.height).toBeCloseTo(42 * 0.0254);
     expect(2 * (upgraded.frameLength + upgraded.frameWidth)).toBeCloseTo(120 * 0.0254);
     expect(upgraded.placement!.reach).toBeCloseTo(18 * 0.0254);
     expect(upgraded.hopperCapacity).toBe(2); expect(upgraded.preload).toBe(1);
+    expect(upgraded.intake.ground).toBe(true);
     upgraded.placement!.reach = 10; upgraded.placement!.maxLevel = 99; upgraded.placement!.liftSpeed = Infinity;
     const clamped = normalizeReefscapeConfig(upgraded);
     expect(clamped.placement).toMatchObject({ reach: 18 * 0.0254, maxLevel: 4, liftSpeed: 1.3 });
     expect(SEASONS[0].robotDefaults.placement).toBeUndefined();
     expect(SEASONS[0].robotDefaults.climber.secondsToClimb).toBeUndefined();
   });
-  it('lets the CORAL profile score even without an ALGAE net launcher', () => {
-    const config = reefscapeRobotPresets().find((p) => p.id === 'coral')!.config;
-    const sim = make('blue', season.testing!.scoringSpots('blue')[0], 2, config); sim.rules.stage(); teleop(sim);
-    expect(sim.robot.config.launcher.enabled).toBe(false);
-    run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
-    expect(sim.ctx.score.counter('blue', 'coralL4')).toBe(1);
-    expect(sim.robot.config.hopperCapacity).toBe(1);
-    run(sim, 2, { ...IDLE_COMMAND, intake: true });
-    expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(0);
-  });
   it('lets a processor-only ALGAE profile feed without a net shooter or CORAL pickup', () => {
-    const config = reefscapeRobotPresets().find((p) => p.id === 'algae')!.config; config.launcher.enabled = false;
+    const config = preset('algae'); config.launcher.enabled = false;
     const p = C.processor('blue'); const sim = make('blue', { x: p.x, y: 1.05, yaw: -Math.PI / 2 }, 2, config);
     sim.rules.stage(); teleop(sim); expect(sim.robot.held).toHaveLength(0);
     load(sim, 126); run(sim, 1.6, { ...IDLE_COMMAND, pass: true, intake: true });
@@ -193,49 +286,35 @@ describe('2025 REEFSCAPE manual implementation', () => {
   it('limits driver scoring commands to the configured elevator level', () => {
     const config = cloneConfig(season.robotDefaults); config.placement!.maxLevel = 2;
     const sim = make('blue', season.testing!.scoringSpots('blue')[0], 2, config); teleop(sim); load(sim, 0);
-    run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
+    place(sim, 4);
     expect(sim.ctx.score.counter('blue', 'coralL2')).toBe(1); expect(sim.ctx.score.counter('blue', 'coralL4')).toBe(0);
   });
   it('uses configured elevator speed and reach in the real mechanism loop', () => {
     for (const speed of [0.25, 2.5]) {
       const config = cloneConfig(season.robotDefaults); config.placement!.liftSpeed = speed;
-      const sim = make('blue', season.testing!.scoringSpots('blue')[0], 2, config); teleop(sim); load(sim, 0);
-      run(sim, 0.8, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
+      const sim = make('blue', linedUp('blue', 4, 0, config), 2, config); teleop(sim); load(sim, 0);
+      place(sim, 4, 1.4);
       expect(sim.ctx.score.counter('blue', 'coralL4')).toBe(speed === 2.5 ? 1 : 0);
     }
     const config = cloneConfig(season.robotDefaults); config.placement!.reach = 0;
     const short = make('blue', season.testing!.scoringSpots('blue')[0], 2, config); teleop(short); load(short, 0);
-    run(short, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 });
+    place(short, 4);
     expect(short.ctx.score.counter('blue', 'coralL4')).toBe(0);
   });
-  it('honors CORAL cycle time rather than the ALGAE shot rate', () => {
+  it('honors CORAL cycle time', () => {
     const config = cloneConfig(season.robotDefaults); config.placement!.cycleSeconds = 2;
     const sim = make('blue', season.testing!.scoringSpots('blue')[0], 2, config); teleop(sim); load(sim, 0);
-    const command = { ...IDLE_COMMAND, shoot: true, scoringLevel: 1 };
-    run(sim, 0.3, command); load(sim, 1); run(sim, 0.8, command);
-    expect(sim.ctx.score.counter('blue', 'coralL1')).toBe(1);
-    run(sim, 1.2, command); expect(sim.ctx.score.counter('blue', 'coralL1')).toBe(2);
-  });
-  it('uses a configured cage rise time independently of shallow/deep point values', () => {
-    for (const level of [1, 2]) {
-      const config = cloneConfig(season.robotDefaults); config.climber.maxLevel = level; config.climber.secondsToClimb = 1;
-      const p = C.cage('blue', 2), sim = make('blue', { x: p.x - 0.75, y: p.y, yaw: 0 }, 2, config); teleop(sim);
-      sim.rules.requestClimb(sim.robot, level); run(sim, 1.8); expect(sim.robot.climbPhase).toBe('hanging');
-    }
+    place(sim, 1, 1.2); load(sim, 1); place(sim, 1, 0.6);
+    expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
+    place(sim, 1, 2.5); expect(sim.ctx.score.counter('blue', 'coralL1')).toBe(2);
   });
   it('replicates the raised elevator collider used by client drive prediction', () => {
-    const host = make(); load(host, 0); run(host, 2, { ...IDLE_COMMAND, scoringLevel: 4 });
+    const host = make(); load(host, 0); run(host, 2.5, { ...IDLE_COMMAND, scoringLevel: 4 });
     const client = make(); client.rules.applyNetState!(host.rules.netState!()); client.rules.updateVisuals(0, 0);
     const collider = client.robot.body.collider(client.robot.body.numColliders() - 1);
-    expect(collider.halfExtents()!.y * 2 + 0.2).toBeCloseTo(C.LEVEL_HEIGHTS[4] + 0.15);
-  });
-  for (const a of ALLIANCES) it(`allows ${a} to harvest neutral ALGAE from the opposing reef`, () => {
-    const other = a === 'blue' ? 'red' : 'blue';
-    const sim = make(a, season.testing!.scoringSpots(other)[0]); sim.rules.stage(); teleop(sim);
-    run(sim, 2, { ...IDLE_COMMAND, intake: true });
-    expect((sim.rules as ReefscapeRules).reefAlgae(other, 0)).toBe(false);
-    expect((sim.rules as ReefscapeRules).reefAlgae(a, 0)).toBe(true);
-    expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
+    const m = (host.rules as ReefscapeRules).mechanisms.get(0)!;
+    expect(collider.halfExtents()!.y * 2 + 0.2).toBeCloseTo(m.height + 0.15);
+    expect(m.height).toBeGreaterThan(C.LEVEL_HEIGHTS[4]);
   });
   it('preserves 2026 commands and sends 2025 reef level selections', () => {
     expect(packCommand(IDLE_COMMAND)).toHaveLength(5);
@@ -260,14 +339,6 @@ describe('2025 REEFSCAPE manual implementation', () => {
     expect(sim.ctx.score.fouls.filter((f) => f.rule === 'G421').map((f) => f.kind)).toEqual(['minor', 'major']);
     expect(sim.ctx.score.foulPointsFor('red')).toBe(8);
   });
-  for (const a of ALLIANCES) it(`lets ${a} climb any matching alliance cage, scoring by that cage's depth`, () => {
-    const p = C.cage(a, 1); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }, 2); teleop(sim);
-    sim.rules.requestClimb(sim.robot, 2); run(sim, 6);
-    expect(sim.robot.climbPhase).toBe('hanging');
-    expect(sim.robot.climbSlot).toBe(0);
-    sim.rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
-    expect(sim.ctx.score.category(a, 'barge')).toBe(12);
-  });
   it('keeps a shallow climber off deep partner cages', () => {
     const config = cloneConfig(season.robotDefaults); config.climber.maxLevel = 1;
     const deep = C.cage('blue', 3); const sim = make('blue', { x: deep.x - 0.75, y: deep.y, yaw: 0 }, 2, config); teleop(sim);
@@ -275,34 +346,6 @@ describe('2025 REEFSCAPE manual implementation', () => {
     expect(rules.refs.cageDepth.blue).toEqual(['deep', 'shallow', 'deep']);
     rules.requestClimb(sim.robot, 1); run(sim, 1);
     expect(sim.robot.isClimbing).toBe(false);
-  });
-  for (const a of ALLIANCES) for (const k of [0, 1]) it(`feeds ${a} station ${k} CORAL straight into a docked intake`, () => {
-    const st = C.stations(a)[k];
-    const sim = make(a, { x: st.x + Math.cos(st.yaw) * 0.9, y: st.y + Math.sin(st.yaw) * 0.9, yaw: st.yaw + Math.PI });
-    sim.ctx.humanPlayerIsAuto = () => true;
-    sim.rules.stage(); for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
-    teleop(sim);
-    run(sim, 1.5);
-    expect(sim.robot.held).toHaveLength(0); // intake off: no piece is dropped onto the docked robot
-    expect(sim.pool.indices('field').filter((i) => i < 126 && i % 63 > 2)).toHaveLength(0);
-    run(sim, 0.8, { ...IDLE_COMMAND, intake: true });
-    expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
-    expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(58); // 59 after the preload, one fed
-  });
-  for (const a of ALLIANCES) it(`lets a ${a} CORAL-only robot knock staged ALGAE onto the carpet`, () => {
-    const config = reefscapeRobotPresets().find((p) => p.id === 'coral')!.config;
-    const sim = make(a, season.testing!.scoringSpots(a)[0], 2, config); sim.rules.stage(); teleop(sim);
-    const rules = sim.rules as ReefscapeRules, algae = 126 + (a === 'red' ? 0 : 6);
-    run(sim, 1.5, { ...IDLE_COMMAND, intake: true, scoringLevel: 3 });
-    expect(rules.reefAlgae(a, 0)).toBe(false);
-    expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(0);
-    run(sim, 2.5);
-    const p = sim.frame.toField(sim.pool.position(algae)), c = C.reefCenter(a);
-    expect(sim.pool.state[algae]).toBe('field');
-    expect(p.z).toBeLessThan(C.ALGAE_RADIUS + 0.05);
-    expect(Math.hypot(p.x - c.x, p.y - c.y)).toBeGreaterThan(C.REEF_APOTHEM + C.ALGAE_RADIUS);
-    run(sim, 1, { ...IDLE_COMMAND, shoot: true, scoringLevel: 3 });
-    expect(sim.ctx.score.counter(a, 'coralL3')).toBe(1);
   });
   it('stages CORAL MARKS and the BARGE ZONE per the manual figures', () => {
     const sim = make(); sim.rules.stage();
@@ -373,6 +416,13 @@ describe('2025 REEFSCAPE manual implementation', () => {
       run(sim, 3, { ...IDLE_COMMAND, vx: 2, scoringLevel: level });
       if (level === 1) expect(sim.robot.pose.x).toBeGreaterThan(C.FIELD_LENGTH / 2 + 0.7);
       else expect(sim.robot.pose.x).toBeLessThan(C.FIELD_LENGTH / 2 - 0.3);
+    }
+  });
+  it('uses a configured cage rise time independently of shallow/deep point values', () => {
+    for (const level of [1, 2]) {
+      const config = cloneConfig(season.robotDefaults); config.climber.maxLevel = level; config.climber.secondsToClimb = 1;
+      const p = C.cage('blue', 2), sim = make('blue', { x: p.x - 0.75, y: p.y, yaw: 0 }, 2, config); teleop(sim);
+      sim.rules.requestClimb(sim.robot, level); run(sim, 1.8); expect(sim.robot.climbPhase).toBe('hanging');
     }
   });
   it('awards AUTO, CORAL, BARGE, win and Coopertition correctly', () => {

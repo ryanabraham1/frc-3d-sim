@@ -24,9 +24,9 @@ export class CrescendoHud implements SeasonHud {
     }
     const tele = rules.teleopElapsed();
     const center = rules.isEndgame()
-      ? '<b>END GAME</b> · STAGE protected · HIGH NOTES (N) · ONSTAGE 3 / SPOTLIT 4 / HARMONY +2 / TRAP 5'
+      ? '<b>END GAME</b> · STAGE protected · HIGH NOTES (M) · ONSTAGE 3 / SPOTLIT 4 / HARMONY +2 / TRAP 5'
       : tele < C.COOP_WINDOW
-        ? `Coopertition window ${Math.ceil(C.COOP_WINDOW - tele)} s · both alliances press B with a banked AMP NOTE`
+        ? `Coopertition window ${Math.ceil(C.COOP_WINDOW - tele)} s · both alliances press N with a banked AMP NOTE`
         : coop ? '<b class="ok">COOPERTITION BONUS · MELODY needs 15</b>' : 'CRESCENDO · MELODY: 18 AMP + SPEAKER NOTES · ENSEMBLE: 10 STAGE pts + 2 ONSTAGE';
     ctx.hud.setHtml(slots.center, center);
 
@@ -40,11 +40,19 @@ export class CrescendoHud implements SeasonHud {
         ? `ONSTAGE · ${C.chainLabel(r.alliance, c)}${rules.spotlit[r.alliance][c] ? ' · SPOTLIT' : ''}${holding && r.config.climber.maxLevel >= 2 && !rules.trapScored[r.alliance][c] ? ' · <b class="ok">Space: TRAP</b>' : ''} · X to descend`
         : 'Climbing…';
     } else if (holding) {
-      hint = rules.nearAmp(r) ? '<b class="ok">G: score in the AMP</b> · Space: shoot SPEAKER' : 'Space: shoot SPEAKER · G: pass / score at your AMP';
-    } else hint = 'Intake a NOTE from the carpet or your SOURCE (opponent end)';
+      const c = r.config;
+      const shoot = !c.launcher.enabled ? 'No SPEAKER shooter' : c.launcher.turret ? 'Space: shoot SPEAKER (turret)' : c.autoAlign ? 'Hold Space: auto-align + shoot SPEAKER' : 'Face the SPEAKER · Space: shoot';
+      const amp = c.options?.amp === false ? 'no AMP mechanism' : 'G: score at your AMP';
+      hint = rules.nearAmp(r) && c.options?.amp !== false ? `<b class="ok">G: score in the AMP</b> · ${shoot}` : `${shoot} · ${amp}${c.launcher.enabled ? ' / pass' : ''}`;
+    } else {
+      const i = r.config.intake;
+      hint = i.ground && i.station ? 'Intake a NOTE from the carpet, or face your SOURCE (opponent end) and catch one from the CHUTE'
+        : i.ground ? 'Intake a NOTE from the carpet (no SOURCE intake: let SOURCE drops land first)'
+        : 'No ground intake: face your SOURCE (opponent end) and catch a NOTE from the CHUTE (H drops one)';
+    }
     const climb = r.isClimbing ? '' : rules.chainFor(r) && rules.isTeleop() ? '<div class="ok">C: climb this chain</div>' : '';
     const unclear = holding && !r.lastShotClear ? '<div class="bad">No clean SPEAKER shot from here</div>' : '';
     ctx.hud.setHtml(slots.player, `<div class="hopper-label">NOTE ${holding ? '1' : '0'}/1</div><div>${hint}</div>${unclear}${climb}` +
-      `<div class="dim">H: AMPLIFY · B: Coopertition · N: HIGH NOTE</div>`);
+      `<div class="dim">H: SOURCE drop · B: AMPLIFY · N: Coopertition · M: HIGH NOTE</div>`);
   }
 }

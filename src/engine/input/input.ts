@@ -16,7 +16,7 @@ export interface DriverInput {
   climb: boolean;
   descend: boolean;
   humanPlayer: boolean;
-  /** Extra human-player buttons for seasons that declare them (2 = B / gamepad LB, 3 = N). 0 = none. */
+  /** Extra human-player buttons for seasons that declare them (2 = B / gamepad LB, 3 = N, 4 = M). 0 = none. */
   humanPlayerAlt: number;
   precision: boolean;
   // edge-triggered
@@ -83,7 +83,7 @@ export class InputManager {
     let climb = this.k('KeyC');
     let descend = this.k('KeyX');
     let humanPlayer = this.edge('KeyH');
-    let humanPlayerAlt = this.edge('KeyB') ? 2 : this.edge('KeyN') ? 3 : 0;
+    let humanPlayerAlt = this.edge('KeyB') ? 2 : this.edge('KeyN') ? 3 : this.edge('KeyM') ? 4 : 0;
     const precision = this.k('ShiftLeft') || this.k('ShiftRight');
     let levelUp = this.edge('BracketRight');
     let levelDown = this.edge('BracketLeft');
