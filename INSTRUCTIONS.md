@@ -14,8 +14,9 @@ Companion docs: [docs/FRAMEWORK.md](docs/FRAMEWORK.md) (engine reuse map + seaso
    robot-size rules (R1xx). Skip the rest.
 3. Write `constants.ts` first — every number with a provenance tag `[M §]` / `[FIG n]` / `[EST]`.
 4. Decide, per scoring action, **physical vs assisted** (see §3) *before* writing rules.
-4b. **Research how real robots are built for this game** and design the robot archetypes, options and driver
-   assists before writing `config.ts` (see §3b). The simulator exists to compare archetypes at kickoff.
+4b. **Derive the robot archetypes** from past games' patterns plus this manual's tasks and constraints (there is
+   no research to find at kickoff), and design the options and driver assists before writing `config.ts` (see §3b
+   and `docs/ROBOT-ARCHETYPES.md`). The simulator exists to compare archetypes at kickoff.
 5. Build: `constants → config → scoring (pure) → field → rules → autopilot → hud → index`, register in
    `src/seasons/index.ts`.
 6. `npm run typecheck`, `npm test` (the physics suite automatically tests every registered season),
@@ -105,11 +106,15 @@ This simulator is used at kickoff to decide **which robot archetype is best** an
 building** (e.g. "is a ground intake worth it?"). A season is not done until its robots are ones real teams would
 build, with the same trade-offs. Lessons from reworking 2024/2025/2026:
 
-1. **Research first.** Search Chief Delphi ("<game> robot archetypes", "controller layout", "auto align"), team
-   technical binders/blogs and robot code for this game *and* the closest previous games. Write the findings, with
-   links, into `docs/ROBOT-ARCHETYPES.md` (one section per season). Before kickoff-week data exists, reason from
-   the manual: which tasks exist, which field constraints set the robot size (heights under structures, frame
-   perimeter), and which of the patterns in that doc apply.
+1. **Derive the archetypes; don't wait for research.** At kickoff no robot for the new game exists, so there is
+   nothing to look up. Follow "Deriving archetypes for a new game" in `docs/ROBOT-ARCHETYPES.md`:
+   (a) build a task table from the manual (pieces, where they're acquired, goals, points, height/reach/capacity
+   constraints, field obstacles with clearance heights, human-player stations); (b) match each task to its analog
+   in past games using the pattern library there (e.g. "launch balls at a central goal" → hopper + shooter, turret
+   or chassis auto-align; "place on pegs at several heights" → elevator/arm tiers, vision alignment, no turret;
+   "human-player chute" → station-fed vs ground-intake trade-off); (c) build the presets and options from that;
+   (d) record the derivation in that file, marked as *derived, not observed*. If real information about the game
+   is available (e.g. later in the season), use it to check and adjust the presets, but never depend on it.
 2. **Presets = real archetypes.** Give `robotPresets` (4–5) that span the viable designs: the common competitive
    build (the default), the elite do-everything build, a simple/kitbot-like build, and the specialists. Each
    description says what it has and why teams built it.
@@ -232,6 +237,6 @@ src/seasons/<year>-<name>/constants.ts     manual facts + helpers (side(), zones
 src/seasons/index.ts                       register (newest first)
 tests/<name>.test.ts                       season tests
 docs/<NAME>.md                             manual page map, what's simulated vs assisted, approximations, archetypes
-docs/ROBOT-ARCHETYPES.md                   research + sources for this season's archetypes
+docs/ROBOT-ARCHETYPES.md                   this season's task table, past-game analogs and derived archetypes
 README.md, PLAN.md (log), docs/FRAMEWORK.md (if the engine changed)
 ```

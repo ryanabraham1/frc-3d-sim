@@ -43,7 +43,7 @@ Each season's **Robot** panel offers archetype presets based on how real teams b
 mechanism options for the real trade-offs: ground intake or not, station/human-player intake, turret vs chassis
 auto-align vs driver aim, shooter type, capacity, height, climber. Use it at kickoff to compare archetypes, e.g.
 "is a ground intake worth it?". Human players feed physical pieces down the real chutes (H), and driver assists
-(chassis auto-align, reef auto-align) are robot options. Research and sources: [docs/ROBOT-ARCHETYPES.md](docs/ROBOT-ARCHETYPES.md).
+(chassis auto-align, reef auto-align) are robot options. How archetypes are derived for a new game (from past-game patterns plus the manual) and what was built 2022–2026: [docs/ROBOT-ARCHETYPES.md](docs/ROBOT-ARCHETYPES.md).
 
 ## Playing 2024 CRESCENDO
 

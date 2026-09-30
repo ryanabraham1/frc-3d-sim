@@ -30,9 +30,10 @@ the season's doc (e.g. `docs/REEFSCAPE.md` "Simulation approximations").
 
 ## Model robots as real teams build them
 
-The sim is for comparing robot archetypes at kickoff. Follow INSTRUCTIONS.md §3b: research the game's archetypes
-(record them in `docs/ROBOT-ARCHETYPES.md` with links), offer them as `robotPresets` plus `robotOptions` for the
-real trade-offs, and never assume a ground intake (`intake.ground`). Don't allow mechanisms no real team would
+The sim is for comparing robot archetypes at kickoff, when no robots for the new game exist yet. Follow
+INSTRUCTIONS.md §3b: derive the archetypes from the manual's tasks and constraints plus how past games' robots were
+built (the pattern library in `docs/ROBOT-ARCHETYPES.md`; record your derivation there, marked as derived). Offer
+them as `robotPresets` plus `robotOptions` for the real trade-offs, and never assume a ground intake (`intake.ground`). Don't allow mechanisms no real team would
 build for the game (no turrets on pick-and-place robots). Human-player stations drop physical pieces down the real
 chute geometry (button H), driver assists (chassis auto-align, scoring auto-align) are robot options, and placing
 a piece is physical: misaligned placements miss.
