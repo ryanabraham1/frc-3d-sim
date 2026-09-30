@@ -39,6 +39,8 @@ export class GamePiecePool {
   /** Free-form tag set by season rules (e.g. which hub is processing it). */
   readonly tag: (string | null)[] = [];
   private readonly airborne: boolean[] = [];
+  /** Pieces whose state/owner/tag changed since the last `takeChanges()` (multiplayer host). */
+  private readonly changed = new Set<number>();
   readonly mesh: THREE.InstancedMesh;
   readonly radius: number;
   readonly colliderRadius: number;
@@ -105,6 +107,7 @@ export class GamePiecePool {
     this.state[i] = 'field';
     this.owner[i] = -1;
     this.tag[i] = null;
+    this.changed.add(i);
   }
 
   /** Put piece i on the field at a FIELD position (x, y, z-up), resting on the carpet if z omitted. */
@@ -116,6 +119,7 @@ export class GamePiecePool {
     this.bodies[i].setEnabled(false);
     this.state[i] = 'held';
     this.owner[i] = ownerId;
+    this.changed.add(i);
   }
 
   reserve(i: number, tag: string | null = null): void {
@@ -123,6 +127,28 @@ export class GamePiecePool {
     this.state[i] = 'reserve';
     this.owner[i] = -1;
     this.tag[i] = tag;
+    this.changed.add(i);
+  }
+
+  /** Indices changed since the last call (and clears the set). */
+  takeChanges(): number[] {
+    const out = [...this.changed];
+    this.changed.clear();
+    return out;
+  }
+
+  /**
+   * Replica (multiplayer client) update: set bookkeeping without simulating. Bodies stay disabled —
+   * clients never step physics for pieces; positions come from snapshots via `setReplicaPosition`.
+   */
+  applyReplicaState(i: number, state: PieceState, owner: number, tag: string | null): void {
+    this.state[i] = state;
+    this.owner[i] = owner;
+    this.tag[i] = tag;
+  }
+
+  setReplicaPosition(i: number, x: number, y: number, z: number): void {
+    this.bodies[i].setTranslation({ x, y, z }, false);
   }
 
   /** Indices in a state (optionally with a tag). */

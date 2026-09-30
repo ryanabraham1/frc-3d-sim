@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import RAPIER from '@dimforge/rapier3d-compat';
+import { HeadlessSim } from '../src/engine/testing/headless';
+import { SEASONS } from '../src/seasons/index';
 import * as THREE from 'three';
 import { feedTarget, rowClearances, rowHeightAt, FEED_LAND_X } from '../src/seasons/2026-rebuilt/passing';
 import * as C from '../src/seasons/2026-rebuilt/constants';
-import { Robot } from '../src/engine/robot/robot';
-import { DEFAULT_ROBOT } from '../src/engine/robot/config';
 
 describe('feeding geometry', () => {
   it('feed target lands inside our own ALLIANCE ZONE', () => {
@@ -34,29 +35,35 @@ describe('feeding geometry', () => {
   });
 });
 
-describe('shot solver respects clearances', () => {
-  const solve = (from: THREE.Vector3, target: Parameters<Robot['solveShot']>[1]) =>
-    Robot.prototype.solveShot.call({ config: DEFAULT_ROBOT } as unknown as Robot, from, target);
-  const G = 9.81;
+describe('shot solver respects clearances (drag-aware)', () => {
+  let sim: HeadlessSim;
+  beforeAll(async () => {
+    await RAPIER.init();
+    sim = new HeadlessSim(SEASONS[0], RAPIER, { robot: SEASONS[0].robotDefaults, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
+  });
+  afterAll(() => sim.dispose());
   const heightAt = (from: THREE.Vector3, to: THREE.Vector3, sol: { speed: number; angle: number }, back: number) => {
     const d = Math.hypot(to.x - from.x, to.z - from.z);
-    const x = d - back;
-    return from.y + x * Math.tan(sol.angle) - (G * x * x) / (2 * sol.speed ** 2 * Math.cos(sol.angle) ** 2);
+    return sim.robot.simulateFlight(from.y, sol.angle, sol.speed, [d - back, d]);
   };
 
-  it('picks a trajectory that passes above a tall obstacle', () => {
+  it('picks a trajectory that passes above a tall obstacle and lands on target', () => {
     const from = new THREE.Vector3(0, 0.5, 0);
     const point = new THREE.Vector3(5, 0.2, 0);
-    const clearances = [{ distance: 2.2, height: 3.0 }];
-    const sol = solve(from, { point, clearances })!;
-    expect(sol).not.toBeNull();
-    expect(heightAt(from, point, sol, 2.2)).toBeGreaterThanOrEqual(3.0);
+    const sol = sim.robot.solveShot(from, { point, clearances: [{ distance: 2.2, height: 3.0 }] })!;
+    expect(sol.clear).toBe(true);
+    const [atObstacle, atTarget] = heightAt(from, point, sol, 2.2);
+    expect(atObstacle!.y).toBeGreaterThanOrEqual(3.0);
+    expect(Math.abs(atTarget!.y - 0.2)).toBeLessThan(0.03);
   });
 
-  it('clears the hub rim on a close shot', () => {
+  it('clears the rim on a close shot and is descending into the goal', () => {
     const from = new THREE.Vector3(0, 0.5, 0);
     const point = new THREE.Vector3(1.2, 1.85, 0);
-    const sol = solve(from, { point, clearRadius: 0.5, clearHeight: 1.93 })!;
-    expect(heightAt(from, point, sol, 0.5)).toBeGreaterThanOrEqual(1.93);
+    const sol = sim.robot.solveShot(from, { point, clearRadius: 0.6, clearHeight: 1.93 })!;
+    expect(sol.clear).toBe(true);
+    const [atRim, atTarget] = heightAt(from, point, sol, 0.6);
+    expect(atRim!.y).toBeGreaterThanOrEqual(1.93);
+    expect(atTarget!.vy).toBeLessThan(0);
   });
 });

@@ -32,6 +32,7 @@ export const GROUPS = {
   pieceOnly: collisionGroups(Group.PIECE_ONLY, Group.PIECE),
   robotOnly: collisionGroups(Group.ROBOT_ONLY, Group.ROBOT),
   robot: collisionGroups(Group.ROBOT, Group.FIELD | Group.ROBOT | Group.PIECE | Group.ROBOT_ONLY),
+  // Pieces always collide with each other, including mid-air (real physics — user decision 2026-09-29).
   piece: collisionGroups(Group.PIECE, Group.FIELD | Group.ROBOT | Group.PIECE | Group.PIECE_ONLY),
 };
 

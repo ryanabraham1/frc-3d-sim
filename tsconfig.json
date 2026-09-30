@@ -11,12 +11,13 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["vite/client"],
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client", "node"],
     "baseUrl": ".",
     "paths": {
       "@engine/*": ["src/engine/*"],
       "@seasons/*": ["src/seasons/*"]
     }
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "server", "vite.config.ts"]
 }

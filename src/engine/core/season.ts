@@ -54,8 +54,15 @@ export interface SeasonContext {
   readonly rng: Rng;
   readonly hud: Hud;
   readonly settings: GameSettings;
+  /** The robot driven on THIS screen (null for a multiplayer spectator). */
   readonly playerRobot: Robot | null;
-  toast(msg: string, kind?: ToastKind, alliance?: Alliance): void;
+  /**
+   * Show a toast. With `robot`, only that robot's driver sees it (hints like "drive closer"); otherwise
+   * everyone does (in multiplayer the host forwards it to all clients).
+   */
+  toast(msg: string, kind?: ToastKind, alliance?: Alliance, robot?: Robot): void;
+  /** Should this alliance's human player act automatically (vs. a driver pressing the HP button)? */
+  humanPlayerIsAuto(alliance: Alliance): boolean;
 }
 
 export interface ResultsRow {
@@ -92,6 +99,12 @@ export interface SeasonRules {
   /** Per rendered frame: lights and other cosmetic effects. */
   updateVisuals(dt: number, time: number): void;
   results(): MatchResults;
+  /**
+   * Multiplayer: JSON-serializable rules state that clients need for HUD/visuals (not the score or clock —
+   * the engine syncs those). Clients never run stage/beforeStep/afterStep; they only call applyNetState.
+   */
+  netState?(): unknown;
+  applyNetState?(state: unknown): void;
 }
 
 /**
@@ -158,4 +171,23 @@ export interface SeasonDefinition {
   controlsHelp?: [string, string][];
   /** Key rules/points shown on the menu's "Game rules" page. */
   rulesSummary?: { title: string; detail: string; value?: string; tag?: string }[];
+  /**
+   * REQUIRED for the automated physics checks in tests/shooting.test.ts (every registered season is
+   * tested): legal scoring positions and a way to count pieces that entered the goal.
+   */
+  testing?: SeasonTesting;
+}
+
+export interface SeasonTesting {
+  /** Positions (FIELD frame) where a robot may legally score — e.g. a grid over its scoring zone. */
+  scoringSpots(alliance: Alliance): FieldPose[];
+  /** Total game pieces that have entered this alliance's goal so far (regardless of whether they scored points). */
+  goalCount(ctx: SeasonContext, alliance: Alliance): number;
+  /** Goal center (FIELD frame) — used to point a turret-less chassis at the goal. */
+  goalCenter(alliance: Alliance): { x: number; y: number };
+  /**
+   * Paths robots must be able to drive (e.g. over each bump, under each trench), optionally limited to
+   * robots at or under `maxRobotHeight`. The tests drive them — also through scattered game pieces.
+   */
+  traversals(): { label: string; from: { x: number; y: number }; to: { x: number; y: number }; maxRobotHeight?: number }[];
 }

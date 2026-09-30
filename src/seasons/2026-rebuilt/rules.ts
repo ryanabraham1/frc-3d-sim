@@ -23,6 +23,14 @@ const CHUTE_TAG = (a: Alliance) => `chute-${a}`;
 const HUB_TAG = (a: Alliance) => `hub-${a}`;
 const HP_RELEASE_INTERVAL = 0.14;
 
+/** What multiplayer clients need from the rules (score/clock are synced by the engine). */
+export interface RebuiltNetState {
+  fi: Alliance | null;
+  /** HubGrace.lastActive (null = never). */
+  la: [number | null, number | null];
+  co: [boolean, boolean];
+}
+
 interface Processing {
   idx: number;
   alliance: Alliance;
@@ -212,7 +220,7 @@ export class RebuiltRules implements SeasonRules {
   }
 
   beforeStep(dt: number): void {
-    const { pool, frame, rng, clock, settings, playerRobot } = this.ctx;
+    const { pool, frame, rng, clock } = this.ctx;
     const t = this.now;
 
     // Hub processing → exits into the NEUTRAL ZONE.
@@ -242,7 +250,7 @@ export class RebuiltRules implements SeasonRules {
     // Human players: automatic ones open the CHUTE when it has stock and their hub is (about to be) active.
     const running = clock.started && !clock.finished;
     for (const a of ALLIANCES) {
-      const auto = a !== playerRobot?.alliance || settings.autoHumanPlayer || !playerRobot;
+      const auto = this.ctx.humanPlayerIsAuto(a);
       const stock = this.chuteCount(a);
       if (auto && running && !this.chuteOpen[a] && stock >= 6 && t - this.lastHpOpen[a] > 5 && clock.mode !== 'disabled') {
         if (this.secondsUntilActive(a) < 4 || clock.mode === 'auto') {
@@ -363,7 +371,21 @@ export class RebuiltRules implements SeasonRules {
   aimTarget(robot: Robot): AimTarget | null {
     const hc = this.refs.hubs[robot.alliance].center;
     const point = this.ctx.frame.toWorld(hc.x, hc.y, C.HUB_RIM_HEIGHT + 0.02);
-    return { point, clearRadius: C.HUB_OPENING_HEX / 2 - 0.05, clearHeight: C.HUB_RIM_HEIGHT + this.ctx.pool.radius + 0.03 };
+    // The physical rim is the square cup wall (the hex funnel is visual only). Along the approach
+    // direction the wall's outer edge is half/max(|cos|,|sin|) from center — up to √2× further at a
+    // corner. The piece must be above rim + radius over the whole wall top, outer to inner edge.
+    const p = robot.pose;
+    const ang = Math.atan2(p.y - hc.y, p.x - hc.x);
+    const k = 1 / Math.max(Math.abs(Math.cos(ang)), Math.abs(Math.sin(ang)), 1e-6);
+    const r = this.ctx.pool.radius;
+    const top = C.HUB_RIM_HEIGHT + r + 0.02;
+    return {
+      point,
+      clearances: [
+        { distance: (C.HUB_SIZE / 2) * k + r, height: top },
+        { distance: (C.HUB_SIZE / 2 - C.HUB_WALL) * k, height: top },
+      ],
+    };
   }
 
   requestClimb(robot: Robot, level: number): void {
@@ -373,7 +395,7 @@ export class RebuiltRules implements SeasonRules {
     if (!slot || slot.dist > 1.6) {
       if (robot.controller === 'player' && this.now - this.climbHintAt > 2) {
         this.climbHintAt = this.now;
-        this.ctx.toast(slot ? 'Drive closer to your TOWER to climb' : 'No free climb position on your TOWER', 'warn');
+        this.ctx.toast(slot ? 'Drive closer to your TOWER to climb' : 'No free climb position on your TOWER', 'warn', undefined, robot);
       }
       return;
     }
@@ -423,6 +445,19 @@ export class RebuiltRules implements SeasonRules {
       const door = this.refs.chuteDoors[a];
       door.visible = !this.chuteOpen[a];
     }
+  }
+
+  netState(): RebuiltNetState {
+    const la = (a: Alliance) => (Number.isFinite(this.grace.lastActive[a]) ? this.grace.lastActive[a] : null);
+    return { fi: this.firstInactive, la: [la('red'), la('blue')], co: [this.chuteOpen.red, this.chuteOpen.blue] };
+  }
+
+  applyNetState(state: unknown): void {
+    const s = state as RebuiltNetState;
+    this.firstInactive = s.fi;
+    this.grace.lastActive = { red: s.la[0] ?? -Infinity, blue: s.la[1] ?? -Infinity };
+    this.chuteOpen.red = s.co[0];
+    this.chuteOpen.blue = s.co[1];
   }
 
   results(): MatchResults {

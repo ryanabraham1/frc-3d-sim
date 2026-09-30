@@ -3,7 +3,7 @@ import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
 import { driverEye, rebuiltRobotDefaults, startPose, TIMELINE } from './config';
-import { buildRebuiltField, RebuiltFieldRefs } from './field';
+import { buildRebuiltField, RebuiltFieldRefs, side, sideYaw } from './field';
 import { RebuiltHud } from './hud';
 import { RebuiltRules } from './rules';
 
@@ -94,5 +94,39 @@ export const rebuilt2026: SeasonDefinition = {
     { title: 'G403 — AUTO center line', detail: 'Bumpers completely across the CENTER LINE during AUTO.', value: 'MAJOR 15', tag: 'G4' },
     { title: 'Robot limits', detail: 'R104/R107: 30 in tall max, 110 in frame perimeter. TRENCH clearance is 22.25 in.', value: '30 in', tag: 'R1' },
   ],
+  testing: {
+    // Grid over the ALLIANCE ZONE (G407: only score from here), avoiding the TOWER and DEPOT. Includes
+    // point-blank spots against the HUB and the far corners by the wall.
+    scoringSpots(alliance) {
+      const spots: [number, number][] = [
+        [1.0, 1.0], [1.0, 7.0],
+        [1.8, 1.0], [1.8, 2.2], [1.8, 5.3], [1.8, 7.0],
+        [2.5, 2.2], [2.5, 4.03], [2.5, 5.9],
+        [3.3, 0.8], [3.3, 2.5], [3.3, 5.5], [3.3, 7.2],
+        [3.5, 4.03],
+      ];
+      return spots.map(([x, y]) => ({ ...side(alliance, x, y), yaw: sideYaw(alliance, 0) }));
+    },
+    goalCount: (ctx, alliance) => ctx.score.counter(alliance, 'fuelActive') + ctx.score.counter(alliance, 'fuelInactive'),
+    goalCenter: (alliance) => side(alliance, C.HUB_CENTER.x, C.HUB_CENTER.y),
+    // Alliance zone → neutral zone through every lane of both hub rows: 2 trenches + 2 bumps per row.
+    traversals() {
+      const hs = C.HUB_SIZE / 2;
+      const lanes = [
+        { label: 'trench (rail side)', y: C.TRENCH_OPENING_CENTER_Y, maxRobotHeight: C.TRENCH_CLEARANCE },
+        { label: 'bump', y: C.HUB_CENTER.y - hs - C.BUMP_WIDTH / 2 },
+        { label: 'bump', y: C.HUB_CENTER.y + hs + C.BUMP_WIDTH / 2 },
+        { label: 'trench (far side)', y: C.FIELD_WIDTH - C.TRENCH_OPENING_CENTER_Y, maxRobotHeight: C.TRENCH_CLEARANCE },
+      ];
+      return (['blue', 'red'] as const).flatMap((a) =>
+        lanes.map((l) => ({
+          label: `${a} ${l.label} y=${l.y.toFixed(2)}`,
+          from: side(a, C.ALLIANCE_ZONE_DEPTH - 1.2, l.y),
+          to: side(a, C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE + 1.4, l.y),
+          maxRobotHeight: l.maxRobotHeight,
+        })),
+      );
+    },
+  },
   controlsHelp: [...DEFAULT_CONTROLS_HELP, ['REBUILT tips', 'Score (Space) only while YOUR hub is lit and your bumpers are in your ALLIANCE ZONE; from the neutral zone, feed (G) FUEL home']],
 };

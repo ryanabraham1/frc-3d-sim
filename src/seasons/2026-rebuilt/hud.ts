@@ -60,6 +60,7 @@ export class RebuiltHud implements SeasonHud {
       const zone = rules.inAllianceZone(p)
         ? '<span class="ok">IN ALLIANCE ZONE — Space to score</span>'
         : '<span class="dim">Outside zone — hold <b>G</b> to feed FUEL home (scoring from here = G407)</span>';
+      const noShot = p.lastCommand.shoot && p.held.length > 0 && !p.lastShotClear ? '<div class="bad">No clean shot from here — move back / sideways</div>' : '';
       const feeding = p.lastCommand.pass && !p.lastCommand.shoot && p.held.length > 0 ? '<div class="ok">Feeding → alliance zone</div>' : '';
       let climb = '';
       if (p.climbPhase === 'hanging') climb = `<div class="ok">Hanging at LEVEL ${p.climbLevel} (X to descend)</div>`;
@@ -71,7 +72,7 @@ export class RebuiltHud implements SeasonHud {
       this.hud.setHtml(
         this.slots.player,
         `<div class="hopper"><div class="hopper-label">FUEL ${p.held.length}/${cap}</div><div class="bar"><div style="width:${pct}%"></div></div></div>` +
-          `<div>${zone}</div>${feeding}${climb}`,
+          `<div>${zone}</div>${noShot}${feeding}${climb}`,
       );
     }
   }

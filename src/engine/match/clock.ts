@@ -24,6 +24,15 @@ export interface PeriodChange {
   at: number;
 }
 
+/** Serializable clock state (multiplayer snapshots). */
+export interface ClockState {
+  i: number;
+  ep: number;
+  e: number;
+  s: boolean;
+  f: boolean;
+}
+
 export class MatchClock {
   index = 0;
   elapsedInPeriod = 0;
@@ -97,6 +106,18 @@ export class MatchClock {
     this.elapsed = 0;
     this.elapsedInPeriod = 0;
     return { from: null, to: this.current, at: 0 };
+  }
+
+  snapshot(): ClockState {
+    return { i: this.index, ep: this.elapsedInPeriod, e: this.elapsed, s: this.started, f: this.finished };
+  }
+
+  restore(s: ClockState): void {
+    this.index = Math.max(0, Math.min(this.periods.length - 1, s.i));
+    this.elapsedInPeriod = s.ep;
+    this.elapsed = s.e;
+    this.started = s.s;
+    this.finished = s.f;
   }
 
   /** Advance time; returns every period transition that occurred (in order). */

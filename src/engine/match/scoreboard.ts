@@ -18,6 +18,13 @@ export interface ScoreEvent {
   points: number;
 }
 
+/** Serializable scoreboard state (multiplayer snapshots). Score events are host-only. */
+export interface ScoreState {
+  points: Record<Alliance, Record<string, number>>;
+  counters: Record<Alliance, Record<string, number>>;
+  fouls: FoulRecord[];
+}
+
 /**
  * Per-alliance points by category + counters + fouls. Pure logic.
  * Foul points are credited to the OPPONENT (FRC convention).
@@ -81,6 +88,23 @@ export class Scoreboard {
     const r = this.total('red');
     const b = this.total('blue');
     return r === b ? 'tie' : r > b ? 'red' : 'blue';
+  }
+
+  snapshot(): ScoreState {
+    return {
+      points: { red: { ...this.points.red }, blue: { ...this.points.blue } },
+      counters: { red: { ...this.counters.red }, blue: { ...this.counters.blue } },
+      fouls: this.fouls.map((f) => ({ ...f })),
+    };
+  }
+
+  restore(s: ScoreState): void {
+    for (const a of ['red', 'blue'] as Alliance[]) {
+      this.points[a] = { ...s.points[a] };
+      this.counters[a] = { ...s.counters[a] };
+    }
+    this.fouls.length = 0;
+    this.fouls.push(...s.fouls);
   }
 
   reset(): void {

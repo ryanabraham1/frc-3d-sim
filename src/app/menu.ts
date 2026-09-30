@@ -5,12 +5,14 @@ import { AimAssist, cloneConfig, RobotConfig } from '@engine/robot/config';
 import { formatClock, inch, toInch } from '@engine/units';
 import { SEASONS, getSeason } from '@seasons/index';
 import { icon } from './icons';
+import type { LobbyController } from './lobby';
+import { bindMultiplayer, multiplayerPage } from './multiplayer';
 import './menu.css';
 
 const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
-type Page = 'play' | 'controls' | 'rules';
+type Page = 'play' | 'controls' | 'rules' | 'multiplayer';
 
 function load(): Partial<GameSettings> | null {
   try {
@@ -159,7 +161,7 @@ function fieldMap(season: SeasonDefinition, s: GameSettings): string {
     <rect x="0" y="0" width="${L}" height="${W}" fill="#0f0f15" stroke="#e7e7ee" stroke-opacity=".8" stroke-width="1.5" vector-effect="non-scaling-stroke"/>${out}</svg>`;
 }
 
-export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => void): void {
+export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => void, opts: { lobby?: LobbyController; page?: Page } = {}): void {
   const stored = load();
   let season = getSeason(stored?.seasonId ?? SEASONS[0].id);
   let s: GameSettings = { ...defaultSettings(season), ...(stored ?? {}) };
@@ -173,7 +175,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       intake: { ...d.intake, ...stored.robot.intake },
     };
   }
-  let page: Page = 'play';
+  let page: Page = opts.page ?? 'play';
+  const lobby = opts.lobby;
 
   const el = document.createElement('div');
   el.className = 'shell';
@@ -265,7 +268,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       play: { h1: 'Single player', sub: '' },
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
       rules: { h1: `${season.name} rules`, sub: season.summary },
+      multiplayer: { h1: 'Multiplayer', sub: '' },
     };
+    // Multiplayer page content lives in multiplayer.ts; the lobby re-renders it on every lobby change.
+    const mp =
+      page === 'multiplayer' && lobby
+        ? (save(s), multiplayerPage(lobby, { s, season, rerender: render, goto: (p) => ((page = p), render()) }))
+        : null;
     const t = titles[page];
     const tab = (p: Page, label: string) => `<button class="bbtn ${page === p ? 'on' : ''}" data-page="${p}">${label}</button>`;
     el.innerHTML = `
@@ -276,12 +285,16 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       </header>
       <main class="main">
         <h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>
-        ${page === 'play' ? playPage() : page === 'controls' ? controlsPage() : rulesPage()}
+        ${mp ? mp.body : page === 'play' ? playPage() : page === 'controls' ? controlsPage() : rulesPage()}
       </main>
       <footer class="bar-bottom">
-        ${page === 'play' ? tab('controls', 'Controls') + tab('rules', 'Rules') : `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button>`}
+        ${
+          mp
+            ? mp.footer
+            : `${page === 'play' ? tab('controls', 'Controls') + tab('rules', 'Rules') + (lobby ? tab('multiplayer', 'Multiplayer') : '') : `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button>`}
         <span class="spacer"></span>
-        ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}
+        ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}`
+        }
       </footer>`;
     bind();
   };
@@ -339,7 +352,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     });
     const startBtn = el.querySelector<HTMLButtonElement>('[data-k="start"]');
     if (startBtn) startBtn.onclick = start;
+    if (page === 'multiplayer' && lobby) bindMultiplayer(el, lobby, { s, season, rerender: render, goto: (p) => ((page = p), render()) });
   };
+
+  if (lobby)
+    lobby.onChange = () => {
+      if (el.isConnected && page === 'multiplayer') render();
+    };
 
   render();
 }

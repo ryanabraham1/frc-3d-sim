@@ -1,0 +1,14 @@
+# Render Blueprint — one free web service that serves the built site AND the multiplayer relay (/ws).
+# Render dashboard → New → Blueprint → pick this repo. See docs/MULTIPLAYER.md §8.
+services:
+  - type: web
+    name: frc-3d-sim
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run serve
+    healthCheckPath: /healthz
+    envVars:
+      # server/*.ts runs via Node's built-in TypeScript type stripping (Node >= 22.18).
+      - key: NODE_VERSION
+        value: "24"

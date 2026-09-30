@@ -260,7 +260,9 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
     const sd = a === 'blue' ? s : -s;
     const openEnd = yRail + sd * (C.TRENCH_OPENING_CENTER_Y * 2);
     const bumpEdge = hub.y - sd * (hs + C.BUMP_WIDTH);
-    const trenchEnd = yRail + sd * C.TRENCH_WIDTH;
+    // Manual: TRENCH is 65.65in "from the guardrail to the BUMP" but guardrail→bump is only ~62.3in here.
+    // End the arm at the bump edge: an arm overhanging the bump caught robots riding up the ramp. [EST]
+    const trenchEnd = yRail + sd * Math.min(C.TRENCH_WIDTH, Math.abs(bumpEdge - yRail));
     // Arm over the opening
     const armLo = Math.min(yRail, trenchEnd);
     const armHi = Math.max(yRail, trenchEnd);

@@ -1,7 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import { relayPlugin } from './server/vitePlugin';
 
 export default defineConfig({
+  // Multiplayer relay at /ws on `npm run dev` / `npm run preview` (see docs/MULTIPLAYER.md).
+  plugins: [relayPlugin()],
   resolve: {
     alias: {
       '@engine': fileURLToPath(new URL('./src/engine', import.meta.url)),

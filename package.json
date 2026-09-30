@@ -9,16 +9,23 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "serve": "node server/index.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
-    "three": "^0.186.1"
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@types/node": "^26.6.3",
     "@types/three": "^0.186.0",
+    "@types/ws": "^8.18.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

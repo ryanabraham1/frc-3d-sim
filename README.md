@@ -8,10 +8,12 @@ kickoff from the Game Manual. Current season: **2026 REBUILT presented by Haas**
 - **Season module** (`src/seasons/2026-rebuilt`) — this year's field, rules, scoring, AUTO routines, HUD.
 - See **[docs/FRAMEWORK.md](docs/FRAMEWORK.md)** for what's reusable and the kickoff-day checklist,
   and **[PLAN.md](PLAN.md)** for the full plan and progress log.
+- **Multiplayer** — up to 6 drivers + spectators per room. Design, protocol and hand-off log:
+  **[docs/MULTIPLAYER.md](docs/MULTIPLAYER.md)**.
 
 ## Run it
 
-Needs Node 20+.
+Needs Node 22.18+ (the multiplayer server runs its TypeScript directly).
 
 ```bash
 npm install
@@ -25,7 +27,7 @@ Then open http://localhost:5173.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server with hot reload |
+| `npm run dev` | Dev server with hot reload (multiplayer relay included at `/ws`; add `-- --host` for LAN play) |
 | `npm test` | Unit tests (rules, scoring, staging, clock, coordinates) |
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build to `dist/` (static — deploy anywhere, e.g. Vercel) |
@@ -33,38 +35,52 @@ Then open http://localhost:5173.
 
 ## Playing 2026 REBUILT
 
-Pick alliance, driver station, AUTO routine and robot specs on the home screen, then **Start match**.
-AUTO (20 s) runs your chosen routine; TELEOP (2:20) is yours.
+Pick alliance, driver station, AUTO mode, camera and robot specs on the home screen, then **Start match**.
+AUTO (20 s): drive it yourself (default) or pick a scripted routine. TELEOP (2:20) is yours.
 
 | Key | Action |
 |---|---|
 | W A S D | Drive (field-oriented from your driver station) |
 | Q / E, ← / → | Rotate |
 | Shift | Precision mode |
-| Space | Shoot (hold) — aim assist handles the turret & shot speed |
+| Space | Shoot at your HUB (hold) — aim assist handles the turret & shot speed |
+| G | Feed (hold) — lob FUEL back into your ALLIANCE ZONE, clearing the hub/net/trench |
 | F / J | Toggle auto-intake / hold to intake |
 | C / X | Climb / descend (at your TOWER) · 1 2 3 selects the level |
 | H | Human player: open/close the CHUTE |
-| V | Cycle camera (driver station, chase, overhead, orbit) |
+| V | Cycle camera (driver station, follow, chase, overhead, orbit) |
+| Mouse drag / wheel | Orbit / zoom the Follow camera (W always drives away from the camera) |
 | P / Esc | Pause |
-| Gamepad | LS drive · RS rotate · RT shoot · LT intake · A climb · B descend · X human player · Y camera |
+| Gamepad | LS drive · RS rotate · RT shoot · RB feed · LT intake · A climb · B descend · X human player · Y camera |
 
 **What's simulated:** full field (HUBs with sensor cups, exits and nets, BUMPs, TRENCHes, DEPOTs,
 TOWERs with rungs, OUTPOSTs with CHUTE/CORRAL, walls, tape, 32 AprilTags at official poses), all 504
 FUEL staged per 6.3.4, match timeline with HUB shifts decided by AUTO fuel, 3 s grace windows, hub
-lights, FUEL/TOWER points, ENERGIZED/SUPERCHARGED/TRAVERSAL RP, fouls G403 & G407, human player.
+lights, FUEL/TOWER points, ENERGIZED/SUPERCHARGED/TRAVERSAL RP, fouls G403 & G407 (G407 is called
+when FUEL launched from outside your zone actually enters your HUB — feeding is legal), human player.
 
 **Simplified:** climbing is a kinematic animation to the selected level; FUEL is a rigid sphere
 (slightly undersized collider to model squish); no air drag; G408 (catching hub FUEL) and other
-referee-judgement rules are not enforced. Singleplayer only for now.
+referee-judgement rules are not enforced.
+
+## Multiplayer
+
+Menu → **Multiplayer** → *Create room* and share the 4-letter code; friends *Join*, pick a driver
+station (or spectate) and bring the robot they configured on the Single player page. The host starts
+the match. The host's browser runs the simulation (keep that tab open — it keeps running in the
+background); everyone else sends inputs and renders 30 Hz snapshots, with client-side prediction so your
+own robot responds instantly. Test latency locally with `?netlag=200` in a client's URL.
+
+| Command | What it does |
+|---|---|
+| `npm run build` then `npm run serve` | Production: one Node server on :8787 serving `dist/` + relay at `/ws` |
 
 ## Deployment (not done yet)
 
-The build is a static site — Vercel needs no config beyond `npm run build` → `dist/`.
-Multiplayer will need a realtime backend (Vercel serverless can't hold WebSockets): options are
-PartyKit / Cloudflare Durable Objects, Colyseus on Fly.io/Railway, or Supabase Realtime. The engine
-already routes every robot through a `RobotCommand` and exposes `NetworkAdapter`
-(`src/engine/net/adapter.ts`) for that.
+Multiplayer needs a host that keeps WebSockets open (Vercel serverless can't). Easiest: a **free Render
+web service** using the included [`render.yaml`](render.yaml) — it serves the site *and* the relay from one
+URL. Alternative: static site on Vercel + relay on Render, with `VITE_RELAY_URL=wss://<relay>/ws` set at
+build time. Details: [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) §8.
 
 ## Sources
 

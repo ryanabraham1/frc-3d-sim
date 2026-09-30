@@ -1,0 +1,65 @@
+/**
+ * Production server: serves the built static site (dist/) and the multiplayer relay at /ws on one port.
+ *   npm run build && npm run serve          → http://localhost:8787
+ * Env: PORT (default 8787), HOST (default 0.0.0.0), DIST (default ./dist).
+ * Runs directly with Node ≥ 22.18 / 23.6 (built-in TypeScript type stripping) — no build step.
+ */
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { extname, join, normalize, resolve } from 'node:path';
+import { attachRelay } from './relay.ts';
+
+const PORT = Number(process.env.PORT ?? 8787);
+const HOST = process.env.HOST ?? '0.0.0.0';
+const DIST = resolve(process.env.DIST ?? 'dist');
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm',
+  '.glb': 'model/gltf-binary',
+  '.woff2': 'font/woff2',
+};
+
+if (!existsSync(join(DIST, 'index.html'))) {
+  console.warn(`[serve] ${DIST}/index.html not found — run "npm run build" first. Relay will still run.`);
+}
+
+const server = createServer((req, res) => {
+  const url = new URL(req.url ?? '/', 'http://x');
+  if (url.pathname === '/healthz') {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end(`ok rooms=${relay.roomCount()}`);
+    return;
+  }
+  let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
+  if (!file.startsWith(DIST)) {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
+  if (!existsSync(file) || statSync(file).isDirectory()) file = join(DIST, 'index.html');
+  if (!existsSync(file)) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
+  const ext = extname(file);
+  res.writeHead(200, {
+    'content-type': MIME[ext] ?? 'application/octet-stream',
+    'cache-control': url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+  });
+  createReadStream(file).pipe(res);
+});
+
+const relay = attachRelay(server, { rejectOtherPaths: true, log: (m) => console.log(`[relay] ${m}`) });
+
+server.listen(PORT, HOST, () => {
+  console.log(`[serve] http://localhost:${PORT}  (relay at ws://localhost:${PORT}/ws)`);
+});

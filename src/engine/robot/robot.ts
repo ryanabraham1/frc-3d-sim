@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coords';
-import { GROUPS, PhysicsWorld } from '../physics/world';
+import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
 import { RobotConfig, footprint } from './config';
 import { makeTextTexture } from '../render/text';
+import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
 export interface RobotCommand {
@@ -229,7 +230,8 @@ export class Robot {
 
     // Turret + barrel.
     this.turret = new THREE.Group();
-    this.turret.position.set(c.frameLength * 0.18, c.launcher.height - 0.06, 0);
+    // Launcher sits on top of the robot (see launcherExit()).
+    this.turret.position.set(c.frameLength * 0.18, Math.max(c.launcher.height, c.height) - 0.02, 0);
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.06, 20), dark);
     this.turret.add(base);
     const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.14), alu);
@@ -315,8 +317,40 @@ export class Robot {
 
   // ───────────────────────── control ─────────────────────────
 
+  /** True while the chassis rests on the field (set every drive() call). */
+  grounded = true;
+  private static readonly GROUND_QUERY = collisionGroups(Group.ROBOT, Group.FIELD);
+
+  /**
+   * Is the chassis resting on FIELD surfaces (carpet, bumps, tower base, rails…)? Rays go down from the
+   * center and the four wheel positions. Game pieces and other robots don't count: a robot beached on a
+   * FUEL ball or in the air has no traction — its wheels can't push it anywhere.
+   */
+  private checkGrounded(): boolean {
+    const R = this.physics.R;
+    const t = this.body.translation();
+    const yaw = yawFromQuat(this.body.rotation());
+    const c = this.config;
+    const up = 0.15;
+    const reach = up + 0.03; // surface within 3cm below the wheel plane (or above it: high-centered)
+    const hx = c.frameLength / 2 - 0.06;
+    const hz = c.frameWidth / 2 - 0.06;
+    const pts: [number, number][] = [[0, 0], [hx, hz], [hx, -hz], [-hx, hz], [-hx, -hz]];
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    for (const [a, b] of pts) {
+      const ray = new R.Ray({ x: t.x + a * cos + b * sin, y: t.y + up, z: t.z - a * sin + b * cos }, { x: 0, y: -1, z: 0 });
+      const hit = this.physics.world.castRay(ray, reach, true, undefined, Robot.GROUND_QUERY, undefined, this.body);
+      if (hit) return true;
+    }
+    return false;
+  }
+
   drive(cmd: RobotCommand, dt: number): void {
     if (this.climbPhase !== 'none') return;
+    // No traction without ground contact (airborne off a bump, beached on game pieces).
+    this.grounded = this.checkGrounded();
+    if (!this.grounded) return;
     const c = this.config;
     let tvx = cmd.vx;
     let tvy = cmd.vy;
@@ -379,34 +413,121 @@ export class Robot {
   }
 
   /**
-   * Solve launch speed + hood angle to pass through target.point, clearing a rim of height
-   * `clearHeight` located `clearRadius` before the target (horizontal). Returns null if unreachable.
+   * Game-piece flight model the shot solver mirrors. Set from the season's GamePieceSpec when the robot
+   * is created (`robot.projectile = { radius, airDamping }`); defaults are close to a typical ball.
    */
-  solveShot(from: THREE.Vector3, target: AimTarget): { speed: number; angle: number } | null {
-    const c = this.config.launcher;
-    const dx = target.point.x - from.x;
-    const dz = target.point.z - from.z;
-    const d = Math.hypot(dx, dz);
-    const h = target.point.y - from.y;
-    const step = (1 * Math.PI) / 180;
-    let chosen: { speed: number; angle: number } | null = null;
-    for (let th = c.minAngle; th <= c.maxAngle + 1e-9; th += step) {
-      const denom = 2 * Math.cos(th) ** 2 * (d * Math.tan(th) - h);
-      if (denom <= 0) continue;
-      const v = Math.sqrt((G * d * d) / denom);
-      if (v > c.maxSpeed || v < c.minSpeed * 0.5) continue;
-      const yAt = (x: number) => from.y + x * Math.tan(th) - (G * x * x) / (2 * v * v * Math.cos(th) ** 2);
-      const checks = [...(target.clearances ?? [])];
-      if (target.clearHeight !== undefined) checks.push({ distance: target.clearRadius ?? 0, height: target.clearHeight });
-      if (checks.some((c2) => d - c2.distance > 0 && yAt(d - c2.distance) < c2.height)) continue;
-      // Lowest angle that clears, plus a small margin for noise.
-      const angle = Math.min(c.maxAngle, th + (4 * Math.PI) / 180);
-      const den2 = 2 * Math.cos(angle) ** 2 * (d * Math.tan(angle) - h);
-      const v2 = den2 > 0 ? Math.sqrt((G * d * d) / den2) : v;
-      chosen = { speed: clamp(v2, c.minSpeed, c.maxSpeed), angle };
-      break;
+  get projectile(): { radius: number; airDamping: number } {
+    return this._projectile;
+  }
+  set projectile(p: { radius: number; airDamping: number }) {
+    this._projectile = p;
+    this.projectileSet = true;
+  }
+  private _projectile = { radius: 0.075, airDamping: 0.02 };
+  private projectileSet = false;
+  private static warnedProjectile = false;
+
+  /**
+   * Where pieces leave the launcher, relative to the robot origin (floor, frame center).
+   * Always ABOVE the robot's own collision box (config.height) so a launched piece can never spawn
+   * inside the robot that fired it. (Bug fixed 2026-09-29: a 30in robot with a 19in launcher spawned
+   * every ball inside its own frame collider and physics shoved it out sideways → misses.)
+   */
+  launcherExit(): { forward: number; up: number } {
+    const c = this.config;
+    return { forward: c.frameLength * 0.18, up: Math.max(c.launcher.height, c.height) + this._projectile.radius + 0.03 };
+  }
+
+  /**
+   * Height of a projectile after travelling `dists` (ascending, horizontal meters), integrated the same
+   * way as the physics step (gravity, Rapier-style linear damping, then position). Also returns the
+   * vertical velocity there. null = never got that far (fell below the floor first).
+   */
+  simulateFlight(fromY: number, angle: number, speed: number, dists: number[]): ({ y: number; vy: number } | null)[] {
+    const dt = this.physics.dt;
+    const k = 1 / (1 + dt * this._projectile.airDamping);
+    let x = 0;
+    let y = fromY;
+    let vx = speed * Math.cos(angle);
+    let vy = speed * Math.sin(angle);
+    const out: ({ y: number; vy: number } | null)[] = dists.map(() => null);
+    let j = 0;
+    for (let i = 0; i < 3000 && j < dists.length; i++) {
+      const px = x;
+      const py = y;
+      vy -= G * dt;
+      vx *= k;
+      vy *= k;
+      x += vx * dt;
+      y += vy * dt;
+      while (j < dists.length && x >= dists[j]) {
+        const f = (dists[j] - px) / Math.max(1e-9, x - px);
+        out[j++] = { y: py + (y - py) * f, vy };
+      }
+      if (y < -0.5 || vx < 1e-3) break;
     }
-    return chosen;
+    return out;
+  }
+
+  /**
+   * Solve launch speed + hood angle so the piece passes through target.point, clears every obstacle
+   * (`clearHeight` at `clearRadius` before the target, plus `clearances`) and is DESCENDING at the
+   * target. Uses the same integration as the physics engine (incl. air damping), refined by a secant
+   * search. `clear` is false when nothing clears everything — the result is then a best effort.
+   */
+  solveShot(from: THREE.Vector3, target: AimTarget): { speed: number; angle: number; clear: boolean } | null {
+    const c = this.config.launcher;
+    const d = Math.hypot(target.point.x - from.x, target.point.z - from.z);
+    const h = target.point.y - from.y;
+    const obstacles = [...(target.clearances ?? [])];
+    if (target.clearHeight !== undefined) obstacles.push({ distance: target.clearRadius ?? 0, height: target.clearHeight });
+    // Obstacles in flight order (farthest from the target first), as distances from the launcher.
+    const ordered = obstacles.filter((q) => d - q.distance > 0).sort((a, b) => b.distance - a.distance);
+    const dists = [...ordered.map((q) => d - q.distance), d];
+
+    const errAt = (angle: number, v: number) => (this.simulateFlight(from.y, angle, v, [d])[0]?.y ?? -10) - target.point.y;
+    /** Speed that puts the piece at the target height at distance d (secant search on the drag model). */
+    const speedFor = (angle: number): number | null => {
+      const denom = 2 * Math.cos(angle) ** 2 * (d * Math.tan(angle) - h);
+      if (denom <= 0) return null;
+      let v0 = Math.sqrt((G * d * d) / denom);
+      let f0 = errAt(angle, v0);
+      let v1 = v0 * 1.04;
+      let f1 = errAt(angle, v1);
+      for (let i = 0; i < 8 && Math.abs(f1) > 0.004; i++) {
+        const slope = (f1 - f0) / (v1 - v0);
+        if (!Number.isFinite(slope) || Math.abs(slope) < 1e-6) break;
+        const v2 = clamp(v1 - f1 / slope, 0.5, c.maxSpeed * 1.5);
+        v0 = v1;
+        f0 = f1;
+        v1 = v2;
+        f1 = errAt(angle, v1);
+      }
+      return Math.abs(f1) < 0.03 ? v1 : null;
+    };
+    const clears = (angle: number, v: number): boolean => {
+      const pts = this.simulateFlight(from.y, angle, v, dists);
+      const atTarget = pts[pts.length - 1];
+      if (!atTarget || atTarget.vy > 0) return false; // must be coming DOWN into the goal
+      return ordered.every((q, i) => (pts[i]?.y ?? -Infinity) >= q.height);
+    };
+
+    const step = Math.PI / 180;
+    let fallback: { speed: number; angle: number; clear: boolean } | null = null;
+    for (let th = c.minAngle; th <= c.maxAngle + 1e-9; th += step) {
+      const v = speedFor(th);
+      if (v === null || v > c.maxSpeed || v < c.minSpeed * 0.5) continue;
+      if (!clears(th, v)) {
+        fallback = { speed: clamp(v, c.minSpeed, c.maxSpeed), angle: th, clear: false }; // steepest reachable so far
+        continue;
+      }
+      // Lowest angle that clears, plus a margin for launch noise (if that still clears).
+      const withMargin = Math.min(c.maxAngle, th + 4 * step);
+      const v2 = speedFor(withMargin);
+      if (v2 !== null && v2 <= c.maxSpeed && clears(withMargin, v2)) return { speed: clamp(v2, c.minSpeed, c.maxSpeed), angle: withMargin, clear: true };
+      return { speed: clamp(v, c.minSpeed, c.maxSpeed), angle: th, clear: true };
+    }
+    return fallback;
   }
 
   /**
@@ -416,25 +537,33 @@ export class Robot {
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
     const c = this.config.launcher;
     if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none') return null;
+    if (!this.projectileSet && !Robot.warnedProjectile && typeof console !== 'undefined') {
+      Robot.warnedProjectile = true;
+      console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
+    }
     this.fireCooldown = 1 / c.rate;
     const t = this.body.translation();
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
-    const pos = new THREE.Vector3(t.x, t.y + c.height, t.z);
-    pos.x += Math.cos(heading) * this.config.frameLength * 0.18;
-    pos.z -= Math.sin(heading) * this.config.frameLength * 0.18;
+    const ex = this.launcherExit();
+    const pos = new THREE.Vector3(t.x + Math.cos(heading) * ex.forward, t.y + ex.up, t.z - Math.sin(heading) * ex.forward);
 
     let speed = c.manualSpeed;
     let theta = c.angle;
     let aimYaw = c.turret ? this.turretYaw : heading;
+    this.lastShotClear = true;
     if (target && this.config.aimAssist !== 'off') {
       // Iterate to lead the target for robot motion (shoot-on-the-move).
       const lead: AimTarget = { ...target, point: target.point.clone() };
       for (let k = 0; k < 3; k++) {
         const sol = this.solveShot(pos, lead);
-        if (!sol) break;
+        if (!sol) {
+          this.lastShotClear = false;
+          break;
+        }
         speed = sol.speed;
         theta = sol.angle;
+        this.lastShotClear = sol.clear;
         const d = Math.hypot(lead.point.x - pos.x, lead.point.z - pos.z);
         const tof = d / Math.max(0.1, speed * Math.cos(theta));
         lead.point.set(target.point.x - rv.x * tof, target.point.y, target.point.z - rv.z * tof);
@@ -455,6 +584,8 @@ export class Robot {
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;
+  /** False when the last aimed shot had no trajectory that clears the goal rim (too close/far) — for HUD hints. */
+  lastShotClear = true;
 
   tick(dt: number): void {
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
@@ -528,9 +659,55 @@ export class Robot {
 
   /** Progress 0..1 of the current climb (for HUD). */
   get climbProgress(): number {
+    if (this.replicaClimbProgress !== null) return this.replicaClimbProgress;
     if (this.climbPhase === 'hanging') return 1;
     if (this.climbPhase === 'rise') return clamp(this.climbT / this.climbDur, 0, 1);
     return 0;
+  }
+
+  // ───────────────────────── multiplayer ─────────────────────────
+
+  /** Set on multiplayer clients (replicas), where climb timing isn't simulated. */
+  private replicaClimbProgress: number | null = null;
+
+  netState(cmdSeq = 0): RobotNetState {
+    const t = this.body.translation();
+    return {
+      id: this.id,
+      x: t.x,
+      y: t.y,
+      z: t.z,
+      yaw: yawFromQuat(this.body.rotation()),
+      turretYaw: this.turretYaw,
+      held: this.held.length,
+      enabled: this.enabled,
+      climbPhase: Math.max(0, CLIMB_PHASES.indexOf(this.climbPhase)),
+      climbLevel: this.climbLevel,
+      climbSlot: this.climbSlot,
+      climbProgress: this.climbProgress,
+      cmdSeq,
+    };
+  }
+
+  /** Replica update from a (possibly interpolated) snapshot. The body is only posed, never simulated. */
+  applyNet(s: RobotNetState): void {
+    this.body.setTranslation({ x: s.x, y: s.y, z: s.z }, false);
+    this.body.setRotation({ x: 0, y: Math.sin(s.yaw / 2), z: 0, w: Math.cos(s.yaw / 2) }, false);
+    this.applyNetDiscrete(s);
+  }
+
+  /** Everything but the chassis pose (used when the pose comes from client-side prediction). */
+  applyNetDiscrete(s: RobotNetState): void {
+    this.turretYaw = s.turretYaw;
+    if (this.held.length !== s.held) {
+      this.held.length = 0;
+      for (let i = 0; i < s.held; i++) this.held.push(-1);
+    }
+    this.enabled = s.enabled;
+    this.climbPhase = CLIMB_PHASES[s.climbPhase] ?? 'none';
+    this.climbLevel = s.climbLevel;
+    this.climbSlot = s.climbSlot;
+    this.replicaClimbProgress = s.climbProgress;
   }
 
   // ───────────────────────── misc ─────────────────────────

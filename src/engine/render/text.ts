@@ -9,8 +9,12 @@ export interface TextTextureOptions {
   padding?: number;
 }
 
+/** True when there is no DOM (node tests / headless simulation): textures become blank placeholders. */
+export const HEADLESS = typeof document === 'undefined';
+
 /** Canvas-rendered text as a texture (team numbers, labels, AprilTag IDs). */
-export function makeTextTexture(text: string, o: TextTextureOptions = {}): THREE.CanvasTexture {
+export function makeTextTexture(text: string, o: TextTextureOptions = {}): THREE.Texture {
+  if (HEADLESS) return new THREE.Texture();
   const w = o.width ?? 256;
   const h = o.height ?? 128;
   const canvas = document.createElement('canvas');

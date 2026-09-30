@@ -538,3 +538,8 @@ kbd {
     font-size: 11px;
   }
 }
+
+/* Multiplayer spectators have no robot: hide the empty player panel. */
+.hud-player:empty {
+  display: none;
+}

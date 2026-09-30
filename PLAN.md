@@ -35,8 +35,8 @@ First season: **2026 REBUILT presented by Haas** (manual: `2026GameManual.pdf`, 
 | Robot | **One configurable robot** (size, speed, hopper capacity, fire rate, height, max climb level, aim assist). Presets later. | Flexible, minimal UI |
 | Coordinates | **WPILib field coordinates** in season code (meters, origin = blue alliance wall / right corner, +x toward red, +y left, +z up). Engine converts to Three.js (y-up). | Matches robot code & official AprilTag JSON; drop-in future layouts |
 | Field geometry | Procedural primitives from manual dimensions, positions anchored to the official WPILib AprilTag layout | CAD (Onshape/STEP) needs login + conversion; engine supports an optional GLB visual overlay later |
-| Players | **Singleplayer only** (user decision). No bot AI. Only automated driving = the player's AUTO routine (drivers can't control in AUTO). | Multiplayer comes later; engine keeps multi-robot seams |
-| UI theme | Light "attendance app" style (user-supplied reference): off-white bg, left sidebar w/ purple logo tile + pill nav, mono eyebrows, big grotesk headline, stat card, white list card w/ outlined option buttons. Fonts: Space Grotesk + JetBrains Mono. Same tokens for HUD/modals. | User request |
+| Players | Singleplayer + **online multiplayer** (up to 6 drivers + spectators). No bot AI — every robot is a human (or its driver's AUTO routine). | Multiplayer: host-authoritative browser sim + WebSocket relay — see `docs/MULTIPLAYER.md` |
+| UI theme | Dark "single player" layout (user reference): condensed display title (Barlow Condensed), left column = robot card + option groups, right = top-down starting-spot map (click driver stations) + spec bars, bottom action bar (Controls / Rules / Start match). Purple accent kept. Menu CSS in `src/app/menu.css`; HUD stays light. Seasons supply `mapShapes` for the map. | User request |
 
 ## 3. Architecture
 
@@ -69,7 +69,9 @@ src/
     match/scoreboard.ts      per-alliance score categories, fouls, RP (pure logic)
     ai/steering.ts           arrive/avoid/turn + routeThroughBands (cross rows only via gaps)
     hud/hud.ts               DOM HUD: scores, timer, period banner, toasts, widget slots, results screen
-    net/adapter.ts           NetworkAdapter interface + LocalAdapter (multiplayer seam)
+    net/                     multiplayer: relayProtocol, protocol (snapshot codec), netClient, hostSync,
+                             clientSync (interpolation), prediction, ticker — see docs/MULTIPLAYER.md
+server/                      relay.ts (rooms/fan-out), index.ts (`npm run serve`), vitePlugin.ts (/ws in dev)
   seasons/
     index.ts                 registry of available seasons
     2026-rebuilt/
@@ -157,13 +159,20 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
 - [x] Tower assessment (AUTO L1 ×15 max 2 robots; TELEOP 10/20/30)
 - [x] Fouls G403 (AUTO center line) / G407 (launch outside alliance zone)
 - [x] HUD + results screen + pause
-- [x] Unit tests — 37 passing (`npm test`)
+- [x] Unit tests — 43 passing (`npm test`)
 
 ### Stage 6 — AUTO & human player  (bots dropped per user)
 - [x] ~~Bot brain~~ → removed; singleplayer
-- [x] Player AUTO routines: shoot+collect neutral, shoot+depot, shoot+climb L1, shoot only, none (+ "drive in AUTO" practice toggle)
+- [x] Player AUTO: drive manually (default) or routines: shoot+collect neutral, shoot+depot, shoot+climb L1, shoot only, none
 - [x] Human player chute door (H key, or automatic)
 - [x] Corral / out-of-bounds → chute recycling
+
+### Stage 6b — Round 2 requests (2026-09-29)
+- [x] FEED/PASS: hold G (gamepad RB) to lob FUEL into own ALLIANCE ZONE; solver arcs over hub+net / trench rows (`passing.ts`, `AimTarget.clearances`)
+- [x] G407 now assessed when FUEL launched from outside the zone ENTERS own HUB (was: any launch outside zone) — matches manual wording
+- [x] Manual AUTO: "Drive it yourself" is the first/default Autonomous option (menu)
+- [x] Follow camera: 3rd-person, tracks position not heading, mouse drag orbit + wheel zoom, camera-relative driving; selectable on menu (Camera row) + V cycle
+- [x] Tests: 43 passing (added passing/solver tests)
 
 ### Stage 7 — App shell
 - [x] Home screen themed to user's reference (Play / Controls / Game rules pages, robot config, persisted settings)
@@ -176,14 +185,14 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
 
 ### Later (not in current scope)
 - [ ] Deploy to Vercel (needs user's Vercel account/team; static `dist/`, no server needed)
-- [ ] Multiplayer (needs realtime server: PartyKit/Cloudflare DO, Colyseus on Fly/Railway, or Supabase Realtime) — implement `NetworkAdapter`, run `Game` headless as authority
+- [x] Multiplayer — done 2026-09-29, full design + log in `docs/MULTIPLAYER.md` (deploy: free Render web service via `render.yaml`)
 - [ ] Official CAD GLB visual overlay (`engine/field/cadOverlay.ts` is ready; needs an exported GLB)
 - [ ] Robot presets; replay recording; driver practice stats
 - [ ] Rules not enforced: G408 catching hub FUEL, contact/defense rules, extension limits (R105), HP zone rules
 - [ ] [EST] values to confirm against official field drawings: depot position, hub cup floor/net height, upright x-position, DS positions
 
 ## 5b. How to verify (for the next agent)
-- `npm test` → 37 tests pass. `npm run typecheck` → clean. `npm run build` → ok.
+- `npm test` → 43 tests pass. `npm run typecheck` → clean. `npm run build` → ok.
 - `npm run dev`, open http://localhost:5173, Start match. In the browser console `window.game` is the
   live `Game`; you can fast-forward deterministically with `game.step(game.physics.dt, idleInput)`
   (see the session log below for the idle input shape). This is how traversal (bump/trench), climb L3,
@@ -200,3 +209,11 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   for the player; (2) re-theme UI to their light "attendance app" reference (done for menu + HUD).
   Verified in browser: menu, match start, AUTO scoring (≈26 FUEL), hub shift order, bump/trench
   traversal, hub blocks robots, L3 climb (30 pts), G407 foul, chute/corral, results modal, prod build.
+- 2026-09-29 (round 2): Added feeding (G), G407-on-hub-entry, manual AUTO as default option, Follow
+  camera. Verified in browser: feeds from behind hub / over bump / from opponent zone all land in the
+  blue alliance zone with 0 hub entries & 0 fouls; shooting into hub from outside zone → G407; manual
+  input moves robot during AUTO; W is camera-relative in Follow mode.
+- 2026-09-29 (round 3): Fixed tall robots missing the HUB (balls spawned inside own collider), rim/drag-aware
+  aim solver, traction only with ground contact (robots wedging under TRENCH), trench arm overhang. Added
+  HeadlessSim + tests/physics.test.ts (runs for every season). Mid-air ball collisions kept (user: real
+  physics). Details + remaining items: docs/BUGFIX-HANDOFF.md.

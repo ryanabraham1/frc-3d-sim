@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FieldBuilder } from './builder';
 import { inch } from '../units';
+import { HEADLESS } from '../render/text';
 
 /** WPILib AprilTagFieldLayout JSON shape (same format every year). */
 export interface AprilTagLayout {
@@ -32,7 +33,8 @@ export function tagPoses(layout: AprilTagLayout): TagPose[] {
 }
 
 /** Stylised tag texture: black square with a deterministic bit pattern and ID label. Not a decodable 36h11 tag. */
-function tagTexture(id: number): THREE.CanvasTexture {
+function tagTexture(id: number): THREE.Texture {
+  if (HEADLESS) return new THREE.Texture();
   const size = 256;
   const c = document.createElement('canvas');
   c.width = c.height = size;
