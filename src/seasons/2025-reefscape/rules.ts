@@ -6,6 +6,7 @@ import type { PeriodChange } from '@engine/match/clock';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
+import type { HangingNetState } from '@engine/field/hanging';
 import { coralGeometry, type ReefscapeFieldRefs } from './field';
 import { coralPoints, reefscapeResults } from './scoring';
 
@@ -16,7 +17,12 @@ export interface ReefscapeNetState {
   mechanisms: [number, MechanismState][];
   hp: Record<Alliance, boolean>;
   forcedBarge: Record<Alliance, boolean>;
+  /** Swinging cage poses in ALLIANCES order, by station. */
+  cages: HangingNetState[];
 }
+
+/** A climbing robot carries its cage from wherever it swung to its hanging pose over the align phase. */
+interface CageGrip { robot: Robot; alliance: Alliance; slot: number; from: { x: number; y: number; z: number }; t: number }
 
 export class ReefscapeRules implements SeasonRules {
   readonly handlesIntake = true;
@@ -34,6 +40,7 @@ export class ReefscapeRules implements SeasonRules {
   private readonly cageContacts = new Set<string>();
   private readonly protectedContacts = new Set<string>();
   private readonly notices = new Map<number, number>();
+  private readonly grips: CageGrip[] = [];
   private readonly launchedBy = new Map<number, { robotId: number; at: number }>();
   private autoAssessed = false;
   private bargeAssessed = false;
@@ -72,6 +79,8 @@ export class ReefscapeRules implements SeasonRules {
     const { pool, robots } = this.ctx;
     this.placements.length = 0; this.autoBranches.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear();
     this.autoAssessed = this.bargeAssessed = false;
+    this.grips.length = 0;
+    for (const a of ALLIANCES) for (const cage of this.refs.cages[a]) cage.reset();
     this.removedAutoTrough.blue = this.removedAutoTrough.red = 0;
     this.hp = { blue: true, red: true }; this.hpTimer = { blue: 0, red: 0 };
     this.defenderTime = { blue: 0, red: 0 }; this.forcedBarge = { blue: false, red: false };
@@ -80,8 +89,7 @@ export class ReefscapeRules implements SeasonRules {
     // 63 CORAL per alliance: 3 marks, up to 3 preloads, all remaining in its stations.
     for (const [ai, a] of ALLIANCES.entries()) {
       const base = ai * 63;
-      for (let k = 0; k < 3; k++) {
-        const p = C.side(a, 1.65, C.REEF_Y + (k - 1) * 1.8);
+      for (const [k, p] of C.coralMarks(a).entries()) {
         pool.placeField(base + k, p.x, p.y, C.CORAL_LENGTH / 2);
         pool.bodies[base + k].setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }, true);
         // Six starting ALGAE sit atop vertical CORAL as in Figure 6-2.
@@ -136,17 +144,27 @@ export class ReefscapeRules implements SeasonRules {
     const face = C.nearestFace(harvestAlliance, robot.pose);
     const reef = C.reefCenter(harvestAlliance);
     const nearReef = Math.hypot(robot.pose.x - reef.x, robot.pose.y - reef.y) < C.REEF_APOTHEM - 0.07 + robot.config.frameLength / 2 + mechanism.reach + C.ALGAE_RADIUS;
-    const harvest = cmd.intake && !cmd.shoot && robot.config.intake.secondary && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && this.held(robot, true) === undefined && nearReef && this.reefAlgae(harvestAlliance, face);
+    // A robot that can't store ALGAE (no ALGAE intake, or one already held) can still use its
+    // elevator/intake to dislodge it onto the carpet, as CORAL-only robots did to open L2/L3.
+    const canHold = robot.config.intake.secondary && robot.config.intake.enabled && this.held(robot, true) === undefined && robot.capacityLeft > 0;
+    const hasTool = robot.config.intake.secondary || mechanism.enabled;
+    const harvest = cmd.intake && !cmd.shoot && hasTool && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && nearReef && this.reefAlgae(harvestAlliance, face);
     if (harvest) desiredHeight = C.LEVEL_HEIGHTS[face % 2 === 0 ? 3 : 2] + 0.08;
     m.height += clamp(desiredHeight - m.height, -mechanism.liftSpeed * dt, mechanism.liftSpeed * dt);
     this.updateElevatorCollider(robot, m.height);
     if (robot.isClimbing) return true;
-    if (harvest && robot.config.intake.enabled && robot.capacityLeft > 0 && Math.abs(m.height - desiredHeight) < 0.06) {
+    if (harvest && Math.abs(m.height - desiredHeight) < 0.06) {
       m.harvest += dt;
       if (m.harvest >= mechanism.harvestSeconds) {
         const i = this.algaeIndex(harvestAlliance, face);
-        this.ctx.pool.hold(i, robot.id); this.ctx.pool.tag[i] = null; robot.held.push(i); m.harvest = 0;
-        this.ctx.toast('ALGAE removed · branch level cleared', 'good', robot.alliance, robot);
+        this.ctx.pool.tag[i] = null; m.harvest = 0;
+        if (canHold) {
+          this.ctx.pool.hold(i, robot.id); robot.held.push(i);
+          this.ctx.toast('ALGAE removed · branch level cleared', 'good', robot.alliance, robot);
+        } else {
+          this.dislodgeAlgae(robot, i, harvestAlliance, face);
+          this.ctx.toast('ALGAE knocked off the REEF · branch level cleared', 'good', robot.alliance, robot);
+        }
       }
     } else m.harvest = 0;
     if (cmd.intake && robot.config.intake.enabled) this.intake(robot);
@@ -175,6 +193,19 @@ export class ReefscapeRules implements SeasonRules {
       robot.fireCooldown = 0.6;
     }
     return true;
+  }
+
+  /** Drop staged reef ALGAE past the side of the face's pipe pair, away from the robot, so it falls to the carpet. */
+  private dislodgeAlgae(robot: Robot, i: number, a: Alliance, face: number): void {
+    const c = C.reefCenter(a), angle = C.sideYaw(a, face * Math.PI / 3);
+    const n = { x: Math.cos(angle), y: Math.sin(angle) }, t = { x: -n.y, y: n.x };
+    const lateral = (robot.pose.x - c.x) * t.x + (robot.pose.y - c.y) * t.y;
+    const sign = lateral > 0 ? -1 : 1;
+    const r = C.REEF_APOTHEM - 0.07, off = sign * 0.41;
+    const z = C.LEVEL_HEIGHTS[face % 2 === 0 ? 3 : 2] + 0.08;
+    this.ctx.pool.placeWorld(i, this.ctx.frame.toWorld(c.x + n.x * r + t.x * off, c.y + n.y * r + t.y * off, z),
+      this.ctx.frame.velToWorld(n.x * 1.1 + t.x * sign * 0.7, n.y * 1.1 + t.y * sign * 0.7, 0.4));
+    this.launchedBy.set(i, { robotId: robot.id, at: this.ctx.clock.elapsed });
   }
 
   private updateElevatorCollider(robot: Robot, height: number): void {
@@ -284,7 +315,7 @@ export class ReefscapeRules implements SeasonRules {
     for (const a of ALLIANCES) {
       let points = 0;
       for (const r of this.ctx.robots.filter((r) => r.alliance === a)) {
-        if (r.climbPhase === 'hanging' && r.elevation > 0.03) points += r.climbLevel === 1 ? 6 : 12;
+        if (r.climbPhase === 'hanging' && r.elevation > 0.03 && r.climbSlot !== null) points += C.CAGE_POINTS[this.refs.cageDepth[a][r.climbSlot]];
         else if (this.inBargeZone(r)) points += 2;
       }
       this.ctx.score.set(a, 'barge', points);
@@ -292,16 +323,20 @@ export class ReefscapeRules implements SeasonRules {
   }
   inBargeZone(robot: Robot): boolean {
     const corners = robot.corners();
-    const ys = corners.map((p) => robot.alliance === 'blue' ? p.y : C.FIELD_WIDTH - p.y);
-    const xs = corners.map((p) => p.x);
-    return Math.min(...xs) <= C.FIELD_LENGTH / 2 + inch(46) / 2 && Math.max(...xs) >= C.FIELD_LENGTH / 2 - inch(46) / 2 && Math.max(...ys) >= C.FIELD_WIDTH / 2 + 0.1 && Math.min(...ys) <= C.FIELD_WIDTH / 2 + 0.1 + inch(146.5);
+    const ys = corners.map((p) => p.y), xs = corners.map((p) => p.x);
+    const [y0, y1] = C.bargeZoneY(robot.alliance);
+    return Math.min(...xs) <= C.FIELD_LENGTH / 2 + C.BARGE_ZONE_DEPTH / 2 && Math.max(...xs) >= C.FIELD_LENGTH / 2 - C.BARGE_ZONE_DEPTH / 2 && Math.max(...ys) >= y0 && Math.min(...ys) <= y1;
   }
 
   beforeStep(dt: number): void {
+    this.updateGrips(dt);
     if (!this.activeScoring()) return;
     for (const a of ALLIANCES) {
       this.hpTimer[a] -= dt;
-      if (this.ctx.clock.mode !== 'disabled' && this.ctx.humanPlayerIsAuto(a) && this.hp[a] && this.hpTimer[a] <= 0) { this.supply(a); this.hpTimer[a] = 1.7; }
+      if (this.ctx.clock.mode === 'disabled' || !this.ctx.humanPlayerIsAuto(a) || !this.hp[a]) continue;
+      // The HUMAN PLAYER reacts within about half a second to a robot waiting at a station.
+      if (this.hpTimer[a] > 0.5 && this.ctx.robots.some((r) => r.alliance === a && this.wantsCoral(r) && C.stations(a).some((st) => this.atStation(r, st)))) this.hpTimer[a] = 0.5;
+      if (this.hpTimer[a] <= 0) { this.supply(a); this.hpTimer[a] = 1.7; }
     }
     this.enforceDefenders(dt);
     this.enforceCageContact();
@@ -348,12 +383,24 @@ export class ReefscapeRules implements SeasonRules {
   private supply(a: Alliance): void {
     const { pool, frame } = this.ctx;
     for (const station of C.stations(a)) {
-      const waiting = pool.indices('field').filter((i) => i < C.CORAL_COUNT && Math.hypot(frame.toField(pool.position(i)).x - station.x, frame.toField(pool.position(i)).y - station.y) < 1.0).length;
       const i = pool.indices('reserve', `station:${a}`)[0];
+      if (!this.hp[a] || i === undefined) continue;
+      // A robot parked at the opening with its CORAL intake running takes the piece straight from the CHUTE.
+      const docked = this.ctx.robots.filter((r) => r.alliance === a && this.atStation(r, station));
+      const receiver = docked.find((r) => this.wantsCoral(r));
+      if (receiver) {
+        pool.hold(i, receiver.id); receiver.held.push(i);
+        this.ctx.toast('CORAL received from the station', 'good', a, receiver);
+        continue;
+      }
+      if (docked.length) continue; // Don't drop CORAL onto a robot blocking the opening.
+      const waiting = pool.indices('field').filter((i) => i < C.CORAL_COUNT && Math.hypot(frame.toField(pool.position(i)).x - station.x, frame.toField(pool.position(i)).y - station.y) < 1.2).length;
       const nearby = this.ctx.robots.some((r) => r.alliance === a && Math.hypot(r.pose.x - station.x, r.pose.y - station.y) < 2.3);
-      if (this.hp[a] && waiting < 2 && nearby && i !== undefined) {
-        const toward = C.reefCenter(a), dx = toward.x - station.x, dy = toward.y - station.y, d = Math.hypot(dx, dy);
-        pool.placeWorld(i, frame.toWorld(station.x, station.y, inch(37.5)), frame.velToWorld(dx / d * 0.6, dy / d * 0.6, 0));
+      if (waiting < 2 && nearby) {
+        // CORAL leaves the 55° CHUTE through the opening and drops onto the carpet in front of the station.
+        const nx = Math.cos(station.yaw), ny = Math.sin(station.yaw);
+        pool.placeWorld(i, frame.toWorld(station.x + nx * 0.12, station.y + ny * 0.12, C.STATION_MOUTH_HEIGHT + C.CORAL_RADIUS + 0.01), frame.velToWorld(nx * 1.1, ny * 1.1, -0.6));
+        pool.bodies[i].setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), station.yaw), true);
       }
     }
     if (!this.isAuto()) {
@@ -368,24 +415,79 @@ export class ReefscapeRules implements SeasonRules {
     }
   }
 
+  /** The robot's climber hangs from cages of its own type; the preselected depth comes from its menu choice. */
+  climberDepth(robot: Robot): C.CageDepth | null {
+    return robot.config.climber.maxLevel === 1 ? 'shallow' : robot.config.climber.maxLevel >= 2 ? 'deep' : null;
+  }
+
+  /** §6.5.2: CAGE points come from any one of the alliance's three cages, not only the driver station's. */
+  climbableCage(robot: Robot): { slot: number; depth: C.CageDepth; occupied: boolean } | null {
+    const want = this.climberDepth(robot);
+    if (!want) return null;
+    let best: { slot: number; depth: C.CageDepth; occupied: boolean; d: number } | null = null;
+    for (let slot = 0; slot < 3; slot++) {
+      const depth = this.refs.cageDepth[robot.alliance][slot];
+      const p = this.refs.cages[robot.alliance][slot].fieldPosition(); // wherever it has swung to
+      const d = Math.hypot(robot.pose.x - p.x, robot.pose.y - p.y);
+      if (depth !== want || d > 1.25 || (best && best.d <= d)) continue;
+      const occupied = this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.climbSlot === slot && r.isClimbing);
+      best = { slot, depth, occupied, d };
+    }
+    return best;
+  }
+
+  private wantsCoral(r: Robot): boolean {
+    return r.lastCommand.intake && !!r.config.intake.primary && r.config.intake.enabled && this.held(r, false) === undefined && r.capacityLeft > 0;
+  }
+
+  /** Robot's intake faces the station opening and is close enough to catch a CORAL leaving the CHUTE. */
+  atStation(robot: Robot, station: { x: number; y: number; yaw: number }): boolean {
+    if (robot.isClimbing) return false;
+    const nx = Math.cos(station.yaw), ny = Math.sin(station.yaw);
+    const dx = robot.pose.x - station.x, dy = robot.pose.y - station.y;
+    const out = dx * nx + dy * ny, along = -dx * ny + dy * nx;
+    const facing = Math.cos(robot.pose.yaw) * nx + Math.sin(robot.pose.yaw) * ny < -0.8;
+    return facing && out < robot.footprint.length / 2 + robot.config.intake.reach + 0.25 && Math.abs(along) < C.STATION_MOUTH_WIDTH / 2;
+  }
+
   requestClimb(robot: Robot, _level: number): void {
     if (this.ctx.clock.mode !== 'teleop') { this.tell(robot, 'CAGE climbing is available during TELEOP'); return; }
-    const level = Math.min(2, robot.config.climber.maxLevel);
-    if (level === 0) return;
-    const p = C.cage(robot.alliance, robot.station);
-    if (Math.hypot(robot.pose.x - p.x, robot.pose.y - p.y) > 1.25) { this.tell(robot, 'Drive to the cage matching your driver station in your BARGE ZONE'); return; }
-    if (this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.climbSlot === robot.station - 1 && r.isClimbing)) { this.tell(robot, 'CAGE already occupied'); return; }
+    const want = this.climberDepth(robot);
+    if (!want) return;
+    const cage = this.climbableCage(robot);
+    if (!cage) { this.tell(robot, `Drive to one of your alliance's ${want.toUpperCase()} cages in your BARGE ZONE`); return; }
+    if (cage.occupied) { this.tell(robot, 'CAGE already occupied · try another of your cages'); return; }
+    const p = C.cage(robot.alliance, cage.slot + 1);
     const yaw = C.sideYaw(robot.alliance, 0);
-    const lift = level === 1 ? 0.88 : 0.28;
-    // Place chassis beside the cage with climber engaging its pipes, below the anchor.
-    robot.startClimb({ x: p.x - Math.cos(yaw) * robot.config.frameLength * 0.3, y: p.y, yaw }, lift, level, robot.station - 1);
+    // Chassis height when hanging: a shallow climb only needs to clear the carpet; a deep climb pulls higher.
+    const lift = cage.depth === 'shallow' ? 0.15 : 0.28;
+    // The climber grabs the cage where it hangs (swung or not), then robot and cage settle plumb under
+    // the pivot with the cage just ahead of the front bumper.
+    const reach = this.gripReach(robot);
+    robot.startClimb({ x: p.x - Math.cos(yaw) * reach, y: p.y, yaw }, lift, cage.depth === 'shallow' ? 1 : 2, cage.slot);
+    this.grips.push({ robot, alliance: robot.alliance, slot: cage.slot, from: this.refs.cages[robot.alliance][cage.slot].fieldPosition(), t: 0 });
+  }
+  private gripReach(robot: Robot): number { return robot.footprint.length / 2 + C.CAGE_SIZE / 2 + 0.02; }
+
+  /** Held cages follow their climbing robot; a cage is released to swing once its robot is back down. */
+  private updateGrips(dt: number): void {
+    for (let k = this.grips.length - 1; k >= 0; k--) {
+      const g = this.grips[k], cage = this.refs.cages[g.alliance][g.slot];
+      if (!g.robot.isClimbing || g.robot.climbSlot !== g.slot) { cage.release(); this.grips.splice(k, 1); continue; }
+      g.t += dt;
+      const blend = clamp(g.t / 0.6, 0, 1), reach = this.gripReach(g.robot), p = g.robot.pose;
+      const rest = C.CAGE_BOTTOM[this.refs.cageDepth[g.alliance][g.slot]];
+      const tx = p.x + Math.cos(p.yaw) * reach, ty = p.y + Math.sin(p.yaw) * reach;
+      cage.hold(g.from.x + (tx - g.from.x) * blend, g.from.y + (ty - g.from.y) * blend, g.from.z + (rest - g.from.z) * blend);
+    }
   }
   requestDescend(robot: Robot): void { robot.startDescend(); }
 
   private enforceDefenders(dt: number): void {
-    if (this.ctx.clock.mode !== 'teleop') return;
+    // G421 is a ROBOT rule for the whole MATCH, not only TELEOP.
+    if (this.ctx.clock.mode === 'disabled') return;
     for (const a of ALLIANCES) {
-      const defenders = this.ctx.robots.filter((r) => r.alliance === a && r.corners().every((p) => a === 'blue' ? p.x > C.FIELD_LENGTH / 2 + inch(46) / 2 : p.x < C.FIELD_LENGTH / 2 - inch(46) / 2));
+      const defenders = this.ctx.robots.filter((r) => r.alliance === a && this.beyondBarge(r));
       if (defenders.length < 2) { this.defenderTime[a] = 0; continue; }
       const old = this.defenderTime[a]; this.defenderTime[a] += dt;
       if (old === 0 || Math.floor(old / 3) < Math.floor(this.defenderTime[a] / 3)) {
@@ -394,13 +496,23 @@ export class ReefscapeRules implements SeasonRules {
       }
     }
   }
+  /** Bumpers completely on the opponent's side of both BARGE ZONES (G403/G421). */
+  private beyondBarge(r: Robot): boolean {
+    return r.corners().every((p) => r.alliance === 'blue' ? p.x > C.FIELD_LENGTH / 2 + C.BARGE_ZONE_DEPTH / 2 : p.x < C.FIELD_LENGTH / 2 - C.BARGE_ZONE_DEPTH / 2);
+  }
+
+  /** Real collider contact between a robot (including its raised elevator) and a swinging cage. */
+  private touchesCage(r: Robot, a: Alliance, slot: number): boolean {
+    let contact = false;
+    for (const cageCollider of this.refs.cages[a][slot].colliders) for (let i = 0; i < r.body.numColliders() && !contact; i++) {
+      this.ctx.physics.world.contactPair(r.body.collider(i), cageCollider, (manifold) => { if (manifold.numContacts() > 0) contact = true; });
+    }
+    return contact;
+  }
+
   private enforceCageContact(): void {
     for (const r of this.ctx.robots) for (let s = 1; s <= 3; s++) {
-      const p = C.cage(opponent(r.alliance), s);
-      const shallow = this.ctx.robots.find((o) => o.alliance !== r.alliance && o.station === s)?.config.climber.maxLevel === 1;
-      if (shallow && r.config.height < C.CAGE_BOTTOM.shallow) continue;
-      const dx = p.x - r.pose.x, dy = p.y - r.pose.y, yaw = r.pose.yaw;
-      const contact = Math.abs(dx * Math.cos(yaw) + dy * Math.sin(yaw)) < r.footprint.length / 2 + inch(7.375) / 2 && Math.abs(-dx * Math.sin(yaw) + dy * Math.cos(yaw)) < r.footprint.width / 2 + inch(7.375) / 2;
+      const contact = this.touchesCage(r, opponent(r.alliance), s - 1);
       const key = `${r.id}:${s}`;
       if (contact && !this.cageContacts.has(key) && this.ctx.clock.mode !== 'disabled') {
         const auto = this.ctx.clock.mode === 'auto';
@@ -422,8 +534,7 @@ export class ReefscapeRules implements SeasonRules {
       }
       if (!contact) continue;
       let rule: string | null = null;
-      const across = r.corners().every((p) => r.alliance === 'blue' ? p.x > C.FIELD_LENGTH / 2 + inch(46) / 2 : p.x < C.FIELD_LENGTH / 2 - inch(46) / 2);
-      if (this.ctx.clock.mode === 'auto' && across) rule = 'G403';
+      if (this.ctx.clock.mode === 'auto' && this.beyondBarge(r)) rule = 'G403';
       else if (this.ctx.clock.current.id === 'endgame' && ['rise', 'hanging'].includes(other.climbPhase)) { rule = 'G428'; this.forcedBarge[other.alliance] = true; }
       else if (this.inBargeZone(other) || C.inReefZone(other.alliance, other.pose, other.footprint.length, other.footprint.width)) rule = 'G427';
       if (!rule) continue;
@@ -436,7 +547,7 @@ export class ReefscapeRules implements SeasonRules {
     this.protectedContacts.clear(); for (const key of live) this.protectedContacts.add(key);
   }
 
-  updateVisuals(_dt: number, time: number): void {
+  updateVisuals(dt: number, time: number): void {
     const { pool, frame, score } = this.ctx;
     for (const a of ALLIANCES) {
       for (let f = 0; f < 6; f++) this.refs.algae[a][f].visible = this.reefAlgae(a, f);
@@ -446,6 +557,7 @@ export class ReefscapeRules implements SeasonRules {
         (light.material as THREE.MeshStandardMaterial).emissiveIntensity = flash || coop || score.counter(a, 'processor') > i ? 2.5 : 0.15;
       }
     }
+    for (const a of ALLIANCES) for (const cage of this.refs.cages[a]) cage.syncVisual(dt);
     for (const robot of this.ctx.robots) {
       const m = this.mechanisms.get(robot.id)!;
       // Replica clients also predict driving against the raised elevator and barge.
@@ -499,11 +611,13 @@ export class ReefscapeRules implements SeasonRules {
   results(): MatchResults {
     return reefscapeResults(this.ctx.score, { blue: this.ctx.robots.filter((r) => r.alliance === 'blue').length, red: this.ctx.robots.filter((r) => r.alliance === 'red').length }, this.forcedBarge);
   }
-  netState(): ReefscapeNetState { return { placements: this.placements.map((p) => ({ ...p })), mechanisms: [...this.mechanisms].map(([id, m]) => [id, { ...m }]), hp: { ...this.hp }, forcedBarge: { ...this.forcedBarge } }; }
+  netState(): ReefscapeNetState { return { placements: this.placements.map((p) => ({ ...p })), mechanisms: [...this.mechanisms].map(([id, m]) => [id, { ...m }]), hp: { ...this.hp }, forcedBarge: { ...this.forcedBarge },
+    cages: ALLIANCES.flatMap((a) => this.refs.cages[a].map((c) => c.netState())) }; }
   applyNetState(state: unknown): void {
     const s = state as ReefscapeNetState;
     this.placements.splice(0, this.placements.length, ...s.placements);
     for (const [id, m] of s.mechanisms) this.mechanisms.set(id, { ...m });
     this.hp = { ...s.hp }; this.forcedBarge = { ...s.forcedBarge };
+    ALLIANCES.flatMap((a) => this.refs.cages[a]).forEach((c, k) => s.cages?.[k] && c.applyNetState(s.cages[k]));
   }
 }

@@ -64,6 +64,9 @@ tipping, damage, collusion), G425–G429 (humans).
 | TRAP | **Assisted.** While hanging with a NOTE and a "Chain + TRAP" climber, press Space. |
 | HIGH NOTE | Physical throw from behind the wall by the AMP human player at a MICROPHONE (≈80 % success); a ring falling over the pipe top SPOTLIGHTS that chain. |
 
+**Known gap:** the STAGE chains are static visuals (climbs snap to them). Per `CLAUDE.md`, hung elements
+should be dynamic (`src/engine/field/hanging.ts`); converting the chains is a follow-up.
+
 ## Figure-derived (undimensioned) values
 
 The manual gives sizes but not most *positions*. These were measured from the top-view figures

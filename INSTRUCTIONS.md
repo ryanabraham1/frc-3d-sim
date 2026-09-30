@@ -77,6 +77,11 @@ Things to extract deliberately (they drive the code):
 
 ## 3. Physical vs assisted — decide up front
 
+**Also follow `CLAUDE.md` "Model the field as it behaves in real life":** anything on the real field that
+hangs, swings, hinges or can be pushed (chains, cages, doors, tilting platforms) should be a dynamic body
+(`src/engine/field/hanging.ts` for hung elements). Note: the 2024 STAGE chains were built as static visuals
+before that rule existed — a known gap, see docs/CRESCENDO.md.
+
 The engine simulates rigid bodies well but not everything. For each scoring action ask: *can the game
 piece physically do this with the colliders we have?*
 

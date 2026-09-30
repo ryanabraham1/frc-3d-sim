@@ -22,8 +22,12 @@ export class ReefscapeHud implements SeasonHud {
     const target = this.rules.placementTarget(r, m?.level ?? 4);
     const point = target?.point;
     const near = point && Math.hypot(point.x - r.pose.x, point.y - r.pose.y) <= this.rules.coralReach(r);
-    const reef = coral ? !r.config.placement!.enabled ? 'CORAL scorer disabled · G ejects CORAL' : !target ? '<span class="bad">Branch blocked · remove ALGAE or choose another level / face</span>' : near ? '<span class="ok">Space: place CORAL · 1–4: reef level</span>' : 'Drive to your REEF · Space places within reach' : r.config.intake.primary ? 'CORAL: intake at stations or carpet · ALGAE: J at reef' : 'ALGAE: intake on carpet or J at reef';
-    const climb = r.isClimbing ? `${r.climbPhase === 'hanging' ? 'Hanging' : 'Climbing'} · ${r.config.climber.maxLevel === 1 ? 'SHALLOW' : 'DEEP'} CAGE · X to descend` : r.config.climber.maxLevel ? 'C: climb your station’s cage · park in your BARGE ZONE for 2' : 'No cage climber · park in your BARGE ZONE for 2';
+    const blockedFace = C.nearestFace(r.alliance, r.pose);
+    const knock = !r.config.intake.secondary || algae ? ' · J: knock staged ALGAE off' : ' · J: remove ALGAE';
+    const reef = coral ? !r.config.placement!.enabled ? 'CORAL scorer disabled · G ejects CORAL' : !target ? `<span class="bad">Branch blocked${this.rules.reefAlgae(r.alliance, blockedFace) ? knock : ''} · or choose another level / face</span>` : near ? '<span class="ok">Space: place CORAL · 1–4: reef level</span>' : 'Drive to your REEF · Space places within reach' : r.config.intake.primary ? 'CORAL: back into a station with intake on, or from carpet · ALGAE: J at reef' : 'ALGAE: intake on carpet or J at reef';
+    const depth = this.rules.climberDepth(r)?.toUpperCase();
+    const slot = r.climbSlot ?? -1;
+    const climb = r.isClimbing ? `${r.climbPhase === 'hanging' ? 'Hanging' : 'Climbing'} · ${(this.rules.refs.cageDepth[r.alliance][slot] ?? depth ?? 'DEEP').toUpperCase()} CAGE · X to descend` : depth ? `C: climb any of your ${depth} cages (${this.rules.refs.cageDepth[r.alliance].filter((d) => d.toUpperCase() === depth).length}) · park in your BARGE ZONE for 2` : 'No cage climber · park in your BARGE ZONE for 2';
     const algaeHint = algae ? `<div class="ok">${r.config.launcher.enabled ? coral ? 'Place / eject CORAL before NET shot' : 'Space: shoot NET' : 'NET shooter disabled'} · ${r.config.processor!.enabled ? 'G: feed PROCESSOR nearby' : 'PROCESSOR feeder disabled'}</div>` : '';
     ctx.hud.setHtml(slots.player, `<div class="hopper-label">CORAL ${r.config.intake.primary ? `${coral ? 1 : 0}/1` : 'off'} · ALGAE ${r.config.intake.secondary ? `${algae ? 1 : 0}/1` : 'off'}</div><div>Elevator L${m?.level ?? 4} / L${r.config.placement!.maxLevel} · ${(m?.height ?? 0.45).toFixed(2)} m</div><div>${reef}</div>${algaeHint}<div class="dim">${climb}</div>`);
   }
