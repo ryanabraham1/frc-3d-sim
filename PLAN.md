@@ -217,11 +217,17 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   aim solver, traction only with ground contact (robots wedging under TRENCH), trench arm overhang. Added
   HeadlessSim + tests/physics.test.ts (runs for every season). Mid-air ball collisions kept (user: real
   physics). Details + remaining items: docs/BUGFIX-HANDOFF.md.
-- 2026-09-30: Fixed robots getting **stranded on game pieces** (2026: cresting a BUMP at speed and landing on
-  FUEL). The chassis can't tilt, so a robot resting level on pieces had every wheel in the air and zero
-  traction forever. Now, once it has settled off the field (`Robot.traction`), half its weight goes to the
-  carpet through its wheels and it gets half its drive grip (`Robot.BEACHED_TRACTION`, [EST]) so it rocks off
-  like a real robot; still no traction while airborne. Regression test in tests/physics.test.ts (all seasons).
+- 2026-09-30: **Robots tilt and tip over.** The chassis rotation lock is gone: each wheel (a 5 cm sphere swept
+  down, following the tilt) that touches the field gives full grip, one on a game piece `Robot.PIECE_GRIP` (35%,
+  [EST]), and drive force is applied at those contact points. Mass split re-weighted so the CoM is realistic
+  (~6 in / ~8 in for 20 in / 30 in robots, [EST]). A robot tipped past 60°, or wedged at a lean with no wheel
+  down, is set back on its wheels after 5 s (user rule). The launcher/intake follow the tilt (a rocking robot
+  misses, as in real life); no driving, shooting, intake or climbing while tipped. Multiplayer snapshots carry the
+  full orientation + tip timer; prediction keeps the tilt. HUD warns the driver. This also fixes robots getting
+  **stranded on FUEL** (a level-locked robot on pieces had every wheel in the air forever): it now rocks onto
+  some wheels and drives off. No measurable CPU cost (≈1.8 ms/physics step either way; the ~400 FUEL dominate).
+  Measured: default robot never tips crossing a BUMP at 4.5 m/s (≤ 34° tilt) nor in 32 random 20 s drives through
+  the neutral zone; flat out at 6 m/s it occasionally does.
 - 2026-09-30: Added **2024 CRESCENDO** from only the 2024 manual (V0, downloaded from a GitHub mirror —
   FIRST's host was blocked by the sandbox network policy). New season module `src/seasons/2024-crescendo/`,
   engine additions: ring game pieces, solver `ceilings`/`allowRising`/`minEntryAngle`, `engine/zones.ts`,

@@ -117,14 +117,18 @@ for (const season of SEASONS) {
             }
             sim.run(0.4);
             const speed = cfg.maxSpeed;
+            let tipped = false;
             sim.run(
               (len / speed) * 3 + 2,
               { ...IDLE_COMMAND, vx: (dx / len) * speed, vy: (dy / len) * speed, ...(T.mechanism === 'placement' ? { scoringLevel: 1 } : {}) },
               () => {
+                tipped ||= sim.robot.tippedOver;
                 const p = sim.robot.pose;
                 return (p.x - lane.to.x) * dx + (p.y - lane.to.y) * dy > 0; // passed the end
               },
             );
+            // Robots tilt now: a normal lane at normal speed must not tip anyone over.
+            if (tipped) stuck.push(`${lane.label} h=${(h / 0.0254).toFixed(1)}in pieces=${pieces} TIPPED OVER`);
             const p = sim.robot.pose;
             const progress = ((p.x - lane.from.x) * dx + (p.y - lane.from.y) * dy) / (len * len);
             if (progress < 0.95) stuck.push(`${lane.label} h=${(h / 0.0254).toFixed(1)}in pieces=${pieces} progress=${(progress * 100).toFixed(0)}%`);
@@ -136,8 +140,8 @@ for (const season of SEASONS) {
     });
 
     it('a robot beached on game pieces can drive itself off (never stranded with zero traction)', () => {
-      // Regression: the chassis can't tilt, so a robot tossed onto loose pieces (e.g. landing off a BUMP onto
-      // FUEL) rested level on them with every wheel in the air and no traction forever.
+      // Regression: a robot tossed onto loose pieces (e.g. landing off a BUMP onto FUEL) once rested level on
+      // them with every wheel in the air and no traction forever. Now it rocks onto some wheels and drives off.
       const lane = T.traversals()[0];
       const cfg = cloneConfig(season.robotDefaults);
       // Drive back from the lane start, away from the lane's structure (the robot rides high while beached).
@@ -156,14 +160,39 @@ for (const season of SEASONS) {
       const t = sim.robot.body.translation();
       sim.robot.body.setTranslation({ x: t.x, y: season.gamePiece.radius * 2 + 0.05, z: t.z }, true);
       sim.run(0.6);
-      const beached = !sim.robot.grounded;
-      const start = sim.robot.pose;
+      expect(sim.robot.wheelsDown, 'setup: the robot should start up on the pieces').toBeLessThan(4);
       const speed = cfg.maxSpeed * 0.6;
-      sim.run(4, { ...IDLE_COMMAND, vx: Math.cos(heading) * speed, vy: Math.sin(heading) * speed }, () => sim.robot.grounded && sim.robot.elevation < 0.01);
-      const end = sim.robot.pose;
-      const moved = Math.hypot(end.x - start.x, end.y - start.y);
-      if (beached) expect(moved, 'beached robot never moved').toBeGreaterThan(0.3);
-      expect(sim.robot.grounded, `still beached (elevation ${sim.robot.elevation.toFixed(3)} m)`).toBe(true);
+      const off = () => sim.robot.wheelsDown === 4 && sim.robot.elevation < 0.01;
+      sim.run(6, { ...IDLE_COMMAND, vx: Math.cos(heading) * speed, vy: Math.sin(heading) * speed }, off);
+      expect(off(), `still beached (elevation ${sim.robot.elevation.toFixed(3)} m, ${sim.robot.wheelsDown} wheels down)`).toBe(true);
+      sim.dispose();
+    });
+
+    it('a tipped-over robot is set back on its wheels after 5 s (and is helpless until then)', () => {
+      const lane = T.traversals()[0];
+      const cfg = cloneConfig(season.robotDefaults);
+      const sim = new HeadlessSim(season, RAPIER, { robot: cfg, alliance: 'blue', pose: { ...lane.from, yaw: 0 } });
+      sim.load(1);
+      // Lay it on its side (rolled 90° about its forward axis), resting on the carpet.
+      const t = sim.robot.body.translation();
+      sim.robot.body.setTranslation({ x: t.x, y: sim.robot.footprint.width / 2 + 0.02, z: t.z }, true);
+      sim.robot.body.setRotation({ x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }, true);
+      sim.run(1);
+      expect(sim.robot.tippedOver).toBe(true);
+      const before = sim.robot.pose;
+      sim.run(2, { ...IDLE_COMMAND, vx: 2, shoot: true, pass: false });
+      expect(Math.hypot(sim.robot.pose.x - before.x, sim.robot.pose.y - before.y), 'a tipped robot drove').toBeLessThan(0.3);
+      expect(sim.robot.held.length, 'a tipped robot fired').toBe(1);
+      expect(sim.robot.tippedOver, 'righted too early').toBe(true);
+      expect(sim.robot.rightingIn).toBeGreaterThan(1);
+      sim.run(2.5);
+      expect(sim.robot.tippedOver).toBe(false);
+      sim.run(0.5);
+      expect(sim.robot.uprightness).toBeGreaterThan(0.99);
+      expect(sim.robot.wheelsDown).toBe(4);
+      expect(sim.robot.tippedTime).toBe(0);
+      sim.run(1, { ...IDLE_COMMAND, vx: 1.5 });
+      expect(sim.robot.speed, 'drives again once righted').toBeGreaterThan(1);
       sim.dispose();
     });
 

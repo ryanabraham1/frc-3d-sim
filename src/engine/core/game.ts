@@ -124,6 +124,8 @@ export class Game {
   private fpsAcc = 0;
   private fpsFrames = 0;
   private autoIntake: boolean;
+  /** Player was told their robot tipped over (reset once it is back on its wheels). */
+  private tipNotified = false;
   climbLevel: number;
   scoringLevel = 4;
   private results: MatchResults | null = null;
@@ -465,7 +467,7 @@ export class Game {
       r.drive(cmd, dt);
       if (enabled) {
         if (cmd.descend && r.isClimbing) this.rules.requestDescend(r);
-        else if (cmd.climb !== null && !r.isClimbing && r.config.climber.maxLevel > 0) this.rules.requestClimb(r, cmd.climb);
+        else if (cmd.climb !== null && !r.isClimbing && !r.tippedOver && r.config.climber.maxLevel > 0) this.rules.requestClimb(r, cmd.climb);
       }
       r.tick(dt);
       const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
@@ -613,11 +615,16 @@ export class Game {
     else if (this.state === 'countdown' || (!this.clock.started && this.state === 'paused')) this.hud.setClock('PRE-MATCH', String(Math.max(0, Math.ceil(this.countdown))));
     else this.hud.setClock(this.clock.finished ? 'MATCH OVER' : this.clock.current.label, formatClock(this.clock.displayTime));
     const p = this.player;
+    if (p && p.tippedTime > 0.5 && !this.tipNotified) {
+      this.tipNotified = true;
+      this.hud.toast(`Robot ${p.tippedOver ? 'tipped over' : 'stuck off its wheels'} — back on its wheels in ${Math.ceil(p.rightingIn)} s`, 'warn');
+    } else if (p && p.tippedTime === 0) this.tipNotified = false;
     const net = this.role === 'local' ? '' : `<div>${this.role === 'host' ? 'Hosting' : 'Online'} · room <b>${this.net!.client.room || '—'}</b></div>`;
     if (p) {
       const rs = this.robotSetups.get(p.id)!;
       this.hud.setInfo(
         `<div><b>${p.config.teamNumber}</b> · ${p.alliance.toUpperCase()} ${p.station}</div>` +
+          (p.tippedTime > 0.5 ? `<div class="bad">${p.tippedOver ? 'TIPPED OVER' : 'STUCK'} · upright in ${Math.ceil(p.rightingIn)} s</div>` : '') +
           net +
           `<div>Camera: ${CAMERA_LABELS[this.camera.mode]} <span class="dim">(V)</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +

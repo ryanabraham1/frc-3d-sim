@@ -40,8 +40,17 @@ export interface ShotResult {
 export function runShotTrial(season: SeasonDefinition, R: RapierModule, trial: ShotTrial): ShotResult {
   const sim = new HeadlessSim(season, R, { robot: trial.robot, alliance: trial.alliance, pose: trial.pose, seed: trial.seed });
   const testing = season.testing!;
-  sim.load(trial.shots);
   sim.run(0.4); // settle onto the carpet
+  // Scoring spots are laid out for a typical robot. A bigger one would start overlapping field geometry (e.g. a
+  // 36x36 robot inside the 2024 SUBWOOFER) and ride up onto it tilted; back it away from the goal instead, as a
+  // driver would park it.
+  const goal = testing.goalCenter(trial.alliance);
+  for (let k = 1; k <= 30 && (sim.robot.uprightness < 0.999 || sim.robot.wheelsDown < 4); k++) {
+    const away = Math.atan2(trial.pose.y - goal.y, trial.pose.x - goal.x);
+    sim.robot.resetTo({ x: trial.pose.x + Math.cos(away) * 0.05 * k, y: trial.pose.y + Math.sin(away) * 0.05 * k, yaw: trial.pose.yaw });
+    sim.run(0.4);
+  }
+  sim.load(trial.shots);
   const before = testing.goalCount(sim.ctx, trial.alliance);
   const d = trial.drive ?? { vx: 0, vy: 0 };
   const cmd = { ...IDLE_COMMAND, vx: d.vx, vy: d.vy, omega: d.omega ?? 0, shoot: trial.mode !== 'pass', pass: trial.mode === 'pass' };

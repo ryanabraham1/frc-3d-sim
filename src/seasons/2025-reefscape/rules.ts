@@ -124,7 +124,8 @@ export class ReefscapeRules implements SeasonRules {
     const branches = [0, 1].filter((branch) => level === 1 || !this.placements.some((p) => p.alliance === robot.alliance && p.level === level && p.face === face && p.branch === branch));
     branches.sort((x, y) => {
       const px = C.branchPoint(robot.alliance, face, x, level), py = C.branchPoint(robot.alliance, face, y, level);
-      return Math.hypot(px.x - robot.pose.x, px.y - robot.pose.y) - Math.hypot(py.x - robot.pose.x, py.y - robot.pose.y);
+      const d = Math.hypot(px.x - robot.pose.x, px.y - robot.pose.y) - Math.hypot(py.x - robot.pose.x, py.y - robot.pose.y);
+      return Math.abs(d) < 0.01 ? 0 : d; // centered on the face: a stable pick, not chassis jitter
     });
     if (!branches.length) return null;
     return { face, branch: branches[0], point: C.branchPoint(robot.alliance, face, branches[0], level) };

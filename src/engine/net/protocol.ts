@@ -125,6 +125,10 @@ export interface RobotNetState {
   z: number;
   /** Field yaw (rad). */
   yaw: number;
+  /** Full chassis orientation (world quaternion x, y, z, w) — robots tilt and tip. Absent = level at `yaw`. */
+  rot?: [number, number, number, number];
+  /** Seconds the robot has been tipped over / wedged off its wheels (0 = fine). */
+  tipped?: number;
   turretYaw: number;
   held: number;
   enabled: boolean;
@@ -170,7 +174,7 @@ export interface Snapshot {
 }
 
 export const SNAPSHOT_KIND = 1;
-const ROBOT_BYTES = 1 + 5 * 4 + 6 + 4;
+const ROBOT_BYTES = 1 + 9 * 4 + 7 + 4;
 /** Piece positions are sent as int16 millimetres (±32.7 m covers any FRC field). */
 export const PIECE_QUANTUM = 0.001;
 
@@ -194,10 +198,12 @@ export function encodeSnapshot(s: Snapshot): ArrayBuffer {
   for (const r of s.robots) {
     v.setUint8(o, r.id);
     o += 1;
-    for (const f of [r.x, r.y, r.z, r.yaw, r.turretYaw]) {
+    const q = r.rot ?? [0, Math.sin(r.yaw / 2), 0, Math.cos(r.yaw / 2)];
+    for (const f of [r.x, r.y, r.z, r.yaw, r.turretYaw, ...q]) {
       v.setFloat32(o, f, true);
       o += 4;
     }
+    v.setUint8(o++, Math.round(Math.max(0, Math.min(25.5, r.tipped ?? 0)) * 10));
     v.setUint8(o++, Math.min(255, r.held));
     v.setUint8(o++, r.enabled ? 1 : 0);
     v.setUint8(o++, r.climbPhase);
@@ -235,7 +241,8 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
     const id = v.getUint8(o);
     o += 1;
     const f: number[] = [];
-    for (let k = 0; k < 5; k++, o += 4) f.push(v.getFloat32(o, true));
+    for (let k = 0; k < 9; k++, o += 4) f.push(v.getFloat32(o, true));
+    const tipped = v.getUint8(o++) / 10;
     const held = v.getUint8(o++);
     const enabled = v.getUint8(o++) === 1;
     const climbPhase = v.getUint8(o++);
@@ -244,7 +251,7 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
     const climbProgress = v.getUint8(o++) / 255;
     const cmdSeq = v.getUint32(o, true);
     o += 4;
-    robots.push({ id, x: f[0], y: f[1], z: f[2], yaw: f[3], turretYaw: f[4], held, enabled, climbPhase, climbLevel, climbSlot: slot < 0 ? null : slot, climbProgress, cmdSeq });
+    robots.push({ id, x: f[0], y: f[1], z: f[2], yaw: f[3], rot: [f[5], f[6], f[7], f[8]], tipped, turretYaw: f[4], held, enabled, climbPhase, climbLevel, climbSlot: slot < 0 ? null : slot, climbProgress, cmdSeq });
   }
   const n = v.getUint16(o, true);
   o += 2;

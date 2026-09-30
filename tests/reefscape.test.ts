@@ -372,7 +372,12 @@ describe('2025 REEFSCAPE manual implementation', () => {
       run(sim, 2, { ...IDLE_COMMAND, scoringLevel: level });
       run(sim, 3, { ...IDLE_COMMAND, vx: 2, scoringLevel: level });
       if (level === 1) expect(sim.robot.pose.x).toBeGreaterThan(C.FIELD_LENGTH / 2 + 0.7);
-      else expect(sim.robot.pose.x).toBeLessThan(C.FIELD_LENGTH / 2 - 0.3);
+      else {
+        // The raised elevator catches on the barge: the robot stops short, or (tilt is simulated) pitches back
+        // and leans on it — either way it never gets through.
+        expect(sim.robot.pose.x).toBeLessThan(C.FIELD_LENGTH / 2 + 0.7);
+        expect(sim.robot.pose.x < C.FIELD_LENGTH / 2 - 0.3 || sim.robot.uprightness < 0.97).toBe(true);
+      }
     }
   });
   it('awards AUTO, CORAL, BARGE, win and Coopertition correctly', () => {

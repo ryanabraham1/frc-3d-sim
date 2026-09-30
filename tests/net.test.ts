@@ -20,7 +20,7 @@ describe('protocol', () => {
     const snap: Snapshot = {
       time: 12.3456789,
       robots: [
-        { id: 0, x: 1.5, y: 0.002, z: -4, yaw: 3.1, turretYaw: -1, held: 7, enabled: true, climbPhase: 3, climbLevel: 2, climbSlot: 1, climbProgress: 1, cmdSeq: 99 },
+        { id: 0, x: 1.5, y: 0.002, z: -4, yaw: 3.1, rot: [0.5, 0.5, -0.5, 0.5], tipped: 3.2, turretYaw: -1, held: 7, enabled: true, climbPhase: 3, climbLevel: 2, climbSlot: 1, climbProgress: 1, cmdSeq: 99 },
         { id: 5, x: 15, y: 0.5, z: -7.5, yaw: -0.2, turretYaw: 0.4, held: 0, enabled: false, climbPhase: 0, climbLevel: 0, climbSlot: null, climbProgress: 0, cmdSeq: 0 },
       ],
       pieceIdx: [0, 503],
@@ -36,6 +36,11 @@ describe('protocol', () => {
     expect(back.robots[0]).toMatchObject({ id: 0, held: 7, enabled: true, climbPhase: 3, climbLevel: 2, climbSlot: 1, cmdSeq: 99 });
     expect(back.robots[0].x).toBeCloseTo(1.5, 5);
     expect(back.robots[0].climbProgress).toBe(1);
+    back.robots[0].rot!.forEach((v, i) => expect(v).toBeCloseTo([0.5, 0.5, -0.5, 0.5][i], 6));
+    expect(back.robots[0].tipped).toBeCloseTo(3.2, 5);
+    // Robots sent without a full orientation arrive level at their yaw.
+    expect(back.robots[1].rot![1]).toBeCloseTo(Math.sin(-0.1), 6);
+    expect(back.robots[1].tipped).toBe(0);
     expect(decodeSnapshot(new ArrayBuffer(4))).toBeNull();
   });
 

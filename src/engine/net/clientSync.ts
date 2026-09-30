@@ -199,6 +199,15 @@ export function lerpRobot(a: RobotNetState, b: RobotNetState, k: number): RobotN
     y: a.y + (b.y - a.y) * k,
     z: a.z + (b.z - a.z) * k,
     yaw: a.yaw + wrapAngle(b.yaw - a.yaw) * k,
+    rot: a.rot && b.rot ? nlerpQuat(a.rot, b.rot, k) : b.rot,
     turretYaw: a.turretYaw + wrapAngle(b.turretYaw - a.turretYaw) * k,
   };
+}
+
+/** Normalized quaternion blend (shortest way round) — plenty for 30 Hz snapshots. */
+export function nlerpQuat(a: [number, number, number, number], b: [number, number, number, number], k: number): [number, number, number, number] {
+  const sign = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0 ? -1 : 1;
+  const q = a.map((v, i) => v + (sign * b[i] - v) * k) as [number, number, number, number];
+  const n = Math.hypot(...q) || 1;
+  return q.map((v) => v / n) as [number, number, number, number];
 }

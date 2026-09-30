@@ -57,9 +57,9 @@ export class FieldFrame {
   }
 }
 
-/** Yaw (about world +Y) extracted from a quaternion. Equal to field yaw. */
+/** Field heading of a body's forward axis (local +x) projected onto the floor — correct for tilted bodies too. */
 export function yawFromQuat(q: { x: number; y: number; z: number; w: number }): number {
-  return Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.x * q.x));
+  return Math.atan2(2 * (q.w * q.y - q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
 }
 
 export function quatFromYaw(yaw: number): { x: number; y: number; z: number; w: number } {

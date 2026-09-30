@@ -13,6 +13,9 @@ interface PoseSample {
 /** Corrections larger than this snap instead of blending (m / rad). */
 const SNAP_DIST = 1.0;
 const SNAP_YAW = 1.0;
+/** Snap when host and local chassis tilt differ by more than this (cos of ~15°): e.g. the host robot rode up on
+ * game pieces, which clients don't simulate. */
+const SNAP_UP = 0.035;
 /** Fraction of the measured error removed per snapshot (~30 Hz). */
 const BLEND = 0.3;
 
@@ -63,7 +66,8 @@ export class Predictor {
       for (const k of this.sendTimes.keys()) if (k <= ss.cmdSeq) this.sendTimes.delete(k);
     }
 
-    const can = this.enabled && running && ss.enabled && ss.climbPhase === 0;
+    // A tipped-over robot is posed from snapshots until the host sets it back on its wheels.
+    const can = this.enabled && running && ss.enabled && ss.climbPhase === 0 && !(ss.tipped ?? 0);
     if (!can) {
       this.active = false;
       return;
@@ -78,7 +82,10 @@ export class Predictor {
     const ex = ss.x - h.x;
     const ez = ss.z - h.z;
     const ey = wrapAngle(ss.yaw - h.yaw);
-    if (Math.hypot(ex, ez) > SNAP_DIST || Math.abs(ey) > SNAP_YAW) {
+    const r0 = this.robot.body.rotation();
+    const hostUp = ss.rot ? 1 - 2 * (ss.rot[0] ** 2 + ss.rot[2] ** 2) : 1;
+    const localUp = 1 - 2 * (r0.x * r0.x + r0.z * r0.z);
+    if (Math.hypot(ex, ez) > SNAP_DIST || Math.abs(ey) > SNAP_YAW || Math.abs(hostUp - localUp) > SNAP_UP) {
       this.snap(ss);
       return;
     }
@@ -87,9 +94,12 @@ export class Predictor {
     const dy = ey * BLEND;
     const b = this.robot.body;
     const t = b.translation();
-    const yaw = yawFromQuat(b.rotation()) + dy;
+    // Turn the chassis by dy about world up, keeping its tilt.
+    const r = b.rotation();
+    const sy = Math.sin(dy / 2);
+    const cy = Math.cos(dy / 2);
     b.setTranslation({ x: t.x + dx, y: t.y, z: t.z + dz }, true);
-    b.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+    b.setRotation({ x: cy * r.x + sy * r.z, y: cy * r.y + sy * r.w, z: cy * r.z - sy * r.x, w: cy * r.w - sy * r.y }, true);
     for (const p of this.hist) {
       p.x += dx;
       p.z += dz;
@@ -101,7 +111,8 @@ export class Predictor {
   private snap(ss: RobotNetState): void {
     const b = this.robot.body;
     b.setTranslation({ x: ss.x, y: ss.y, z: ss.z }, true);
-    b.setRotation({ x: 0, y: Math.sin(ss.yaw / 2), z: 0, w: Math.cos(ss.yaw / 2) }, true);
+    const q = ss.rot ?? [0, Math.sin(ss.yaw / 2), 0, Math.cos(ss.yaw / 2)];
+    b.setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] }, true);
     b.setLinvel({ x: 0, y: 0, z: 0 }, true);
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.hist.length = 0;

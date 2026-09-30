@@ -98,13 +98,13 @@ export class Robot {
       R.RigidBodyDesc.dynamic()
         .setTranslation(p.x, p.y, p.z)
         .setRotation({ x: 0, y: Math.sin(start.yaw / 2), z: 0, w: Math.cos(start.yaw / 2) })
-        .enabledRotations(false, true, false)
         .setLinearDamping(0.2)
         .setAngularDamping(1.0)
         .setCcdEnabled(true)
         .setCanSleep(false),
     );
     this.turretYaw = start.yaw;
+    this.wheelShape = new R.Ball(Robot.WHEEL_RADIUS);
     this.buildColliders();
     this.buildVisual(scene);
     this.syncVisual();
@@ -115,6 +115,9 @@ export class Robot {
     const c = this.config;
     const m = c.mass;
     const rw = 0.045;
+    // Mass split sets the center of mass, which decides how easily the robot tips: about half the weight is
+    // drivetrain + battery down at wheel level, ~15% bumpers, the rest spread through the superstructure
+    // (CoM ≈ 6 in up on a 20 in robot, ≈ 8 in on a 30 in one). [EST]
     // Caster "wheels": frictionless spheres so the chassis rides over low obstacles (bumps, depot rails).
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
@@ -123,7 +126,7 @@ export class Robot {
           .setFriction(0)
           .setFrictionCombineRule(R.CoefficientCombineRule.Min)
           .setRestitution(0)
-          .setMass(m * 0.05)
+          .setMass(m * 0.125)
           .setCollisionGroups(GROUPS.robot);
         this.physics.world.createCollider(d, this.body);
       }
@@ -134,14 +137,14 @@ export class Robot {
       .setTranslation(0, (c.bumperTop + c.bumperBottom) / 2, 0)
       .setFriction(0.25)
       .setRestitution(0.05)
-      .setMass(m * 0.55)
+      .setMass(m * 0.15)
       .setCollisionGroups(GROUPS.robot);
     this.physics.world.createCollider(bumper, this.body);
     const upper = Math.max(0.02, (c.height - c.bumperTop) / 2);
     const frameCol = R.ColliderDesc.cuboid(c.frameLength / 2 - 0.01, upper, c.frameWidth / 2 - 0.01)
       .setTranslation(0, c.bumperTop + upper, 0)
       .setFriction(0.3)
-      .setMass(m * 0.25)
+      .setMass(m * 0.35)
       .setCollisionGroups(GROUPS.robot);
     this.physics.world.createCollider(frameCol, this.body);
   }
@@ -328,71 +331,94 @@ export class Robot {
 
   // ───────────────────────── control ─────────────────────────
 
-  /** True while the chassis rests on the field (set every drive() call). */
+  /** True while at least one wheel rests on the field (set every drive() call). */
   grounded = true;
-  /** Fraction of full drive traction available this step (1 = on the carpet, 0 = airborne). */
+  /** Share of full drive grip this step: wheels touching something, weighted by what they touch (0..1). */
   traction = 1;
-  /** Seconds the chassis has been off the field while not moving vertically (resting on game pieces). */
-  private beachedTime = 0;
+  /** Wheels resting on the field this step (0-4). */
+  wheelsDown = 4;
+  /** Seconds the robot has been tipped over, or stuck leaning with no wheel touching anything (0 = fine). */
+  tippedTime = 0;
   private static readonly GROUND_QUERY = collisionGroups(Group.ROBOT, Group.FIELD);
+  private static readonly WHEEL_QUERY = collisionGroups(Group.ROBOT, Group.FIELD | Group.PIECE);
   /**
-   * Share of the robot carried by its wheels while high-centered on game pieces. The chassis collider can't
-   * tilt (rotations are locked for stability), so a robot lifted level onto a ball would otherwise rest its
-   * whole weight on the pieces with every wheel in the air and no traction — stranded for good. A real robot
-   * tips off the piece until some wheels touch the carpet again: those wheels carry part of the weight
-   * (less friction on the pieces) and give part of the drive grip, so it can rock and drive itself off. [EST]
+   * Grip of a wheel resting on a game piece instead of the field: the piece rolls or squashes under the
+   * tread, so a robot high-centered on pieces still inches along and can work itself off. [EST]
    */
-  static readonly BEACHED_TRACTION = 0.5;
-  /** How long the chassis must sit still (vertically) off the field before it counts as beached, not airborne. */
-  private static readonly BEACHED_DELAY = 0.15;
+  static readonly PIECE_GRIP = 0.35;
+  /** Tipped over = chassis up axis more than 60° from vertical. */
+  static readonly TIPPED_UP_Y = Math.cos((60 * Math.PI) / 180);
+  /** A lean past 20° with no wheel down counts as stuck (a robot tilts less than that when it rocks on pieces). */
+  private static readonly LEAN_UP_Y = Math.cos((20 * Math.PI) / 180);
+  /** Seconds a tipped-over robot lies there before it is set back on its wheels (sim rule, not the manual). */
+  static readonly TIP_RECOVERY_S = 5;
+  private static readonly WHEEL_RADIUS = 0.05;
+  private readonly wheelShape: RAPIER.Shape;
+  private readonly wheelHits: { x: number; y: number; z: number; grip: number }[] = [];
+  private readonly q = new THREE.Quaternion();
 
-  /**
-   * Is the chassis resting on FIELD surfaces (carpet, bumps, tower base, rails…)? Rays go down from the
-   * center and the four wheel positions. Game pieces and other robots don't count: a robot beached on a
-   * FUEL ball or in the air has no wheels on the field (see `traction` for how much grip it still has).
-   */
-  private checkGrounded(): boolean {
-    const R = this.physics.R;
+  /** Vertical component of the chassis up axis: 1 = level, 0 = on its side, < 0 = upside down. */
+  get uprightness(): number {
+    const r = this.body.rotation();
+    return 1 - 2 * (r.x * r.x + r.z * r.z);
+  }
+
+  /** Lying on its side or upside down (can't drive, shoot, intake or climb until righted). */
+  get tippedOver(): boolean {
+    return this.uprightness < Robot.TIPPED_UP_Y;
+  }
+
+  /** Seconds until a tipped-over (or wedged) robot is set back on its wheels (0 while fine). */
+  get rightingIn(): number {
+    return this.tippedTime > 0 ? Math.max(0, Robot.TIP_RECOVERY_S - this.tippedTime) : 0;
+  }
+
+  /** World position of a point in the chassis frame (x forward, y up, z = robot right; origin = floor, center). */
+  localToWorld(x: number, y: number, z: number, out = new THREE.Vector3()): THREE.Vector3 {
+    const r = this.body.rotation();
     const t = this.body.translation();
-    const yaw = yawFromQuat(this.body.rotation());
-    const c = this.config;
-    const up = 0.15;
-    const reach = up + 0.03; // surface within 3cm below the wheel plane (or above it: high-centered)
-    const hx = c.frameLength / 2 - 0.06;
-    const hz = c.frameWidth / 2 - 0.06;
-    const pts: [number, number][] = [[0, 0], [hx, hz], [hx, -hz], [-hx, hz], [-hx, -hz]];
-    const cos = Math.cos(yaw);
-    const sin = Math.sin(yaw);
-    for (const [a, b] of pts) {
-      const ray = new R.Ray({ x: t.x + a * cos + b * sin, y: t.y + up, z: t.z - a * sin + b * cos }, { x: 0, y: -1, z: 0 });
-      const hit = this.physics.world.castRay(ray, reach, true, undefined, Robot.GROUND_QUERY, undefined, this.body);
-      if (hit) return true;
-    }
-    return false;
+    out.set(x, y, z).applyQuaternion(this.q.set(r.x, r.y, r.z, r.w));
+    out.x += t.x;
+    out.y += t.y;
+    out.z += t.z;
+    return out;
   }
 
   /**
-   * Update `grounded` and `traction`: full grip on the field; none while airborne (off a bump, falling);
-   * partial grip once the chassis has come to rest off the field, i.e. high-centered on game pieces.
+   * Which wheels touch something? Each wheel (a 5cm-radius sphere at its corner, following the chassis tilt)
+   * is swept 3cm down. A wheel on the field has full grip, one on a game piece `PIECE_GRIP`, one in the air
+   * none — so a robot rocked up onto two wheels, beached on FUEL or airborne off a bump has the traction it
+   * would really have.
    */
-  private updateTraction(dt: number): void {
-    this.grounded = this.checkGrounded();
-    if (this.grounded) {
-      this.beachedTime = 0;
-      this.traction = 1;
-      return;
+  private updateWheels(): void {
+    const c = this.config;
+    const hx = c.frameLength / 2 - 0.06;
+    const hz = c.frameWidth / 2 - 0.06;
+    const rw = Robot.WHEEL_RADIUS;
+    const r = this.body.rotation();
+    this.wheelHits.length = 0;
+    let grip = 0;
+    let down = 0;
+    for (const [a, b] of [[hx, hz], [hx, -hz], [-hx, hz], [-hx, -hz]]) {
+      const w = this.localToWorld(a, rw, b, this.tmp);
+      const hit = this.physics.world.castShape(w, r, { x: 0, y: -1, z: 0 }, this.wheelShape, 0, 0.03, true, undefined, Robot.WHEEL_QUERY, undefined, this.body);
+      if (!hit) continue;
+      const onField = ((hit.collider.collisionGroups() >>> 16) & Group.PIECE) === 0;
+      const g = onField ? 1 : Robot.PIECE_GRIP;
+      const p = hit.witness1;
+      this.wheelHits.push({ x: p.x, y: p.y, z: p.z, grip: g });
+      grip += g;
+      if (onField) down++;
     }
-    this.beachedTime = Math.abs(this.body.linvel().y) < 0.08 ? this.beachedTime + dt : 0;
-    this.traction = this.beachedTime >= Robot.BEACHED_DELAY ? Robot.BEACHED_TRACTION : 0;
+    this.wheelsDown = down;
+    this.grounded = down > 0;
+    this.traction = grip / 4;
   }
 
   drive(cmd: RobotCommand, dt: number): void {
     if (this.climbPhase !== 'none') return;
-    // No traction in the air; reduced traction when beached on game pieces.
-    this.updateTraction(dt);
+    this.updateWheels();
     if (this.traction <= 0) return;
-    const m = this.body.mass();
-    if (this.traction < 1) this.body.applyImpulse({ x: 0, y: this.traction * m * G * dt, z: 0 }, true); // wheels on the carpet
     const c = this.config;
     let tvx = cmd.vx;
     let tvy = cmd.vy;
@@ -417,27 +443,64 @@ export class Robot {
       dvx *= maxDv / mag;
       dvz *= maxDv / mag;
     }
-    this.body.applyImpulse({ x: dvx * m, y: 0, z: dvz * m }, true);
+    // Wheel force acts where the tread meets the ground (below the center of mass): hard acceleration or
+    // shoving pitches the chassis, and only wheels that touch something can push.
+    const m = this.body.mass();
+    let total = 0;
+    for (const h of this.wheelHits) total += h.grip;
+    for (const h of this.wheelHits) {
+      const k = (m * h.grip) / total;
+      this.body.applyImpulseAtPoint({ x: dvx * k, y: 0, z: dvz * k }, { x: h.x, y: h.y, z: h.z }, true);
+    }
 
     const w = this.body.angvel();
     const targetW = clamp(cmd.omega, -c.maxOmega, c.maxOmega);
     const maxDw = c.maxOmega * 8 * this.traction * dt;
     const nw = w.y + clamp(targetW - w.y, -maxDw, maxDw);
-    this.body.setAngvel({ x: 0, y: nw, z: 0 }, true);
+    this.body.setAngvel({ x: w.x, y: nw, z: w.z }, true);
+  }
+
+  /**
+   * Count time lying tipped over — or wedged at a lean with every wheel in the air (e.g. a raised elevator
+   * caught under a bar) — and after TIP_RECOVERY_S set the robot back on its wheels where it is.
+   */
+  private updateTipped(dt: number): void {
+    const wedged = this.traction === 0 && this.uprightness < Robot.LEAN_UP_Y && this.speed < 0.1;
+    if (this.climbPhase !== 'none' || !this.body.isDynamic() || !(this.tippedOver || wedged)) {
+      this.tippedTime = 0;
+      return;
+    }
+    this.tippedTime += dt;
+    if (this.tippedTime >= Robot.TIP_RECOVERY_S) this.setUpright();
+  }
+
+  /** Put the robot back on its wheels at its current spot and heading, on top of whatever field surface is there. */
+  setUpright(): void {
+    const R = this.physics.R;
+    const t = this.body.translation();
+    const yaw = this.pose.yaw;
+    const top = 3;
+    const hit = this.physics.world.castRay(new R.Ray({ x: t.x, y: top, z: t.z }, { x: 0, y: -1, z: 0 }), top + 1, true, undefined, Robot.GROUND_QUERY, undefined, this.body);
+    const floor = hit ? top - hit.timeOfImpact : 0;
+    this.body.setTranslation({ x: t.x, y: floor + 0.01, z: t.z }, true);
+    this.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.tippedTime = 0;
   }
 
   /** Is a world-space point inside this robot's intake capture zone? */
   intakeContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
     const c = this.config;
-    if (!c.intake.enabled || this.climbPhase !== 'none') return false;
+    if (!c.intake.enabled || this.climbPhase !== 'none' || this.tippedOver) return false;
+    // Into the chassis frame (follows tilt): f = forward, l = sideways, h = up from the chassis floor.
     const t = this.body.translation();
-    const yaw = yawFromQuat(this.body.rotation());
-    const dx = p.x - t.x;
-    const dz = p.z - t.z;
-    const f = dx * Math.cos(yaw) - dz * Math.sin(yaw);
-    const l = -dx * Math.sin(yaw) - dz * Math.cos(yaw);
+    const r = this.body.rotation();
+    const local = this.tmp.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(this.q.set(r.x, r.y, r.z, r.w).invert());
+    const f = local.x;
+    const l = local.z;
     const front = this.fp.length / 2;
-    return f > front - 0.06 && f < front + c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2 && p.y - t.y < c.intake.maxHeight;
+    return f > front - 0.06 && f < front + c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2 && local.y < c.intake.maxHeight;
   }
 
   /** Point turret at a world target (visual + used for launches). */
@@ -580,17 +643,18 @@ export class Robot {
    */
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
     const c = this.config.launcher;
-    if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none') return null;
+    if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none' || this.tippedOver) return null;
     if (!this.projectileSet && !Robot.warnedProjectile && typeof console !== 'undefined') {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
     }
     this.fireCooldown = 1 / c.rate;
-    const t = this.body.translation();
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
     const ex = this.launcherExit();
-    const pos = new THREE.Vector3(t.x + Math.cos(heading) * ex.forward, t.y + ex.up, t.z - Math.sin(heading) * ex.forward);
+    // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
+    // (the aim below assumes a level robot, so a rocking or tipping robot misses — as it would for real).
+    const pos = this.localToWorld(ex.forward, ex.up, 0, new THREE.Vector3());
 
     let speed = c.manualSpeed;
     let theta = c.angle;
@@ -622,7 +686,12 @@ export class Robot {
     const pitchN = theta + rng.gauss(0, c.spread);
     const sN = speed * (1 + rng.gauss(0, c.speedError));
     const horiz = sN * Math.cos(pitchN);
-    const vel = new THREE.Vector3(horiz * Math.cos(yawN) + rv.x, sN * Math.sin(pitchN), -horiz * Math.sin(yawN) + rv.z);
+    const vel = new THREE.Vector3(horiz * Math.cos(yawN), sN * Math.sin(pitchN), -horiz * Math.sin(yawN));
+    const r = this.body.rotation();
+    const tilt = this.q.set(r.x, r.y, r.z, r.w).multiply(new THREE.Quaternion(0, -Math.sin(heading / 2), 0, Math.cos(heading / 2)));
+    vel.applyQuaternion(tilt);
+    vel.x += rv.x;
+    vel.z += rv.z;
     return { pos, vel };
   }
 
@@ -634,6 +703,7 @@ export class Robot {
   tick(dt: number): void {
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.updateClimb(dt);
+    this.updateTipped(dt);
   }
 
   // ───────────────────────── climbing (simplified, kinematic) ─────────────────────────
@@ -716,12 +786,15 @@ export class Robot {
 
   netState(cmdSeq = 0): RobotNetState {
     const t = this.body.translation();
+    const r = this.body.rotation();
     return {
       id: this.id,
       x: t.x,
       y: t.y,
       z: t.z,
       yaw: yawFromQuat(this.body.rotation()),
+      rot: [r.x, r.y, r.z, r.w],
+      tipped: this.tippedTime,
       turretYaw: this.turretYaw,
       held: this.held.length,
       enabled: this.enabled,
@@ -736,13 +809,15 @@ export class Robot {
   /** Replica update from a (possibly interpolated) snapshot. The body is only posed, never simulated. */
   applyNet(s: RobotNetState): void {
     this.body.setTranslation({ x: s.x, y: s.y, z: s.z }, false);
-    this.body.setRotation({ x: 0, y: Math.sin(s.yaw / 2), z: 0, w: Math.cos(s.yaw / 2) }, false);
+    const q = s.rot ?? [0, Math.sin(s.yaw / 2), 0, Math.cos(s.yaw / 2)];
+    this.body.setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] }, false);
     this.applyNetDiscrete(s);
   }
 
   /** Everything but the chassis pose (used when the pose comes from client-side prediction). */
   applyNetDiscrete(s: RobotNetState): void {
     this.turretYaw = s.turretYaw;
+    this.tippedTime = s.tipped ?? 0;
     if (this.held.length !== s.held) {
       this.held.length = 0;
       for (let i = 0; i < s.held; i++) this.held.push(-1);

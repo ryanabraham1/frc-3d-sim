@@ -101,7 +101,7 @@ export class HeadlessSim {
     robot.lastCommand = cmd;
     robot.drive(cmd, dt);
     if (cmd.descend && robot.isClimbing) rules.requestDescend(robot);
-    else if (cmd.climb !== null && !robot.isClimbing && robot.config.climber.maxLevel > 0) rules.requestClimb(robot, cmd.climb);
+    else if (cmd.climb !== null && !robot.isClimbing && !robot.tippedOver && robot.config.climber.maxLevel > 0) rules.requestClimb(robot, cmd.climb);
     robot.tick(dt);
     const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
     robot.aimTurretAt(target, dt);
@@ -151,16 +151,14 @@ export class HeadlessSim {
  * `halfHeight` < r marks a flat piece (a ring/disc): its vertical and horizontal extents differ.
  */
 export function spawnClearance(robot: Robot, p: THREE.Vector3, r: number, halfHeight = r): number {
+  // Into the chassis frame (the robot may be tilted).
   const t = robot.body.translation();
+  const q = robot.body.rotation();
+  const v = new THREE.Vector3(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w).invert());
   const fp = robot.footprint;
-  const yaw = robot.pose.yaw;
-  const dx = p.x - t.x;
-  const dz = p.z - t.z;
-  const f = dx * Math.cos(yaw) - dz * Math.sin(yaw);
-  const l = -dx * Math.sin(yaw) - dz * Math.cos(yaw);
-  const y = p.y - t.y;
-  const ox = Math.max(0, Math.abs(f) - fp.length / 2);
-  const oz = Math.max(0, Math.abs(l) - fp.width / 2);
+  const ox = Math.max(0, Math.abs(v.x) - fp.length / 2);
+  const oz = Math.max(0, Math.abs(v.z) - fp.width / 2);
+  const y = v.y;
   const oy = y > robot.config.height ? y - robot.config.height : y < 0 ? -y : 0;
   if (halfHeight < r) return Math.max(oy - halfHeight, Math.hypot(ox, oz) - r);
   return Math.hypot(ox, oy, oz) - r;
