@@ -51,7 +51,7 @@ interface NumField {
   key: string;
   label: string;
   min: number;
-  max: number;
+  max?: number;
   step: number;
   get: (c: RobotConfig) => number;
   set: (c: RobotConfig, v: number) => void;
@@ -82,6 +82,11 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     },
     { key: 'cspd', label: 'Sec/level', min: 0.5, max: 6, step: 0.1, get: (c) => +c.climber.secondsPerLevel.toFixed(1), set: (c, v) => (c.climber.secondsPerLevel = v) },
   ];
+  if (season.year === 2026) {
+    for (const f of list) {
+      if (['speed', 'accel', 'cap', 'rate', 'cspd'].includes(f.key)) delete f.max;
+    }
+  }
   return Object.fromEntries(list.map((f) => [f.key, f]));
 }
 
@@ -184,7 +189,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   const matchLength = () => season.timeline.filter((p) => p.mode !== 'disabled').reduce((a, p) => a + p.duration, 0);
   const numInput = (f: NumField) =>
-    `<label class="num"><span>${esc(f.label)}</span><input type="number" data-f="${f.key}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.get(s.robot)}"/></label>`;
+    `<label class="num"><span>${esc(f.label)}</span><input type="number" data-f="${f.key}" min="${f.min}"${f.max === undefined ? '' : ` max="${f.max}"`} step="${f.step}" value="${f.get(s.robot)}"/></label>`;
 
   const specBar = (label: string, value: string, frac: number) => {
     const n = Math.round(Math.min(1, Math.max(0, frac)) * 10);
@@ -359,7 +364,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all<HTMLInputElement>('[data-f]').forEach((input) => {
       const f = F[input.dataset.f!];
       input.onchange = () => {
-        const v = Math.min(f.max, Math.max(f.min, Number(input.value)));
+        const v = Math.min(f.max ?? Infinity, Math.max(f.min, Number(input.value)));
         if (Number.isFinite(v)) f.set(s.robot, v);
         render();
       };
