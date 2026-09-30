@@ -55,8 +55,6 @@ export class HostSync {
   private readonly waitingFor: Set<string>;
   private readonly lastQ: Int16Array;
   private readonly lastRot: Int16Array;
-  /** 1 = the piece was asleep when last examined and its resting pose has been sent. */
-  private readonly restSent: Uint8Array;
   private lastScore = '';
   private lastRules = '';
   /** JSON of each top-level rules key as last sent (for `rulesPatch`). */
@@ -78,7 +76,6 @@ export class HostSync {
   ) {
     this.lastQ = new Int16Array(src.pool.count * 3).fill(-32768);
     this.lastRot = new Int16Array(src.pool.count * 4).fill(-32768);
-    this.restSent = new Uint8Array(src.pool.count);
     this.waitingFor = new Set(setup.peers.filter((p) => p !== client.peerId));
     this.offs.push(client.on('msg', ({ from, data }) => this.onMsg(from, data as ClientMsg)));
     this.offs.push(client.on('peer-left', ({ peerId }) => this.onPeerLeft(peerId)));
@@ -171,18 +168,13 @@ export class HostSync {
     const pieceIdx: number[] = [];
     const piecePos: number[] = [];
     const rotations: [number, number, number, number, number][] = [];
-    const { lastQ, lastRot, restSent } = this;
+    const { lastQ, lastRot } = this;
     for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field') {
-        restSent[i] = 0;
-        continue;
-      }
+      if (pool.state[i] !== 'field') continue;
       const body = pool.bodies[i];
-      const asleep = body.isSleeping();
       const fresh = key || changedSet!.has(i);
-      // A sleeping piece doesn't move: once its resting pose went out, skip it without touching Rapier.
-      if (!fresh && asleep && restSent[i]) continue;
-      restSent[i] = asleep ? 1 : 0;
+      // Every field piece is compared with what was last sent (never skipped as "asleep": that flag is not
+      // proof a body hasn't moved), so clients always see pieces where the host has them.
       const p = body.translation();
       const qx = quantize(p.x);
       const qy = quantize(p.y);

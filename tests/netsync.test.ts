@@ -11,6 +11,7 @@ import { decodeSnapshot, type ClientMsg, type Snapshot } from '../src/engine/net
 import type { NetClient } from '../src/engine/net/netClient';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { cloneConfig } from '../src/engine/robot/config';
+import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import { getSeason } from '../src/seasons/index';
 import type { SeasonRules } from '../src/engine/core/season';
 
@@ -260,11 +261,65 @@ describe('ClientSync', () => {
   });
 });
 
-describe('GamePiecePool.syncVisuals', () => {
-  it('skips resting pieces but redraws a piece that moves', () => {
+describe('pieces are where the host has them (regression: invisible FUEL that "spawned in" and beached robots)', () => {
+  it('2026: robot drives through FUEL — nothing sinks into the carpet; host view and client replica match the physics', () => {
+    const season = getSeason('2026-rebuilt');
+    const mk = () => new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: season.startPose('blue', 2) });
+    const hostSim = mk();
+    hostSim.rules.stage();
+    const clientSim = mk();
+    const h = host(hostSim);
+    const cs = new ClientSync(fakeNet().client, { pool: clientSim.pool, robots: [clientSim.robot], clock: clientSim.ctx.clock, score: clientSim.ctx.score, rules: clientSim.rules });
+    hostSim.ctx.clock.start();
+    const m = new THREE.Matrix4();
+    const drift = (view: typeof hostSim.pool) => {
+      let worst = 0;
+      for (let i = 0; i < hostSim.pool.count; i++) {
+        if (hostSim.pool.state[i] !== 'field') continue;
+        view.meshes[0].getMatrixAt(i, m);
+        const p = hostSim.pool.position(i);
+        worst = Math.max(worst, m.elements[0] === 0 ? Infinity : Math.hypot(m.elements[12] - p.x, m.elements[13] - p.y, m.elements[14] - p.z));
+      }
+      return worst;
+    };
+    const drive = { vx: 2.5, vy: 0, omega: 0, intake: true, shoot: false, pass: false, climb: null, descend: false };
+    let ms = 0;
+    let lowest = Infinity;
+    for (let i = 0; i < 90 * 6; i++) {
+      hostSim.step(i < 90 ? IDLE_COMMAND : { ...drive, vy: Math.sin(i / 40) });
+      hostSim.ctx.clock.advance(1 / 90);
+      for (let k = 0; k < hostSim.pool.count; k++) if (hostSim.pool.state[k] === 'field') lowest = Math.min(lowest, hostSim.pool.position(k).y);
+      if (i % 3 === 0) {
+        h.hs.sendSnapshot(i / 90);
+        ms = (i / 90) * 1000;
+        cs.onBinary(h.frames[h.frames.length - 1], ms);
+      }
+      if (i % 2 === 0) hostSim.pool.syncVisuals();
+      if (i % 45 === 0 && i > 0) { // right after a snapshot
+        hostSim.pool.syncVisuals();
+        expect(drift(hostSim.pool), `host view at step ${i}`).toBeLessThan(0.002);
+        cs.interpolate(ms + 1000); // past the newest snapshot: every piece at its latest pose
+        clientSim.pool.syncVisuals();
+        expect(drift(clientSim.pool), `client view at step ${i}`).toBeLessThan(0.005);
+      }
+    }
+    expect(lowest, 'a FUEL ball sank into the carpet').toBeGreaterThan(0.03);
+    h.hs.dispose();
+    hostSim.dispose();
+    clientSim.dispose();
+  });
+});
+
+describe('GamePiecePool.syncVisuals (replica)', () => {
+  it('redraws only pieces whose replica pose changed', () => {
     const sim = world('2026-rebuilt');
-    settle(sim);
     const pool = sim.pool;
+    const field = pool.indices('field');
+    for (const i of field) {
+      pool.applyReplicaState(i, 'field', -1, null);
+      const p = pool.position(i);
+      pool.setReplicaPosition(i, p.x, p.y, p.z);
+    }
     pool.syncVisuals();
     let reads = 0;
     for (const b of pool.bodies) {
@@ -273,14 +328,13 @@ describe('GamePiecePool.syncVisuals', () => {
     }
     pool.syncVisuals();
     expect(reads).toBe(0);
-    const i = pool.indices('field')[0];
-    pool.bodies[i].applyImpulse({ x: 0, y: 0.3, z: 0 }, true);
-    sim.physics.step();
+    const i = field[0];
+    pool.setReplicaPosition(i, 1, 0.5, 1);
     pool.syncVisuals();
-    expect(reads).toBeGreaterThan(0);
+    expect(reads).toBe(1);
     const m = new THREE.Matrix4();
     pool.meshes[0].getMatrixAt(i, m);
-    expect(m.elements[13]).toBeCloseTo(pool.position(i).y, 3);
+    expect(m.elements[13]).toBeCloseTo(0.5, 5);
     sim.dispose();
   });
 });

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coords';
-import { collisionGroups, EXTRA_SOLVER_ITERATIONS, Group, GROUPS, PhysicsWorld } from '../physics/world';
+import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
 import { RobotConfig, footprint } from './config';
@@ -132,7 +132,6 @@ export class Robot {
         .setLinearDamping(0.2)
         .setAngularDamping(1.0)
         .setCcdEnabled(true)
-        .setAdditionalSolverIterations(EXTRA_SOLVER_ITERATIONS)
         .setCanSleep(false),
     );
     this.turretYaw = start.yaw;

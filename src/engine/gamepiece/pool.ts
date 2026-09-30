@@ -46,10 +46,6 @@ export interface GamePieceSpec {
 export type PieceState = 'field' | 'held' | 'reserve';
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
-/** A piece slower than this (m/s, rad/s) for REST_STEPS physics steps in a row is put to sleep. */
-const REST_SPEED = 0.03;
-const REST_SPIN = 0.5;
-const REST_STEPS = 20;
 
 function ringHalfHeight(s: Omit<GamePieceSpec, 'variants'>): number {
   return (s.length ?? s.radius * 0.28) / 2;
@@ -92,8 +88,6 @@ export class GamePiecePool {
   /** Free-form tag set by season rules (e.g. which hub is processing it). */
   readonly tag: (string | null)[] = [];
   private readonly airborne: boolean[] = [];
-  /** Consecutive steps each piece has been (nearly) motionless while awake. */
-  private stillSteps = new Uint16Array(0);
   /** Pieces whose state/owner/tag changed since the last `takeChanges()` (multiplayer host). */
   private readonly changed = new Set<number>();
   /** Per piece: 1 = instance matrix shows its current field pose, 2 = shows it hidden, 0 = stale. */
@@ -141,7 +135,6 @@ export class GamePiecePool {
     }
     this.mesh = this.meshes[0];
     this.shown = new Uint8Array(spec.count);
-    this.stillSteps = new Uint16Array(spec.count);
 
     for (let i = 0; i < spec.count; i++) {
       const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
@@ -314,20 +307,10 @@ export class GamePiecePool {
     return this.bodies[i].linvel();
   }
 
-  /**
-   * Once per physics step (simulating side only): switch damping between air/ground values, and put pieces that
-   * have come to rest to sleep.
-   *
-   * Rapier only sleeps a whole contact island at once, so one robot nudging the edge of a pile kept every
-   * motionless ball in it simulated (hundreds with 2026 FUEL). A piece that stays still on its own for
-   * REST_STEPS is slept individually; any contact with a moving body wakes it again.
-   */
+  /** Switch damping between air/ground values. Call once per physics step. */
   updateDamping(): void {
     for (let i = 0; i < this.bodies.length; i++) {
-      if (this.state[i] !== 'field') {
-        this.stillSteps[i] = 0;
-        continue;
-      }
+      if (this.state[i] !== 'field') continue;
       const b = this.bodies[i];
       if (b.isSleeping()) continue;
       const s = this.specs[i];
@@ -336,14 +319,6 @@ export class GamePiecePool {
         this.airborne[i] = inAir;
         b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
       }
-      const v = b.linvel();
-      const w = b.angvel();
-      if (v.x * v.x + v.y * v.y + v.z * v.z < REST_SPEED * REST_SPEED && w.x * w.x + w.y * w.y + w.z * w.z < REST_SPIN * REST_SPIN) {
-        if (++this.stillSteps[i] >= REST_STEPS) {
-          b.sleep();
-          this.stillSteps[i] = 0;
-        }
-      } else this.stillSteps[i] = 0;
     }
   }
 
@@ -360,8 +335,10 @@ export class GamePiecePool {
         continue;
       }
       const b = this.bodies[i];
-      // Resting pieces (often hundreds) keep last frame's matrix: no Rapier reads, no matrix math.
-      if (this.shown[i] === 1 && (this.replica || b.isSleeping())) continue;
+      // Multiplayer clients: poses only change through setReplicaPosition/Rotation, which mark the piece
+      // stale — untouched pieces keep last frame's matrix. (The simulating side always reads the body: a
+      // "sleeping" flag is not proof that a body hasn't moved.)
+      if (this.replica && this.shown[i] === 1) continue;
       const t = b.translation();
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
