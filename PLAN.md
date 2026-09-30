@@ -217,6 +217,11 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   aim solver, traction only with ground contact (robots wedging under TRENCH), trench arm overhang. Added
   HeadlessSim + tests/physics.test.ts (runs for every season). Mid-air ball collisions kept (user: real
   physics). Details + remaining items: docs/BUGFIX-HANDOFF.md.
+- 2026-09-30: Fixed robots getting **stranded on game pieces** (2026: cresting a BUMP at speed and landing on
+  FUEL). The chassis can't tilt, so a robot resting level on pieces had every wheel in the air and zero
+  traction forever. Now, once it has settled off the field (`Robot.traction`), half its weight goes to the
+  carpet through its wheels and it gets half its drive grip (`Robot.BEACHED_TRACTION`, [EST]) so it rocks off
+  like a real robot; still no traction while airborne. Regression test in tests/physics.test.ts (all seasons).
 - 2026-09-30: Added **2024 CRESCENDO** from only the 2024 manual (V0, downloaded from a GitHub mirror —
   FIRST's host was blocked by the sandbox network policy). New season module `src/seasons/2024-crescendo/`,
   engine additions: ring game pieces, solver `ceilings`/`allowRising`/`minEntryAngle`, `engine/zones.ts`,

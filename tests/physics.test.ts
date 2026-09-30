@@ -135,6 +135,38 @@ for (const season of SEASONS) {
       expect(stuck).toEqual([]);
     });
 
+    it('a robot beached on game pieces can drive itself off (never stranded with zero traction)', () => {
+      // Regression: the chassis can't tilt, so a robot tossed onto loose pieces (e.g. landing off a BUMP onto
+      // FUEL) rested level on them with every wheel in the air and no traction forever.
+      const lane = T.traversals()[0];
+      const cfg = cloneConfig(season.robotDefaults);
+      // Drive back from the lane start, away from the lane's structure (the robot rides high while beached).
+      const heading = Math.atan2(lane.from.y - lane.to.y, lane.from.x - lane.to.x);
+      const sim = new HeadlessSim(season, RAPIER, { robot: cfg, alliance: 'blue', pose: { ...lane.from, yaw: heading } });
+      const { length, width } = sim.robot.footprint;
+      const d = Math.max(season.gamePiece.radius * 2, season.gamePiece.length ?? 0) * 1.1;
+      const bed: { x: number; y: number }[] = [];
+      for (let a = -length / 2 + d / 2; a < length / 2 - d / 4; a += d) {
+        for (let b = -width / 2 + d / 2; b < width / 2 - d / 4; b += d) {
+          bed.push({ x: lane.from.x + a * Math.cos(heading) - b * Math.sin(heading), y: lane.from.y + a * Math.sin(heading) + b * Math.cos(heading) });
+        }
+      }
+      sim.scatter(bed);
+      sim.run(0.3); // let the pieces settle, then drop the robot on top of them
+      const t = sim.robot.body.translation();
+      sim.robot.body.setTranslation({ x: t.x, y: season.gamePiece.radius * 2 + 0.05, z: t.z }, true);
+      sim.run(0.6);
+      const beached = !sim.robot.grounded;
+      const start = sim.robot.pose;
+      const speed = cfg.maxSpeed * 0.6;
+      sim.run(4, { ...IDLE_COMMAND, vx: Math.cos(heading) * speed, vy: Math.sin(heading) * speed }, () => sim.robot.grounded && sim.robot.elevation < 0.01);
+      const end = sim.robot.pose;
+      const moved = Math.hypot(end.x - start.x, end.y - start.y);
+      if (beached) expect(moved, 'beached robot never moved').toBeGreaterThan(0.3);
+      expect(sim.robot.grounded, `still beached (elevation ${sim.robot.elevation.toFixed(3)} m)`).toBe(true);
+      sim.dispose();
+    });
+
     it('robots taller than a lane limit are physically blocked (realism check)', () => {
       const limited = T.traversals().filter((l) => l.maxRobotHeight !== undefined && l.maxRobotHeight + inch(2) <= season.maxRobotHeight);
       for (const lane of limited.slice(0, 1)) {

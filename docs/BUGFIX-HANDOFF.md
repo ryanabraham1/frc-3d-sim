@@ -29,7 +29,7 @@ missing in ctx) — that is theirs, fixed by their rewrite. Re-read shared files
 - [x] **Game must set `robot.projectile`** (done by the multiplayer session, game.ts line ~162) right after `new Robot(...)` in game.ts (blocked on the multiplayer rewrite). Exact line:
       `robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };`
       (Asked the multiplayer session to add it; verify it's there.)
-- [x] Traction realism: `Robot.checkGrounded()` raycasts (center + 4 wheels) against FIELD colliders only; `drive()` applies no drive/yaw impulse when not grounded (airborne off a bump, beached on pieces). `robot.grounded` exposed.
+- [x] Traction realism: `Robot.checkGrounded()` raycasts (center + 4 wheels) against FIELD colliders only; `drive()` applies no drive/yaw impulse when not grounded (airborne off a bump, beached on pieces). `robot.grounded` exposed. Follow-up 2026-09-30: a robot that has *settled* on pieces (not airborne) gets `Robot.BEACHED_TRACTION` (50%) grip and half its weight carried by the carpet, modelling the tilt the locked chassis can't do — it used to be stranded forever after landing on FUEL off a BUMP.
 - [x] Trench arm clipped to end at the bump edge (`field.ts`, marked [EST]).
 - [x] Mid-air piece collisions: an "in-flight pieces ignore each other" experiment was **reverted** per user (real physics). Comment in `physics/world.ts` records the decision.
 - [x] Headless simulation for tests: `src/engine/testing/headless.ts` (`HeadlessSim`: real field + Rapier + one robot in Node; mirrors Game.step order — keep in sync) and `src/engine/testing/shotHarness.ts` (`runShotTrial`). DOM-free guards: `HEADLESS` in `render/text.ts`, AprilTag textures.

@@ -330,12 +330,26 @@ export class Robot {
 
   /** True while the chassis rests on the field (set every drive() call). */
   grounded = true;
+  /** Fraction of full drive traction available this step (1 = on the carpet, 0 = airborne). */
+  traction = 1;
+  /** Seconds the chassis has been off the field while not moving vertically (resting on game pieces). */
+  private beachedTime = 0;
   private static readonly GROUND_QUERY = collisionGroups(Group.ROBOT, Group.FIELD);
+  /**
+   * Share of the robot carried by its wheels while high-centered on game pieces. The chassis collider can't
+   * tilt (rotations are locked for stability), so a robot lifted level onto a ball would otherwise rest its
+   * whole weight on the pieces with every wheel in the air and no traction — stranded for good. A real robot
+   * tips off the piece until some wheels touch the carpet again: those wheels carry part of the weight
+   * (less friction on the pieces) and give part of the drive grip, so it can rock and drive itself off. [EST]
+   */
+  static readonly BEACHED_TRACTION = 0.5;
+  /** How long the chassis must sit still (vertically) off the field before it counts as beached, not airborne. */
+  private static readonly BEACHED_DELAY = 0.15;
 
   /**
    * Is the chassis resting on FIELD surfaces (carpet, bumps, tower base, rails…)? Rays go down from the
    * center and the four wheel positions. Game pieces and other robots don't count: a robot beached on a
-   * FUEL ball or in the air has no traction — its wheels can't push it anywhere.
+   * FUEL ball or in the air has no wheels on the field (see `traction` for how much grip it still has).
    */
   private checkGrounded(): boolean {
     const R = this.physics.R;
@@ -357,11 +371,28 @@ export class Robot {
     return false;
   }
 
+  /**
+   * Update `grounded` and `traction`: full grip on the field; none while airborne (off a bump, falling);
+   * partial grip once the chassis has come to rest off the field, i.e. high-centered on game pieces.
+   */
+  private updateTraction(dt: number): void {
+    this.grounded = this.checkGrounded();
+    if (this.grounded) {
+      this.beachedTime = 0;
+      this.traction = 1;
+      return;
+    }
+    this.beachedTime = Math.abs(this.body.linvel().y) < 0.08 ? this.beachedTime + dt : 0;
+    this.traction = this.beachedTime >= Robot.BEACHED_DELAY ? Robot.BEACHED_TRACTION : 0;
+  }
+
   drive(cmd: RobotCommand, dt: number): void {
     if (this.climbPhase !== 'none') return;
-    // No traction without ground contact (airborne off a bump, beached on game pieces).
-    this.grounded = this.checkGrounded();
-    if (!this.grounded) return;
+    // No traction in the air; reduced traction when beached on game pieces.
+    this.updateTraction(dt);
+    if (this.traction <= 0) return;
+    const m = this.body.mass();
+    if (this.traction < 1) this.body.applyImpulse({ x: 0, y: this.traction * m * G * dt, z: 0 }, true); // wheels on the carpet
     const c = this.config;
     let tvx = cmd.vx;
     let tvy = cmd.vy;
@@ -381,17 +412,16 @@ export class Robot {
     let dvx = tvx - v.x;
     let dvz = -tvy - v.z;
     const mag = Math.hypot(dvx, dvz);
-    const maxDv = c.maxAccel * dt;
+    const maxDv = c.maxAccel * this.traction * dt;
     if (mag > maxDv) {
       dvx *= maxDv / mag;
       dvz *= maxDv / mag;
     }
-    const m = this.body.mass();
     this.body.applyImpulse({ x: dvx * m, y: 0, z: dvz * m }, true);
 
     const w = this.body.angvel();
     const targetW = clamp(cmd.omega, -c.maxOmega, c.maxOmega);
-    const maxDw = c.maxOmega * 8 * dt;
+    const maxDw = c.maxOmega * 8 * this.traction * dt;
     const nw = w.y + clamp(targetW - w.y, -maxDw, maxDw);
     this.body.setAngvel({ x: 0, y: nw, z: 0 }, true);
   }
