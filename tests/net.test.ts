@@ -18,6 +18,7 @@ describe('protocol', () => {
 
   it('round-trips snapshots', () => {
     const snap: Snapshot = {
+      seq: 4000000123,
       time: 12.3456789,
       robots: [
         { id: 0, x: 1.5, y: 0.002, z: -4, yaw: 3.1, turretYaw: -1, held: 7, enabled: true, climbPhase: 3, climbLevel: 2, climbSlot: 1, climbProgress: 1, cmdSeq: 99 },
@@ -28,6 +29,7 @@ describe('protocol', () => {
       meta: { st: 'running', cd: 0, clock: { i: 2, ep: 1.5, e: 24.5, s: true, f: false }, pieces: [[3, 1, 0, null], [4, 2, -1, 'chute-red']], key: true },
     };
     const back = decodeSnapshot(encodeSnapshot(snap))!;
+    expect(back.seq).toBe(snap.seq);
     expect(back.time).toBe(snap.time);
     expect(back.meta).toEqual(snap.meta);
     expect(back.pieceIdx).toEqual([0, 503]);

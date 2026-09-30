@@ -17,7 +17,7 @@ import { PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { Renderer } from '../render/renderer';
 import { sanitizeConfig } from '../robot/config';
-import { IDLE_COMMAND, Robot, RobotCommand } from '../robot/robot';
+import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
 import { clamp, formatClock } from '../units';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
@@ -121,6 +121,10 @@ export class Game {
   private stepsSinceSnap = 0;
   private lastIdleSnap = 0;
   private lastPredict = 0;
+  /** Host: fraction of wall time spent simulating, measured over ~0.5 s windows. */
+  private simLoad = 0;
+  private simBusyMs = 0;
+  private simWindowStart = 0;
   private fpsAcc = 0;
   private fpsFrames = 0;
   private autoIntake: boolean;
@@ -293,24 +297,42 @@ export class Game {
 
   start(): void {
     this.last = this.lastDraw = performance.now();
-    if (this.role === 'host') {
-      // The simulation must keep running when the host tab is hidden (rAF stops) — drive it from a worker.
+    if (this.role !== 'local') {
+      // Multiplayer ticks run off a worker timer, not rAF. Host: the simulation must keep running when its
+      // tab is hidden (rAF stops). Client: the driver's input, commands and prediction must not wait for a
+      // slow rendered frame — tying them to rAF delayed commands (and key releases) by whole frames.
       this.ticker = new Ticker((now) => !this.disposed && this.tick(now));
       this.ticker.start();
     }
     const loop = (now: number) => {
       if (this.disposed) return;
       this.raf = requestAnimationFrame(loop);
-      if (this.role !== 'host') this.tick(now);
+      if (this.role === 'local') this.tick(now);
+      else if (this.role === 'host' && now - this.lastDraw < this.hostFrameInterval()) return;
       this.draw(now);
     };
     this.raf = requestAnimationFrame(loop);
+  }
+
+  /**
+   * Host: minimum ms between rendered frames. The host's simulation is everyone's game — when it needs a
+   * big share of the main thread (e.g. hundreds of FUEL balls being pushed around), the host's own view
+   * renders less often so the simulation and snapshots keep real time for every player.
+   */
+  private hostFrameInterval(): number {
+    if (this.simLoad < 0.3) return 0;
+    return this.simLoad < 0.5 ? 1000 / 30 - 4 : 1000 / 20 - 4;
   }
 
   /** Input + simulation (host/local) or input + command send (client). */
   private tick(now: number): void {
     const dt = clamp((now - this.last) / 1000, 0, 0.1);
     this.last = now;
+    if (now - this.simWindowStart >= 500) {
+      this.simLoad = this.simWindowStart ? this.simBusyMs / (now - this.simWindowStart) : 0;
+      this.simBusyMs = 0;
+      this.simWindowStart = now;
+    }
     const inp = this.input.read();
     this.handleUiInput(inp);
 
@@ -320,6 +342,7 @@ export class Game {
     }
 
     if (this.state === 'countdown' || this.state === 'running') {
+      const t0 = performance.now();
       const fixed = this.physics.dt;
       this.acc += dt;
       let steps = 0;
@@ -338,6 +361,7 @@ export class Game {
         inp.humanPlayerAlt = 0;
       }
       if (steps === 5) this.acc = 0;
+      this.simBusyMs += performance.now() - t0;
     } else if (this.hostSync && now - this.lastIdleSnap > 200) {
       // Waiting / paused / results: keep clients in sync at a low rate.
       this.lastIdleSnap = now;
@@ -346,7 +370,8 @@ export class Game {
   }
 
   private draw(now: number): void {
-    const dt = clamp((now - this.lastDraw) / 1000, 0, 0.1);
+    const elapsed = Math.max(0, (now - this.lastDraw) / 1000);
+    const dt = Math.min(elapsed, 0.1);
     this.lastDraw = now;
     this.time += dt;
     if (this.clientSync) {
@@ -363,10 +388,14 @@ export class Game {
     this.updateHud(dt);
     this.renderer.render();
 
-    this.fpsAcc += dt;
+    // Real elapsed time: the clamped dt made 2 fps read as 10.
+    this.fpsAcc += elapsed;
     this.fpsFrames++;
     if (this.fpsAcc > 0.5) {
-      this.hud.setFps(this.fpsFrames / this.fpsAcc);
+      const fps = this.fpsFrames / this.fpsAcc;
+      this.hud.setFps(fps);
+      // A host capping its own frame rate for the simulation's sake isn't a slow GPU.
+      if (this.role !== 'host' || this.hostFrameInterval() === 0) this.renderer.adaptQuality(fps);
       this.fpsAcc = 0;
       this.fpsFrames = 0;
     }
@@ -484,15 +513,21 @@ export class Game {
     // Intake: robots swallow pieces inside their capture zone.
     if (enabled && !this.rules.handlesIntake) {
       const pool = this.pool;
-      for (let i = 0; i < pool.count; i++) {
+      const zones: { r: Robot; z: IntakeZone }[] = [];
+      for (const r of this.robots) {
+        const z = r.lastCommand.intake && r.capacityLeft > 0 ? r.intakeZone() : null;
+        if (z) zones.push({ r, z });
+      }
+      for (let i = 0; i < pool.count && zones.length; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);
         if (p.y > 0.4) continue;
-        for (const r of this.robots) {
-          if (!r.lastCommand.intake || r.capacityLeft <= 0) continue;
-          if (r.intakeContains(p, pool.radius)) {
+        for (let k = 0; k < zones.length; k++) {
+          const { r, z } = zones[k];
+          if (intakeZoneContains(z, p, pool.radius)) {
             pool.hold(i, r.id);
             r.held.push(i);
+            if (r.capacityLeft <= 0) zones.splice(k, 1);
             break;
           }
         }
@@ -692,6 +727,11 @@ export class Game {
       corrections: this.predictor?.corrections ?? 0,
       snaps: this.predictor?.snaps ?? 0,
       snapshots: this.clientSync?.snapshots ?? 0,
+      missedSnapshots: this.clientSync?.missed ?? 0,
+      interpDelayMs: Math.round((this.clientSync?.delay ?? 0) * 1000),
+      jitterMs: Math.round((this.clientSync?.jitter ?? 0) * 1000),
+      hostSimLoad: Math.round(this.simLoad * 100) / 100,
+      pixelRatio: this.renderer.currentPixelRatio,
       simTime: this.simTime,
     };
   }

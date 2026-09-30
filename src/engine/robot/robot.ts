@@ -45,6 +45,27 @@ export interface AimTarget {
   minEntryAngle?: number;
 }
 
+/** A robot's intake capture zone frozen at one pose (see Robot.intakeZone). */
+export interface IntakeZone {
+  x: number;
+  y: number;
+  z: number;
+  cos: number;
+  sin: number;
+  front: number;
+  reach: number;
+  halfWidth: number;
+  maxHeight: number;
+}
+
+export function intakeZoneContains(z: IntakeZone, p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
+  const dx = p.x - z.x;
+  const dz = p.z - z.z;
+  const f = dx * z.cos - dz * z.sin;
+  const l = -dx * z.sin - dz * z.cos;
+  return f > z.front - 0.06 && f < z.front + z.reach + pieceRadius && Math.abs(l) < z.halfWidth && p.y - z.y < z.maxHeight;
+}
+
 export type ClimbPhase = 'none' | 'align' | 'rise' | 'hanging' | 'lower';
 
 export const ALLIANCE_COLORS: Record<Alliance, number> = { red: 0xd32f2f, blue: 0x1e62d0 };
@@ -398,16 +419,20 @@ export class Robot {
 
   /** Is a world-space point inside this robot's intake capture zone? */
   intakeContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
+    const z = this.intakeZone();
+    return !!z && intakeZoneContains(z, p, pieceRadius);
+  }
+
+  /**
+   * The intake capture zone at the robot's current pose (null = can't intake now). Read it once per step
+   * and test pieces with `intakeZoneContains` — no Rapier reads per piece.
+   */
+  intakeZone(): IntakeZone | null {
     const c = this.config;
-    if (!c.intake.enabled || this.climbPhase !== 'none') return false;
+    if (!c.intake.enabled || this.climbPhase !== 'none') return null;
     const t = this.body.translation();
     const yaw = yawFromQuat(this.body.rotation());
-    const dx = p.x - t.x;
-    const dz = p.z - t.z;
-    const f = dx * Math.cos(yaw) - dz * Math.sin(yaw);
-    const l = -dx * Math.sin(yaw) - dz * Math.cos(yaw);
-    const front = this.fp.length / 2;
-    return f > front - 0.06 && f < front + c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2 && p.y - t.y < c.intake.maxHeight;
+    return { x: t.x, y: t.y, z: t.z, cos: Math.cos(yaw), sin: Math.sin(yaw), front: this.fp.length / 2, reach: c.intake.reach, halfWidth: c.intake.width / 2, maxHeight: c.intake.maxHeight };
   }
 
   /** Point turret at a world target (visual + used for launches). */

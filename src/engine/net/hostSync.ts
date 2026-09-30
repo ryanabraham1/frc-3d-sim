@@ -7,6 +7,8 @@ import type { NetClient } from './netClient';
 import {
   encodeSnapshot,
   quantize,
+  quantizeRot,
+  ROT_QUANTUM,
   unpackCommand,
   type ClientMsg,
   type HostMsg,
@@ -17,8 +19,11 @@ import {
 } from './protocol';
 
 const STATE_CODE: Record<PieceState, number> = { field: 0, held: 1, reserve: 2 };
-/** Skip a snapshot if this much is still queued on the socket (slow uplink) — deltas stay queued. */
-const MAX_BUFFERED = 512 * 1024;
+/**
+ * Skip a snapshot while this much is still queued on the socket (slow uplink) — deltas stay queued for the
+ * next one. Kept small: everything queued here is latency every client sees (~4 keyframes' worth).
+ */
+const MAX_BUFFERED = 64 * 1024;
 
 /** What the host sync reads from the running Game. */
 export interface HostSyncSource {
@@ -48,8 +53,14 @@ export class HostSync {
   private readonly cmds = new Map<number, { cmd: RobotCommand; seq: number }>();
   private readonly waitingFor: Set<string>;
   private readonly lastQ: Int16Array;
+  private readonly lastRot: Int16Array;
+  /** 1 = the piece was asleep when last examined and its resting pose has been sent. */
+  private readonly restSent: Uint8Array;
   private lastScore = '';
   private lastRules = '';
+  /** JSON of each top-level rules key as last sent (for `rulesPatch`). */
+  private readonly lastRulesKeys = new Map<string, string>();
+  private seq = 0;
   private forceKey = true;
   private readyFired = false;
   private readonly offs: (() => void)[] = [];
@@ -64,6 +75,8 @@ export class HostSync {
     readyTimeoutMs = 20000,
   ) {
     this.lastQ = new Int16Array(src.pool.count * 3).fill(-32768);
+    this.lastRot = new Int16Array(src.pool.count * 4).fill(-32768);
+    this.restSent = new Uint8Array(src.pool.count);
     this.waitingFor = new Set(setup.peers.filter((p) => p !== client.peerId));
     this.offs.push(client.on('msg', ({ from, data }) => this.onMsg(from, data as ClientMsg)));
     this.offs.push(client.on('peer-left', ({ peerId }) => this.onPeerLeft(peerId)));
@@ -115,6 +128,9 @@ export class HostSync {
       case 'hp':
         this.hooks.humanPlayer(this.robotForPeer(from), from, Number(m.n) || 1);
         break;
+      case 'resync':
+        this.forceKey = true;
+        break;
     }
   }
 
@@ -153,24 +169,49 @@ export class HostSync {
     const pieceIdx: number[] = [];
     const piecePos: number[] = [];
     const rotations: [number, number, number, number, number][] = [];
+    const { lastQ, lastRot, restSent } = this;
     for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field') continue;
-      const p = pool.position(i);
+      if (pool.state[i] !== 'field') {
+        restSent[i] = 0;
+        continue;
+      }
+      const body = pool.bodies[i];
+      const asleep = body.isSleeping();
+      const fresh = key || changedSet!.has(i);
+      // A sleeping piece doesn't move: once its resting pose went out, skip it without touching Rapier.
+      if (!fresh && asleep && restSent[i]) continue;
+      restSent[i] = asleep ? 1 : 0;
+      const p = body.translation();
       const qx = quantize(p.x);
       const qy = quantize(p.y);
       const qz = quantize(p.z);
-      const nonSphere = pool.specAt(i).shape === 'tube';
       const k = i * 3;
-      if (!key && !changedSet!.has(i) && !nonSphere && this.lastQ[k] === qx && this.lastQ[k + 1] === qy && this.lastQ[k + 2] === qz) continue;
-      this.lastQ[k] = qx;
-      this.lastQ[k + 1] = qy;
-      this.lastQ[k + 2] = qz;
+      let moved = fresh || lastQ[k] !== qx || lastQ[k + 1] !== qy || lastQ[k + 2] !== qz;
+      let rot: [number, number, number, number, number] | null = null;
+      if (pool.specAt(i).shape === 'tube') {
+        // Tubes (not round) also need their orientation — but only when it changed.
+        const q = body.rotation();
+        const r = i * 4;
+        const a = quantizeRot(q.x);
+        const b = quantizeRot(q.y);
+        const c = quantizeRot(q.z);
+        const d = quantizeRot(q.w);
+        if (fresh || lastRot[r] !== a || lastRot[r + 1] !== b || lastRot[r + 2] !== c || lastRot[r + 3] !== d) {
+          lastRot[r] = a;
+          lastRot[r + 1] = b;
+          lastRot[r + 2] = c;
+          lastRot[r + 3] = d;
+          rot = [i, a * ROT_QUANTUM, b * ROT_QUANTUM, c * ROT_QUANTUM, d * ROT_QUANTUM];
+          moved = true;
+        }
+      }
+      if (!moved) continue;
+      lastQ[k] = qx;
+      lastQ[k + 1] = qy;
+      lastQ[k + 2] = qz;
       pieceIdx.push(i);
       piecePos.push(p.x, p.y, p.z);
-      if (nonSphere) {
-        const q = pool.bodies[i].rotation();
-        rotations.push([i, q.x, q.y, q.z, q.w]);
-      }
+      if (rot) rotations.push(rot);
     }
 
     const meta: SnapshotMeta = { st: this.src.netState, cd: this.src.countdownLeft, clock: clock.snapshot() };
@@ -183,17 +224,11 @@ export class HostSync {
       meta.score = sc;
       this.lastScore = scJson;
     }
-    if (rules.netState) {
-      const rs = rules.netState();
-      const rsJson = JSON.stringify(rs);
-      if (key || rsJson !== this.lastRules) {
-        meta.rules = rs;
-        this.lastRules = rsJson;
-      }
-    }
+    if (rules.netState) this.addRules(meta, rules.netState(), key);
     if (this.src.netState === 'results' && this.src.lastResults) meta.results = this.src.lastResults;
 
     const buf = encodeSnapshot({
+      seq: ++this.seq,
       time,
       robots: robots.map((r) => r.netState(this.cmds.get(r.id)?.seq ?? 0)),
       pieceIdx,
@@ -202,6 +237,31 @@ export class HostSync {
     });
     this.bytesSent += buf.byteLength;
     this.client.sendBinary(buf);
+  }
+
+  /**
+   * Season rules state: a plain object is diffed per top-level key so a constantly-changing field (e.g. a
+   * swinging cage) doesn't resend the rest (e.g. every scored piece) 30 times a second.
+   */
+  private addRules(meta: SnapshotMeta, rs: unknown, key: boolean): void {
+    if (!rs || typeof rs !== 'object' || Array.isArray(rs)) {
+      const json = JSON.stringify(rs);
+      if (key || json !== this.lastRules) meta.rules = rs;
+      this.lastRules = json;
+      return;
+    }
+    const patch: Record<string, unknown> = {};
+    let changed = false;
+    for (const [k, v] of Object.entries(rs)) {
+      const json = JSON.stringify(v);
+      if (key || this.lastRulesKeys.get(k) !== json) {
+        patch[k] = v;
+        this.lastRulesKeys.set(k, json);
+        changed = true;
+      }
+    }
+    if (key) meta.rules = rs;
+    else if (changed) meta.rulesPatch = patch;
   }
 
   dispose(): void {

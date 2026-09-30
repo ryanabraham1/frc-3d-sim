@@ -53,13 +53,14 @@ Limits: 12 peers/room, 256 KB max frame, ping/pong keep-alive every 20 s, codes 
 
 ### 2.2 Game protocol (`src/engine/net/protocol.ts`)
 
-Client→host `data`: `lobby-set {name, slot, robot, autoRoutine, manualAuto}` · `ready` · `cmd {c:[vx,vy,omega,flags,climb], s:seq}` · `hp` (human player button).
+Client→host `data`: `lobby-set {name, slot, robot, autoRoutine, manualAuto}` · `ready` · `cmd {c:[vx,vy,omega,flags,climb], s:seq}` · `hp` (human player button) · `resync` (missed a snapshot → host sends a keyframe).
 Host→client `data`: `lobby {lobby}` · `start {setup}` · `toast {msg,kind,alliance}` · `to-lobby` · `closed`.
 Binary snapshot (little-endian):
 ```
-u8 kind=1 | f64 simTime | u8 nRobots | per robot: u8 id f32 x y z yaw turretYaw u8 held u8 flags u8 climbPhase u8 climbLevel i8 climbSlot u8 climbProgress*255 u16 lastCmdSeq
+u8 kind=2 | u32 seq | f64 simTime | u8 nRobots | per robot: u8 id f32 x y z yaw turretYaw u8 held u8 flags u8 climbPhase u8 climbLevel i8 climbSlot u8 climbProgress*255 u16 lastCmdSeq
 | u16 nPieces | per piece: u16 idx i16 x y z (mm, world) | u32 metaLen | meta JSON (utf-8)
-meta = { st: gameState, cd: countdown, clock, pieces?: [[idx,state,owner,tag]...], score?, rules?, results? }
+meta = { st: gameState, cd: countdown, clock, pieces?: [[idx,state,owner,tag]...], rotations?: [[idx,x,y,z,w]...],
+         score?, rules? (keyframe: full), rulesPatch? (changed top-level keys only), results?, key? }
 ```
 
 ### 2.3 Match setup (`MatchSetup`)
@@ -128,6 +129,27 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
 - [x] **M7** Browser verification with two tabs (host + client), fix issues
 - [x] **M8** Own-robot client prediction with server reconciliation (`src/engine/net/prediction.ts`, `tests/prediction.test.ts`)
 - [x] **M9** Docs: README, PLAN.md, FRAMEWORK.md, memory; `render.yaml`; final test/typecheck/build
+
+## 2.4 Performance & lag (4+ players)
+
+Measured on 2026 REBUILT with 4 robots plowing through ~450 FUEL: the host spends ~5 ms per 90 Hz step
+(~3.7 ms is Rapier), i.e. about half a core on a fast CPU before it renders anything. What keeps a match
+responsive:
+
+| Where | What | Why |
+|---|---|---|
+| Client | Input, commands and prediction run on the worker `Ticker` (120 Hz), not rAF. | A slow rendered frame used to delay commands and key releases by whole frames ("can't move"). |
+| Client | Prediction RTT: samples capped at 1 s; the estimate falls fast, rises slowly. | The first ack arrives while the host is still loading (seconds). The old EMA kept a multi-second RTT for a long time, so prediction compared the host pose with where you were seconds ago and dragged the robot back. |
+| Client | Interpolation delay adapts to arrival jitter (75–350 ms, eased). Robots extrapolate ≤ 100 ms past the newest snapshot. | Low delay on good links; no freeze-then-jump on a late packet. |
+| Client | Snapshots carry `seq`. A gap sends `resync` (≤ 1/s) → the host's next snapshot is a keyframe. | Deltas stay correct when the relay drops frames. |
+| Relay | Drops host binary frames for a peer with > `MAX_BINARY_BACKLOG` (128 KB) queued. | A slow client no longer builds up seconds of stale snapshots. |
+| Host | Skips a snapshot while > 64 KB is queued on its socket (was 512 KB). Deltas carry over. | Everything queued there is latency for every client. |
+| Host | Renders less often (30 / 20 fps) when the simulation needs > 30% / 50% of wall time (`netStats().hostSimLoad`). | The host's simulation is everyone's game; its own view comes second. |
+| Host | Snapshots skip sleeping pieces once their resting pose went out. Tube orientation is sent only when it changes (1e-4). Rules state is diffed per top-level key. | 2025 snapshots were 830 B avg (every CORAL rotation + all placements, because the cages swing), now ~190 B. |
+| All | Intake zone computed once per robot per step; the piece loop is skipped when nobody intakes. `GamePiecePool.syncVisuals` skips resting pieces. | Hundreds of Rapier reads and matrix updates per frame saved. |
+| All | Pixel ratio capped at 1.5. Dynamic resolution steps down to 0.75 when fps < 45 and back up when > 57. The FPS meter uses real elapsed time. | GPU headroom on laptops. The clamped meter reported 2 fps as 10. |
+
+Debug: `game.netStats()` → `rttMs`, `missedSnapshots`, `interpDelayMs`, `jitterMs`, `hostSimLoad`, `pixelRatio`.
 
 ## 7a. Known limitations / next steps
 - **Host is a player's browser.** If the host closes the tab the room ends. Next step: a headless host

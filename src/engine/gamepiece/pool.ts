@@ -84,6 +84,10 @@ export class GamePiecePool {
   private readonly airborne: boolean[] = [];
   /** Pieces whose state/owner/tag changed since the last `takeChanges()` (multiplayer host). */
   private readonly changed = new Set<number>();
+  /** Per piece: 1 = instance matrix shows its current field pose, 2 = shows it hidden, 0 = stale. */
+  private shown = new Uint8Array(0);
+  /** Multiplayer client: poses come from snapshots, so only pieces touched since the last draw are redrawn. */
+  private replica = false;
   readonly mesh: THREE.InstancedMesh;
   readonly radius: number;
   readonly colliderRadius: number;
@@ -124,6 +128,7 @@ export class GamePiecePool {
       scene.add(mesh);
     }
     this.mesh = this.meshes[0];
+    this.shown = new Uint8Array(spec.count);
 
     for (let i = 0; i < spec.count; i++) {
       const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
@@ -181,6 +186,7 @@ export class GamePiecePool {
     this.state[i] = 'field';
     this.owner[i] = -1;
     this.tag[i] = null;
+    this.shown[i] = 0;
     this.changed.add(i);
   }
 
@@ -216,6 +222,8 @@ export class GamePiecePool {
    * clients never step physics for pieces; positions come from snapshots via `setReplicaPosition`.
    */
   applyReplicaState(i: number, state: PieceState, owner: number, tag: string | null): void {
+    this.replica = true;
+    if (state !== this.state[i]) this.shown[i] = 0;
     this.state[i] = state;
     this.owner[i] = owner;
     this.tag[i] = tag;
@@ -223,6 +231,12 @@ export class GamePiecePool {
 
   setReplicaPosition(i: number, x: number, y: number, z: number): void {
     this.bodies[i].setTranslation({ x, y, z }, false);
+    this.shown[i] = 0;
+  }
+
+  setReplicaRotation(i: number, x: number, y: number, z: number, w: number): void {
+    this.bodies[i].setRotation({ x, y, z, w }, false);
+    this.shown[i] = 0;
   }
 
   /** Indices in a state (optionally with a tag). */
@@ -265,20 +279,29 @@ export class GamePiecePool {
   }
 
   syncVisuals(): void {
+    let dirty = false;
     for (let i = 0; i < this.bodies.length; i++) {
       const mesh = this.meshes[this.meshIndex[i]];
       if (this.state[i] !== 'field') {
-        mesh.setMatrixAt(i, HIDDEN);
+        if (this.shown[i] !== 2) {
+          mesh.setMatrixAt(i, HIDDEN);
+          this.shown[i] = 2;
+          dirty = true;
+        }
         continue;
       }
       const b = this.bodies[i];
+      // Resting pieces (often hundreds) keep last frame's matrix: no Rapier reads, no matrix math.
+      if (this.shown[i] === 1 && (this.replica || b.isSleeping())) continue;
       const t = b.translation();
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
       this.tmpQ.set(r.x, r.y, r.z, r.w);
       this.tmpM.compose(this.tmpP, this.tmpQ, this.one);
       mesh.setMatrixAt(i, this.tmpM);
+      this.shown[i] = 1;
+      dirty = true;
     }
-    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    if (dirty) for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
 }

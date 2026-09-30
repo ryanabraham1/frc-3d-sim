@@ -7,6 +7,8 @@
 export const RELAY_PATH = '/ws';
 export const MAX_PEERS_PER_ROOM = 12;
 export const MAX_FRAME_BYTES = 256 * 1024;
+/** The relay drops host binary frames (snapshots) for a peer with more than this still queued to it. */
+export const MAX_BINARY_BACKLOG = 128 * 1024;
 /** Room code alphabet: no I/O/0/1 to avoid confusion when read aloud. */
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const ROOM_CODE_LENGTH = 4;

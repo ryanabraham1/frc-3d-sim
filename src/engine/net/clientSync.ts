@@ -8,10 +8,22 @@ import type { NetClient } from './netClient';
 import { decodeSnapshot, packCommand, type ClientMsg, type NetGameState, type RobotNetState, type Snapshot } from './protocol';
 
 const STATES: PieceState[] = ['field', 'held', 'reserve'];
-/** Render this far behind the newest host time so there are usually two snapshots to blend. */
+/** Starting render delay behind the newest host time, so there are usually two snapshots to blend. */
 export const INTERP_DELAY = 0.1;
+/** The render delay adapts to measured arrival jitter within these bounds (s). */
+export const MIN_INTERP_DELAY = 0.075;
+export const MAX_INTERP_DELAY = 0.35;
 /** Nominal snapshot spacing (host sends at ~30 Hz). */
 const SNAP_DT = 1 / 30;
+/** When snapshots run late, keep robots moving on their last velocity for at most this long (s). */
+const MAX_EXTRAPOLATE = 0.1;
+/** Minimum spacing between keyframe requests after missed snapshots (ms). */
+const RESYNC_EVERY_MS = 1000;
+
+interface RobotSnap {
+  t: number;
+  robots: Map<number, RobotNetState>;
+}
 
 export interface ClientSyncTarget {
   readonly pool: GamePiecePool;
@@ -35,9 +47,21 @@ export class ClientSync {
   gotKeyframe = false;
   bytesReceived = 0;
   snapshots = 0;
+  /** Snapshots that never arrived (sequence gaps). */
+  missed = 0;
+  /** Current render delay behind host time (s); adapts to network jitter. */
+  delay = INTERP_DELAY;
+  /** Smoothed arrival jitter (s). */
+  jitter = 0;
 
   private offset: number | null = null;
-  private readonly robotSnaps: { t: number; robots: Map<number, RobotNetState> }[] = [];
+  private lastSeq = -1;
+  private lastResyncAt = -Infinity;
+  /** Last full rules state (rules patches are merged into it). */
+  private rulesState: Record<string, unknown> | null = null;
+  /** Pieces whose replica pose already sits at their newest sample (nothing to interpolate). */
+  private readonly settled: Uint8Array;
+  private readonly robotSnaps: RobotSnap[] = [];
   private readonly pt0: Float64Array;
   private readonly pt1: Float64Array;
   private readonly pp0: Float32Array;
@@ -57,6 +81,7 @@ export class ClientSync {
     this.pt1 = new Float64Array(n);
     this.pp0 = new Float32Array(n * 3);
     this.pp1 = new Float32Array(n * 3);
+    this.settled = new Uint8Array(n);
     for (const r of target.robots) this.robotsById.set(r.id, r);
   }
 
@@ -76,9 +101,27 @@ export class ClientSync {
     if (!this.gotKeyframe && !s.meta.key) return null; // wait for a full picture
     this.bytesReceived += buf.byteLength;
     this.snapshots++;
+    // Deltas are only safe when none were lost (the relay drops frames for peers that fall behind).
+    if (this.lastSeq >= 0 && s.seq !== this.lastSeq + 1 && !s.meta.key) {
+      this.missed += Math.max(1, s.seq - this.lastSeq - 1);
+      if (localMs - this.lastResyncAt >= RESYNC_EVERY_MS) {
+        this.lastResyncAt = localMs;
+        this.client.send({ t: 'resync' } satisfies ClientMsg);
+      }
+    }
+    this.lastSeq = s.seq;
     const sample = s.time - localMs / 1000;
-    if (this.offset === null || Math.abs(sample - this.offset) > 0.5 || s.meta.key) this.offset = sample;
-    else this.offset += (sample - this.offset) * 0.05;
+    if (this.offset === null || Math.abs(sample - this.offset) > 0.5) {
+      this.offset = sample;
+      this.jitter = 0;
+    } else {
+      const err = sample - this.offset;
+      this.offset += err * 0.05;
+      this.jitter += (Math.abs(err) - this.jitter) * 0.05;
+    }
+    // Enough delay for two snapshots plus the arrival jitter; eased so the view never jumps.
+    const want = Math.min(MAX_INTERP_DELAY, Math.max(MIN_INTERP_DELAY, SNAP_DT * 1.5 + this.jitter * 2.5));
+    this.delay += (want - this.delay) * 0.05;
 
     const { pool, clock, score, rules } = this.target;
     const m = s.meta;
@@ -86,9 +129,20 @@ export class ClientSync {
     this.countdown = m.cd;
     clock.restore(m.clock);
     if (m.score) score.restore(m.score);
-    if (m.rules !== undefined && rules.applyNetState) rules.applyNetState(m.rules);
+    if (rules.applyNetState) {
+      if (m.rules !== undefined) {
+        this.rulesState = m.rules && typeof m.rules === 'object' && !Array.isArray(m.rules) ? { ...(m.rules as Record<string, unknown>) } : null;
+        rules.applyNetState(m.rules);
+      } else if (m.rulesPatch && this.rulesState) {
+        Object.assign(this.rulesState, m.rulesPatch);
+        rules.applyNetState(this.rulesState);
+      }
+    }
     for (const [i, x, y, z, w] of m.rotations ?? []) {
-      if (i >= 0 && i < pool.count) pool.bodies[i].setRotation({ x, y, z, w }, false);
+      if (i >= 0 && i < pool.count) {
+        pool.setReplicaRotation(i, x, y, z, w);
+        this.settled[i] = 0;
+      }
     }
     this.results = m.results ?? (m.st === 'results' ? this.results : null);
 
@@ -101,12 +155,14 @@ export class ClientSync {
       if (i < 0 || i >= pool.count) continue;
       const st = STATES[code] ?? 'reserve';
       if (st === 'field' && pool.state[i] !== 'field') fresh.add(i);
+      this.settled[i] = 0;
       pool.applyReplicaState(i, st, owner, tag);
     }
     for (let k = 0; k < s.pieceIdx.length; k++) {
       const i = s.pieceIdx[k];
       if (i >= pool.count) continue;
       const j = i * 3;
+      this.settled[i] = 0;
       if (fresh.has(i)) {
         this.pt0[i] = this.pt1[i] = s.time;
         for (let d = 0; d < 3; d++) this.pp0[j + d] = this.pp1[j + d] = s.piecePos[k * 3 + d];
@@ -139,7 +195,7 @@ export class ClientSync {
    */
   interpolate(localMs: number, skipRobot: number | null = null): void {
     if (this.offset === null || !this.robotSnaps.length) return;
-    const rt = this.hostNow(localMs) - INTERP_DELAY;
+    const rt = this.hostNow(localMs) - this.delay;
 
     const snaps = this.robotSnaps;
     let j = -1;
@@ -149,20 +205,25 @@ export class ClientSync {
         break;
       }
     }
-    const a = snaps[Math.max(0, j)];
-    const b = j >= 0 && j < snaps.length - 1 ? snaps[j + 1] : a;
-    const alpha = b === a ? 1 : Math.min(1, Math.max(0, (rt - a.t) / (b.t - a.t)));
-    for (const [id, sb] of b.robots) {
-      if (id === skipRobot) continue;
-      const robot = this.robotsById.get(id);
-      if (!robot) continue;
-      const sa = a.robots.get(id) ?? sb;
-      robot.applyNet(alpha >= 1 ? sb : lerpRobot(sa, sb, alpha));
+    const newest = snaps.length - 1;
+    if (j === newest && newest > 0 && rt > snaps[newest].t) {
+      // Ran past the newest snapshot (a late packet): carry robots along their last motion briefly
+      // instead of freezing them and then jumping.
+      const a = snaps[newest - 1];
+      const b = snaps[newest];
+      const k = b.t > a.t ? 1 + Math.min(rt - b.t, MAX_EXTRAPOLATE) / (b.t - a.t) : 1;
+      this.poseRobots(a, b, k, skipRobot);
+    } else {
+      const a = snaps[Math.max(0, j)];
+      const b = j >= 0 && j < newest ? snaps[j + 1] : a;
+      const alpha = b === a ? 1 : Math.min(1, Math.max(0, (rt - a.t) / (b.t - a.t)));
+      this.poseRobots(a, b, alpha, skipRobot);
     }
 
     const pool = this.target.pool;
+    const settled = this.settled;
     for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field') continue;
+      if (pool.state[i] !== 'field' || settled[i]) continue;
       const t0 = this.pt0[i];
       const t1 = this.pt1[i];
       const k = t1 > t0 ? Math.min(1, Math.max(0, (rt - t0) / (t1 - t0))) : 1;
@@ -173,6 +234,18 @@ export class ClientSync {
         this.pp0[j3 + 1] + (this.pp1[j3 + 1] - this.pp0[j3 + 1]) * k,
         this.pp0[j3 + 2] + (this.pp1[j3 + 2] - this.pp0[j3 + 2]) * k,
       );
+      // At rest on its newest sample: nothing more to do until the next update for this piece.
+      if (k >= 1) settled[i] = 1;
+    }
+  }
+
+  private poseRobots(a: RobotSnap, b: RobotSnap, k: number, skipRobot: number | null): void {
+    for (const [id, sb] of b.robots) {
+      if (id === skipRobot) continue;
+      const robot = this.robotsById.get(id);
+      if (!robot) continue;
+      const sa = a.robots.get(id) ?? sb;
+      robot.applyNet(k === 1 ? sb : lerpRobot(sa, sb, k));
     }
   }
 

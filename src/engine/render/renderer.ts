@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+/** Dynamic resolution never renders below this many device pixels per CSS pixel. */
+const MIN_PIXEL_RATIO = 0.75;
+
 export interface RendererOptions {
   shadows?: boolean;
   pixelRatioCap?: number;
@@ -11,6 +14,11 @@ export class Renderer {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   private readonly onResize = () => this.resize();
+  /** Highest pixel ratio used (device ratio, capped); `adaptQuality` works between MIN_PIXEL_RATIO and this. */
+  private readonly maxPixelRatio: number;
+  private pixelRatio: number;
+  private slowWindows = 0;
+  private fastWindows = 0;
 
   constructor(
     readonly container: HTMLElement,
@@ -19,7 +27,10 @@ export class Renderer {
     opts: RendererOptions = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, opts.pixelRatioCap ?? 2));
+    // 1.5 looks the same as 2 on high-DPI screens with antialiasing, at ~56% of the pixels.
+    this.maxPixelRatio = Math.min(window.devicePixelRatio || 1, opts.pixelRatioCap ?? 1.5);
+    this.pixelRatio = this.maxPixelRatio;
+    this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -90,6 +101,39 @@ export class Renderer {
     this.renderer.domElement.style.height = '100%';
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /**
+   * Dynamic resolution: call with the measured frame rate every ~0.5 s. Sustained low fps lowers the
+   * render resolution a step; sustained high fps raises it back (never above the starting ratio).
+   */
+  adaptQuality(fps: number): void {
+    if (fps < 45) {
+      this.fastWindows = 0;
+      if (++this.slowWindows >= 2 && this.pixelRatio > MIN_PIXEL_RATIO) {
+        this.slowWindows = 0;
+        this.setPixelRatio(Math.max(MIN_PIXEL_RATIO, this.pixelRatio - 0.25));
+      }
+    } else if (fps > 57) {
+      this.slowWindows = 0;
+      if (++this.fastWindows >= 10 && this.pixelRatio < this.maxPixelRatio) {
+        this.fastWindows = 0;
+        this.setPixelRatio(Math.min(this.maxPixelRatio, this.pixelRatio + 0.25));
+      }
+    } else {
+      this.slowWindows = 0;
+      this.fastWindows = 0;
+    }
+  }
+
+  get currentPixelRatio(): number {
+    return this.pixelRatio;
+  }
+
+  private setPixelRatio(r: number): void {
+    this.pixelRatio = r;
+    this.renderer.setPixelRatio(r);
+    this.resize();
   }
 
   render(): void {

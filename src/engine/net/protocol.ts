@@ -104,7 +104,9 @@ export type ClientMsg =
   | { t: 'ready' }
   | { t: 'cmd'; s: number; c: PackedCommand }
   /** Human-player button (e.g. open the CHUTE) for the sender's alliance. `n` = button (1 default). */
-  | { t: 'hp'; n?: number };
+  | { t: 'hp'; n?: number }
+  /** A snapshot went missing (sequence gap, e.g. dropped by the relay for a slow link): send a keyframe. */
+  | { t: 'resync' };
 
 export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }
@@ -153,13 +155,18 @@ export interface SnapshotMeta {
   rotations?: [number, number, number, number, number][];
   /** Present when changed (always in a keyframe). */
   score?: ScoreState;
+  /** Full season rules state (keyframes, or when the state isn't a plain object). */
   rules?: unknown;
+  /** Only the top-level keys of the rules state that changed since the previous snapshot. */
+  rulesPatch?: Record<string, unknown>;
   results?: MatchResults;
   /** Keyframe: every field piece position is included. */
   key?: boolean;
 }
 
 export interface Snapshot {
+  /** Increments by one per snapshot sent; a gap tells the client it missed a delta and needs a keyframe. */
+  seq: number;
   /** Host simulation time (s). */
   time: number;
   robots: RobotNetState[];
@@ -169,10 +176,17 @@ export interface Snapshot {
   meta: SnapshotMeta;
 }
 
-export const SNAPSHOT_KIND = 1;
+export const SNAPSHOT_KIND = 2;
 const ROBOT_BYTES = 1 + 5 * 4 + 6 + 4;
 /** Piece positions are sent as int16 millimetres (±32.7 m covers any FRC field). */
 export const PIECE_QUANTUM = 0.001;
+
+/** Quaternion components are sent rounded to 1e-4 (and only when that rounded value changes). */
+export const ROT_QUANTUM = 1e-4;
+
+export function quantizeRot(v: number): number {
+  return Math.round(v / ROT_QUANTUM);
+}
 
 export function quantize(v: number): number {
   return Math.max(-32767, Math.min(32767, Math.round(v / PIECE_QUANTUM)));
@@ -181,12 +195,14 @@ export function quantize(v: number): number {
 export function encodeSnapshot(s: Snapshot): ArrayBuffer {
   const metaBytes = new TextEncoder().encode(JSON.stringify(s.meta));
   const n = s.pieceIdx.length;
-  const size = 1 + 8 + 1 + s.robots.length * ROBOT_BYTES + 2 + n * 8 + 4 + metaBytes.length;
+  const size = 1 + 4 + 8 + 1 + s.robots.length * ROBOT_BYTES + 2 + n * 8 + 4 + metaBytes.length;
   const buf = new ArrayBuffer(size);
   const v = new DataView(buf);
   let o = 0;
   v.setUint8(o, SNAPSHOT_KIND);
   o += 1;
+  v.setUint32(o, s.seq >>> 0, true);
+  o += 4;
   v.setFloat64(o, s.time, true);
   o += 8;
   v.setUint8(o, s.robots.length);
@@ -224,8 +240,10 @@ export function encodeSnapshot(s: Snapshot): ArrayBuffer {
 
 export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
   const v = new DataView(buf);
-  if (buf.byteLength < 16 || v.getUint8(0) !== SNAPSHOT_KIND) return null;
+  if (buf.byteLength < 20 || v.getUint8(0) !== SNAPSHOT_KIND) return null;
   let o = 1;
+  const seq = v.getUint32(o, true);
+  o += 4;
   const time = v.getFloat64(o, true);
   o += 8;
   const nr = v.getUint8(o);
@@ -260,5 +278,5 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
   const len = v.getUint32(o, true);
   o += 4;
   const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, o, len))) as SnapshotMeta;
-  return { time, robots, pieceIdx, piecePos, meta };
+  return { seq, time, robots, pieceIdx, piecePos, meta };
 }
