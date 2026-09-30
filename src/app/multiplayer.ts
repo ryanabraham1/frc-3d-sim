@@ -36,7 +36,14 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   const err = lobby.error ? `<div class="mp-error">${esc(lobby.error)}</div>` : '';
 
   if (lobby.status !== 'lobby' || !lobby.lobby) {
+    if (lobby.serverState === 'unknown') queueMicrotask(() => void lobby.wake());
     const busy = lobby.status === 'connecting';
+    const server = {
+      unknown: '<span class="mp-dot"></span>Checking server…',
+      waking: `<span class="mp-dot waking"></span>Waking up the multiplayer server… <span data-mp="wake-seconds">${lobby.wakeSeconds}s</span> <span class="dim">(free servers sleep when idle — about a minute)</span>`,
+      online: '<span class="mp-dot on"></span>Server online',
+      offline: '<span class="mp-dot off"></span>Server unreachable <button class="link" data-mp="retry">Retry</button>',
+    }[lobby.serverState];
     return {
       body: `
       <div class="mp-grid">
@@ -44,6 +51,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
           <div class="panel-head"><span>Play online</span></div>
           <div class="mp-pad">
             ${err}
+            <div class="mp-server">${server}</div>
             <label class="mp-field"><span>Your name</span><input data-mp="name" maxlength="24" placeholder="Driver name" value="${esc(loadName())}"/></label>
             <div class="mp-row">
               <button class="bbtn primary mp-grow" data-mp="create" ${busy ? 'disabled' : ''}>Create room</button>
@@ -53,7 +61,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
               <input class="mp-code" data-mp="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"/>
               <button class="bbtn mp-grow" data-mp="join" ${busy ? 'disabled' : ''}>Join</button>
             </div>
-            ${busy ? '<div class="mp-hint">Connecting…</div>' : ''}
+            ${busy ? `<div class="mp-hint">${lobby.serverState === 'waking' ? 'Connecting as soon as the server is up…' : 'Connecting…'}</div>` : ''}
             <details class="mp-adv"><summary>Relay server</summary>
               <label class="mp-field"><span>WebSocket URL</span><input data-mp="url" value="${esc(lobby.relayUrl)}" spellcheck="false"/></label>
               <div class="mp-hint">Defaults to this site's own <code>/ws</code>. Everyone in a room must use the same relay.</div>
@@ -152,7 +160,14 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
     return n;
   };
   const url = q<HTMLInputElement>('url');
-  if (url) url.onchange = () => (lobby.relayUrl = url.value.trim());
+  if (url)
+    url.onchange = () => {
+      lobby.relayUrl = url.value.trim();
+      lobby.serverState = 'unknown';
+      void lobby.wake(true);
+    };
+  const retry = q('retry');
+  if (retry) retry.onclick = () => void lobby.wake(true);
   const create = q('create');
   if (create) create.onclick = () => void lobby.create(name());
   const code = q<HTMLInputElement>('code');

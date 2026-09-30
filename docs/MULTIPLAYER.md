@@ -179,17 +179,28 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   client's first drawn state is already running; empty player HUD box for spectators (`.hud-player:empty`).
   Singleplayer regression-checked (drive + shoot + G407 still work). Docs updated. `render.yaml` added.
 
-## 8. Deployment (needs the user's account — not done)
+## 8. Deployment
 
 Multiplayer needs a server that holds WebSockets open, so Vercel alone won't work.
 
-**Recommended (free): Render web service** — Render's free tier supports WebSockets and (since Feb 2026)
-counts WebSocket messages as activity, so it doesn't sleep mid-match; it sleeps after 15 min idle and takes
-~1 min to wake on the next visit.
-1. Push this repo to GitHub.
-2. render.com → New → **Blueprint** → select the repo (uses `render.yaml`: `npm ci && npm run build`,
-   `npm run serve`, health check `/healthz`, Node 24).
-3. Open `https://<service>.onrender.com` — site and relay share the URL, nothing else to configure.
+**Recommended for an instant-loading page: separate static site + Render web service.** Render's free
+web service supports WebSockets, sleeps after 15 minutes without inbound traffic, and takes about a
+minute to wake. Its static site stays available while the web service sleeps.
 
-Alternative: keep the static site on **Vercel** (free Hobby) and run only the relay on Render; build the site
-with `VITE_RELAY_URL=wss://<service>.onrender.com/ws`. More moving parts; only worth it for Vercel's CDN.
+1. Push this repo to GitHub. Deploy the relay on Render: New → Blueprint → select this repo (`render.yaml`). Note its URL,
+   `https://<service>.onrender.com`. The blueprint also serves the site, but use the static URL below
+   as the public link.
+2. Render → New → Static Site → select the same repo. Build command: `npm ci && npm run build`;
+   publish directory: `dist`.
+3. On the static site's environment settings, set
+   `VITE_RELAY_URL=wss://<service>.onrender.com/ws`, using the actual web service hostname. Redeploy
+   the static site after setting it, because Vite embeds this value during the build.
+4. Share the **static site URL**. The page opens immediately. The Multiplayer page wakes the relay via
+   `/healthz` and shows the elapsed wait. Players can enter a name or join code while it wakes. Creating
+   a new room and getting its share code require the relay to be online.
+
+Vercel can host the static site instead, with the same build command, `dist` output, and
+`VITE_RELAY_URL` setting. Keep Render as the WebSocket relay.
+
+The simple single-service option is still available: deploy just the `render.yaml` blueprint and share
+its `https://<service>.onrender.com` URL. That URL waits through a cold start before displaying the page.

@@ -56,14 +56,23 @@ export class NetClient extends Emitter<NetClientEvents> {
     return this.ws?.readyState === WebSocket.OPEN && !!this.room;
   }
 
-  async connect(url: string): Promise<void> {
+  /** http(s) health URL for a relay ws(s) URL: wss://host/ws → https://host/healthz. */
+  static healthUrl(wsUrl: string): string {
+    const u = new URL(wsUrl);
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = '/healthz';
+    u.search = '';
+    return u.toString();
+  }
+
+  async connect(url: string, timeoutMs = 15000): Promise<void> {
     this.close();
     this.closedReason = null;
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`Could not reach relay at ${url}`)), 6000);
+      const t = setTimeout(() => reject(new Error(`Could not reach relay at ${url}`)), timeoutMs);
       ws.onopen = () => {
         clearTimeout(t);
         resolve();

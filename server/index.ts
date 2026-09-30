@@ -34,7 +34,8 @@ if (!existsSync(join(DIST, 'index.html'))) {
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (url.pathname === '/healthz') {
-    res.writeHead(200, { 'content-type': 'text/plain' });
+    // CORS so a site hosted elsewhere (e.g. Vercel) can wake/check this relay.
+    res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     res.end(`ok rooms=${relay.roomCount()}`);
     return;
   }

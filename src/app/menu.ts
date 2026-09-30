@@ -264,6 +264,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   };
 
   const render = () => {
+    // A relay wake/status update can arrive while the user is typing. Keep the form draft and focus.
+    const draft = page === 'multiplayer' ? {
+      name: el.querySelector<HTMLInputElement>('[data-mp="name"]')?.value,
+      code: el.querySelector<HTMLInputElement>('[data-mp="code"]')?.value,
+      url: el.querySelector<HTMLInputElement>('[data-mp="url"]')?.value,
+      focused: (document.activeElement as HTMLElement | null)?.dataset.mp,
+    } : null;
     const titles: Record<Page, { h1: string; sub: string }> = {
       play: { h1: 'Single player', sub: '' },
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
@@ -297,6 +304,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         }
       </footer>`;
     bind();
+    if (draft && page === 'multiplayer') {
+      for (const key of ['name', 'code', 'url'] as const) {
+        const input = el.querySelector<HTMLInputElement>(`[data-mp="${key}"]`);
+        if (input && draft[key] !== undefined) input.value = draft[key];
+        if (input && draft.focused === key) input.focus();
+      }
+    }
   };
 
   onKey = (e: KeyboardEvent) => {

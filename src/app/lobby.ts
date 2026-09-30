@@ -18,6 +18,11 @@ import { cleanName } from '@engine/net/relayProtocol';
 import type { RobotConfig } from '@engine/robot/config';
 
 export type LobbyStatus = 'idle' | 'connecting' | 'lobby';
+/** Free hosts (Render/Koyeb) sleep when idle; the site pings the relay early so it's awake by the time you click. */
+export type ServerState = 'unknown' | 'waking' | 'online' | 'offline';
+
+/** Give a sleeping free-tier relay this long to boot (Render takes ~1 min). */
+const WAKE_TIMEOUT_MS = 120_000;
 
 interface PlayerChoice {
   /** undefined = keep the current station. */
@@ -39,6 +44,10 @@ export class LobbyController {
   /** Latest menu settings (robot config, AUTO choice, camera…) for this player. */
   settings: GameSettings | null = null;
   relayUrl = NetClient.defaultUrl();
+  serverState: ServerState = 'unknown';
+  /** Seconds spent waking the relay so far (for the UI). */
+  wakeSeconds = 0;
+  private waking: Promise<boolean> | null = null;
 
   onChange: () => void = () => {};
   onStart: (setup: MatchSetup, role: 'host' | 'client') => void = () => {};
@@ -97,11 +106,60 @@ export class LobbyController {
     });
   }
 
+  /**
+   * Ping the relay's /healthz until it answers (or WAKE_TIMEOUT_MS passes). Called when the Multiplayer page
+   * opens, so a sleeping free-tier server starts booting while the player types their name.
+   */
+  wake(force = false): Promise<boolean> {
+    if (this.serverState === 'online') return Promise.resolve(true);
+    if (this.waking && !force) return this.waking;
+    let url: string;
+    try {
+      url = NetClient.healthUrl(this.relayUrl);
+    } catch {
+      this.serverState = 'offline';
+      this.onChange();
+      return Promise.resolve(false);
+    }
+    const started = performance.now();
+    this.serverState = 'waking';
+    this.wakeSeconds = 0;
+    this.onChange();
+    const tick = setInterval(() => {
+      this.wakeSeconds = Math.round((performance.now() - started) / 1000);
+      // Update the timer without replacing the form while someone is typing a name or room code.
+      const timer = document.querySelector<HTMLElement>('[data-mp="wake-seconds"]');
+      if (timer) timer.textContent = `${this.wakeSeconds}s`;
+    }, 1000);
+    const attempt = async (): Promise<boolean> => {
+      while (performance.now() - started < WAKE_TIMEOUT_MS) {
+        try {
+          // A sleeping host usually holds this request open until it has booted.
+          const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(30000) });
+          if (res.ok && (await res.text()).startsWith('ok rooms=')) return true;
+        } catch {
+          /* not up yet */
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      return false;
+    };
+    this.waking = attempt().then((ok) => {
+      clearInterval(tick);
+      this.serverState = ok ? 'online' : 'offline';
+      this.waking = null;
+      this.onChange();
+      return ok;
+    });
+    return this.waking;
+  }
+
   private async connectThen(fn: () => Promise<void>): Promise<void> {
     this.error = '';
     this.status = 'connecting';
     this.onChange();
     try {
+      if (this.serverState !== 'online' && !(await this.wake())) throw new Error('The multiplayer server did not respond. Try again in a moment.');
       await this.client.connect(this.relayUrl);
       await fn();
       this.status = 'lobby';

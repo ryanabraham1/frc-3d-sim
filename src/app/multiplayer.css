@@ -242,3 +242,34 @@
     grid-template-columns: 1fr;
   }
 }
+
+.mp-server {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.mp-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--faint);
+  flex: none;
+}
+.mp-dot.on {
+  background: #22c55e;
+}
+.mp-dot.off {
+  background: var(--red);
+}
+.mp-dot.waking {
+  background: #f59e0b;
+  animation: mp-pulse 1s ease-in-out infinite;
+}
+@keyframes mp-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}

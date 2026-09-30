@@ -75,12 +75,14 @@ own robot responds instantly. Test latency locally with `?netlag=200` in a clien
 |---|---|
 | `npm run build` then `npm run serve` | Production: one Node server on :8787 serving `dist/` + relay at `/ws` |
 
-## Deployment (not done yet)
+## Deployment
 
-Multiplayer needs a host that keeps WebSockets open (Vercel serverless can't). Easiest: a **free Render
-web service** using the included [`render.yaml`](render.yaml) — it serves the site *and* the relay from one
-URL. Alternative: static site on Vercel + relay on Render, with `VITE_RELAY_URL=wss://<relay>/ws` set at
-build time. Details: [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) §8.
+For a site that loads immediately even when the multiplayer server is asleep, deploy the built `dist/`
+as a **Render Static Site** (or on Vercel) and the WebSocket relay as a **Render Web Service**. Set the
+static site's build-time environment variable `VITE_RELAY_URL=wss://<relay>.onrender.com/ws`.
+The Multiplayer page checks `/healthz`, shows the wake status, and connects when the relay is ready.
+The included [`render.yaml`](render.yaml) still supports a simpler single-service deployment, but that
+URL waits for the service to wake before it can show the site. Steps: [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) §8.
 
 ## Sources
 
