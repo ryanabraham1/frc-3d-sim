@@ -14,7 +14,7 @@ No external field CAD, WPILib tag layout or later team updates were used for 202
 |---|---|---|
 | Field and markings | §5.1–5.2, pp19–22 | 57 ft 6⅞ in × 26 ft 5 in; clipped station corners, guardrails, starting lines, reef zones, 46 × 146½ in barge zones running to the guardrail, PROCESSOR AREAS outside the guardrail beside the opponent's processor |
 | Reefs | §5.3, pp23–24 | Two hexagonal reefs; L1 troughs; 12 branches per level at L2/L3/L4; 13 in pipe spacing, specified heights/insets and 35° lower branches |
-| Barge, cages, nets | §5.4, pp25–27 | Truss with center support, six cages at stated lateral offsets; preselected shallow/deep bottoms; 4 ft × 12 ft nets at 76 in minimum height |
+| Barge, cages, nets | §5.4, pp25–27 | Truss with center support; six free-swinging cages (pendulums hung from the 62 in truss, deep ones on chain) at stated lateral offsets with shallow/deep bottoms; 4 ft × 12 ft nets at 76 in minimum height |
 | Processors, stations | §5.5–5.6, pp28–32 | 28 × 20 in processor opening, 7 in bottom; four station mouths at 37½ in |
 | Pieces | §5.7, pp33–35 | Hollow CORAL visuals: 4½ in OD, 4 in ID, 11⅞ in length; ALGAE diameter 16¼ in |
 | AprilTags | §5.8, pp35–39 | All 22 IDs at the depicted structures and stated mounting heights; visual markers |
@@ -71,6 +71,10 @@ your alliance's cages of that depth and press **C** during TELEOP (§6.5.2 accep
 alliance's cages). **X** descends. Climbing is assisted; cage occupation is exclusive. Points follow the
 cage climbed. Park/cage points are assessed at the end of the final scoring window.
 
+Cages are not locked in place: each one hangs from the truss as a pendulum, so driving into it pushes it
+and it swings, then settles. **C** grabs the cage wherever it has swung to; robot and cage then settle
+plumb under the pivot with the cage just ahead of the front bumper. After you descend, it swings freely again.
+
 Scripted AUTO options are leave + L4, leave + L1, leave only and do nothing. Manual AUTO remains a
 practice option, as in the existing 2026 simulator.
 
@@ -80,7 +84,7 @@ practice option, as in the existing 2026 simulator.
 - G410: the assisted retrieval mechanism only accesses your own scored CORAL.
 - G412: CORAL placement requires reef reach; a gentle reverse-intake ejection follows its exception.
 - G403: direct robot contact beyond the opposing barge boundary during AUTO produces a major foul.
-- G405/G418: opponent cage contact produces a major foul; TELEOP also awards the opponent BARGE RP.
+- G405/G418: real collider contact with a (possibly swinging) opponent cage produces a major foul; TELEOP also awards the opponent BARGE RP.
 - G421: multiple defenders beyond the barge zones produce a minor foul, then a major every three seconds (AUTO and TELEOP).
 - G427: direct contact with an opponent in its protected reef/barge zone produces a major foul.
 - G428: direct contact with an opponent climbing in the final 20 seconds awards a major and BARGE RP.
@@ -103,11 +107,12 @@ rigid-body collider. CORAL mass is 0.65 kg within the manual's 0.5–0.8 kg rang
 friction, rebound, damping, elevator speed and human-player launch speed are simulation assumptions.
 Scored CORAL is placed and retained by the assisted mechanism, rather than simulating pipe insertion
 and every subsequent dislodgement. Nets use a rigid cup/sensor instead of deformable fabric. Staged
-reef ALGAE is retained until harvested. Cage engagement uses the engine's kinematic climb animation;
-anchor-contact qualification and cage sway are not physically adjudicated.
+reef ALGAE is retained until harvested. Cages swing as rigid pendulums (the chain is treated as a rigid link,
+~8 kg estimated mass). The climb itself is the engine's kinematic animation, during which the robot
+carries its cage. Anchor contact (G419) is not adjudicated.
 
 Multiplayer is host authoritative. CORAL placements, harvested reef ALGAE, held pieces, piece rotations,
-elevator state, cages, scores, clock, fouls and results are replicated. Clients predict driving against
+elevator state, swinging cage poses, scores, clock, fouls and results are replicated. Clients predict driving against
 the field and the replicated elevator collider; mechanisms and scoring execute on the host.
 
 ## Verification

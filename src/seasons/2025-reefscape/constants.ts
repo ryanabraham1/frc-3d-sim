@@ -24,6 +24,13 @@ export const NET_LENGTH = inch(144);
 export const CAGE_OFFSETS = [inch(127.375), inch(84.375), inch(41.5)];
 export const CAGE_BOTTOM = { shallow: inch(30.125), deep: inch(3.125) };
 export type CageDepth = keyof typeof CAGE_BOTTOM;
+// §5.4.1: 2 ft × 7⅜ in cage of four 1 in Sch 40 pipes (1.315 in OD), hung from the 62 in truss.
+// A deep cage hangs on 19 chain links; both swing freely.
+export const CAGE_SIZE = inch(7.375);
+export const CAGE_HEIGHT = inch(24);
+export const CAGE_PIPE_RADIUS = inch(1.315) / 2;
+export const CAGE_PIVOT_HEIGHT = inch(62);
+export const CAGE_MASS = 8; // [EST] ~13 lb of pipe plus plates.
 export const CAGE_POINTS: Record<CageDepth, number> = { shallow: 6, deep: 12 };
 // BARGE ZONE §5.2: 46 in deep × 146.5 in long, running from the guardrail toward the center support (Fig. 5-4).
 export const BARGE_ZONE_DEPTH = inch(46);

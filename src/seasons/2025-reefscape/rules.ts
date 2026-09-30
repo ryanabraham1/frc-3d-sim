@@ -6,6 +6,7 @@ import type { PeriodChange } from '@engine/match/clock';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
+import type { HangingNetState } from '@engine/field/hanging';
 import { coralGeometry, type ReefscapeFieldRefs } from './field';
 import { coralPoints, reefscapeResults } from './scoring';
 
@@ -16,7 +17,12 @@ export interface ReefscapeNetState {
   mechanisms: [number, MechanismState][];
   hp: Record<Alliance, boolean>;
   forcedBarge: Record<Alliance, boolean>;
+  /** Swinging cage poses in ALLIANCES order, by station. */
+  cages: HangingNetState[];
 }
+
+/** A climbing robot carries its cage from wherever it swung to its hanging pose over the align phase. */
+interface CageGrip { robot: Robot; alliance: Alliance; slot: number; from: { x: number; y: number; z: number }; t: number }
 
 export class ReefscapeRules implements SeasonRules {
   readonly handlesIntake = true;
@@ -34,6 +40,7 @@ export class ReefscapeRules implements SeasonRules {
   private readonly cageContacts = new Set<string>();
   private readonly protectedContacts = new Set<string>();
   private readonly notices = new Map<number, number>();
+  private readonly grips: CageGrip[] = [];
   private readonly launchedBy = new Map<number, { robotId: number; at: number }>();
   private autoAssessed = false;
   private bargeAssessed = false;
@@ -72,6 +79,8 @@ export class ReefscapeRules implements SeasonRules {
     const { pool, robots } = this.ctx;
     this.placements.length = 0; this.autoBranches.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear();
     this.autoAssessed = this.bargeAssessed = false;
+    this.grips.length = 0;
+    for (const a of ALLIANCES) for (const cage of this.refs.cages[a]) cage.reset();
     this.removedAutoTrough.blue = this.removedAutoTrough.red = 0;
     this.hp = { blue: true, red: true }; this.hpTimer = { blue: 0, red: 0 };
     this.defenderTime = { blue: 0, red: 0 }; this.forcedBarge = { blue: false, red: false };
@@ -320,6 +329,7 @@ export class ReefscapeRules implements SeasonRules {
   }
 
   beforeStep(dt: number): void {
+    this.updateGrips(dt);
     if (!this.activeScoring()) return;
     for (const a of ALLIANCES) {
       this.hpTimer[a] -= dt;
@@ -417,7 +427,7 @@ export class ReefscapeRules implements SeasonRules {
     let best: { slot: number; depth: C.CageDepth; occupied: boolean; d: number } | null = null;
     for (let slot = 0; slot < 3; slot++) {
       const depth = this.refs.cageDepth[robot.alliance][slot];
-      const p = C.cage(robot.alliance, slot + 1);
+      const p = this.refs.cages[robot.alliance][slot].fieldPosition(); // wherever it has swung to
       const d = Math.hypot(robot.pose.x - p.x, robot.pose.y - p.y);
       if (depth !== want || d > 1.25 || (best && best.d <= d)) continue;
       const occupied = this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.climbSlot === slot && r.isClimbing);
@@ -449,9 +459,27 @@ export class ReefscapeRules implements SeasonRules {
     if (cage.occupied) { this.tell(robot, 'CAGE already occupied · try another of your cages'); return; }
     const p = C.cage(robot.alliance, cage.slot + 1);
     const yaw = C.sideYaw(robot.alliance, 0);
-    const lift = cage.depth === 'shallow' ? 0.88 : 0.28;
-    // Place chassis beside the cage with climber engaging its pipes, below the anchor.
-    robot.startClimb({ x: p.x - Math.cos(yaw) * robot.config.frameLength * 0.3, y: p.y, yaw }, lift, cage.depth === 'shallow' ? 1 : 2, cage.slot);
+    // Chassis height when hanging: a shallow climb only needs to clear the carpet; a deep climb pulls higher.
+    const lift = cage.depth === 'shallow' ? 0.15 : 0.28;
+    // The climber grabs the cage where it hangs (swung or not), then robot and cage settle plumb under
+    // the pivot with the cage just ahead of the front bumper.
+    const reach = this.gripReach(robot);
+    robot.startClimb({ x: p.x - Math.cos(yaw) * reach, y: p.y, yaw }, lift, cage.depth === 'shallow' ? 1 : 2, cage.slot);
+    this.grips.push({ robot, alliance: robot.alliance, slot: cage.slot, from: this.refs.cages[robot.alliance][cage.slot].fieldPosition(), t: 0 });
+  }
+  private gripReach(robot: Robot): number { return robot.footprint.length / 2 + C.CAGE_SIZE / 2 + 0.02; }
+
+  /** Held cages follow their climbing robot; a cage is released to swing once its robot is back down. */
+  private updateGrips(dt: number): void {
+    for (let k = this.grips.length - 1; k >= 0; k--) {
+      const g = this.grips[k], cage = this.refs.cages[g.alliance][g.slot];
+      if (!g.robot.isClimbing || g.robot.climbSlot !== g.slot) { cage.release(); this.grips.splice(k, 1); continue; }
+      g.t += dt;
+      const blend = clamp(g.t / 0.6, 0, 1), reach = this.gripReach(g.robot), p = g.robot.pose;
+      const rest = C.CAGE_BOTTOM[this.refs.cageDepth[g.alliance][g.slot]];
+      const tx = p.x + Math.cos(p.yaw) * reach, ty = p.y + Math.sin(p.yaw) * reach;
+      cage.hold(g.from.x + (tx - g.from.x) * blend, g.from.y + (ty - g.from.y) * blend, g.from.z + (rest - g.from.z) * blend);
+    }
   }
   requestDescend(robot: Robot): void { robot.startDescend(); }
 
@@ -473,12 +501,18 @@ export class ReefscapeRules implements SeasonRules {
     return r.corners().every((p) => r.alliance === 'blue' ? p.x > C.FIELD_LENGTH / 2 + C.BARGE_ZONE_DEPTH / 2 : p.x < C.FIELD_LENGTH / 2 - C.BARGE_ZONE_DEPTH / 2);
   }
 
+  /** Real collider contact between a robot (including its raised elevator) and a swinging cage. */
+  private touchesCage(r: Robot, a: Alliance, slot: number): boolean {
+    let contact = false;
+    for (const cageCollider of this.refs.cages[a][slot].colliders) for (let i = 0; i < r.body.numColliders() && !contact; i++) {
+      this.ctx.physics.world.contactPair(r.body.collider(i), cageCollider, (manifold) => { if (manifold.numContacts() > 0) contact = true; });
+    }
+    return contact;
+  }
+
   private enforceCageContact(): void {
     for (const r of this.ctx.robots) for (let s = 1; s <= 3; s++) {
-      const p = C.cage(opponent(r.alliance), s);
-      if (this.refs.cageDepth[opponent(r.alliance)][s - 1] === 'shallow' && r.config.height < C.CAGE_BOTTOM.shallow) continue;
-      const dx = p.x - r.pose.x, dy = p.y - r.pose.y, yaw = r.pose.yaw;
-      const contact = Math.abs(dx * Math.cos(yaw) + dy * Math.sin(yaw)) < r.footprint.length / 2 + inch(7.375) / 2 && Math.abs(-dx * Math.sin(yaw) + dy * Math.cos(yaw)) < r.footprint.width / 2 + inch(7.375) / 2;
+      const contact = this.touchesCage(r, opponent(r.alliance), s - 1);
       const key = `${r.id}:${s}`;
       if (contact && !this.cageContacts.has(key) && this.ctx.clock.mode !== 'disabled') {
         const auto = this.ctx.clock.mode === 'auto';
@@ -513,7 +547,7 @@ export class ReefscapeRules implements SeasonRules {
     this.protectedContacts.clear(); for (const key of live) this.protectedContacts.add(key);
   }
 
-  updateVisuals(_dt: number, time: number): void {
+  updateVisuals(dt: number, time: number): void {
     const { pool, frame, score } = this.ctx;
     for (const a of ALLIANCES) {
       for (let f = 0; f < 6; f++) this.refs.algae[a][f].visible = this.reefAlgae(a, f);
@@ -523,6 +557,7 @@ export class ReefscapeRules implements SeasonRules {
         (light.material as THREE.MeshStandardMaterial).emissiveIntensity = flash || coop || score.counter(a, 'processor') > i ? 2.5 : 0.15;
       }
     }
+    for (const a of ALLIANCES) for (const cage of this.refs.cages[a]) cage.syncVisual(dt);
     for (const robot of this.ctx.robots) {
       const m = this.mechanisms.get(robot.id)!;
       // Replica clients also predict driving against the raised elevator and barge.
@@ -576,11 +611,13 @@ export class ReefscapeRules implements SeasonRules {
   results(): MatchResults {
     return reefscapeResults(this.ctx.score, { blue: this.ctx.robots.filter((r) => r.alliance === 'blue').length, red: this.ctx.robots.filter((r) => r.alliance === 'red').length }, this.forcedBarge);
   }
-  netState(): ReefscapeNetState { return { placements: this.placements.map((p) => ({ ...p })), mechanisms: [...this.mechanisms].map(([id, m]) => [id, { ...m }]), hp: { ...this.hp }, forcedBarge: { ...this.forcedBarge } }; }
+  netState(): ReefscapeNetState { return { placements: this.placements.map((p) => ({ ...p })), mechanisms: [...this.mechanisms].map(([id, m]) => [id, { ...m }]), hp: { ...this.hp }, forcedBarge: { ...this.forcedBarge },
+    cages: ALLIANCES.flatMap((a) => this.refs.cages[a].map((c) => c.netState())) }; }
   applyNetState(state: unknown): void {
     const s = state as ReefscapeNetState;
     this.placements.splice(0, this.placements.length, ...s.placements);
     for (const [id, m] of s.mechanisms) this.mechanisms.set(id, { ...m });
     this.hp = { ...s.hp }; this.forcedBarge = { ...s.forcedBarge };
+    ALLIANCES.flatMap((a) => this.refs.cages[a]).forEach((c, k) => s.cages?.[k] && c.applyNetState(s.cages[k]));
   }
 }

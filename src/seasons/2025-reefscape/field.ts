@@ -3,12 +3,14 @@ import { ALLIANCES, type Alliance } from '@engine/coords';
 import type { SeasonContext } from '@engine/core/season';
 import type { Vec3 } from '@engine/field/builder';
 import { addAprilTags, type TagPose } from '@engine/field/apriltags';
+import { HangingElement, type HangingPart } from '@engine/field/hanging';
 import { inch } from '@engine/units';
 import * as C from './constants';
 
 export interface ReefscapeFieldRefs {
   branches: Record<Alliance, THREE.Mesh[]>;
-  cages: Record<Alliance, THREE.Group[]>;
+  /** Swinging cages (dynamic pendulums), index = driver station - 1. */
+  cages: Record<Alliance, HangingElement[]>;
   /** Per-cage depth, index = driver station - 1 (§6.3.5: each team chooses the cage nearest its station). */
   cageDepth: Record<Alliance, C.CageDepth[]>;
   lights: Record<Alliance, THREE.Mesh[]>;
@@ -152,21 +154,19 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
     b.tapeRect(L / 2 - C.BARGE_ZONE_DEPTH / 2, zoneY0 + 0.025, L / 2 + C.BARGE_ZONE_DEPTH / 2, zoneY1 - 0.025, 0.05, color);
     for (let s = 1; s <= 3; s++) {
       const p = C.cage(a, s);
-      const group = new THREE.Group();
       // Cages start the day deep (§6.3.5); a station's team may request shallow for its own cage.
       const depth: C.CageDepth = ctx.robots.find((r) => r.alliance === a && r.station === s)?.config.climber.maxLevel === 1 ? 'shallow' : 'deep';
       refs.cageDepth[a].push(depth);
-      group.position.copy(ctx.frame.toWorld(p.x, p.y, C.CAGE_BOTTOM[depth]));
-      const mat = b.material({ color, metalness: 0.6 });
-      const size = inch(7.375), height = inch(24);
-      for (const x of [-size / 2 + 0.017, size / 2 - 0.017]) for (const z of [-size / 2 + 0.017, size / 2 - 0.017]) {
-        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, height, 10), mat);
-        pipe.position.set(x, height / 2, z); group.add(pipe);
-        b.cylinder([p.x + x, p.y - z, C.CAGE_BOTTOM[depth]], [p.x + x, p.y - z, C.CAGE_BOTTOM[depth] + height], 0.017, { visible: false });
-      }
-      for (const y of [0, height]) { const plate = new THREE.Mesh(new THREE.BoxGeometry(size, 0.025, size), mat); plate.position.y = y; group.add(plate); }
-      b.root.add(group); refs.cages[a].push(group);
-      b.cylinder([p.x, p.y, C.CAGE_BOTTOM[depth] + height], [p.x, p.y, inch(62)], 0.007, { color: C.COLORS.steel, collide: false });
+      // The cage is a real pendulum hanging from the truss: robots push it and it swings (not locked in place).
+      const s2 = C.CAGE_SIZE / 2 - C.CAGE_PIPE_RADIUS, h = C.CAGE_HEIGHT;
+      const parts: HangingPart[] = [];
+      for (const x of [-s2, s2]) for (const y of [-s2, s2]) parts.push({ kind: 'cylinder', a: [x, y, 0], b: [x, y, h], radius: C.CAGE_PIPE_RADIUS });
+      for (const z of [0.0125, h - 0.0125]) parts.push({ kind: 'box', center: [0, 0, z], size: [C.CAGE_SIZE, C.CAGE_SIZE, 0.025] });
+      refs.cages[a].push(new HangingElement(ctx.physics, b.root, ctx.frame, {
+        origin: [p.x, p.y, C.CAGE_BOTTOM[depth]], pivot: [p.x, p.y, C.CAGE_PIVOT_HEIGHT], parts, mass: C.CAGE_MASS,
+        material: b.material({ color, metalness: 0.6 }), tetherFrom: [0, 0, h], tetherMaterial: b.material({ color: C.COLORS.steel }),
+        name: `${a}-cage-${s}`,
+      }));
       const light = b.box([L / 2 - 0.57, p.y, inch(62)], [0.07, 0.25, 0.08], { color, emissive: color, emissiveIntensity: 0.2, collide: false }).mesh!;
       refs.lights[a].push(light);
     }

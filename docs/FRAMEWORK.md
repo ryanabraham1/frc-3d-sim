@@ -16,6 +16,7 @@ and a step-by-step plan for kickoff day.
 | Physics wrapper | `src/engine/physics/world.ts` | **100%** | Rapier init, fixed timestep, collision groups (field / robot / piece / piece-only / robot-only). |
 | Renderer & venue | `src/engine/render/*` | **100%** | Lights, shadows, backdrop, canvas text textures. |
 | Field builder | `src/engine/field/builder.ts` | **100%** | `box`, `boxMinMax`, `convex` (ramps/wedges), `cylinder` (rungs/pipes), `tape`, `tapeRect`, `label`, `carpet`. Every primitive = mesh + collider in one call, in field coordinates. |
+| Moving field elements | `src/engine/field/hanging.ts` | **100%** | `HangingElement`: a dynamic pendulum (cages, chains) that robots push. Climbers can `hold`/`release` it, and it replicates via `netState`/`applyNetState`. Add sibling helpers for hinged/tilting elements. |
 | AprilTags | `src/engine/field/apriltags.ts` | **100%** | Drop in the year's WPILib `*.json` layout → tags render at official poses. |
 | CAD overlay | `src/engine/field/cadOverlay.ts` | **100%** | Optional: show an official field GLB as visuals while physics stays procedural. |
 | Game-piece pool | `src/engine/gamepiece/pool.ts` | **~90%** | Sphere and tube shapes; indexed variants permit CORAL and ALGAE in one stable pool. Per-piece collider size, damping and instanced mesh; non-spherical rotations are replicated. Other shapes still need an extension. |
@@ -108,6 +109,11 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 - [ ] `field.ts`: carpet, tape, walls/guardrails, then each element with `box`/`convex`/`cylinder`.
 - [ ] `addAprilTags()` with the new JSON — visually confirms element placement.
 - [ ] Choose collide modes: `'all'`, `'pieces'` (nets/funnels), `'robots'`, or `false` (visual only).
+- [ ] **List every element that moves on the real field** (hung on chain/rope, hinged, tilting, sprung,
+      loose) and model it as a dynamic body, never static: `HangingElement` for hanging parts, jointed
+      Rapier bodies for hinges and tilts. Rules that reference it (contact fouls, climbs) use its live
+      pose and real collider contacts, and its pose goes in `netState()`. See `CLAUDE.md`. The 2025
+      cages were first built static; on the real field they swing.
 - [ ] Run `npm run dev`, drive around, check clearances (under/over obstacles).
 
 **Day 1–2 · Game logic**

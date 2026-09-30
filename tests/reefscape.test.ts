@@ -318,10 +318,46 @@ describe('2025 REEFSCAPE manual implementation', () => {
     expect(sim.ctx.score.fouls.filter((f) => f.rule === 'G421')).toHaveLength(1);
   });
   it('awards the opponent BARGE RP for TELEOP cage contact without repeating while touching', () => {
-    const sim = make('blue', { ...C.cage('red', 2), yaw: 0 }); teleop(sim);
-    sim.rules.beforeStep(sim.physics.dt); sim.rules.beforeStep(sim.physics.dt);
+    const cage = C.cage('red', 2); const sim = make('blue', { x: cage.x - 1.1, y: cage.y, yaw: 0 }); teleop(sim);
+    run(sim, 1.6, { ...IDLE_COMMAND, vx: 1 });
     expect(sim.ctx.score.fouls.filter((f) => f.rule === 'G418')).toHaveLength(1);
     expect(sim.rules.results().rpDetail.red).toContain('BARGE');
+  });
+  it('hangs cages as free pendulums that swing when pushed and settle back', () => {
+    const sim = make(); teleop(sim);
+    const cage = (sim.rules as ReefscapeRules).refs.cages.blue[0], p = C.cage('blue', 1);
+    const pivotDist = () => { const q = cage.fieldPosition(); return Math.hypot(q.x - p.x, q.y - p.y, q.z - C.CAGE_PIVOT_HEIGHT); };
+    const length = pivotDist();
+    cage.push(8, 0); run(sim, 0.4);
+    expect(cage.swing()).toBeGreaterThan(0.1);
+    expect(pivotDist()).toBeCloseTo(length, 2); // still hanging from its chain
+    run(sim, 12);
+    expect(cage.swing()).toBeLessThan(0.03);
+  });
+  it('lets a driving robot shove its cage aside and still grab it where it swung', () => {
+    const p = C.cage('blue', 2); const sim = make('blue', { x: p.x - 1.2, y: p.y, yaw: 0 }); teleop(sim);
+    const rules = sim.rules as ReefscapeRules, cage = rules.refs.cages.blue[1];
+    run(sim, 0.9, { ...IDLE_COMMAND, vx: 1.2 });
+    expect(cage.swing()).toBeGreaterThan(0.05);
+    rules.requestClimb(sim.robot, 2); run(sim, 5);
+    expect(sim.robot.climbPhase).toBe('hanging');
+    expect(cage.isHeld).toBe(true);
+    expect(cage.swing()).toBeLessThan(0.01); // robot and cage hang plumb under the pivot
+    rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
+    expect(sim.ctx.score.category('blue', 'barge')).toBe(12);
+    rules.requestDescend(sim.robot); run(sim, 2);
+    expect(sim.robot.isClimbing).toBe(false);
+    expect(cage.isHeld).toBe(false);
+    run(sim, 1);
+    const v = sim.robot.body.linvel(), w = cage.body.linvel();
+    expect(Math.hypot(v.x, v.z)).toBeLessThan(0.3);
+    expect(Math.hypot(w.x, w.y, w.z)).toBeLessThan(1);
+  });
+  it('replicates swinging cage poses to multiplayer clients', () => {
+    const host = make(); teleop(host); (host.rules as ReefscapeRules).refs.cages.red[2].push(0, 6); run(host, 0.3);
+    const client = make(); client.rules.applyNetState!(JSON.parse(JSON.stringify(host.rules.netState!())));
+    const a = (host.rules as ReefscapeRules).refs.cages.red[2].fieldPosition(), b = (client.rules as ReefscapeRules).refs.cages.red[2].fieldPosition();
+    expect(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)).toBeLessThan(0.002);
   });
   it('has 22 unique visual AprilTags at manual structures', () => {
     const sim = make(); const tags: string[] = [];
