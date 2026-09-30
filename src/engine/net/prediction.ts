@@ -16,6 +16,8 @@ const SNAP_YAW = 1.0;
 /** Snap when host and local chassis tilt differ by more than this (cos of ~15°): e.g. the host robot rode up on
  * game pieces, which clients don't simulate. */
 const SNAP_UP = 0.035;
+/** Longest round trip a single ack may report (s); anything slower is a stall, not the link. */
+const MAX_RTT_SAMPLE = 1.0;
 /** Fraction of the measured error removed per snapshot (~30 Hz). */
 const BLEND = 0.3;
 
@@ -59,8 +61,13 @@ export class Predictor {
     if (ss.cmdSeq > this.lastAck) {
       const sent = this.sendTimes.get(ss.cmdSeq);
       if (sent !== undefined) {
-        const sample = (localMs - sent) / 1000;
-        this.rtt = this.rtt === 0 ? sample : this.rtt * 0.85 + sample * 0.15;
+        // One stall (e.g. the host still loading the match when our first commands arrive) must not
+        // poison the estimate: samples are capped, and the estimate falls fast but rises slowly. A
+        // multi-second RTT would compare the host's pose with where we were seconds ago and drag the
+        // robot backwards — drivers saw that as "can't move".
+        const sample = Math.min(MAX_RTT_SAMPLE, (localMs - sent) / 1000);
+        if (this.rtt === 0) this.rtt = sample;
+        else this.rtt += (sample - this.rtt) * (sample < this.rtt ? 0.5 : 0.1);
       }
       this.lastAck = ss.cmdSeq;
       for (const k of this.sendTimes.keys()) if (k <= ss.cmdSeq) this.sendTimes.delete(k);

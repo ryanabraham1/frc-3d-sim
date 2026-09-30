@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { GROUPS, PhysicsWorld } from '../physics/world';
+import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { FieldFrame } from '../coords';
 
 export interface GamePieceSpec {
@@ -13,6 +13,12 @@ export interface GamePieceSpec {
   innerRadius?: number;
   /** Ring only: number of equidistant white tape bands (e.g. 3 for a 2024 HIGH NOTE). */
   stripes?: number;
+  /**
+   * Tube only: a real hollow collider (a ring of staves around the bore) so a pipe can pass through it — e.g. a 2025
+   * CORAL sliding onto a BRANCH. `colliderInnerRadius` sets the bore (default `innerRadius`).
+   */
+  hollow?: boolean;
+  colliderInnerRadius?: number;
   /** Additional piece types use stable index ranges in the same synchronized pool. */
   variants?: { start: number; spec: Omit<GamePieceSpec, 'variants'> }[];
   name: string;
@@ -84,6 +90,10 @@ export class GamePiecePool {
   private readonly airborne: boolean[] = [];
   /** Pieces whose state/owner/tag changed since the last `takeChanges()` (multiplayer host). */
   private readonly changed = new Set<number>();
+  /** Per piece: 1 = instance matrix shows its current field pose, 2 = shows it hidden, 0 = stale. */
+  private shown = new Uint8Array(0);
+  /** Multiplayer client: poses come from snapshots, so only pieces touched since the last draw are redrawn. */
+  private replica = false;
   readonly mesh: THREE.InstancedMesh;
   readonly radius: number;
   readonly colliderRadius: number;
@@ -124,6 +134,7 @@ export class GamePiecePool {
       scene.add(mesh);
     }
     this.mesh = this.meshes[0];
+    this.shown = new Uint8Array(spec.count);
 
     for (let i = 0; i < spec.count; i++) {
       const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
@@ -139,6 +150,34 @@ export class GamePiecePool {
           .setCanSleep(true)
           .setEnabled(false),
       );
+      if (piece.shape === 'tube' && piece.hollow) {
+        // Staves around the tube axis (body-local +X): a polygonal bore a pipe can pass through.
+        const n = 10;
+        const half = (piece.length ?? piece.radius * 2) / 2;
+        const rIn = piece.colliderInnerRadius ?? piece.innerRadius ?? piece.radius * 0.8;
+        const wall = Math.max(piece.radius - rIn, 0.004);
+        const rMid = rIn + wall / 2;
+        const chord = 2 * piece.radius * Math.tan(Math.PI / n);
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);
+          const stave = R.ColliderDesc.cuboid(half, wall / 2, chord / 2)
+            .setTranslation(0, rMid * Math.cos(a), rMid * Math.sin(a))
+            .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+            .setMass(piece.mass / n)
+            .setRestitution(piece.restitution)
+            .setFriction(piece.friction)
+            .setCollisionGroups(GROUPS.piece);
+          physics.world.createCollider(stave, body);
+        }
+        this.bodies.push(body);
+        this.state.push('reserve');
+        this.owner.push(-1);
+        this.tag.push(null);
+        this.airborne.push(false);
+        this.mesh.setMatrixAt(i, HIDDEN);
+        continue;
+      }
       const col = (piece.shape === 'tube'
         ? R.ColliderDesc.cylinder((piece.length ?? piece.radius * 2) / 2, piece.radius).setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
         : piece.shape === 'ring'
@@ -181,12 +220,23 @@ export class GamePiecePool {
     this.state[i] = 'field';
     this.owner[i] = -1;
     this.tag[i] = null;
+    this.shown[i] = 0;
     this.changed.add(i);
   }
 
   /** Put piece i on the field at a FIELD position (x, y, z-up), resting on the carpet if z omitted. */
   placeField(i: number, x: number, y: number, z?: number): void {
     this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.restHeight(i) + 0.001, this.tmpP));
+  }
+
+  /**
+   * Let piece i pass through robots (true) or collide with them again (false) — for a piece released from inside
+   * a robot's mechanism (it starts overlapping that robot's collision box).
+   */
+  setIgnoreRobots(i: number, ignore: boolean): void {
+    const b = this.bodies[i];
+    const groups = ignore ? collisionGroups(Group.PIECE, Group.FIELD | Group.PIECE | Group.PIECE_ONLY) : GROUPS.piece;
+    for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);
   }
 
   hold(i: number, ownerId: number): void {
@@ -216,6 +266,8 @@ export class GamePiecePool {
    * clients never step physics for pieces; positions come from snapshots via `setReplicaPosition`.
    */
   applyReplicaState(i: number, state: PieceState, owner: number, tag: string | null): void {
+    this.replica = true;
+    if (state !== this.state[i]) this.shown[i] = 0;
     this.state[i] = state;
     this.owner[i] = owner;
     this.tag[i] = tag;
@@ -223,6 +275,12 @@ export class GamePiecePool {
 
   setReplicaPosition(i: number, x: number, y: number, z: number): void {
     this.bodies[i].setTranslation({ x, y, z }, false);
+    this.shown[i] = 0;
+  }
+
+  setReplicaRotation(i: number, x: number, y: number, z: number, w: number): void {
+    this.bodies[i].setRotation({ x, y, z, w }, false);
+    this.shown[i] = 0;
   }
 
   /** Indices in a state (optionally with a tag). */
@@ -265,20 +323,31 @@ export class GamePiecePool {
   }
 
   syncVisuals(): void {
+    let dirty = false;
     for (let i = 0; i < this.bodies.length; i++) {
       const mesh = this.meshes[this.meshIndex[i]];
       if (this.state[i] !== 'field') {
-        mesh.setMatrixAt(i, HIDDEN);
+        if (this.shown[i] !== 2) {
+          mesh.setMatrixAt(i, HIDDEN);
+          this.shown[i] = 2;
+          dirty = true;
+        }
         continue;
       }
       const b = this.bodies[i];
+      // Multiplayer clients: poses only change through setReplicaPosition/Rotation, which mark the piece
+      // stale — untouched pieces keep last frame's matrix. (The simulating side always reads the body: a
+      // "sleeping" flag is not proof that a body hasn't moved.)
+      if (this.replica && this.shown[i] === 1) continue;
       const t = b.translation();
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
       this.tmpQ.set(r.x, r.y, r.z, r.w);
       this.tmpM.compose(this.tmpP, this.tmpQ, this.one);
       mesh.setMatrixAt(i, this.tmpM);
+      this.shown[i] = 1;
+      dirty = true;
     }
-    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    if (dirty) for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
 }

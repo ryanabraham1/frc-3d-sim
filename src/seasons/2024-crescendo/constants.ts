@@ -291,6 +291,18 @@ export function sourcePoint(a: Alliance, t: number, n = 0) {
   return side(sourceEnd(a), x, y);
 }
 
+/** CHUTE [M 5.4]: a 50° tunnel from the opening (bottom 3 ft ¾ in) up to its SOURCE AREA edge (bottom 4 ft 4¾ in). */
+export const CHUTE_ANGLE = (50 * Math.PI) / 180;
+export const CHUTE_TOP = inch(52.75);
+/** Slope length of the CHUTE floor between its two openings. */
+export const CHUTE_LENGTH = (CHUTE_TOP - SOURCE_OPENING_BOTTOM) / Math.sin(CHUTE_ANGLE);
+
+/** Point on the CHUTE floor: `t` along the SOURCE wall, `up` meters up the 50° slope from the opening's bottom edge. */
+export function chutePoint(a: Alliance, t: number, up: number) {
+  const p = sourcePoint(a, t, -up * Math.cos(CHUTE_ANGLE));
+  return { ...p, z: SOURCE_OPENING_BOTTOM + up * Math.sin(CHUTE_ANGLE) };
+}
+
 /** SOURCE ZONE polygon: the parallelogram between the SOURCE wall, the (opponent's) ALLIANCE WALL line and the tape. */
 export function sourceZone(a: Alliance): { x: number; y: number }[] {
   const d = SOURCE_ZONE_DEPTH;

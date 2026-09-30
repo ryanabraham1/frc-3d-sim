@@ -8,7 +8,7 @@ import { crescendo2024 as season } from '../src/seasons/2024-crescendo';
 import { CrescendoRules } from '../src/seasons/2024-crescendo/rules';
 import * as C from '../src/seasons/2024-crescendo/constants';
 import { ampPoints, ensembleEarned, melodyEarned, speakerPoints, stagePoints } from '../src/seasons/2024-crescendo/scoring';
-import { normalizeCrescendoConfig } from '../src/seasons/2024-crescendo/config';
+import { crescendoRobotOptions, crescendoRobotPresets, normalizeCrescendoConfig } from '../src/seasons/2024-crescendo/config';
 
 const sims: HeadlessSim[] = [];
 beforeAll(async () => {
@@ -24,6 +24,7 @@ function make(a: Alliance = 'blue', pose: FieldPose = season.startPose(a, 2), ro
   return sim;
 }
 const rules = (sim: HeadlessSim) => sim.rules as CrescendoRules;
+const preset = (id: string) => cloneConfig(crescendoRobotPresets().find((p) => p.id === id)!.config);
 /** Step physics AND the match clock (HeadlessSim.step alone never advances the clock). */
 function run(sim: HeadlessSim, seconds: number, cmd: RobotCommand | (() => RobotCommand) = IDLE_COMMAND) {
   for (let n = 0; n < Math.round(seconds / sim.physics.dt); n++) {
@@ -203,7 +204,7 @@ describe('2024 CRESCENDO — manual facts', () => {
     it(`${a}: climbs a chain in TELEOP, scores a TRAP, and is assessed ONSTAGE (SPOTLIT 4)`, () => {
       const g = C.chainGeometry(a, 0);
       const pose = { x: g.mid.x + Math.cos(g.normal) * 0.35, y: g.mid.y + Math.sin(g.normal) * 0.35, yaw: g.normal + Math.PI };
-      const sim = make(a, pose);
+      const sim = make(a, pose, preset('amp-trap'));
       const r = rules(sim);
       jump(sim, ENDGAME + 2);
       give(sim);
@@ -271,7 +272,7 @@ describe('2024 CRESCENDO — manual facts', () => {
     run(sim, 0.5, { ...IDLE_COMMAND, shoot: true });
     expect(sim.ctx.score.fouls.map((f) => [f.rule, f.kind])).toEqual([['G404', 'major']]);
     expect(sim.ctx.score.foulPointsFor('red')).toBe(5);
-    const s2 = make('blue', { x: C.L - C.WING_DEPTH + 0.5, y: C.SPEAKER_Y, yaw: Math.PI });
+    const s2 = make('blue', { x: C.L - C.WING_DEPTH + 0.5, y: C.SPEAKER_Y, yaw: Math.PI }, preset('turret'));
     jump(s2, TELEOP + 1);
     give(s2, C.FIELD_NOTES);
     give(s2, C.FIELD_NOTES + 1);
@@ -279,19 +280,129 @@ describe('2024 CRESCENDO — manual facts', () => {
     expect(s2.ctx.score.fouls.map((f) => [f.rule, f.kind])).toEqual([['G414', 'minor'], ['G414', 'major']]);
   });
 
-  it('SOURCE human players drop NOTES for a robot waiting at its SOURCE in TELEOP', () => {
-    const src = C.sourcePoint('blue', 0.5, 1.0);
-    const sim = make('blue', { ...src, yaw: 0 });
+  /** Robot facing the SOURCE opening, `gap` m from its bumpers to the SOURCE wall. */
+  const atSource = (a: Alliance, gap: number, config = cloneConfig(season.robotDefaults)): FieldPose => {
+    const n = C.sideYaw(C.sourceEnd(a), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x));
+    const w = C.sourcePoint(a, 0.5, config.frameLength / 2 + config.bumperThickness + gap);
+    return { x: w.x, y: w.y, yaw: n + Math.PI };
+  };
+  const emptyHanded = (sim: HeadlessSim, a: Alliance) => {
     sim.rules.stage();
-    sim.robot.held.length = 0;
+    for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i, `source:${a}`);
+  };
+
+  for (const a of ['blue', 'red'] as const) {
+    it(`${a}: the SOURCE human player drops a NOTE down the physical 50° CHUTE into a SOURCE intake`, () => {
+      const cfg = preset('source-pivot');
+      const sim = make(a, atSource(a, 0.02, cfg), cfg);
+      sim.ctx.humanPlayerIsAuto = () => true;
+      emptyHanded(sim, a);
+      jump(sim, TELEOP + 1);
+      const before = sim.pool.indices('reserve', `source:${a}`).length;
+      run(sim, 2.5, { ...IDLE_COMMAND, intake: true });
+      expect(sim.pool.indices('reserve', `source:${a}`).length).toBe(before - 1);
+      expect(sim.robot.held).toHaveLength(1);
+    });
+
+    it(`${a}: a NOTE the SOURCE drops lands on the carpet, where only a ground intake can pick it up`, () => {
+      for (const [id, expected] of [['pivot', 1], ['source-pivot', 0]] as const) {
+        const cfg = preset(id);
+        const sim = make(a, atSource(a, 1.0, cfg), cfg);
+        emptyHanded(sim, a);
+        jump(sim, TELEOP + 1);
+        rules(sim).humanPlayerAction(a, 1); // H: manual SOURCE drop
+        run(sim, 2.5);
+        const note = sim.pool.indices('field').find((i) => i >= C.FIELD_NOTES)!;
+        const p = sim.frame.toField(sim.pool.position(note));
+        expect(p.z, 'lying on the carpet').toBeLessThan(0.05);
+        expect(sim.robot.held).toHaveLength(0);
+        for (let k = 0; k < 90 * 3 && !sim.robot.held.length; k++) {
+          const dx = p.x - sim.robot.pose.x, dy = p.y - sim.robot.pose.y, d = Math.hypot(dx, dy);
+          const cmd = { ...IDLE_COMMAND, intake: true, vx: (dx / d) * 1.2, vy: (dy / d) * 1.2 };
+          for (const ch of sim.ctx.clock.advance(sim.physics.dt)) sim.rules.onPeriodChange(ch);
+          sim.step(cmd);
+        }
+        expect(sim.robot.held, id).toHaveLength(expected);
+      }
+    });
+  }
+
+  it('SOURCE human players only drop in TELEOP, one NOTE in the CHUTE at a time', () => {
+    const sim = make('blue', atSource('blue', 0.6));
+    emptyHanded(sim, 'blue');
+    startMatch(sim);
+    expect(rules(sim).dropNote('blue')).toBe(false);
     jump(sim, TELEOP + 1);
-    const before = sim.pool.indices('reserve', 'source:blue').length;
-    run(sim, 1.5);
-    expect(sim.pool.indices('reserve', 'source:blue').length).toBe(before - 1);
+    expect(rules(sim).dropNote('blue')).toBe(true);
+    expect(rules(sim).dropNote('blue')).toBe(false);
+  });
+
+  it('offers realistic 2024 archetypes and intake / shooter / aiming options', () => {
+    const ids = crescendoRobotPresets().map((p) => p.id);
+    expect(ids).toEqual(['pivot', 'turret', 'source-pivot', 'kitbot', 'amp-trap']);
+    expect(season.robotDefaults.launcher.turret).toBe(false);
+    expect(season.robotDefaults.autoAlign).toBe(true);
+    const kit = preset('kitbot');
+    expect([kit.intake.ground, kit.intake.station, kit.launcher.minAngle === kit.launcher.maxAngle, kit.climber.maxLevel]).toEqual([false, true, true, 0]);
+    const c = cloneConfig(season.robotDefaults);
+    const opt = (id: string) => crescendoRobotOptions.find((o) => o.id === id)!;
+    opt('intake').set(c, 'source');
+    expect([c.intake.ground, c.intake.station]).toEqual([false, true]);
+    opt('shooter').set(c, 'none');
+    expect(c.launcher.enabled).toBe(false);
+    opt('shooter').set(c, 'pivot');
+    expect(c.launcher.maxAngle).toBeGreaterThan(c.launcher.minAngle);
+    opt('aim').set(c, 'turret');
+    expect([c.launcher.turret, c.autoAlign]).toEqual([true, false]);
+  });
+
+  it('chassis auto-align turns a turretless robot onto the SPEAKER before it fires', () => {
+    const s = C.speakerCenter('blue');
+    const sim = make('blue', { x: s.x + 2.4, y: s.y - 1.2, yaw: 0.9 });
+    jump(sim, TELEOP + 1);
+    give(sim);
+    run(sim, 2.5, { ...IDLE_COMMAND, shoot: true });
+    expect(sim.robot.held).toHaveLength(0);
+    expect(sim.ctx.score.counter('blue', 'speaker') + sim.pool.countIn('reserve', 'speaker:blue')).toBeGreaterThanOrEqual(1);
+    // Without auto-align the driver must aim: facing away, the NOTE goes where the robot points.
+    const cfg = cloneConfig(season.robotDefaults);
+    cfg.autoAlign = false;
+    const manual = make('blue', { x: s.x + 2.4, y: s.y - 1.2, yaw: 0.9 }, cfg);
+    jump(manual, TELEOP + 1);
+    give(manual);
+    run(manual, 2.5, { ...IDLE_COMMAND, shoot: true });
+    expect(manual.pool.countIn('reserve', 'speaker:blue')).toBe(0);
+  });
+
+  it('a fixed SUBWOOFER shooter scores from the SUBWOOFER but not from the WING', () => {
+    const cfg = preset('kitbot');
+    const s = C.speakerCenter('blue');
+    // The KitBot's shooter faces forward: the driver backs off the SUBWOOFER facing the SPEAKER.
+    const close = make('blue', { x: C.SUBWOOFER_DEPTH + cfg.frameLength / 2 + cfg.bumperThickness + 0.05, y: s.y, yaw: Math.PI }, cfg);
+    jump(close, TELEOP + 1);
+    give(close);
+    run(close, 2.5, { ...IDLE_COMMAND, shoot: true });
+    expect(close.pool.countIn('reserve', 'speaker:blue')).toBe(1);
+    const far = make('blue', { x: s.x + 3.6, y: s.y, yaw: Math.PI }, cfg);
+    jump(far, TELEOP + 1);
+    give(far);
+    run(far, 2.5, { ...IDLE_COMMAND, shoot: true });
+    expect(far.pool.countIn('reserve', 'speaker:blue')).toBe(0);
+  });
+
+  it('a robot without an AMP mechanism cannot score the AMP', () => {
+    const cfg = cloneConfig(season.robotDefaults);
+    cfg.options = { ...cfg.options, amp: false };
+    const sim = make('blue', ampPose('blue'), cfg);
+    jump(sim, TELEOP + 1);
+    give(sim);
+    run(sim, 1, { ...IDLE_COMMAND, pass: true });
+    expect(sim.ctx.score.category('blue', 'amp')).toBe(0);
+    expect(sim.robot.held).toHaveLength(1);
   });
 
   it('SPEAKER NOTES stop counting 3 s after TELEOP ends', () => {
-    const sim = make('blue', season.testing!.scoringSpots('blue')[5]);
+    const sim = make('blue', season.testing!.scoringSpots('blue')[5], preset('turret'));
     jump(sim, 150 + 3 + 3.2);
     give(sim);
     const sensorOnly = sim.ctx.score.category('blue', 'speaker');

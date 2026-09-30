@@ -31,6 +31,17 @@ export interface RobotConfig {
     reach: number;
     /** Max piece center height that can be grabbed. */
     maxHeight: number;
+    /**
+     * Floor pickup (e.g. an under-bumper roller). Default true. False = the robot can only take pieces a human
+     * player feeds it (see `station`) — one of the main archetype trade-offs every season.
+     */
+    ground?: boolean;
+    /**
+     * Takes pieces straight from a human-player station while they fall/roll out of it: a funnel, hopper mouth
+     * or shooter intake at the top of the robot. Captures airborne pieces entering the zone at `stationSide`.
+     */
+    station?: boolean;
+    stationSide?: 'front' | 'back';
   };
   hopperCapacity: number;
   preload: number;
@@ -58,6 +69,14 @@ export interface RobotConfig {
     manualSpeed: number;
   };
   aimAssist: AimAssist;
+  /**
+   * Chassis auto-align for robots without a turret: while shooting/passing, the drive heading is servoed onto the
+   * target (the driver keeps translation) and the robot fires only once aligned — the swerve "aim at speaker" /
+   * "heading lock" feature most non-turret shooters had.
+   */
+  autoAlign?: boolean;
+  /** Season-specific archetype options (keys defined by the season module). */
+  options?: Record<string, string | number | boolean>;
 
   /** Optional elevator/placement mechanism; level heights are defined by the season. */
   placement?: {

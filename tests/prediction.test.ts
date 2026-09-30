@@ -43,6 +43,20 @@ describe('Predictor', () => {
     expect(pos.x).toBeCloseTo(2.0, 5);
   });
 
+  it('recovers quickly from one stalled round trip (host still loading the match)', () => {
+    const { robot } = fakeRobot();
+    const p = new Predictor(robot);
+    // First command acknowledged 4 s late, then the link is 30 ms.
+    p.onSent(1, 0);
+    p.onSnapshot(net(0, 0, 1), 4000, true);
+    expect(p.rtt).toBeLessThanOrEqual(1);
+    for (let k = 2; k < 8; k++) {
+      p.onSent(k, 4000 + k * 250);
+      p.onSnapshot(net(0, 0, k), 4000 + k * 250 + 30, true);
+    }
+    expect(p.rtt).toBeLessThan(0.05);
+  });
+
   it('corrects 30% of a small error and shifts history so it is not double-counted', () => {
     const { robot, pos } = fakeRobot();
     const p = new Predictor(robot);

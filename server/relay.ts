@@ -3,6 +3,7 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import {
   cleanName,
+  MAX_BINARY_BACKLOG,
   MAX_FRAME_BYTES,
   MAX_PEERS_PER_ROOM,
   normalizeRoomCode,
@@ -105,9 +106,14 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     ws.on('message', (raw: RawData, isBinary: boolean) => {
       const room = peer.room;
       if (isBinary) {
-        // Only the host streams binary (snapshots) → every other peer in the room.
+        // Only the host streams binary (snapshots) → every other peer in the room. A peer whose link can't
+        // keep up skips frames rather than queueing seconds of stale ones; it asks the host for a keyframe.
         if (!room || room.host !== peer) return;
-        for (const o of room.peers.values()) if (o !== peer && o.ws.readyState === WebSocket.OPEN) o.ws.send(raw, { binary: true });
+        for (const o of room.peers.values()) {
+          if (o === peer || o.ws.readyState !== WebSocket.OPEN) continue;
+          if (o.ws.bufferedAmount > MAX_BINARY_BACKLOG) continue;
+          o.ws.send(raw, { binary: true });
+        }
         return;
       }
       let req: RelayRequest;

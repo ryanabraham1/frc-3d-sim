@@ -2,7 +2,7 @@ import type { MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
-import { driverEye, rebuiltRobotDefaults, startPose, TIMELINE } from './config';
+import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltSpecBars, startPose, TIMELINE } from './config';
 import { buildRebuiltField, RebuiltFieldRefs, side, sideYaw } from './field';
 import { RebuiltHud } from './hud';
 import { RebuiltRules } from './rules';
@@ -63,6 +63,11 @@ export const rebuilt2026: SeasonDefinition = {
     count: C.FUEL_TOTAL,
   },
   robotDefaults: rebuiltRobotDefaults(),
+  normalizeRobotConfig: normalizeRebuiltConfig,
+  robotPresets: rebuiltRobotPresets(),
+  robotOptions: rebuiltRobotOptions,
+  robotSpecBars: rebuiltSpecBars,
+  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'],
   maxClimbLevel: 3,
   autoRoutines: AUTO_ROUTINES,
   mapShapes: mapShapes(),
@@ -128,5 +133,5 @@ export const rebuilt2026: SeasonDefinition = {
       );
     },
   },
-  controlsHelp: [...DEFAULT_CONTROLS_HELP, ['REBUILT tips', 'Score (Space) only while YOUR hub is lit and your bumpers are in your ALLIANCE ZONE; from the neutral zone, feed (G) FUEL home']],
+  controlsHelp: [...DEFAULT_CONTROLS_HELP, ['Aiming', 'Turret robots aim themselves; turretless robots with chassis auto-align rotate onto the HUB while you hold Space (you keep driving)'], ['REBUILT tips', 'Score (Space) only while YOUR hub is lit and your bumpers are in your ALLIANCE ZONE; from the neutral zone, feed (G) FUEL home']],
 };

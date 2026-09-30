@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type RAPIER from '@dimforge/rapier3d-compat';
 import { ALLIANCES, type Alliance } from '@engine/coords';
 import type { SeasonContext } from '@engine/core/season';
 import type { Vec3 } from '@engine/field/builder';
@@ -15,6 +16,10 @@ export interface ReefscapeFieldRefs {
   cageDepth: Record<Alliance, C.CageDepth[]>;
   lights: Record<Alliance, THREE.Mesh[]>;
   algae: Record<Alliance, THREE.Mesh[]>;
+  /** Static colliders for the staged reef ALGAE (enabled while it sits on the REEF), per face. */
+  algaeColliders: Record<Alliance, RAPIER.Collider[]>;
+  /** Trough colliders (L1), for "contacting the trough". */
+  troughColliders: Record<Alliance, RAPIER.Collider[]>;
   scored: THREE.Group;
 }
 
@@ -26,7 +31,7 @@ export function coralGeometry() {
 export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
   const b = ctx.builder;
   const L = C.FIELD_LENGTH, W = C.FIELD_WIDTH;
-  const refs: ReefscapeFieldRefs = { branches: { blue: [], red: [] }, cages: { blue: [], red: [] }, cageDepth: { blue: [], red: [] }, lights: { blue: [], red: [] }, algae: { blue: [], red: [] }, scored: new THREE.Group() };
+  const refs: ReefscapeFieldRefs = { branches: { blue: [], red: [] }, cages: { blue: [], red: [] }, cageDepth: { blue: [], red: [] }, lights: { blue: [], red: [] }, algae: { blue: [], red: [] }, algaeColliders: { blue: [], red: [] }, troughColliders: { blue: [], red: [] }, scored: new THREE.Group() };
   const tags: TagPose[] = [];
   refs.scored.name = 'reefscape-scored-pieces';
   b.root.add(refs.scored);
@@ -58,13 +63,39 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
       b.tape(p.x - 0.05, p.y, p.x + 0.05, p.y, 0.02, 0x141419);
       b.tape(p.x, p.y - 0.05, p.x, p.y + 0.05, 0.02, 0x141419);
     }
-    // Diagonal CORAL STATION walls; 76 in × 7 in opening with its bottom at 37.5 in (manual §5.6.2).
+    // Diagonal CORAL STATION walls with the 76 in × 7 in opening (bottom 37½ in) fed by a 55° CHUTE (§5.6.2).
     for (const [k, mouth] of C.stations(a).entries()) {
       const out = (d: number, z: number): Vec3 => [mouth.x + Math.cos(mouth.yaw) * d, mouth.y + Math.sin(mouth.yaw) * d, z];
       const yaw = mouth.yaw + Math.PI / 2;
-      b.box(out(-0.04, 1), [C.STATION_WALL_LENGTH, 0.08, 2], { color: 0x869cac, yaw, opacity: 0.42 });
-      b.box(out(0.005, C.STATION_MOUTH_HEIGHT - 0.03), [C.STATION_MOUTH_WIDTH, 0.03, 0.06], { color, yaw, collide: false });
-      b.box(out(0.005, C.STATION_MOUTH_HEIGHT + inch(7) + 0.03), [C.STATION_MOUTH_WIDTH, 0.03, 0.06], { color, yaw, collide: false });
+      const lo = C.STATION_MOUTH_HEIGHT, hi = lo + C.STATION_MOUTH_TALL;
+      const wall = { color: 0x869cac, yaw, opacity: 0.42 };
+      b.box(out(-0.04, lo / 2), [C.STATION_WALL_LENGTH, 0.08, lo], wall);
+      // Thin edge above the opening: a 4½ in CORAL on a 55° CHUTE only clears the 7 in opening at the wall plane.
+      b.box(out(-0.006, (hi + 2) / 2), [C.STATION_WALL_LENGTH, 0.012, 2 - hi], wall);
+      for (const sgn of [-1, 1]) {
+        const end = (C.STATION_WALL_LENGTH + C.STATION_MOUTH_WIDTH) / 4;
+        const [ex, ey] = out(-0.04, 0);
+        const t = { x: -Math.sin(mouth.yaw), y: Math.cos(mouth.yaw) };
+        b.box([ex + t.x * sgn * end, ey + t.y * sgn * end, (lo + hi) / 2], [(C.STATION_WALL_LENGTH - C.STATION_MOUTH_WIDTH) / 2, 0.08, hi - lo], wall);
+      }
+      b.box(out(0.005, lo - 0.03), [C.STATION_MOUTH_WIDTH, 0.03, 0.06], { color, yaw, collide: false });
+      b.box(out(0.005, hi + 0.03), [C.STATION_MOUTH_WIDTH, 0.03, 0.06], { color, yaw, collide: false });
+      // CHUTE: 35° exit lip at the opening, then the 55° slope up and away from the FIELD; roof and side walls keep
+      // CORAL in while it rolls down.
+      const n = { x: Math.cos(mouth.yaw), y: Math.sin(mouth.yaw) };
+      const up = (p: { x: number; y: number; z: number }, ang: number, d: number): Vec3 => [p.x + n.x * Math.sin(ang) * d, p.y + n.y * Math.sin(ang) * d, p.z + Math.cos(ang) * d];
+      const seg = (from: number, len: number, ang: number) => {
+        const mid = C.chutePoint(mouth, 0, from + len / 2);
+        b.box(up(mid, ang, -0.01), [len, C.STATION_MOUTH_WIDTH, 0.02], { yaw: mouth.yaw + Math.PI, pitch: ang, collide: 'pieces', color: 0x9aa7b3, roughness: 0.5 });
+        for (const sgn of [-1, 1]) {
+          const e = C.chutePoint(mouth, sgn * (C.STATION_MOUTH_WIDTH / 2 + 0.01), from + len / 2);
+          b.box(up(e, ang, 0.07), [len, 0.02, 0.16], { yaw: mouth.yaw + Math.PI, pitch: ang, collide: 'pieces', color: 0x9aa7b3, opacity: 0.5 });
+        }
+        return mid;
+      };
+      seg(0, C.CHUTE_LIP, C.CHUTE_LIP_ANGLE);
+      const slope = seg(C.CHUTE_LIP, C.CHUTE_LENGTH, C.CHUTE_ANGLE);
+      b.box(up(slope, C.CHUTE_ANGLE, 0.15), [C.CHUTE_LENGTH, C.STATION_MOUTH_WIDTH, 0.01], { yaw: mouth.yaw + Math.PI, pitch: C.CHUTE_ANGLE, collide: 'pieces', color: 0xc6d4de, opacity: 0.25 });
       b.label(out(0.01, 1.78), 'CORAL STATION', 0.19, mouth.yaw);
       const [tx, ty] = out(0.005, 0);
       tags.push({ id: a === 'blue' ? 12 + k : 2 - k, x: tx, y: ty, z: inch(53.25) + inch(10.5) / 2, yaw: mouth.yaw });
@@ -94,7 +125,8 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
       const faceMid = C.side(a, C.REEF_X + C.REEF_APOTHEM * Math.cos(angle), C.REEF_Y + C.REEF_APOTHEM * Math.sin(angle));
       const section = (profile: [number, number][], name: string, shade: number) => {
         const points: Vec3[] = profile.flatMap(([r, z]) => [-1, 1].map((sign): Vec3 => [r, sign * r * Math.tan(Math.PI / 6), z]));
-        b.convex([center.x, center.y, 0], points, { color: shade, yaw: C.sideYaw(a, angle), name: `${a}-trough-${f}-${name}`, roughness: 0.75 });
+        const el = b.convex([center.x, center.y, 0], points, { color: shade, yaw: C.sideYaw(a, angle), name: `${a}-trough-${f}-${name}`, roughness: 0.75 });
+        if (el.collider) refs.troughColliders[a].push(el.collider);
       };
       section([[innerApothem, troughBottom - 0.02], [C.REEF_APOTHEM, troughBottom - 0.02], [C.REEF_APOTHEM, C.LEVEL_HEIGHTS[1]], [C.REEF_APOTHEM - 0.02, C.LEVEL_HEIGHTS[1]], [innerApothem, troughBottom]], 'slope', 0x8a939b);
       section([[innerApothem - 0.02, troughBottom - 0.02], [innerApothem, troughBottom - 0.02], [innerApothem, C.LEVEL_HEIGHTS[1] + 0.025], [innerApothem - 0.02, C.LEVEL_HEIGHTS[1] + 0.025]], 'inner-wall', C.COLORS.steel);
@@ -120,6 +152,8 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
       algae.castShadow = true;
       b.root.add(algae);
       refs.algae[a].push(algae);
+      // Staged ALGAE rests between the face's pipes and physically blocks that level's BRANCHES.
+      refs.algaeColliders[a].push(b.sphere([ap.x, ap.y, C.LEVEL_HEIGHTS[high ? 3 : 2] + 0.08], C.ALGAE_RADIUS, { visible: false }).collider!);
     }
 
     const p = C.processor(a);

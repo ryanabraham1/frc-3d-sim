@@ -1,5 +1,6 @@
 import type { Alliance } from '@engine/coords';
 import type { MatchPeriod } from '@engine/match/clock';
+import type { RobotOption } from '@engine/core/season';
 import { cloneConfig, DEFAULT_ROBOT, sanitizeConfig, type RobotConfig } from '@engine/robot/config';
 import { inch } from '@engine/units';
 import * as C from './constants';
@@ -12,6 +13,10 @@ export const TIMELINE: MatchPeriod[] = [
   { id: 'post', label: 'FINAL SCORING', duration: 3, mode: 'disabled' },
 ];
 
+/**
+ * Default: the most common competitive 2025 design — an elevator with a CORAL end effector fed by a funnel from
+ * the CORAL STATION, reef auto-align, and a deep CAGE climber. See docs/ROBOT-ARCHETYPES.md.
+ */
 export function reefscapeRobotDefaults() {
   const c = cloneConfig(DEFAULT_ROBOT);
   c.height = inch(36);
@@ -21,14 +26,23 @@ export function reefscapeRobotDefaults() {
   c.preload = 1;
   c.intake.maxHeight = C.ALGAE_RADIUS * 2 + 0.1;
   c.intake.reach = 0.35;
-  c.intake.primary = c.intake.secondary = true;
+  c.intake.primary = true;
+  c.intake.secondary = false;
+  c.intake.ground = false;
+  c.intake.station = true;
+  c.intake.stationSide = 'back';
+  c.options = { algaeGround: false };
   c.placement = { enabled: true, maxLevel: 4, liftSpeed: 1.3, reach: inch(18), cycleSeconds: 0.6, harvestSeconds: 0.45 };
-  c.processor = { enabled: true };
+  c.processor = { enabled: false };
+  c.launcher.enabled = false;
+  c.launcher.turret = false; // pick-and-place game: no turret (it would make placement trivially easy)
   c.launcher.height = inch(38);
   c.launcher.minAngle = Math.PI / 6;
   c.launcher.maxAngle = Math.PI * 0.46;
   c.launcher.maxSpeed = 16;
   c.launcher.rate = 2;
+  c.aimAssist = 'speed';
+  c.autoAlign = true;
   c.climber.maxLevel = 2;
   c.climber.secondsToClimb = 3.6;
   return c;
@@ -39,6 +53,8 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   const c = sanitizeConfig(config, inch(42), inch(120)), d = reefscapeRobotDefaults();
   const bounded = (v: number | undefined, fallback: number, lo: number, hi: number) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v!)) : fallback;
   c.intake.primary ??= true; c.intake.secondary ??= true;
+  c.intake.ground ??= true; c.intake.station ??= false; c.intake.stationSide ??= 'back';
+  c.options = { ...d.options, ...c.options };
   c.placement = { ...d.placement!, ...c.placement };
   const p = c.placement;
   p.maxLevel = Math.round(bounded(p.maxLevel, 4, 1, 4));
@@ -47,10 +63,15 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   p.cycleSeconds = bounded(p.cycleSeconds, 0.6, 0.2, 3);
   p.harvestSeconds = bounded(p.harvestSeconds, 0.45, 0.2, 3);
   c.processor = { ...d.processor!, ...c.processor };
+  // A CORAL intake needs a way in: floor or funnel.
+  if (c.intake.primary && !c.intake.ground && !c.intake.station) c.intake.primary = false;
   c.hopperCapacity = Number(c.intake.primary) + Number(c.intake.secondary);
   c.preload = c.intake.primary ? Math.min(1, c.preload) : 0;
   c.intake.enabled = c.hopperCapacity > 0;
   c.intake.reach = Math.min(d.intake.reach, Math.max(0, p.reach - c.bumperThickness));
+  c.launcher.turret = false;
+  if (c.aimAssist === 'full') c.aimAssist = 'speed';
+  c.autoAlign ??= true;
   c.climber.maxLevel = Math.round(bounded(c.climber.maxLevel, 2, 0, 2));
   c.climber.secondsToClimb = bounded(c.climber.secondsToClimb, 3.6, 0.5, 12);
   c.launcher.rate = bounded(c.launcher.rate, 2, 0.25, 4);
@@ -58,22 +79,77 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   return c;
 }
 
+type Build = { coral: 'none' | 'l1' | 'l3' | 'l4'; intake: 'funnel' | 'ground' | 'both' | 'none'; algae: 'none' | 'reef' | 'reefGround'; algaeScore: 'none' | 'processor' | 'net' | 'both'; climb: 0 | 1 | 2; align: boolean };
+function build(b: Build): RobotConfig {
+  const c = reefscapeRobotDefaults();
+  c.placement!.enabled = b.coral !== 'none';
+  c.placement!.maxLevel = { none: 4, l1: 1, l3: 3, l4: 4 }[b.coral];
+  c.intake.primary = b.intake !== 'none' && b.coral !== 'none';
+  c.intake.ground = b.intake === 'ground' || b.intake === 'both';
+  c.intake.station = b.intake === 'funnel' || b.intake === 'both';
+  c.intake.secondary = b.algae !== 'none';
+  c.options = { ...c.options, algaeGround: b.algae === 'reefGround' };
+  c.processor!.enabled = b.algaeScore === 'processor' || b.algaeScore === 'both';
+  c.launcher.enabled = b.algaeScore === 'net' || b.algaeScore === 'both';
+  c.climber.maxLevel = b.climb;
+  c.autoAlign = b.align;
+  if (b.coral === 'l1') { c.height = inch(24); c.placement!.reach = inch(10); }
+  return normalizeReefscapeConfig(c);
+}
+
+/** Archetypes seen across 2025 events (docs/ROBOT-ARCHETYPES.md). */
 export function reefscapeRobotPresets() {
-  const all = reefscapeRobotDefaults(), coral = cloneConfig(all), algae = cloneConfig(all);
-  coral.intake.secondary = false; coral.launcher.enabled = false; coral.processor!.enabled = false;
-  algae.intake.primary = false; algae.preload = 0; algae.placement!.enabled = false;
   return [
-    { id: 'all-rounder', label: 'All-rounder', description: 'L1–L4 CORAL, reef/ground ALGAE, PROCESSOR, NET and a deep CAGE climber.', config: all },
-    { id: 'coral', label: 'CORAL + cage', description: 'L1–L4 CORAL and a deep CAGE climber; ALGAE mechanisms disabled.', config: coral },
-    { id: 'algae', label: 'ALGAE + cage', description: 'Reef/ground ALGAE, PROCESSOR, NET and a deep CAGE climber; no CORAL preload or scoring.', config: algae },
-  ].map((p) => ({ ...p, config: normalizeReefscapeConfig(p.config) }));
+    { id: 'funnel-l4', label: 'Funnel-fed L4 cycler', description: 'Elevator + CORAL end effector fed by a CORAL STATION funnel (no ground intake), reef auto-align, knocks ALGAE off with the elevator, deep climb. The most common competitive design.', config: build({ coral: 'l4', intake: 'funnel', algae: 'none', algaeScore: 'none', climb: 2, align: true }) },
+    { id: 'all-rounder', label: 'Ground-intake all-rounder', description: 'CORAL ground intake + funnel, L1–L4, reef and floor ALGAE into NET and PROCESSOR, auto-align, deep climb. The elite do-everything build.', config: build({ coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
+    { id: 'mid-elevator', label: 'L2–L3 elevator', description: 'Single-stage elevator: funnel-fed CORAL on L1–L3, reef ALGAE to the PROCESSOR, shallow climb. A common mid-tier build.', config: build({ coral: 'l3', intake: 'funnel', algae: 'reef', algaeScore: 'processor', climb: 1, align: true }) },
+    { id: 'trough', label: 'L1 trough bot', description: 'Low, simple robot: CORAL ground intake scoring only the L1 trough, floor ALGAE to the PROCESSOR, shallow climb, no auto-align (kit-bot style).', config: build({ coral: 'l1', intake: 'ground', algae: 'reefGround', algaeScore: 'processor', climb: 1, align: false }) },
+    { id: 'algae', label: 'ALGAE specialist', description: 'No CORAL scoring: removes reef ALGAE and collects it from the floor, shoots the NET and feeds the PROCESSOR, deep climb.', config: build({ coral: 'none', intake: 'none', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
+  ];
+}
+
+const opt = (id: string, label: string, choices: [string, string, string?][], get: (c: RobotConfig) => string, set: (c: RobotConfig, v: string) => void, hint?: string): RobotOption =>
+  ({ id, label, hint, choices: choices.map(([cid, l, title]) => ({ id: cid, label: l, title })), get, set: (c, v) => { set(c, v); Object.assign(c, normalizeReefscapeConfig(c)); } });
+
+export const reefscapeRobotOptions: RobotOption[] = [
+  opt('coral', 'CORAL scoring', [['none', 'None'], ['l1', 'L1 trough'], ['l3', 'Up to L3'], ['l4', 'Up to L4']],
+    (c) => !c.placement!.enabled ? 'none' : c.placement!.maxLevel === 1 ? 'l1' : c.placement!.maxLevel <= 3 ? 'l3' : 'l4',
+    (c, v) => { c.placement!.enabled = v !== 'none'; c.placement!.maxLevel = v === 'l1' ? 1 : v === 'l3' ? 3 : 4; if (v !== 'none' && !c.intake.ground && !c.intake.station) c.intake.station = true; c.intake.primary = v !== 'none'; },
+    'Elevator height limit. L1 is the trough (18 in); L2 31⅞ in, L3 47⅝ in, L4 72 in.'),
+  opt('coralIntake', 'CORAL intake', [['funnel', 'Station funnel', 'Catches CORAL rolling out of the CORAL STATION CHUTE'], ['ground', 'Ground', 'Picks CORAL up off the carpet'], ['both', 'Both'], ['none', 'None']],
+    (c) => !c.intake.primary ? 'none' : c.intake.ground && c.intake.station ? 'both' : c.intake.ground ? 'ground' : 'funnel',
+    (c, v) => { c.intake.primary = v !== 'none'; c.intake.ground = v === 'ground' || v === 'both'; c.intake.station = v === 'funnel' || v === 'both'; },
+    'Without a ground intake you depend on your human player dropping CORAL into your funnel.'),
+  opt('algae', 'ALGAE handling', [['none', 'Knock off only', 'The elevator can still knock reef ALGAE onto the carpet'], ['reef', 'Grab from REEF'], ['reefGround', 'REEF + ground']],
+    (c) => !c.intake.secondary ? 'none' : c.options?.algaeGround ? 'reefGround' : 'reef',
+    (c, v) => { c.intake.secondary = v !== 'none'; c.options = { ...c.options, algaeGround: v === 'reefGround' }; }),
+  opt('algaeScore', 'ALGAE scoring', [['none', 'None'], ['processor', 'PROCESSOR'], ['net', 'NET shooter'], ['both', 'Both']],
+    (c) => (c.processor!.enabled && c.launcher.enabled ? 'both' : c.processor!.enabled ? 'processor' : c.launcher.enabled ? 'net' : 'none'),
+    (c, v) => { c.processor!.enabled = v === 'processor' || v === 'both'; c.launcher.enabled = v === 'net' || v === 'both'; }),
+  opt('assist', 'Driver assist', [['align', 'Reef auto-align', 'Holding Space drives to the nearest open BRANCH (vision pose alignment)'], ['manual', 'Manual alignment']],
+    (c) => (c.autoAlign ? 'align' : 'manual'), (c, v) => { c.autoAlign = v === 'align'; },
+    'CORAL only goes on when the end effector is lined up with the BRANCH (±1 in).'),
+  opt('climb', 'CAGE climber', [['0', 'None'], ['1', 'Shallow'], ['2', 'Deep']],
+    (c) => String(c.climber.maxLevel), (c, v) => { c.climber.maxLevel = Number(v); },
+    'Park 2 · shallow 6 · deep 12. Sets your station’s cage depth; you may climb any matching alliance cage.'),
+];
+
+export function reefscapeSpecBars(config: RobotConfig) {
+  const c = normalizeReefscapeConfig(config);
+  const intake = !c.intake.primary ? 'no intake' : c.intake.ground && c.intake.station ? 'ground + funnel' : c.intake.ground ? 'ground' : 'funnel';
+  return [
+    { label: 'CORAL', value: c.placement!.enabled ? `L1–L${c.placement!.maxLevel} · ${intake}` : 'Off', frac: c.placement!.enabled ? c.placement!.maxLevel / 4 : 0 },
+    { label: 'ALGAE', value: !c.intake.secondary ? 'Knock off' : [c.processor!.enabled ? 'PROCESSOR' : '', c.launcher.enabled ? 'NET' : ''].filter(Boolean).join(' + ') || 'Pickup only', frac: Number(c.intake.secondary) * (Number(c.processor!.enabled) + Number(c.launcher.enabled)) / 2 },
+    { label: 'Mechanism reach', value: `${(c.placement!.reach / 0.0254).toFixed(1)} in`, frac: c.placement!.reach / inch(18) },
+  ];
 }
 
 export function reefscapeRobotSummary(config: RobotConfig): string {
   const c = normalizeReefscapeConfig(config);
-  const coral = c.placement!.enabled && c.intake.primary ? `CORAL L1–L${c.placement!.maxLevel}` : 'CORAL off';
-  const algae = c.intake.secondary ? [c.processor!.enabled ? 'PROCESSOR' : '', c.launcher.enabled ? 'NET' : ''].filter(Boolean).join(' + ') || 'ALGAE pickup only' : 'ALGAE off';
-  return `${coral} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}`;
+  const intake = !c.intake.primary ? '' : c.intake.ground && c.intake.station ? ' (ground + funnel)' : c.intake.ground ? ' (ground)' : ' (funnel)';
+  const coral = c.placement!.enabled && c.intake.primary ? `CORAL L1–L${c.placement!.maxLevel}${intake}` : 'CORAL off';
+  const algae = c.intake.secondary ? [c.processor!.enabled ? 'PROCESSOR' : '', c.launcher.enabled ? 'NET' : ''].filter(Boolean).join(' + ') || 'ALGAE pickup only' : 'ALGAE knock-off';
+  return `${coral} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
 }
 
 export function startPose(a: Alliance, station: number) {

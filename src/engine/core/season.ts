@@ -83,6 +83,11 @@ export interface SeasonRules {
   /** A placement/elevator season can own mechanisms and intake instead of the generic shooter. */
   handlesIntake?: boolean;
   handleMechanisms?(robot: Robot, command: RobotCommand, dt: number): boolean;
+  /**
+   * Optional driver assist applied to a robot's command BEFORE it drives (manual and AUTO), e.g. REEFSCAPE reef
+   * auto-align. Chassis auto-align onto the shot target is applied by the engine afterwards.
+   */
+  adjustCommand?(robot: Robot, command: RobotCommand, dt: number): RobotCommand;
   /** Stage game pieces and robot preloads for a fresh match. */
   stage(): void;
   onPeriodChange(change: PeriodChange): void;
@@ -136,6 +141,15 @@ export interface MapShape {
   points: [number, number][];
 }
 
+export interface RobotOption {
+  id: string;
+  label: string;
+  hint?: string;
+  choices: { id: string; label: string; title?: string }[];
+  get(config: RobotConfig): string;
+  set(config: RobotConfig, choice: string): void;
+}
+
 export interface AutoRoutine {
   id: string;
   label: string;
@@ -174,8 +188,17 @@ export interface SeasonDefinition {
   mapShapes?: MapShape[];
   /** How the red half mirrors the blue `mapShapes`: rotational (default, L−x, W−y) or mirror (L−x, y). */
   mapSymmetry?: 'rotational' | 'mirror';
-  /** Number of human-player buttons (1 = H only; 2 adds B / gamepad LB; 3 adds N). Default 1. */
+  /** Number of human-player buttons (1 = H only; 2 adds B / gamepad LB; 3 adds N; 4 adds M). Default 1. */
   humanPlayerButtons?: number;
+  /**
+   * Robot-builder choices shown on the menu (archetype mechanisms: intake type, shooter type, aiming, climber…).
+   * Each option is a segmented control; `get` reads the current choice from a config and `set` applies one.
+   */
+  robotOptions?: RobotOption[];
+  /** Numeric robot fields shown on the menu (keys of the menu's field table). Default: the generic shooter set. */
+  robotFields?: string[];
+  /** Spec bars summarizing a config on the menu. */
+  robotSpecBars?(config: RobotConfig): { label: string; value: string; frac: number }[];
   /** Menu hint for the human-player option (auto / manual). */
   humanPlayerHint?: { auto: string; manual: string };
 

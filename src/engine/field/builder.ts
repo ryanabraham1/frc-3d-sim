@@ -162,6 +162,16 @@ export class FieldBuilder {
     return { mesh, collider };
   }
 
+  /** Sphere (e.g. a staged ball resting on a structure). */
+  sphere(center: Vec3, radius: number, o: ElementOptions = {}): Element {
+    const pos = this.frame.toWorld(center[0], center[1], center[2]);
+    const q = new THREE.Quaternion();
+    let mesh: THREE.Mesh | null = null;
+    if (o.visible ?? true) mesh = this.finishMesh(new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 12), this.material(o)), pos, q, o);
+    const collider = this.finishCollider(this.physics.R.ColliderDesc.ball(radius), pos, q, o);
+    return { mesh, collider };
+  }
+
   /** Floor tape line between two field points. */
   tape(x0: number, y0: number, x1: number, y1: number, width: number, color: THREE.ColorRepresentation): THREE.Mesh {
     const len = Math.hypot(x1 - x0, y1 - y0);
