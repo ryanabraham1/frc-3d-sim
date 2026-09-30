@@ -113,6 +113,12 @@ export interface HudSlots {
   player: HTMLElement;
 }
 
+/** Menu minimap shape, in BLUE-side field coordinates (meters); the menu mirrors it for red. */
+export interface MapShape {
+  kind: 'zone' | 'hub' | 'bump' | 'trench' | 'tower' | 'depot' | 'outpost';
+  points: [number, number][];
+}
+
 export interface AutoRoutine {
   id: string;
   label: string;
@@ -139,6 +145,8 @@ export interface SeasonDefinition {
   robotDefaults: RobotConfig;
   maxClimbLevel: number;
   autoRoutines: AutoRoutine[];
+  /** Optional top-down field features for the menu's starting-spot map. */
+  mapShapes?: MapShape[];
 
   startPose(alliance: Alliance, station: number): FieldPose;
   driverEye(alliance: Alliance, station: number): { x: number; y: number; z: number; yaw: number };

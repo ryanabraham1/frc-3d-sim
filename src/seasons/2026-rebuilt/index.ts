@@ -1,4 +1,4 @@
-import type { SeasonDefinition } from '@engine/core/season';
+import type { MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
@@ -6,6 +6,28 @@ import { driverEye, rebuiltRobotDefaults, startPose, TIMELINE } from './config';
 import { buildRebuiltField, RebuiltFieldRefs } from './field';
 import { RebuiltHud } from './hud';
 import { RebuiltRules } from './rules';
+
+const rect = (x0: number, y0: number, x1: number, y1: number): [number, number][] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+
+function mapShapes(): MapShape[] {
+  const { x: hx, y: hy } = C.HUB_CENTER;
+  const R = C.HUB_OPENING_HEX / Math.sqrt(3);
+  const hex = Array.from({ length: 6 }, (_, k): [number, number] => [hx + R * Math.cos(Math.PI / 2 + (k * Math.PI) / 3), hy + R * Math.sin(Math.PI / 2 + (k * Math.PI) / 3)]);
+  const hs = C.HUB_SIZE / 2;
+  const bd = C.BUMP_DEPTH / 2;
+  const td = C.TRENCH_DEPTH / 2;
+  return [
+    { kind: 'zone', points: rect(0, 0, C.ALLIANCE_ZONE_DEPTH, C.FIELD_WIDTH) },
+    { kind: 'trench', points: rect(hx - td, 0, hx + td, C.TRENCH_WIDTH) },
+    { kind: 'trench', points: rect(hx - td, C.FIELD_WIDTH - C.TRENCH_WIDTH, hx + td, C.FIELD_WIDTH) },
+    { kind: 'bump', points: rect(hx - bd, hy - hs - C.BUMP_WIDTH, hx + bd, hy - hs) },
+    { kind: 'bump', points: rect(hx - bd, hy + hs, hx + bd, hy + hs + C.BUMP_WIDTH) },
+    { kind: 'hub', points: hex },
+    { kind: 'tower', points: rect(0, C.TOWER_CENTER_Y - C.TOWER_WIDTH / 2, C.TOWER_DEPTH, C.TOWER_CENTER_Y + C.TOWER_WIDTH / 2) },
+    { kind: 'depot', points: rect(0, C.DEPOT_CENTER_Y - C.DEPOT_WIDTH / 2, C.DEPOT_DEPTH, C.DEPOT_CENTER_Y + C.DEPOT_WIDTH / 2) },
+    { kind: 'outpost', points: rect(0, 0, 0.61, C.OUTPOST_AREA_WIDTH) },
+  ];
+}
 
 /** Field refs are created in buildField and handed to the rules. One game per page, so module scope is fine. */
 let fieldRefs: RebuiltFieldRefs | null = null;
@@ -43,6 +65,7 @@ export const rebuilt2026: SeasonDefinition = {
   robotDefaults: rebuiltRobotDefaults(),
   maxClimbLevel: 3,
   autoRoutines: AUTO_ROUTINES,
+  mapShapes: mapShapes(),
 
   startPose: (a, s) => startPose(a, s),
   driverEye,

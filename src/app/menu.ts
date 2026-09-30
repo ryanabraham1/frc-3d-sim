@@ -1,10 +1,11 @@
-import type { GameSettings, SeasonDefinition } from '@engine/core/season';
 import type { CameraMode } from '@engine/camera/cameras';
+import type { GameSettings, MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { AimAssist, cloneConfig, RobotConfig } from '@engine/robot/config';
 import { formatClock, inch, toInch } from '@engine/units';
 import { SEASONS, getSeason } from '@seasons/index';
 import { icon } from './icons';
+import './menu.css';
 
 const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
@@ -83,24 +84,79 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
-const initials = (s: string) =>
-  s
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
 
-function row(title: string, sub: string, controls: string, badge = initials(title)): string {
-  return `<div class="row">
-    <div class="badge">${esc(badge)}</div>
-    <div class="row-text"><div class="row-title">${esc(title)}</div><div class="row-sub">${sub}</div></div>
-    <div class="row-ctl">${controls}</div>
-  </div>`;
+function opt(attrs: string, label: string, on: boolean, extra = '', lead = ''): string {
+  return `<button class="opt ${on ? 'on' : ''} ${extra}" ${attrs}>${lead}<span>${esc(label)}</span></button>`;
 }
 
-function opt(attrs: string, label: string, on: boolean, ico = '', extra = ''): string {
-  return `<button class="opt ${on ? 'on' : ''} ${extra}" ${attrs}>${ico}<span>${esc(label)}</span></button>`;
+function group(label: string, body: string, hint = ''): string {
+  return `<div class="group"><div class="label">${esc(label)}</div>${body}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
+}
+
+const CAMERAS: [CameraMode, string][] = [
+  ['follow', 'Third person'],
+  ['driver', 'Driver station'],
+  ['chase', 'Chase'],
+  ['overhead', 'Overhead'],
+];
+
+function robotArt(alliance: 'red' | 'blue', team: number): string {
+  const c = alliance === 'red' ? '#ef4444' : '#4f8cff';
+  return `<svg viewBox="0 0 210 150" aria-hidden="true">
+    <ellipse cx="105" cy="112" rx="88" ry="26" fill="none" stroke="#2f2f3c" stroke-width="1.5"/>
+    <polygon points="105,62 172,96 105,130 38,96" fill="${c}"/>
+    <polygon points="105,74 156,98 105,122 54,98" fill="#0c0c10"/>
+    <polygon points="38,96 105,130 105,138 38,104" fill="${c}" opacity=".6"/>
+    <polygon points="172,96 105,130 105,138 172,104" fill="${c}" opacity=".4"/>
+    <polygon points="105,30 130,42 130,84 105,96 80,84 80,42" fill="#8b6cf6"/>
+    <polygon points="105,30 130,42 105,54 80,42" fill="#a48bff"/>
+    <polygon points="105,54 130,42 130,84 105,96" fill="#6c4fd8"/>
+    <text x="105" y="112" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="15" fill="#fff" letter-spacing="1">${team}</text>
+  </svg>`;
+}
+
+const SHAPE_OPACITY: Record<MapShape['kind'], number> = { zone: 0.07, hub: 0.28, bump: 0.16, trench: 0.12, tower: 0.1, depot: 0.08, outpost: 0.1 };
+
+/** Top-down field with the player's start position; other driver stations are clickable. */
+function fieldMap(season: SeasonDefinition, s: GameSettings): string {
+  const L = season.fieldLength;
+  const W = season.fieldWidth;
+  const pad = 0.5;
+  const fy = (y: number) => W - y; // +y is up on screen
+  const poly = (m: MapShape, red: boolean) =>
+    m.points.map(([x, y]) => `${(red ? L - x : x).toFixed(3)},${fy(red ? W - y : y).toFixed(3)}`).join(' ');
+  const shapes = season.mapShapes ?? [];
+  let out = '';
+  for (const red of [false, true]) {
+    const col = red ? '#ef4444' : '#4f8cff';
+    for (const m of shapes) {
+      const neutral = m.kind === 'tower' || m.kind === 'depot' || m.kind === 'outpost';
+      out += `<polygon points="${poly(m, red)}" fill="${neutral ? '#ffffff' : col}" fill-opacity="${SHAPE_OPACITY[m.kind]}" stroke="${m.kind === 'zone' ? 'none' : col}" stroke-opacity="${m.kind === 'hub' ? 0.9 : 0.4}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+    }
+  }
+  const zone = shapes.find((m) => m.kind === 'zone');
+  const zx = zone ? Math.max(...zone.points.map((p) => p[0])) : season.startPose('blue', 1).x;
+  out += `<line x1="${zx}" y1="0" x2="${zx}" y2="${W}" stroke="#4f8cff" stroke-opacity=".7" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  out += `<line x1="${L - zx}" y1="0" x2="${L - zx}" y2="${W}" stroke="#ef4444" stroke-opacity=".7" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  out += `<line x1="${L / 2}" y1="0" x2="${L / 2}" y2="${W}" stroke="#fff" stroke-opacity=".25" stroke-width="1.5" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>`;
+
+  const fl = s.robot.frameLength + 2 * s.robot.bumperThickness;
+  const fw = s.robot.frameWidth + 2 * s.robot.bumperThickness;
+  for (const n of [1, 2, 3]) {
+    const p = season.startPose(s.alliance, n);
+    if (n === s.station) {
+      const deg = (-p.yaw * 180) / Math.PI;
+      out += `<g transform="translate(${p.x} ${fy(p.y)}) rotate(${deg})">
+        <rect x="${-fl / 2}" y="${-fw / 2}" width="${fl}" height="${fw}" rx="0.06" fill="#8b6cf6" fill-opacity=".35" stroke="#a48bff" stroke-width="2.5" vector-effect="non-scaling-stroke"/>
+        <polygon points="${fl / 2 + 0.3},0 ${fl / 2 + 0.04},-0.16 ${fl / 2 + 0.04},0.16" fill="#a48bff"/>
+      </g>
+      <text x="${p.x}" y="${fy(p.y)}" text-anchor="middle" dominant-baseline="central" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="0.42" fill="#fff">${s.robot.teamNumber}</text>`;
+    } else {
+      out += `<circle class="st-hit" data-station="${n}" cx="${p.x}" cy="${fy(p.y)}" r="0.5"/><circle class="st-dot" cx="${p.x}" cy="${fy(p.y)}" r="0.24" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+    }
+  }
+  return `<svg viewBox="${-pad} ${-pad} ${L + 2 * pad} ${W + 2 * pad}" preserveAspectRatio="xMidYMid meet">
+    <rect x="0" y="0" width="${L}" height="${W}" fill="#0f0f15" stroke="#e7e7ee" stroke-opacity=".8" stroke-width="1.5" vector-effect="non-scaling-stroke"/>${out}</svg>`;
 }
 
 export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => void): void {
@@ -124,210 +180,165 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   container.appendChild(el);
 
   const matchLength = () => season.timeline.filter((p) => p.mode !== 'disabled').reduce((a, p) => a + p.duration, 0);
-
   const numInput = (f: NumField) =>
     `<label class="num"><span>${esc(f.label)}</span><input type="number" data-f="${f.key}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.get(s.robot)}"/></label>`;
+
+  const specBar = (label: string, value: string, frac: number) => {
+    const n = Math.round(Math.min(1, Math.max(0, frac)) * 10);
+    return `<div class="spec-bar"><div class="top"><span>${esc(label)}</span><b>${esc(value)}</b></div><div class="segs">${Array.from({ length: 10 }, (_, i) => `<i class="${i < n ? 'f' : ''}"></i>`).join('')}</div></div>`;
+  };
 
   const playPage = () => {
     const F = numFields(season);
     const r = s.robot;
     const routine = season.autoRoutines.find((x) => x.id === s.autoRoutine);
-    const allianceCode = `${s.alliance === 'red' ? 'R' : 'B'}${s.station}`;
-    return `
-      <section class="card">
-        <div class="card-head">
-          <div class="ch-left">
-            <span class="big-num ${s.alliance}">${allianceCode}</span>
-            <div><div class="ch-title">${s.alliance === 'red' ? 'Red' : 'Blue'} ${s.station}</div><div class="mono dim">team ${r.teamNumber} · driver station</div></div>
-          </div>
-          <button class="start" data-k="start">${icon.play(16)}<span>Start match</span></button>
-          <div class="mono amber">${s.manualAuto ? 'You drive AUTO' : 'AUTO runs your routine'} after a 3s countdown</div>
-        </div>
-        ${row('Alliance', 'Which side of the field you drive for', opt('data-alliance="red"', 'Red', s.alliance === 'red', icon.flag(15), 'red') + opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', icon.flag(15), 'blue'), 'AL')}
-        ${row('Driver station', 'Sets your starting spot and driver view', [1, 2, 3].map((n) => opt(`data-station="${n}"`, `Station ${n}`, s.station === n, icon.user(15))).join(''), 'DS')}
-        ${row(
-          'Autonomous',
-          s.manualAuto
-            ? 'You drive during the 20 s AUTO period. Remember G403 — don’t fully cross the CENTER LINE.'
-            : esc(routine?.description ?? ''),
-          opt('data-routine="__manual"', 'Drive it yourself', s.manualAuto, icon.gamepad(15)) +
-            season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, !s.manualAuto && x.id === s.autoRoutine, icon.route(15))).join(''),
-          'AU',
-        )}
-        ${row(
-          'Camera',
-          'Starting view — press V in a match to cycle. Follow: drag to orbit, scroll to zoom.',
-          (
-            [
-              ['driver', 'Driver station'],
-              ['follow', 'Follow (3rd person)'],
-              ['chase', 'Chase'],
-              ['overhead', 'Overhead'],
-            ] as [CameraMode, string][]
-          )
-            .map(([m, label]) => opt(`data-camera="${m}"`, label, s.camera === m, icon.target(15)))
-            .join(''),
-          'CM',
-        )}
-        ${row(
-          'Match options',
-          'Practice helpers — none of these change scoring',
-          opt('data-toggle="autoHumanPlayer"', 'Auto human player', s.autoHumanPlayer, icon.users(15)) +
-            opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake, icon.check(15)) +
-            opt('data-toggle="shadows"', 'Shadows', s.shadows, icon.sliders(15)),
-          'OP',
-        )}
+    const acc = F.acc.get(r);
+    const left = `
+      <section class="panel robot-card ${s.alliance}">
+        <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
+        <div class="robot-art">${robotArt(s.alliance, r.teamNumber)}</div>
+        <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
+        <button class="wide-btn" data-k="resetRobot"><span>Reset robot</span>${icon.reset(18)}</button>
       </section>
-
-      <div class="section-label">${icon.logo(14)}<span>Your robot</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${season.year} defaults</button></div>
-      <section class="card">
-        ${row('Identity', 'Shown on your bumpers', numInput(F.team), 'ID')}
-        ${row('Size', `Max height ${toInch(season.maxRobotHeight).toFixed(0)}in · under 22.25in fits the TRENCH`, numInput(F.height) + numInput(F.len) + numInput(F.wid), 'SZ')}
-        ${row('Drivetrain', 'Swerve · field-oriented', numInput(F.speed) + numInput(F.accel), 'DT')}
-        ${row('Hopper', 'Preload max 8 FUEL', numInput(F.cap) + numInput(F.pre), 'HP')}
-        ${row(
-          'Launcher',
-          'Rate and grouping',
-          numInput(F.rate) + numInput(F.acc) + opt('data-toggle="turret"', 'Turret', r.launcher.turret, icon.target(15)),
-          'LN',
-        )}
-        ${row(
-          'Aim assist',
-          'Full = turret aim + speed · Speed = aim with your chassis · Off = manual',
-          (['full', 'speed', 'off'] as AimAssist[]).map((a) => opt(`data-aim="${a}"`, { full: 'Full', speed: 'Speed only', off: 'Off' }[a], r.aimAssist === a, icon.target(15))).join(''),
-          'AA',
-        )}
-        ${row(
-          'Climber',
-          'Highest TOWER level your robot can reach',
-          Array.from({ length: season.maxClimbLevel + 1 }, (_, n) => opt(`data-level="${n}"`, n === 0 ? 'None' : `L${n}`, r.climber.maxLevel === n, n === 0 ? '' : icon.arrowUp(15))).join('') + numInput(F.cspd),
-          'CL',
-        )}
+      ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
+      ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`)}
+      ${group('Autonomous', `<div class="seg">${season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, x.id === s.autoRoutine)).join('')}</div>`, routine?.description ?? '')}
+      ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.')}
+      ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.')}`;
+    const right = `
+      <section class="panel map-panel">
+        <div class="panel-head"><span>Starting spot</span><span class="dim" style="margin-left:auto">${season.year} ${esc(season.name)} · ${formatClock(matchLength())} match</span></div>
+        <div class="map-wrap">${fieldMap(season, s)}</div>
+        <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Other stations</span><span class="sp">Click a circle to move to that driver station.</span></div>
       </section>`;
+    const spec = `
+      <section class="panel" style="margin-top:22px">
+        <div class="panel-head"><span>Spec</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${season.year} defaults</button></div>
+        <div class="spec-bars">
+          ${specBar('Speed', `${F.speed.get(r)} ft/s`, F.speed.get(r) / 22)}
+          ${specBar(`${season.gamePiece.name} capacity`, `${r.hopperCapacity}`, r.hopperCapacity / 80)}
+          ${specBar('Fire rate', `${r.launcher.rate} /s`, r.launcher.rate / 20)}
+          ${specBar('Accuracy', `${acc}%`, acc / 100)}
+          ${specBar('Climb', r.climber.maxLevel === 0 ? 'None' : `L${r.climber.maxLevel}`, r.climber.maxLevel / Math.max(1, season.maxClimbLevel))}
+        </div>
+        <div class="tune">${['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'].map((k) => numInput(F[k])).join('')}</div>
+        <div class="tune-opts">
+          ${group('Aim assist', `<div class="seg">${(['full', 'speed', 'off'] as AimAssist[]).map((a) => opt(`data-aim="${a}"`, { full: 'Full', speed: 'Speed', off: 'Off' }[a], r.aimAssist === a)).join('')}</div>`, 'Full: turret aim + speed · Speed: aim with chassis · Off: manual')}
+          ${group('Turret', `<div class="seg">${opt('data-turret="1"', 'Turret', r.launcher.turret)}${opt('data-turret="0"', 'Fixed', !r.launcher.turret)}</div>`)}
+          ${group('Climber', `<div class="seg">${Array.from({ length: season.maxClimbLevel + 1 }, (_, n) => opt(`data-level="${n}"`, n === 0 ? 'None' : `L${n}`, r.climber.maxLevel === n)).join('')}</div>`, `Max height ${toInch(season.maxRobotHeight).toFixed(0)} in · under 22.25 in fits the TRENCH`)}
+        </div>
+      </section>`;
+    return `<div class="play-grid"><div class="col">${left}</div><div class="col">${right}</div></div>${spec}`;
   };
 
   const controlsPage = () => `
-    <section class="card">
+    <section class="panel list">
       ${(season.controlsHelp ?? DEFAULT_CONTROLS_HELP)
-        .map(([k, v]) => `<div class="row"><div class="badge">${icon.gamepad(15)}</div><div class="row-text"><div class="row-title">${esc(v)}</div></div><div class="row-ctl"><kbd>${esc(k)}</kbd></div></div>`)
+        .map(([k, v]) => `<div class="row"><div class="row-text"><div class="row-title">${esc(v)}</div></div><kbd>${esc(k)}</kbd></div>`)
         .join('')}
     </section>`;
 
   const rulesPage = () => `
-    <section class="card">
+    <section class="panel list">
       ${season.timeline
-        .map((p) =>
-          row(p.label, `${p.mode === 'disabled' ? 'Robots disabled' : p.mode.toUpperCase()}${p.displayGroup ? ` · field timer group “${p.displayGroup}”` : ''}`, `<span class="pill mono">${p.duration}s</span>`, p.id.slice(0, 2)),
-        )
+        .map((p) => `<div class="row"><div class="row-text"><div class="row-title">${esc(p.label)}</div><div class="row-sub">${p.mode === 'disabled' ? 'Robots disabled' : p.mode.toUpperCase()}</div></div><span class="pill">${p.duration}s</span></div>`)
         .join('')}
     </section>
     ${
       season.rulesSummary?.length
-        ? `<div class="section-label">${icon.book(14)}<span>Key rules</span></div><section class="card">${season.rulesSummary
-            .map((x) => row(x.title, esc(x.detail), x.value ? `<span class="pill mono">${esc(x.value)}</span>` : '', x.tag ?? initials(x.title)))
+        ? `<div class="section-label">Key rules</div><section class="panel list">${season.rulesSummary
+            .map((x) => `<div class="row"><div class="row-text"><div class="row-title">${esc(x.title)}</div><div class="row-sub">${esc(x.detail)}</div></div>${x.value ? `<span class="pill">${esc(x.value)}</span>` : ''}</div>`)
             .join('')}</section>`
         : ''
     }`;
 
+  let onKey: (e: KeyboardEvent) => void;
+  const start = () => {
+    save(s);
+    document.removeEventListener('keydown', onKey);
+    el.remove();
+    onStart(s);
+  };
+
   const render = () => {
-    const titles: Record<Page, { eyebrow: string; h1: string; lede: string }> = {
-      play: { eyebrow: `${season.year} · ${season.name}`, h1: 'Ready to drive?', lede: `Set up your robot and press <b>Start match</b>. Drive AUTO yourself or pick a routine, then TELEOP is all yours.` },
-      controls: { eyebrow: 'Keyboard & gamepad', h1: 'Controls', lede: 'Driving is field-oriented from your driver station. Press <b>V</b> in a match to switch cameras.' },
-      rules: { eyebrow: `${season.manualVersion}`, h1: `${season.name} at a glance`, lede: esc(season.summary) },
+    const titles: Record<Page, { h1: string; sub: string }> = {
+      play: { h1: 'Single player', sub: '' },
+      controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
+      rules: { h1: `${season.name} rules`, sub: season.summary },
     };
     const t = titles[page];
-    const nav = (p: Page, label: string, ico: string) => `<button class="nav ${page === p ? 'on' : ''}" data-page="${p}">${ico}<span>${label}</span></button>`;
+    const tab = (p: Page, label: string) => `<button class="bbtn ${page === p ? 'on' : ''}" data-page="${p}">${label}</button>`;
     el.innerHTML = `
-      <aside class="side">
-        <div class="logo">
-          <div class="logo-tile">${icon.logo(22)}</div>
-          <div><div class="logo-title">FRC 3D SIM</div><div class="logo-sub">SEASON ${season.year}</div></div>
-        </div>
-        <nav>
-          ${nav('play', 'Play', icon.play(18))}
-          ${nav('controls', 'Controls', icon.gamepad(18))}
-          ${nav('rules', 'Game rules', icon.book(18))}
-        </nav>
-        <div class="side-foot">
-          <label class="season-pick mono"><span>Season</span>
-            <select data-k="season">${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select>
-          </label>
-          <div class="status mono"><span class="dot"></span>Singleplayer</div>
-          <div class="mono dim small">Multiplayer · coming later</div>
-        </div>
-      </aside>
+      <header class="topbar">
+        <span class="brand">FRC Sim</span><span class="brand-sep"></span>
+        <label class="season-pick"><select data-k="season">${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select></label>
+        <div class="team-chip"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i>Team ${s.robot.teamNumber}</div>
+      </header>
       <main class="main">
-        <div class="head">
-          <div>
-            <div class="eyebrow">${icon.calendar(15)}<span>${esc(t.eyebrow)}</span></div>
-            <h1>${t.h1}</h1>
-            <p class="lede">${t.lede}</p>
-          </div>
-          <div class="stat">
-            <div class="stat-num">${season.gamePiece.count}</div>
-            <div><div class="stat-top">${esc(season.gamePiece.name)}</div><div class="stat-sub mono">on field · ${formatClock(matchLength())} match</div></div>
-          </div>
-        </div>
+        <h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>
         ${page === 'play' ? playPage() : page === 'controls' ? controlsPage() : rulesPage()}
-      </main>`;
+      </main>
+      <footer class="bar-bottom">
+        ${page === 'play' ? tab('controls', 'Controls') + tab('rules', 'Rules') : `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button>`}
+        <span class="spacer"></span>
+        ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}
+      </footer>`;
     bind();
   };
 
+  onKey = (e: KeyboardEvent) => {
+    if (!el.isConnected) return document.removeEventListener('keydown', onKey);
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (e.key === 'Escape' && page !== 'play') {
+      page = 'play';
+      render();
+    } else if (e.key === 'Enter' && page === 'play' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'BUTTON') start();
+  };
+  document.addEventListener('keydown', onKey);
+
   const bind = () => {
-    const all = <T extends HTMLElement>(sel: string) => Array.from(el.querySelectorAll<T>(sel));
-    all<HTMLButtonElement>('[data-page]').forEach((b) => (b.onclick = () => ((page = b.dataset.page as Page), render())));
+    const all = <T extends Element>(sel: string) => Array.from(el.querySelectorAll<T & HTMLElement>(sel));
+    all('[data-page]').forEach((b) => (b.onclick = () => ((page = b.dataset.page as Page), render())));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);
       s = { ...defaultSettings(season), alliance: s.alliance, station: s.station };
       render();
     };
-    all<HTMLButtonElement>('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
-    all<HTMLButtonElement>('[data-station]').forEach((b) => (b.onclick = () => ((s.station = Number(b.dataset.station)), render())));
-    all<HTMLButtonElement>('[data-routine]').forEach(
+    all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
+    all('[data-station]').forEach((b) => (b.onclick = () => ((s.station = Number(b.dataset.station)), render())));
+    all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
+    all('[data-routine]').forEach((b) => (b.onclick = () => ((s.autoRoutine = b.dataset.routine!), render())));
+    all('[data-aim]').forEach((b) => (b.onclick = () => ((s.robot.aimAssist = b.dataset.aim as AimAssist), render())));
+    all('[data-level]').forEach((b) => (b.onclick = () => ((s.robot.climber.maxLevel = Number(b.dataset.level)), render())));
+    all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
+    all('[data-turret]').forEach((b) => (b.onclick = () => ((s.robot.launcher.turret = b.dataset.turret === '1'), render())));
+    all('[data-toggle]').forEach(
       (b) =>
         (b.onclick = () => {
-          const id = b.dataset.routine!;
-          s.manualAuto = id === '__manual';
-          if (!s.manualAuto) s.autoRoutine = id;
+          const k = b.dataset.toggle as 'manualAuto' | 'autoIntake' | 'shadows';
+          s[k] = !s[k];
           render();
         }),
     );
-    all<HTMLButtonElement>('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
-    all<HTMLButtonElement>('[data-aim]').forEach((b) => (b.onclick = () => ((s.robot.aimAssist = b.dataset.aim as AimAssist), render())));
-    all<HTMLButtonElement>('[data-level]').forEach((b) => (b.onclick = () => ((s.robot.climber.maxLevel = Number(b.dataset.level)), render())));
-    all<HTMLButtonElement>('[data-toggle]').forEach(
+    all('[data-k="resetRobot"]').forEach(
       (b) =>
         (b.onclick = () => {
-          const k = b.dataset.toggle!;
-          if (k === 'turret') s.robot.launcher.turret = !s.robot.launcher.turret;
-          else if (k === 'autoHumanPlayer' || k === 'autoIntake' || k === 'shadows') s[k] = !s[k];
+          s.robot = cloneConfig(season.robotDefaults);
           render();
         }),
     );
-    const reset = el.querySelector<HTMLButtonElement>('[data-k="resetRobot"]');
-    if (reset)
-      reset.onclick = () => {
-        s.robot = cloneConfig(season.robotDefaults);
-        render();
-      };
     const F = numFields(season);
     all<HTMLInputElement>('[data-f]').forEach((input) => {
       const f = F[input.dataset.f!];
       input.onchange = () => {
         const v = Math.min(f.max, Math.max(f.min, Number(input.value)));
         if (Number.isFinite(v)) f.set(s.robot, v);
-        input.value = String(f.get(s.robot));
-        if (f.key === 'team') render();
+        render();
       };
     });
-    const start = el.querySelector<HTMLButtonElement>('[data-k="start"]');
-    if (start)
-      start.onclick = () => {
-        save(s);
-        el.remove();
-        onStart(s);
-      };
+    const startBtn = el.querySelector<HTMLButtonElement>('[data-k="start"]');
+    if (startBtn) startBtn.onclick = start;
   };
 
   render();
