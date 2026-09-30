@@ -18,7 +18,7 @@ Page numbers are the manual's printed pages.
 | Field | §5.1 p21–22 | 54 ft 3¼ in × 26 ft 11¼ in; 20 in guardrails; mirror-symmetric (red = L − x) |
 | Zones & markings | §5.2 p23–25 | ROBOT STARTING ZONE 76⅛ × 284⅛ in; AMP ZONE 130 × 17¾ in; SOURCE ZONE parallelogram 18¾ in deep; WING line; STAGE ZONE hexagon; CENTER LINE; STARTING LINE 2 ft behind the wall |
 | AMP | §5.3 p25–26 | Pocket 24 × 18 × 3⅞ in, bottom 26 in; 49½ in from the wall; 2 ALLIANCE lights + amber Coopertition light with the manual's on/blink/off meanings |
-| SOURCE | §5.4 p26–27 | 75¼ × 6 in opening, bottom 36¾ in; 50° CHUTE (visual) |
+| SOURCE | §5.4 p26–27 | 75¼ × 6 in opening, bottom 36¾ in; physical 50° CHUTE rising to its SOURCE AREA edge at 52¾ in |
 | STAGE | §5.5 p27–29 | 3 truss legs, 10 ft 1 in from the wall; core underside 27⅞ in (gussets); chains anchored at 4 ft, drooping to 28¼ in, 16⅝ in from the core; TRAP openings at 56½ in; MICROPHONES 12 in, 1.66 in OD, top at 88¼ in; PODIUM 17¾ × 10 in |
 | SPEAKER / SUBWOOFER | §5.6.1 p31–32 | Opening 41⅜ in wide, 78 in (wall top) → 82⅞ in (lip, 18 in out), 14°; hood + cavity; SUBWOOFER 37 in tall, 36⅛ in deep, 8⅜ in vertical panels; AMPLIFIED light strings + 10-segment receding SUBWOOFER bar |
 | DRIVER STATIONS | §5.6.2 p32–34 | 36¾ in base + 42 in polycarbonate |
@@ -59,13 +59,35 @@ tipping, damage, collusion), G425–G429 (humans).
 | SPEAKER shots | **Physical.** A flat ring flies through the real hood geometry. The aim solver passes *under* the lip (ceilings) and accepts rising entries; a high lob hits the hood. Shots from far off the opening's axis (≳50°) mostly bounce off the hood cheeks — that's intended ("some shots are impossible"). |
 | Passing (G away from the AMP) | Physical lob into your WING (or into the NEUTRAL ZONE when you're in the opponent's WING), arcing over a STAGE in the way. |
 | AMP | **Assisted.** Drive against your AMP and press G: the NOTE animates into the pocket (a flat ring can't physically fit a 3⅞ in pocket in this engine). |
-| SOURCE | Physical drop through the opening when one of your robots waits nearby in TELEOP (no drops in AUTO: SOURCE human players stand behind the STARTING LINE). |
+| SOURCE | **Physical.** The human player (H, or automatic) puts a NOTE at the top of the 50° CHUTE on the part of the opening nearest your robot; it slides down and out. A robot with a SOURCE intake facing the opening catches it; otherwise it lands on the carpet for a ground intake. TELEOP only (SOURCE human players stand behind the STARTING LINE in AUTO), one NOTE in the CHUTE at a time. |
 | Chain climb | **Assisted** kinematic climb to the nearest free spot on the chain you're under (inside your STAGE ZONE), facing the core. Two robots can share a chain (HARMONY). |
 | TRAP | **Assisted.** While hanging with a NOTE and a "Chain + TRAP" climber, press Space. |
 | HIGH NOTE | Physical throw from behind the wall by the AMP human player at a MICROPHONE (≈80 % success); a ring falling over the pipe top SPOTLIGHTS that chain. |
 
 **Known gap:** the STAGE chains are static visuals (climbs snap to them). Per `CLAUDE.md`, hung elements
 should be dynamic (`src/engine/field/hanging.ts`); converting the chains is a follow-up.
+
+## Robot archetypes
+
+The Robot panel has five presets drawn from what 2024 teams built (research and sources in
+[`ROBOT-ARCHETYPES.md`](ROBOT-ARCHETYPES.md)), and per-mechanism options so you can test trade-offs such as
+*is a ground intake worth it?*:
+
+| Preset | Intake | SPEAKER shooter | Aiming | AMP | Climb |
+|---|---|---|---|---|---|
+| **Under-bumper pivot shooter** (default) | ground + SOURCE | pivot | chassis auto-align | yes | chain |
+| **Turret shooter** | ground + SOURCE | pivot | turret (shoot on the move) | yes | chain |
+| **SOURCE-fed shooter** | SOURCE only | pivot | chassis auto-align | yes | chain |
+| **KitBot (SUBWOOFER shooter)** | SOURCE only | fixed 60° hood, ≤ 8.5 m/s | driver | yes | none |
+| **AMP + TRAP specialist** | ground + SOURCE | none | — | yes | chain + TRAP |
+
+- **Chassis auto-align** (most 2024 robots had no turret): hold Space and the robot rotates onto the SPEAKER
+  (lead-compensated, P + kS heading controller) while you keep translating; it fires once within ~3°.
+- **Driver aim**: the NOTE leaves along the robot's heading; the pivot still sets the angle for the distance.
+- **Fixed shooter**: one hood angle and a flywheel speed cap, so it scores from against the SUBWOOFER to about
+  0.6 m off it, and misses from the WING.
+- A robot without a ground intake can only collect NOTES that its SOURCE intake catches from the CHUTE, and it
+  can't pick up the staged NOTES in AUTO.
 
 ## Figure-derived (undimensioned) values
 
@@ -75,19 +97,23 @@ SPEAKER center (in line with the middle WING SPIKE MARK, 57 in above the field c
 footprint widths, DRIVER STATION spans (DS 1 assumed on the AMP side), AMP housing width, SOURCE wall
 corner (0, 41.3 in)–(68 in, 0), WING line (229½ in), STAGE leg radius (58.7 in) and STAGE ZONE vertices.
 Structure heights the manual doesn't give (STAGE trusses, hood roof, AMP top, SOURCE wall) are estimates.
+The SOURCE wall above the opening is modeled as a ½ in edge (its real thickness isn't given): with a 2 in
+thick edge, a 2 in NOTE on the 50° CHUTE would have under 2½ in of perpendicular clearance and jam.
 
 ## Controls
 
 | Key | Action |
 |---|---|
-| Space | Shoot at the SPEAKER · while ONSTAGE: place the NOTE in the TRAP |
+| Space | Shoot at the SPEAKER (chassis auto-align turns you onto it first) · while ONSTAGE: place the NOTE in the TRAP |
 | G | At your AMP: score in the AMP · elsewhere: pass |
 | C / X | Climb the chain you're under (TELEOP) / descend |
-| H / B / N | AMP human player: AMPLIFY / Coopertition / throw a HIGH NOTE (last 20 s) |
-| Gamepad | RB = AMP/pass, X = AMPLIFY, LB = Coopertition |
+| H | SOURCE human player: drop a NOTE down the CHUTE toward your robot (TELEOP) |
+| B / N / M | AMP human player: AMPLIFY / Coopertition / throw a HIGH NOTE (last 20 s) |
+| Gamepad | RB = AMP/pass, X = SOURCE drop, LB = AMPLIFY |
 
-With **Human player: Auto** (default) your AMP human player presses Coopertition when possible,
-AMPLIFIES at 2 NOTES and throws the 3 HIGH NOTES in the last 20 s.
+With **Human player: Auto** (default) your SOURCE human player drops a NOTE whenever one of your robots waits
+near the SOURCE without one, and your AMP human player presses Coopertition when possible, AMPLIFIES at 2
+NOTES and throws the 3 HIGH NOTES in the last 20 s.
 
 AUTO routines: *Speaker + 3 wing notes* (scores 4 NOTES + LEAVE = 22 pts), *Amp + wing note*,
 *Shoot + leave*, *Leave only*, *Do nothing* — or drive AUTO yourself.

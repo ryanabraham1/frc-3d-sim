@@ -148,7 +148,8 @@ export interface SnapshotMeta {
   st: NetGameState;
   /** Pre-match countdown remaining. */
   cd: number;
-  clock: ClockState;
+  /** Match clock: every keyframe, every CLOCK_EVERY-th snapshot, and whenever the period / started / finished flags change. */
+  clock?: ClockState;
   /** Piece state changes since the previous snapshot (all pieces in a keyframe). */
   pieces?: PieceStateEntry[];
   /** Orientations of moved non-spherical pieces, [index,x,y,z,w]. */
@@ -177,6 +178,8 @@ export interface Snapshot {
 }
 
 export const SNAPSHOT_KIND = 2;
+/** The clock only drives the HUD timer on clients (whole seconds): ~10 Hz is plenty. */
+export const CLOCK_EVERY = 3;
 const ROBOT_BYTES = 1 + 5 * 4 + 6 + 4;
 /** Piece positions are sent as int16 millimetres (±32.7 m covers any FRC field). */
 export const PIECE_QUANTUM = 0.001;

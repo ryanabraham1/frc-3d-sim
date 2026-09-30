@@ -127,7 +127,7 @@ export class ClientSync {
     const m = s.meta;
     this.netState = m.st;
     this.countdown = m.cd;
-    clock.restore(m.clock);
+    if (m.clock) clock.restore(m.clock);
     if (m.score) score.restore(m.score);
     if (rules.applyNetState) {
       if (m.rules !== undefined) {

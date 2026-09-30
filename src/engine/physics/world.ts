@@ -36,6 +36,14 @@ export const GROUPS = {
   piece: collisionGroups(Group.PIECE, Group.FIELD | Group.ROBOT | Group.PIECE | Group.PIECE_ONLY),
 };
 
+/**
+ * Contact solver passes. Game pieces (often hundreds of balls resting in piles) get the base count; robots and
+ * swinging field elements add EXTRA_SOLVER_ITERATIONS to keep Rapier's default 4. Halving the passes for pieces
+ * is one of the biggest savings on a multiplayer host.
+ */
+export const BASE_SOLVER_ITERATIONS = 2;
+export const EXTRA_SOLVER_ITERATIONS = 2;
+
 export class PhysicsWorld {
   readonly world: RAPIER.World;
   readonly dt: number;
@@ -46,6 +54,7 @@ export class PhysicsWorld {
   ) {
     this.world = new R.World({ x: 0, y: -9.81, z: 0 });
     this.world.timestep = dt;
+    this.world.numSolverIterations = BASE_SOLVER_ITERATIONS;
     this.dt = dt;
   }
 

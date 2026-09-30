@@ -3,7 +3,7 @@ import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { inch } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, ReefscapeAutoPilot } from './autopilot';
-import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotPresets, reefscapeRobotSummary, startPose, TIMELINE } from './config';
+import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotOptions, reefscapeRobotPresets, reefscapeRobotSummary, reefscapeSpecBars, startPose, TIMELINE } from './config';
 import { buildReefscapeField, type ReefscapeFieldRefs } from './field';
 import { ReefscapeHud } from './hud';
 import { ReefscapeRules } from './rules';
@@ -19,8 +19,8 @@ export const reefscape2025: SeasonDefinition = {
   fieldLength: C.FIELD_LENGTH, fieldWidth: C.FIELD_WIDTH, carpetColor: C.COLORS.carpet,
   maxRobotHeight: inch(42), maxRobotPerimeter: inch(120), foulValues: { minor: 2, major: 6 },
   timeline: TIMELINE,
-  gamePiece: { name: 'CORAL + ALGAE', shape: 'tube', radius: C.CORAL_RADIUS, innerRadius: inch(4) / 2, length: C.CORAL_LENGTH,
-    mass: 0.65, restitution: 0.15, friction: 0.65, color: C.COLORS.coral, count: C.CORAL_COUNT + C.ALGAE_COUNT,
+  gamePiece: { name: 'CORAL + ALGAE', shape: 'tube', hollow: true, colliderInnerRadius: C.CORAL_COLLIDER_INNER, radius: C.CORAL_RADIUS, innerRadius: C.CORAL_INNER_RADIUS, length: C.CORAL_LENGTH,
+    mass: 0.65, restitution: 0.15, friction: 0.35, color: C.COLORS.coral, count: C.CORAL_COUNT + C.ALGAE_COUNT,
     groundDamping: 1.3, angularDamping: 1.1, airDamping: 0.02,
     variants: [{ start: C.CORAL_COUNT, spec: { name: 'ALGAE', radius: C.ALGAE_RADIUS, mass: 0.45, restitution: 0.35, friction: 0.7, color: C.COLORS.algae, count: C.ALGAE_COUNT, groundDamping: 0.9, airDamping: 0.02, angularDamping: 1.0 } }],
   },
@@ -28,6 +28,14 @@ export const reefscape2025: SeasonDefinition = {
   climberLabels: ['None', 'Shallow cage', 'Deep cage'], robotLimits: { capacity: 2, preload: 1 },
   normalizeRobotConfig: normalizeReefscapeConfig, robotPresets: reefscapeRobotPresets(),
   robotSummary: reefscapeRobotSummary,
+  robotOptions: reefscapeRobotOptions,
+  robotSpecBars: reefscapeSpecBars,
+  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'],
+  humanPlayerButtons: 2,
+  humanPlayerHint: {
+    auto: 'Your human players drop CORAL down the CHUTE when you wait at a CORAL STATION, and throw PROCESSOR ALGAE into your NET.',
+    manual: 'H: drop a CORAL down the nearest CHUTE (aimed at your robot) · B: throw PROCESSOR ALGAE at your NET.',
+  },
   robotHint: 'R104: 42 in starting height / 120 in perimeter · R105: 18 in mechanism reach · G409: 1 CORAL + 1 ALGAE',
   autoRoutines: AUTO_ROUTINES, startPose, driverEye,
   configureRobot(robot) {
@@ -51,11 +59,12 @@ export const reefscape2025: SeasonDefinition = {
   controlsHelp: [
     ...DEFAULT_CONTROLS_HELP.filter(([key]) => !['Space', 'G', 'F', 'C / X', '1 2 3  or  [ ]', 'H', 'Gamepad'].includes(key)),
     ['1 / 2 / 3 / 4 · [ / ]', 'Select reef L1–L4 (gamepad D-pad changes level)'],
-    ['Space / RT', 'Place held CORAL on nearest open branch / trough; with ALGAE only, shoot your NET'],
+    ['Space / RT', 'Release CORAL from the end effector (with reef auto-align: hold to line up on the nearest open BRANCH first); with ALGAE only, shoot your NET'],
     ['G / RB', 'Feed ALGAE into your PROCESSOR nearby; with CORAL only, eject it a short distance'],
-    ['J / LT · F', 'Intake (back into a CORAL STATION to catch CORAL) / remove or knock off reef ALGAE · toggle automatic intake'],
-    ['C / A · X / B', 'Climb the nearest of your alliance’s CAGES that matches your climber · descend; X near reef retrieves your scored CORAL'],
-    ['H / gamepad X', 'Toggle CORAL supply and act as HUMAN PLAYER; processor ALGAE throws only in TELEOP'],
+    ['J / LT · F', 'Intake (funnel: back up to a CORAL STATION; ground: drive over CORAL) / remove or knock off reef ALGAE · toggle automatic intake'],
+    ['C / A · X / B', 'Climb the nearest of your alliance’s CAGES that matches your climber · descend'],
+    ['H / gamepad X', 'HUMAN PLAYER: drop a CORAL down the nearest CORAL STATION CHUTE (aimed at your robot)'],
+    ['B / gamepad LB', 'HUMAN PLAYER: throw PROCESSOR ALGAE at your NET (TELEOP)'],
     ['Gamepad', 'LS drive · RS rotate · Y camera · D-pad reef level'],
   ],
   rulesSummary: [
@@ -67,7 +76,7 @@ export const reefscape2025: SeasonDefinition = {
     { title: 'Coopertition', detail: 'Both alliances score at least 2 ALGAE in their processors: 1 Coopertition point each; CORAL RP needs 7 on any 3 levels.', tag: 'COOP' },
     { title: 'Control limits / launch restriction', detail: 'G409: one of each piece at a time. Elevator placement requires reef reach. G412: CORAL launch only with bumpers partly in your REEF ZONE.', value: '1 + 1', tag: 'G409' },
     { title: 'Defenders / opponent cages', detail: 'G421 (whole match): one defender beyond barge zones; 2-point foul then 6 every 3 s. G405/G418: opponent cage contact is a 6-point foul; TELEOP awards opponent BARGE RP.', tag: 'FOUL' },
-    { title: 'Simulation model', detail: 'Elevator placement and cage engagement are assisted animations. Field details without dimensions in this manual are approximate; referee judgement and tournament administration are not automated.', tag: 'SIM' },
+    { title: 'Simulation model', detail: 'CORAL placement is physical: the end effector releases a hollow CORAL and it scores only if a BRANCH ends up inside it (miss by ~1 in and it falls). Reef auto-align is a robot option, not free help. CORAL STATION drops roll down the real CHUTE. Cage climbs are assisted animations; undimensioned field details are approximate.', tag: 'SIM' },
   ],
   testing: {
     mechanism: 'placement',

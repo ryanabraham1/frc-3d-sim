@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { GROUPS, PhysicsWorld } from '../physics/world';
+import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { FieldFrame } from '../coords';
 
 export interface GamePieceSpec {
@@ -13,6 +13,12 @@ export interface GamePieceSpec {
   innerRadius?: number;
   /** Ring only: number of equidistant white tape bands (e.g. 3 for a 2024 HIGH NOTE). */
   stripes?: number;
+  /**
+   * Tube only: a real hollow collider (a ring of staves around the bore) so a pipe can pass through it — e.g. a 2025
+   * CORAL sliding onto a BRANCH. `colliderInnerRadius` sets the bore (default `innerRadius`).
+   */
+  hollow?: boolean;
+  colliderInnerRadius?: number;
   /** Additional piece types use stable index ranges in the same synchronized pool. */
   variants?: { start: number; spec: Omit<GamePieceSpec, 'variants'> }[];
   name: string;
@@ -40,6 +46,10 @@ export interface GamePieceSpec {
 export type PieceState = 'field' | 'held' | 'reserve';
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+/** A piece slower than this (m/s, rad/s) for REST_STEPS physics steps in a row is put to sleep. */
+const REST_SPEED = 0.03;
+const REST_SPIN = 0.5;
+const REST_STEPS = 20;
 
 function ringHalfHeight(s: Omit<GamePieceSpec, 'variants'>): number {
   return (s.length ?? s.radius * 0.28) / 2;
@@ -82,6 +92,8 @@ export class GamePiecePool {
   /** Free-form tag set by season rules (e.g. which hub is processing it). */
   readonly tag: (string | null)[] = [];
   private readonly airborne: boolean[] = [];
+  /** Consecutive steps each piece has been (nearly) motionless while awake. */
+  private stillSteps = new Uint16Array(0);
   /** Pieces whose state/owner/tag changed since the last `takeChanges()` (multiplayer host). */
   private readonly changed = new Set<number>();
   /** Per piece: 1 = instance matrix shows its current field pose, 2 = shows it hidden, 0 = stale. */
@@ -129,6 +141,7 @@ export class GamePiecePool {
     }
     this.mesh = this.meshes[0];
     this.shown = new Uint8Array(spec.count);
+    this.stillSteps = new Uint16Array(spec.count);
 
     for (let i = 0; i < spec.count; i++) {
       const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
@@ -144,6 +157,34 @@ export class GamePiecePool {
           .setCanSleep(true)
           .setEnabled(false),
       );
+      if (piece.shape === 'tube' && piece.hollow) {
+        // Staves around the tube axis (body-local +X): a polygonal bore a pipe can pass through.
+        const n = 10;
+        const half = (piece.length ?? piece.radius * 2) / 2;
+        const rIn = piece.colliderInnerRadius ?? piece.innerRadius ?? piece.radius * 0.8;
+        const wall = Math.max(piece.radius - rIn, 0.004);
+        const rMid = rIn + wall / 2;
+        const chord = 2 * piece.radius * Math.tan(Math.PI / n);
+        for (let k = 0; k < n; k++) {
+          const a = (k / n) * Math.PI * 2;
+          const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), a);
+          const stave = R.ColliderDesc.cuboid(half, wall / 2, chord / 2)
+            .setTranslation(0, rMid * Math.cos(a), rMid * Math.sin(a))
+            .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w })
+            .setMass(piece.mass / n)
+            .setRestitution(piece.restitution)
+            .setFriction(piece.friction)
+            .setCollisionGroups(GROUPS.piece);
+          physics.world.createCollider(stave, body);
+        }
+        this.bodies.push(body);
+        this.state.push('reserve');
+        this.owner.push(-1);
+        this.tag.push(null);
+        this.airborne.push(false);
+        this.mesh.setMatrixAt(i, HIDDEN);
+        continue;
+      }
       const col = (piece.shape === 'tube'
         ? R.ColliderDesc.cylinder((piece.length ?? piece.radius * 2) / 2, piece.radius).setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
         : piece.shape === 'ring'
@@ -193,6 +234,16 @@ export class GamePiecePool {
   /** Put piece i on the field at a FIELD position (x, y, z-up), resting on the carpet if z omitted. */
   placeField(i: number, x: number, y: number, z?: number): void {
     this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.restHeight(i) + 0.001, this.tmpP));
+  }
+
+  /**
+   * Let piece i pass through robots (true) or collide with them again (false) — for a piece released from inside
+   * a robot's mechanism (it starts overlapping that robot's collision box).
+   */
+  setIgnoreRobots(i: number, ignore: boolean): void {
+    const b = this.bodies[i];
+    const groups = ignore ? collisionGroups(Group.PIECE, Group.FIELD | Group.PIECE | Group.PIECE_ONLY) : GROUPS.piece;
+    for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);
   }
 
   hold(i: number, ownerId: number): void {
@@ -263,10 +314,20 @@ export class GamePiecePool {
     return this.bodies[i].linvel();
   }
 
-  /** Switch damping between air/ground values. Call once per physics step. */
+  /**
+   * Once per physics step (simulating side only): switch damping between air/ground values, and put pieces that
+   * have come to rest to sleep.
+   *
+   * Rapier only sleeps a whole contact island at once, so one robot nudging the edge of a pile kept every
+   * motionless ball in it simulated (hundreds with 2026 FUEL). A piece that stays still on its own for
+   * REST_STEPS is slept individually; any contact with a moving body wakes it again.
+   */
   updateDamping(): void {
     for (let i = 0; i < this.bodies.length; i++) {
-      if (this.state[i] !== 'field') continue;
+      if (this.state[i] !== 'field') {
+        this.stillSteps[i] = 0;
+        continue;
+      }
       const b = this.bodies[i];
       if (b.isSleeping()) continue;
       const s = this.specs[i];
@@ -275,6 +336,14 @@ export class GamePiecePool {
         this.airborne[i] = inAir;
         b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
       }
+      const v = b.linvel();
+      const w = b.angvel();
+      if (v.x * v.x + v.y * v.y + v.z * v.z < REST_SPEED * REST_SPEED && w.x * w.x + w.y * w.y + w.z * w.z < REST_SPIN * REST_SPIN) {
+        if (++this.stillSteps[i] >= REST_STEPS) {
+          b.sleep();
+          this.stillSteps[i] = 0;
+        }
+      } else this.stillSteps[i] = 0;
     }
   }
 

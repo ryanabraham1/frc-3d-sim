@@ -26,44 +26,69 @@ No external field CAD, WPILib tag layout or later team updates were used for 202
 
 ## Playing the mechanisms
 
-The 2025 robot editor has **All-rounder**, **CORAL + cage** and **ALGAE + cage** profiles. These are
-simulator designs inferred from the scoring tasks, not robot designs mandated by FIRST. You can
-enable CORAL intake/scoring, ALGAE intake/removal, PROCESSOR feeding and NET shooting independently.
-The processor does not require a net shooter, and CORAL scoring does not require a projectile launcher.
-The lobby summarizes these capabilities and transmits the complete configuration to the host.
+### Robot archetypes
+
+The Robot panel offers five **archetype presets** based on what 2025 teams actually built (see
+[`ROBOT-ARCHETYPES.md`](ROBOT-ARCHETYPES.md) for the research and sources), plus per-mechanism options so
+you can compare trade-offs such as *ground intake vs. funnel only*:
+
+| Preset | CORAL | CORAL intake | ALGAE | Auto-align | Climb |
+|---|---|---|---|---|---|
+| **Funnel-fed L4 cycler** (default) | L1–L4 elevator | CORAL STATION funnel only | knock off with the elevator | yes | deep |
+| **Ground-intake all-rounder** | L1–L4 | ground + funnel | reef + floor → NET + PROCESSOR | yes | deep |
+| **L2–L3 elevator** | L1–L3 | funnel | reef → PROCESSOR | yes | shallow |
+| **L1 trough bot** | L1 only | ground | reef + floor → PROCESSOR | no | shallow |
+| **ALGAE specialist** | none | none | reef + floor → NET + PROCESSOR | yes | deep |
+
+Options: *CORAL scoring* (none / L1 / L1–L3 / L1–L4), *CORAL intake* (funnel / ground / both),
+*ALGAE* (knock off / reef only / reef + floor), *ALGAE scoring*, *reef auto-align* and *climb*. There is
+no turret: a pick-and-place game has no use for one, and a turret made placement unrealistically easy,
+so saved configs with a turret are normalized to a fixed end effector.
 
 Rule-derived limits are 42 in starting height, 120 in frame perimeter (R104), up to 18 in mechanism
 reach beyond the frame (R105/G415), one of each piece (G409), and 0–1 CORAL preload (§6.3.4).
-There is no bulk hopper setting for 2025. Disabled pickup mechanisms remove that piece's inventory slot;
-an ALGAE profile starts without CORAL. Highest elevator level limits CORAL scoring and the L2/L3 ALGAE
-that the mechanism can reach. Size/extension limits apply to menu, saved and multiplayer configurations.
+Elevator speed, cycle time, reach and drive speed are simulation tuning values (the manual doesn't set them).
 
-The all-rounder defaults to a 27 × 27 in frame, 36 in starting height, all four reef levels, 18 in reach,
-1.3 m/s elevator speed, 0.6 s CORAL cycle, 0.45 s ALGAE removal and 3.6 s cage rise. Those speeds and
-times, along with drive speed, net accuracy/rate and release height, are simulation tuning choices:
-the manual does not specify them. Cage rise time is independent of the shallow/deep point value.
-Old saved 2025 configurations receive defaults for the new mechanism fields. 2026 retains its own editor.
+### Placing CORAL (physical)
 
-Keys **1–4** select the elevator's reef level; brackets and gamepad D-pad also change it. Drive close to
-your reef and hold **Space**. Aim assist chooses the closest open branch on the approached face;
-with aim assist reduced or the turret disabled, face the branch. The elevator must reach its height
-before placement. L1 accepts multiple pieces; other branches hold one. Staged ALGAE blocks L2 or L3
-on alternating faces until collected. Hold **J** or enable auto-intake with **F** to collect nearby ground
-pieces or reef ALGAE. ALGAE is neutral and can be harvested from either reef. A robot that can't store it
-(no ALGAE intake, or already holding one) knocks it off the reef onto the carpet instead, which also
-clears the blocked level; the CORAL profile uses this to open L2/L3.
+Keys **1–4** select the level. Drive to your REEF and hold **Space**:
 
-With ALGAE and no CORAL, **Space** launches toward your net using the ballistic solver. **G** feeds
-ALGAE into your processor when nearby. Processor passage scores six points and transfers that ALGAE
-to the opponent's human player. Human players can throw those pieces into their own net only in
-TELEOP. Automatic station feeding supplies nearby robots from the finite CORAL reserve: back your
-intake up to a CORAL STATION opening with intake running and CORAL comes straight from the CHUTE into the
-robot; otherwise it drops onto the carpet in front of the station (never onto a robot parked in the
-opening). **H** toggles CORAL supply and acts once; the lobby also lets the host choose automatic human players.
+- The elevator rises to the level and the end effector extends toward the nearest open BRANCH on the
+  face you're approaching (the other BRANCH once one is full; the emptier half of the trough for L1).
+- **With reef auto-align** (as most 2025 robots had: vision / pose-estimate alignment with left/right
+  branch targets) the robot drives itself onto that BRANCH's scoring pose and releases when lined up.
+  A small random vision error (σ ≈ 0.25 in) is added per attempt.
+- **Without auto-align**, *you* line up; the HUD shows how far left/right the BRANCH is. Space releases
+  as soon as the mechanism is in position — wherever the robot is.
+- The released CORAL is a free, hollow rigid body (a tube of collider staves) launched along the
+  BRANCH's axis (down onto L4, 35° down onto L2/L3, sideways into the L1 trough). It scores only if the
+  real BRANCH pipe ends up inside its bore (§6.5.1) and it stays there 0.3 s. From testing: L2/L3 score
+  within about ±0.9 in laterally and miss at ~1.3 in; L4 tolerates ~1.3 in and a few degrees of yaw.
+  A missed CORAL bounces off the REEF onto the carpet.
 
-**X** near your own reef retrieves a scored CORAL at the selected level. Points and branch occupancy
-are adjusted; original AUTO location credit is restored on re-scoring, including the manual's L1
-TELEOP-first removal / AUTO-first restoration order. Opponent CORAL cannot be retrieved.
+Staged ALGAE physically sits in front of L3 (even faces) or L2 (odd faces) and blocks placement there
+until it's removed. Hold **J** at the REEF to remove it: robots with an ALGAE intake keep it, others knock
+it onto the carpet. ALGAE is neutral and can be harvested from either REEF.
+
+With ALGAE and no CORAL, **Space** shoots the NET (chassis auto-align turns the robot toward it), and **G**
+feeds the PROCESSOR, which transfers that ALGAE to the opponent's human player (thrown at their NET only in
+TELEOP, button **B**).
+
+### CORAL STATION
+
+The human player button (**H**) drops a CORAL into the nearest CORAL STATION's 55° CHUTE, aimed at your
+robot's side of the opening. It slides out of the 7 in slot and falls:
+
+- a **funnel** robot backed up to the opening (intake running) catches it at the CHUTE exit;
+- otherwise it lands and rolls on the carpet, where a **ground intake** can pick it up — a funnel-only
+  robot cannot.
+
+With *Human player: Auto* the human player drops one whenever one of your robots is waiting near a station
+without CORAL (one every ~1.1 s, none while one is still in the CHUTE).
+
+Scored CORAL stays on the REEF as a physical piece. If it is knocked off, points and occupancy follow it;
+original AUTO location credit is restored when that location is re-scored (§6.5.1), including the L1
+TELEOP-first removal / AUTO-first restoration order.
 
 Choose your shallow/deep climber in robot settings before the match; per §6.3.5 it also sets the depth of
 the cage nearest your driver station, and cages without a team choosing stay deep. Drive near any of
@@ -81,7 +106,7 @@ practice option, as in the existing 2026 simulator.
 ## Automatic rule handling
 
 - G409: inventory capture enforces one CORAL and one ALGAE.
-- G410: the assisted retrieval mechanism only accesses your own scored CORAL.
+- G410: there is no CORAL retrieval mechanism; knocked-off CORAL is re-collected from the carpet.
 - G412: CORAL placement requires reef reach; a gentle reverse-intake ejection follows its exception.
 - G403: direct robot contact beyond the opposing barge boundary during AUTO produces a major foul.
 - G405/G418: real collider contact with a (possibly swinging) opponent cage produces a major foul; TELEOP also awards the opponent BARGE RP.
@@ -102,11 +127,15 @@ estimated from its figures. The 12 ft reef offset is interpreted as the near fac
 alliance wall, consistent with the plan views. Tags are stylized visual patterns, not camera-decodable
 36h11 targets or surveyed poses.
 
-CORAL is visibly hollow but uses a solid cylindrical rigid-body collider. ALGAE uses a spherical
+CORAL is a hollow tube: its collider is ten thin staves around a 3.7 in bore, so a BRANCH pipe can really pass
+through it. The CORAL STATION CHUTE is a 55° ramp with a short 35° exit lip: at a flat 55° a 4.5 in CORAL
+would jam in the 7 in slot (only ~4 in of perpendicular clearance), so the lip is an approximation of the
+real chute exit geometry, which the manual doesn't dimension. ALGAE uses a spherical
 rigid-body collider. CORAL mass is 0.65 kg within the manual's 0.5–0.8 kg range; ALGAE mass of 0.45 kg,
 friction, rebound, damping, elevator speed and human-player launch speed are simulation assumptions.
-Scored CORAL is placed and retained by the assisted mechanism, rather than simulating pipe insertion
-and every subsequent dislodgement. Nets use a rigid cup/sensor instead of deformable fabric. Staged
+The end effector is kinematic: it holds CORAL rigidly and releases it at a fixed speed along the BRANCH axis
+(the real intake-wheel ejection is not simulated). Reef auto-align drives to the ideal pose with a P-controller
+plus Gaussian noise rather than simulating a camera. Nets use a rigid cup/sensor instead of deformable fabric. Staged
 reef ALGAE is retained until harvested. Cages swing as rigid pendulums (the chain is treated as a rigid link,
 ~8 kg estimated mass). The climb itself is the engine's kinematic animation, during which the robot
 carries its cage. Anchor contact (G419) is not adjudicated.
@@ -117,7 +146,7 @@ the field and the replicated elevator collider; mechanisms and scoring execute o
 
 ## Verification
 
-`tests/reefscape.test.ts` exercises real Rapier placement/reach, both alliances and all reef faces/levels,
+`tests/reefscape.test.ts` exercises physical CORAL placement (auto-aligned on every face and level, manual misalignment misses), the CHUTE feeding funnel and ground-intake robots, archetype options, real Rapier reach, both alliances and all reef faces/levels,
 branch occupancy, harvest, intake limits, processor/net flight, human-player transfer, scripted AUTO,
 both cage heights, AUTO re-scoring, ranking points, tags and replica state. Shared physics regressions
 exercise both registered seasons. Browser checks cover year selection, room year changes, driver and

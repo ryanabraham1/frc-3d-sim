@@ -8,6 +8,7 @@ import {
   encodeSnapshot,
   quantize,
   quantizeRot,
+  CLOCK_EVERY,
   ROT_QUANTUM,
   unpackCommand,
   type ClientMsg,
@@ -61,6 +62,7 @@ export class HostSync {
   /** JSON of each top-level rules key as last sent (for `rulesPatch`). */
   private readonly lastRulesKeys = new Map<string, string>();
   private seq = 0;
+  private lastClockPhase = '';
   private forceKey = true;
   private readyFired = false;
   private readonly offs: (() => void)[] = [];
@@ -214,7 +216,13 @@ export class HostSync {
       if (rot) rotations.push(rot);
     }
 
-    const meta: SnapshotMeta = { st: this.src.netState, cd: this.src.countdownLeft, clock: clock.snapshot() };
+    const meta: SnapshotMeta = { st: this.src.netState, cd: this.src.countdownLeft };
+    const ck = clock.snapshot();
+    const phase = `${ck.i}:${ck.s}:${ck.f}`;
+    if (key || phase !== this.lastClockPhase || (this.seq + 1) % CLOCK_EVERY === 0) {
+      meta.clock = { ...ck, ep: Math.round(ck.ep * 1000) / 1000, e: Math.round(ck.e * 1000) / 1000 };
+      this.lastClockPhase = phase;
+    }
     if (rotations.length) meta.rotations = rotations;
     if (key) meta.key = true;
     if (pieces.length) meta.pieces = pieces;

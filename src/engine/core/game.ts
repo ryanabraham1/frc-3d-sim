@@ -490,6 +490,10 @@ export class Game {
         else if (r === this.player) cmd = this.playerCommand(inp, r);
         else cmd = this.hostSync?.command(r.id) ?? IDLE_COMMAND;
       }
+      // Driver-assist layers: season assists (e.g. reef auto-align) then chassis auto-align onto the shot target.
+      if (enabled && this.rules.adjustCommand) cmd = this.rules.adjustCommand(r, cmd, dt);
+      const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
+      if (enabled) cmd = r.autoAlign(cmd, target);
       r.lastCommand = cmd;
       r.drive(cmd, dt);
       if (enabled) {
@@ -497,7 +501,6 @@ export class Game {
         else if (cmd.climb !== null && !r.isClimbing && r.config.climber.maxLevel > 0) this.rules.requestClimb(r, cmd.climb);
       }
       r.tick(dt);
-      const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
       r.aimTurretAt(target, dt);
       const handled = enabled && this.rules.handleMechanisms?.(r, cmd, dt);
       if (enabled && !handled && (cmd.shoot || cmd.pass)) {
@@ -505,6 +508,7 @@ export class Game {
         if (shot) {
           const idx = r.held.pop()!;
           this.pool.placeWorld(idx, shot.pos, shot.vel);
+          r.noteLaunch(idx);
           this.rules.onLaunch(r, idx);
         }
       }
@@ -521,10 +525,10 @@ export class Game {
       for (let i = 0; i < pool.count && zones.length; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);
-        if (p.y > 0.4) continue;
         for (let k = 0; k < zones.length; k++) {
           const { r, z } = zones[k];
-          if (intakeZoneContains(z, p, pool.radius)) {
+          if (r.justLaunched(i)) continue;
+          if (intakeZoneContains(z, p, pool.radius, 0.4)) {
             pool.hold(i, r.id);
             r.held.push(i);
             if (r.capacityLeft <= 0) zones.splice(k, 1);

@@ -146,6 +146,8 @@ responsive:
 | Host | Skips a snapshot while > 64 KB is queued on its socket (was 512 KB). Deltas carry over. | Everything queued there is latency for every client. |
 | Host | Renders less often (30 / 20 fps) when the simulation needs > 30% / 50% of wall time (`netStats().hostSimLoad`). | The host's simulation is everyone's game; its own view comes second. |
 | Host | Snapshots skip sleeping pieces once their resting pose went out. Tube orientation is sent only when it changes (1e-4). Rules state is diffed per top-level key. | 2025 snapshots were 830 B avg (every CORAL rotation + all placements, because the cages swing), now ~190 B. |
+| Host | Contact solver: 2 passes for game pieces, robots and hanging elements keep 4 (`EXTRA_SOLVER_ITERATIONS`). A piece that stays still for 20 steps is put to sleep on its own (`GamePiecePool.updateDamping`). | Rapier only sleeps whole contact islands, so a robot touching a pile kept hundreds of still balls simulated. Together: 2026, 4 robots, 4.0 → 3.0 ms per step. All shot/traversal suites unchanged. |
+| Relay | Clock rounded to ms and sent ~10 Hz (every 3rd snapshot, plus on any period change). | Less traffic through a free-tier relay. |
 | All | Intake zone computed once per robot per step; the piece loop is skipped when nobody intakes. `GamePiecePool.syncVisuals` skips resting pieces. | Hundreds of Rapier reads and matrix updates per frame saved. |
 | All | Pixel ratio capped at 1.5. Dynamic resolution steps down to 0.75 when fps < 45 and back up when > 57. The FPS meter uses real elapsed time. | GPU headroom on laptops. The clamped meter reported 2 fps as 10. |
 

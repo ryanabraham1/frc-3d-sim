@@ -224,3 +224,10 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   vitest `testTimeout` 120 s (the physics suite timed out at the 5 s default). 154 tests pass; verified in
   the browser (single player full match, multiplayer host+guest). Details: docs/CRESCENDO.md; lessons for
   the next season: INSTRUCTIONS.md.
+- 2026-09-30 (round 2): **Realistic robot archetypes** for all three seasons (research + sources in
+  docs/ROBOT-ARCHETYPES.md). Engine: optional ground vs station intakes, chassis auto-align for turretless
+  shooters (P + kS heading servo, fire gate), `adjustCommand` hook, generic archetype/option menu, hollow tube
+  pieces, pass-through after release, 4 human-player buttons. 2025: physical CORAL placement (hollow CORAL must
+  end up around a BRANCH), reef auto-align option, physical CORAL STATION CHUTE, no turret. 2024: physical 50°
+  SOURCE CHUTE with an H button, intake/shooter/aim/AMP/climber options. 2026: intake/aim/hopper/height/rate/climb
+  options. Guidance for future seasons: INSTRUCTIONS.md §3b, CLAUDE.md.

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { FieldFrame } from '../coords';
-import { GROUPS, type PhysicsWorld } from '../physics/world';
+import { EXTRA_SOLVER_ITERATIONS, GROUPS, type PhysicsWorld } from '../physics/world';
 import type { Vec3 } from './builder';
 
 /** A rigid part of a hanging element, in the element's local FIELD axes (x, y, z-up) relative to its origin. */
@@ -64,6 +64,7 @@ export class HangingElement {
       .setTranslation(this.rest.x, this.rest.y, this.rest.z)
       .setLinearDamping(spec.linearDamping ?? 0.25)
       .setAngularDamping(spec.angularDamping ?? 0.8)
+      .setAdditionalSolverIterations(EXTRA_SOLVER_ITERATIONS)
       .setCcdEnabled(true));
     const volume = spec.parts.reduce((v, p) => v + (p.kind === 'box' ? p.size[0] * p.size[1] * p.size[2]
       : Math.PI * p.radius ** 2 * Math.hypot(p.b[0] - p.a[0], p.b[1] - p.a[1], p.b[2] - p.a[2])), 0);

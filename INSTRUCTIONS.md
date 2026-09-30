@@ -14,6 +14,9 @@ Companion docs: [docs/FRAMEWORK.md](docs/FRAMEWORK.md) (engine reuse map + seaso
    robot-size rules (R1xx). Skip the rest.
 3. Write `constants.ts` first — every number with a provenance tag `[M §]` / `[FIG n]` / `[EST]`.
 4. Decide, per scoring action, **physical vs assisted** (see §3) *before* writing rules.
+4b. **Derive the robot archetypes** from past games' patterns plus this manual's tasks and constraints (there is
+   no research to find at kickoff), and design the options and driver assists before writing `config.ts` (see §3b
+   and `docs/ROBOT-ARCHETYPES.md`). The simulator exists to compare archetypes at kickoff.
 5. Build: `constants → config → scoring (pure) → field → rules → autopilot → hud → index`, register in
    `src/seasons/index.ts`.
 6. `npm run typecheck`, `npm test` (the physics suite automatically tests every registered season),
@@ -97,6 +100,51 @@ Rules of thumb:
 - Keep **detection** (a piece entered the goal volume → reserve it) separate from **scoring** (points depend
   on the period). Detection must work even when the match clock isn't running (see §5, the harness).
 
+## 3b. Realistic robots — archetypes, intakes, driver assists
+
+This simulator is used at kickoff to decide **which robot archetype is best** and **whether a mechanism is worth
+building** (e.g. "is a ground intake worth it?"). A season is not done until its robots are ones real teams would
+build, with the same trade-offs. Lessons from reworking 2024/2025/2026:
+
+1. **Derive the archetypes; don't wait for research.** At kickoff no robot for the new game exists, so there is
+   nothing to look up. Follow "Deriving archetypes for a new game" in `docs/ROBOT-ARCHETYPES.md`:
+   (a) build a task table from the manual (pieces, where they're acquired, goals, points, height/reach/capacity
+   constraints, field obstacles with clearance heights, human-player stations); (b) match each task to its analog
+   in past games using the pattern library there (e.g. "launch balls at a central goal" → hopper + shooter, turret
+   or chassis auto-align; "place on pegs at several heights" → elevator/arm tiers, vision alignment, no turret;
+   "human-player chute" → station-fed vs ground-intake trade-off); (c) build the presets and options from that;
+   (d) record the derivation in that file, marked as *derived, not observed*. If real information about the game
+   is available (e.g. later in the season), use it to check and adjust the presets, but never depend on it.
+2. **Presets = real archetypes.** Give `robotPresets` (4–5) that span the viable designs: the common competitive
+   build (the default), the elite do-everything build, a simple/kitbot-like build, and the specialists. Each
+   description says what it has and why teams built it.
+3. **Options = real trade-offs.** `robotOptions` segmented choices for the design decisions that matter:
+   ground intake yes/no (`intake.ground`), station/human-player intake (`intake.station` + `stationSide`), turret vs
+   chassis auto-align vs driver aim, shooter type (fixed vs pivot), scoring levels, capacity, height (obstacles),
+   climber. Every choice goes through the season's `normalizeRobotConfig` (legal limits + defaults for old saved
+   configs).
+4. **Never assume a ground intake.** A robot without one must not pick pieces off the carpet (`intake.ground =
+   false` makes `intakeContains` false). It collects only what its station intake catches in the air.
+5. **Don't add unrealistic mechanisms.** A turret on a pick-and-place robot (2023, 2025) makes placement trivial.
+   Force it off in normalize. Check every option against "has a real team built this?".
+6. **Human-player stations are physical.** Model the chute/slide/opening from the ARENA section and let the human
+   player (button H, or automatic) drop a free rigid body into it, aimed at the robot. The piece rolls/slides out;
+   physics decides whether a station intake catches it or it lands for a ground intake. Check the geometry
+   clearances: a piece on a steep chute needs perpendicular clearance at the opening (2024 and 2025 both jammed
+   until the wall edge above the opening was thinned). Test it for both alliances and every station.
+7. **Driver assists are robot features, not free help.** Model the assists real robots had, as options:
+   - *shooting games without a turret*: chassis auto-align (`config.autoAlign`, `Robot.autoAlign`: heading servo
+     with kS feedforward, fires within ~3°);
+   - *placement games*: auto-align to the scoring pose via the season's `adjustCommand` hook, with sensor noise.
+   With the assist off, the driver must line up themselves.
+8. **Placement is physical too.** Don't snap pieces onto the goal. Release the piece from the end effector as a
+   free body and detect scoring from where it ends up (e.g. 2025: a hollow CORAL scores only when a BRANCH is
+   inside its bore). Misalignment of about an inch should miss. Released pieces pass through their own robot
+   briefly (`pool.setIgnoreRobots`) so the release isn't blocked by the robot's own collider.
+9. **Tests per archetype.** For each preset/option: can/can't pick up from the carpet, catches from the station
+   chute, auto-align scores / manual misalignment misses, fixed shooters score only from their spot. Tests for
+   other features should pick the archetype they need (`preset('turret')`) instead of relying on the default.
+
 ## 4. Engine features you may need (added for 2024, all generic)
 
 - `GamePieceSpec.shape: 'ring'` — flat torus visual + rounded flat-disc collider; `stripes` for taped variants;
@@ -110,6 +158,11 @@ Rules of thumb:
 - `SeasonDefinition.humanPlayerButtons` (H, B, N), `humanPlayerHint`, `mapSymmetry: 'mirror'`, `climberLabels`
   (also used by the in-match info panel).
 - `SeasonTesting.canScoreFrom(alliance, x, y)` — the shot harness only fires where a goal is physically possible.
+- Robot realism (see §3b): `intake.ground` / `intake.station` / `intake.stationSide` + `Robot.stationContains`,
+  `config.autoAlign` + `Robot.autoAlign`, `config.options` (season-specific mechanism flags),
+  `SeasonRules.adjustCommand` (scoring auto-align), `SeasonDefinition.robotPresets` / `robotOptions` /
+  `robotSpecBars` / `robotFields`, up to 4 `humanPlayerButtons` (H, B, N, M), hollow tube pieces
+  (`GamePieceSpec.hollow` + `colliderInnerRadius`), `pool.setIgnoreRobots`, `FieldBuilder.sphere`.
 
 Before adding a *season-specific* branch to engine/app code, grep for existing ones
 (`grep -rn "year ===\|maxScoringLevel\|placement" src/app src/engine`) and prefer a generic, optional hook.
@@ -183,6 +236,7 @@ src/seasons/<year>-<name>/constants.ts     manual facts + helpers (side(), zones
                           index.ts         SeasonDefinition (+ controlsHelp, rulesSummary, mapShapes, testing)
 src/seasons/index.ts                       register (newest first)
 tests/<name>.test.ts                       season tests
-docs/<NAME>.md                             manual page map, what's simulated vs assisted, approximations
+docs/<NAME>.md                             manual page map, what's simulated vs assisted, approximations, archetypes
+docs/ROBOT-ARCHETYPES.md                   this season's task table, past-game analogs and derived archetypes
 README.md, PLAN.md (log), docs/FRAMEWORK.md (if the engine changed)
 ```

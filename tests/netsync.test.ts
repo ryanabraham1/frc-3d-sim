@@ -119,6 +119,19 @@ describe('HostSync snapshots', () => {
     sim.dispose();
   });
 
+  it('sends the clock ~10 Hz, but immediately when the period changes', () => {
+    const sim = world('2026-rebuilt');
+    const h = host(sim);
+    const withClock = () => h.frames.map((f) => decodeSnapshot(f)!.meta.clock !== undefined);
+    for (let k = 0; k < 6; k++) h.hs.sendSnapshot(k / 30);
+    expect(withClock()).toEqual([true, false, true, false, false, true]);
+    sim.ctx.clock.start();
+    h.hs.sendSnapshot(0.2);
+    expect(h.last().meta.clock?.s).toBe(true);
+    h.hs.dispose();
+    sim.dispose();
+  });
+
   it('resends only the rules keys that changed (swinging cages, not every placement)', () => {
     const sim = world('2025-reefscape');
     settle(sim, 1);

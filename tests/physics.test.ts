@@ -56,7 +56,8 @@ for (const season of SEASONS) {
             const cfg = cloneConfig(season.robotDefaults);
             v.mod(cfg, season);
             const g = T.goalCenter(alliance);
-            const pose = v.faceGoal ? { ...spot, yaw: Math.atan2(g.y - spot.y, g.x - spot.x) } : spot;
+            // A turretless robot is driven up facing the goal (chassis auto-align finishes the aim).
+            const pose = v.faceGoal || !cfg.launcher.turret ? { ...spot, yaw: Math.atan2(g.y - spot.y, g.x - spot.x) } : spot;
             const r = runShotTrial(season, RAPIER, { label: v.name, robot: cfg, alliance, pose, shots: 8 });
             // A launched piece must never start inside the robot that fired it.
             expect(r.spawnGap, `spawn overlaps robot at ${alliance} (${spot.x.toFixed(2)},${spot.y.toFixed(2)})`).toBeGreaterThanOrEqual(0);
