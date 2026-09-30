@@ -128,7 +128,8 @@ describe('2025 REEFSCAPE manual implementation', () => {
       expect(sim.ctx.score.total(a)).toBe(10);
     });
     for (const level of [1, 2]) it(`climbs and assesses ${a} ${level === 1 ? 'shallow' : 'deep'} cage`, () => {
-      const p = C.cage(a, 2); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }); sim.robot.config.climber.maxLevel = level;
+      const config = cloneConfig(season.robotDefaults); config.climber.maxLevel = level;
+      const p = C.cage(a, 2); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }, 2, config);
       teleop(sim); sim.rules.requestClimb(sim.robot, level); run(sim, 6);
       expect(sim.robot.climbPhase).toBe('hanging');
       sim.rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
@@ -258,6 +259,63 @@ describe('2025 REEFSCAPE manual implementation', () => {
     teleop(sim); run(sim, 3.2);
     expect(sim.ctx.score.fouls.filter((f) => f.rule === 'G421').map((f) => f.kind)).toEqual(['minor', 'major']);
     expect(sim.ctx.score.foulPointsFor('red')).toBe(8);
+  });
+  for (const a of ALLIANCES) it(`lets ${a} climb any matching alliance cage, scoring by that cage's depth`, () => {
+    const p = C.cage(a, 1); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }, 2); teleop(sim);
+    sim.rules.requestClimb(sim.robot, 2); run(sim, 6);
+    expect(sim.robot.climbPhase).toBe('hanging');
+    expect(sim.robot.climbSlot).toBe(0);
+    sim.rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
+    expect(sim.ctx.score.category(a, 'barge')).toBe(12);
+  });
+  it('keeps a shallow climber off deep partner cages', () => {
+    const config = cloneConfig(season.robotDefaults); config.climber.maxLevel = 1;
+    const deep = C.cage('blue', 3); const sim = make('blue', { x: deep.x - 0.75, y: deep.y, yaw: 0 }, 2, config); teleop(sim);
+    const rules = sim.rules as ReefscapeRules;
+    expect(rules.refs.cageDepth.blue).toEqual(['deep', 'shallow', 'deep']);
+    rules.requestClimb(sim.robot, 1); run(sim, 1);
+    expect(sim.robot.isClimbing).toBe(false);
+  });
+  for (const a of ALLIANCES) for (const k of [0, 1]) it(`feeds ${a} station ${k} CORAL straight into a docked intake`, () => {
+    const st = C.stations(a)[k];
+    const sim = make(a, { x: st.x + Math.cos(st.yaw) * 0.9, y: st.y + Math.sin(st.yaw) * 0.9, yaw: st.yaw + Math.PI });
+    sim.ctx.humanPlayerIsAuto = () => true;
+    sim.rules.stage(); for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+    teleop(sim);
+    run(sim, 1.5);
+    expect(sim.robot.held).toHaveLength(0); // intake off: no piece is dropped onto the docked robot
+    expect(sim.pool.indices('field').filter((i) => i < 126 && i % 63 > 2)).toHaveLength(0);
+    run(sim, 0.8, { ...IDLE_COMMAND, intake: true });
+    expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
+    expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(58); // 59 after the preload, one fed
+  });
+  for (const a of ALLIANCES) it(`lets a ${a} CORAL-only robot knock staged ALGAE onto the carpet`, () => {
+    const config = reefscapeRobotPresets().find((p) => p.id === 'coral')!.config;
+    const sim = make(a, season.testing!.scoringSpots(a)[0], 2, config); sim.rules.stage(); teleop(sim);
+    const rules = sim.rules as ReefscapeRules, algae = 126 + (a === 'red' ? 0 : 6);
+    run(sim, 1.5, { ...IDLE_COMMAND, intake: true, scoringLevel: 3 });
+    expect(rules.reefAlgae(a, 0)).toBe(false);
+    expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(0);
+    run(sim, 2.5);
+    const p = sim.frame.toField(sim.pool.position(algae)), c = C.reefCenter(a);
+    expect(sim.pool.state[algae]).toBe('field');
+    expect(p.z).toBeLessThan(C.ALGAE_RADIUS + 0.05);
+    expect(Math.hypot(p.x - c.x, p.y - c.y)).toBeGreaterThan(C.REEF_APOTHEM + C.ALGAE_RADIUS);
+    run(sim, 1, { ...IDLE_COMMAND, shoot: true, scoringLevel: 3 });
+    expect(sim.ctx.score.counter(a, 'coralL3')).toBe(1);
+  });
+  it('stages CORAL MARKS and the BARGE ZONE per the manual figures', () => {
+    const sim = make(); sim.rules.stage();
+    const marks = sim.pool.indices('field').filter((i) => i < 126).map((i) => sim.frame.toField(sim.pool.position(i)));
+    expect(marks.filter((p) => Math.abs(p.x - 48 * 0.0254) < 0.01)).toHaveLength(3);
+    expect(C.bargeZoneY('blue')[1]).toBeCloseTo(C.FIELD_WIDTH);
+    expect(C.bargeZoneY('red')[0]).toBe(0);
+  });
+  it('calls G421 during AUTO as well as TELEOP', () => {
+    const sim = make('blue', { x: 11, y: 6, yaw: 0 });
+    sim.ctx.robots.push(new Robot(sim.physics, sim.ctx.scene, sim.frame, cloneConfig(season.robotDefaults), 'blue', 1, 3, { x: 11, y: 2, yaw: 0 }));
+    sim.rules.onPeriodChange(sim.ctx.clock.start()); run(sim, 0.2);
+    expect(sim.ctx.score.fouls.filter((f) => f.rule === 'G421')).toHaveLength(1);
   });
   it('awards the opponent BARGE RP for TELEOP cage contact without repeating while touching', () => {
     const sim = make('blue', { ...C.cage('red', 2), yaw: 0 }); teleop(sim);

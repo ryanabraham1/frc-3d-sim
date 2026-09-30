@@ -9,6 +9,8 @@ import * as C from './constants';
 export interface ReefscapeFieldRefs {
   branches: Record<Alliance, THREE.Mesh[]>;
   cages: Record<Alliance, THREE.Group[]>;
+  /** Per-cage depth, index = driver station - 1 (§6.3.5: each team chooses the cage nearest its station). */
+  cageDepth: Record<Alliance, C.CageDepth[]>;
   lights: Record<Alliance, THREE.Mesh[]>;
   algae: Record<Alliance, THREE.Mesh[]>;
   scored: THREE.Group;
@@ -22,7 +24,7 @@ export function coralGeometry() {
 export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
   const b = ctx.builder;
   const L = C.FIELD_LENGTH, W = C.FIELD_WIDTH;
-  const refs: ReefscapeFieldRefs = { branches: { blue: [], red: [] }, cages: { blue: [], red: [] }, lights: { blue: [], red: [] }, algae: { blue: [], red: [] }, scored: new THREE.Group() };
+  const refs: ReefscapeFieldRefs = { branches: { blue: [], red: [] }, cages: { blue: [], red: [] }, cageDepth: { blue: [], red: [] }, lights: { blue: [], red: [] }, algae: { blue: [], red: [] }, scored: new THREE.Group() };
   const tags: TagPose[] = [];
   refs.scored.name = 'reefscape-scored-pieces';
   b.root.add(refs.scored);
@@ -50,21 +52,20 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
     }
     const line0 = C.side(a, C.START_LINE, 0), line1 = C.side(a, C.START_LINE, W);
     b.tape(line0.x, line0.y, line1.x, line1.y, 0.05, 0x141419);
-    for (const y of [W / 2 - 1.8, W / 2, W / 2 + 1.8]) {
-      const p = C.side(a, 1.65, y);
+    for (const p of C.coralMarks(a)) {
       b.tape(p.x - 0.05, p.y, p.x + 0.05, p.y, 0.02, 0x141419);
       b.tape(p.x, p.y - 0.05, p.x, p.y + 0.05, 0.02, 0x141419);
     }
-    // 54-degree diagonals, chute lip at 37.5 in (manual §5.6.2).
-    for (const [k, sy] of [0, W].entries()) {
-      const sign = k === 0 ? 1 : -1;
-      const yaw = C.sideYaw(a, Math.atan2(sign * 1.25, -1.7));
-      const mid = local(0.85, sy + sign * 0.625, 1);
-      b.box(mid, [2.11, 0.08, 2], { color: 0x869cac, yaw, opacity: 0.42 });
-      const mouth = C.stations(a)[k];
-      b.box([mouth.x, mouth.y, inch(37.5)], [1.93, 0.22, 0.10], { color, yaw, collide: false });
-      b.label([mouth.x, mouth.y, 1.63], 'CORAL STATION', 0.19, C.sideYaw(a, k ? -Math.PI / 4 : Math.PI / 4));
-      tags.push({ id: a === 'blue' ? 12 + k : 2 - k, x: mouth.x, y: mouth.y, z: inch(53.25) + inch(10.5) / 2, yaw: C.sideYaw(a, k ? -Math.PI / 4 : Math.PI / 4) });
+    // Diagonal CORAL STATION walls; 76 in × 7 in opening with its bottom at 37.5 in (manual §5.6.2).
+    for (const [k, mouth] of C.stations(a).entries()) {
+      const out = (d: number, z: number): Vec3 => [mouth.x + Math.cos(mouth.yaw) * d, mouth.y + Math.sin(mouth.yaw) * d, z];
+      const yaw = mouth.yaw + Math.PI / 2;
+      b.box(out(-0.04, 1), [C.STATION_WALL_LENGTH, 0.08, 2], { color: 0x869cac, yaw, opacity: 0.42 });
+      b.box(out(0.005, C.STATION_MOUTH_HEIGHT - 0.03), [C.STATION_MOUTH_WIDTH, 0.03, 0.06], { color, yaw, collide: false });
+      b.box(out(0.005, C.STATION_MOUTH_HEIGHT + inch(7) + 0.03), [C.STATION_MOUTH_WIDTH, 0.03, 0.06], { color, yaw, collide: false });
+      b.label(out(0.01, 1.78), 'CORAL STATION', 0.19, mouth.yaw);
+      const [tx, ty] = out(0.005, 0);
+      tags.push({ id: a === 'blue' ? 12 + k : 2 - k, x: tx, y: ty, z: inch(53.25) + inch(10.5) / 2, yaw: mouth.yaw });
     }
 
     const center = C.reefCenter(a);
@@ -128,7 +129,14 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
     b.box([p.x, p.y + (a === 'blue' ? -0.10 : 0.10), (top + bottom) / 2], [openingWidth, 0.015, top - bottom], { color: 0x0b1117, collide: false });
     b.label([p.x, p.y + (a === 'blue' ? 0.13 : -0.13), 1.0], 'PROCESSOR', 0.14, yaw);
     tags.push({ id: a === 'blue' ? 16 : 3, x: p.x, y: p.y + (a === 'blue' ? 0.10 : -0.10), z: inch(45.875) + inch(10.5) / 2, yaw });
-    b.tapeRect(p.x - 0.55, a === 'blue' ? 0 : W - 2.29, p.x + 0.55, a === 'blue' ? 2.29 : W, 0.05, color);
+    // The opponent's PROCESSOR AREA (43⅜ in × 90 in, §5.2) is outside the guardrail, beside this processor
+    // on the midfield side; its HUMAN PLAYER receives ALGAE scored here.
+    const hpColor = C.COLORS[a === 'blue' ? 'red' : 'blue'];
+    const areaX = (d: number) => C.side(a, 6.0 + inch(14) + d, 0).x;
+    const [ax0, ax1] = [areaX(0), areaX(inch(43.375))].sort((u, v) => u - v);
+    const [ay0, ay1] = a === 'blue' ? [-inch(90), -0.03] : [W + 0.03, W + inch(90)];
+    b.box([(ax0 + ax1) / 2, (ay0 + ay1) / 2, -0.005], [ax1 - ax0, ay1 - ay0, 0.01], { color: 0x2a2d33, collide: false });
+    b.tapeRect(ax0, ay0, ax1, ay1, 0.05, hpColor);
 
     const n = C.netCenter(a);
     const x0 = n.x - C.NET_WIDTH / 2, x1 = n.x + C.NET_WIDTH / 2;
@@ -140,12 +148,14 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
     for (const x of [x0, x1]) b.box([x, n.y, C.NET_HEIGHT + 0.24], [0.018, C.NET_LENGTH, 0.48], { color: 0xbdd3df, opacity: 0.2, collide: 'pieces' });
     for (const y of [y0, y1]) b.box([n.x, y, C.NET_HEIGHT + 0.24], [C.NET_WIDTH, 0.018, 0.48], { color: 0xbdd3df, opacity: 0.2, collide: 'pieces' });
     b.label([n.x - (a === 'blue' ? 0.63 : -0.63), n.y, C.NET_HEIGHT + 0.36], `${a.toUpperCase()} NET`, 0.17, C.sideYaw(a, Math.PI));
-    const zoneY0 = a === 'blue' ? W / 2 + 0.1 : 0.23;
-    b.tapeRect(L / 2 - inch(46) / 2, zoneY0, L / 2 + inch(46) / 2, zoneY0 + inch(146.5), 0.05, color);
+    const [zoneY0, zoneY1] = C.bargeZoneY(a);
+    b.tapeRect(L / 2 - C.BARGE_ZONE_DEPTH / 2, zoneY0 + 0.025, L / 2 + C.BARGE_ZONE_DEPTH / 2, zoneY1 - 0.025, 0.05, color);
     for (let s = 1; s <= 3; s++) {
       const p = C.cage(a, s);
       const group = new THREE.Group();
-      const depth = ctx.robots.find((r) => r.alliance === a && r.station === s)?.config.climber.maxLevel === 1 ? 'shallow' : 'deep';
+      // Cages start the day deep (§6.3.5); a station's team may request shallow for its own cage.
+      const depth: C.CageDepth = ctx.robots.find((r) => r.alliance === a && r.station === s)?.config.climber.maxLevel === 1 ? 'shallow' : 'deep';
+      refs.cageDepth[a].push(depth);
       group.position.copy(ctx.frame.toWorld(p.x, p.y, C.CAGE_BOTTOM[depth]));
       const mat = b.material({ color, metalness: 0.6 });
       const size = inch(7.375), height = inch(24);
@@ -172,7 +182,8 @@ export function buildReefscapeField(ctx: SeasonContext): ReefscapeFieldRefs {
   for (const x of [L / 2 - 0.4, L / 2 + 0.4]) b.box([x, W / 2, inch(62) + 0.08], [0.08, W + 0.6, 0.16], { color: C.COLORS.steel });
   for (const xSide of [-1, 1]) for (const ySide of [-1, 1]) tags.push({
     id: xSide === -1 ? (ySide === 1 ? 14 : 15) : (ySide === 1 ? 4 : 5),
-    x: L / 2 + xSide * 0.55, y: W / 2 + ySide * 2.0, z: inch(69) + inch(10.5) / 2, yaw: xSide === -1 ? Math.PI : 0,
+    // Centered above each alliance's middle cage (§5.8).
+    x: L / 2 + xSide * 0.55, y: W / 2 + ySide * C.CAGE_OFFSETS[1], z: inch(69) + inch(10.5) / 2, yaw: xSide === -1 ? Math.PI : 0,
   });
   addAprilTags(b, { field: { length: L, width: W }, tags: tags.map((t) => ({ ID: t.id, pose: { translation: { x: t.x, y: t.y, z: t.z }, rotation: { quaternion: { W: Math.cos(t.yaw / 2), X: 0, Y: 0, Z: Math.sin(t.yaw / 2) } } } })) });
   return refs;

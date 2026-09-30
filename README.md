@@ -37,7 +37,8 @@ Then open http://localhost:5173.
 ## Playing 2025 REEFSCAPE
 
 Select **2025 REEFSCAPE** in the season dropdown. Pick your alliance, driver station, AUTO routine,
-camera and robot. Choose **Shallow cage** or **Deep cage** before starting; this sets your station's cage.
+camera and robot. Choose **Shallow cage** or **Deep cage** before starting; this sets your station's cage,
+and you may climb any of your alliance's cages of that depth.
 The 2025 robot editor offers All-rounder, CORAL + cage and ALGAE + cage profiles, individual mechanism
 toggles, elevator level/speed/reach, placement/removal cycle times, net tuning and cage rise time.
 Inventory follows the manual's one-CORAL/one-ALGAE limit rather than an adjustable bulk hopper.
@@ -47,9 +48,9 @@ Drive with W/A/S/D and rotate with Q/E. The other camera and pause controls are 
 |---|---|
 | 1 / 2 / 3 / 4, [ / ] | Choose reef L1–L4 |
 | Space | Place held CORAL on the nearest open branch or L1 trough; with ALGAE only, shoot your NET |
-| J / F | Hold intake / toggle auto-intake; close to either reef, collect its staged ALGAE |
+| J / F | Hold intake / toggle auto-intake; back into a CORAL STATION to catch CORAL; at either reef, collect staged ALGAE (or knock it off if you can't hold it) |
 | G | Feed held ALGAE into your nearby PROCESSOR; with CORAL only, eject it a short distance |
-| C / X | Climb your driver station's cage / descend; X near your reef retrieves scored CORAL |
+| C / X | Climb the nearest matching alliance cage / descend; X near your reef retrieves scored CORAL |
 | H | Toggle station CORAL supply and act as HUMAN PLAYER; throw received ALGAE in TELEOP |
 | Gamepad | LS drive · RS rotate · D-pad reef level · RT score · RB processor · LT intake · A climb · B descend · X human player · Y camera |
 

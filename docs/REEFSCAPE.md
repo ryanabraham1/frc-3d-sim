@@ -12,15 +12,15 @@ No external field CAD, WPILib tag layout or later team updates were used for 202
 
 | Feature | Manual reference | Implementation |
 |---|---|---|
-| Field and markings | §5.1–5.2, pp19–22 | 57 ft 6⅞ in × 26 ft 5 in; clipped station corners, guardrails, starting lines, reef and barge zones |
+| Field and markings | §5.1–5.2, pp19–22 | 57 ft 6⅞ in × 26 ft 5 in; clipped station corners, guardrails, starting lines, reef zones, 46 × 146½ in barge zones running to the guardrail, PROCESSOR AREAS outside the guardrail beside the opponent's processor |
 | Reefs | §5.3, pp23–24 | Two hexagonal reefs; L1 troughs; 12 branches per level at L2/L3/L4; 13 in pipe spacing, specified heights/insets and 35° lower branches |
 | Barge, cages, nets | §5.4, pp25–27 | Truss with center support, six cages at stated lateral offsets; preselected shallow/deep bottoms; 4 ft × 12 ft nets at 76 in minimum height |
 | Processors, stations | §5.5–5.6, pp28–32 | 28 × 20 in processor opening, 7 in bottom; four station mouths at 37½ in |
 | Pieces | §5.7, pp33–35 | Hollow CORAL visuals: 4½ in OD, 4 in ID, 11⅞ in length; ALGAE diameter 16¼ in |
 | AprilTags | §5.8, pp35–39 | All 22 IDs at the depicted structures and stated mounting heights; visual markers |
-| Staging/cages | §6.3.4–6.3.5, pp45–46 | 126 CORAL, 18 ALGAE; one optional preload per robot, six floor CORAL with ALGAE atop, twelve staged reef ALGAE, remaining CORAL in alliance station reserves |
+| Staging/cages | §6.3.4–6.3.5, pp45–46 | 126 CORAL, 18 ALGAE; one optional preload per robot, six CORAL MARK CORAL with ALGAE atop (48 in from the wall, ±72 in, measured from Fig. 6-2), twelve staged reef ALGAE, remaining CORAL in alliance station reserves; each station's team sets its cage depth, the rest stay deep |
 | Match timing | §6.4–6.5, pp46–48 | 15 s AUTO + 3 s scoring delay; 135 s TELEOP (last 20 s endgame) + 3 s final assessment |
-| Scoring | §6.5.1–6.5.4, pp48–50 | AUTO CORAL 3/4/6/7, TELEOP 2/3/4/5, processor 6, net 4, leave 3, park 2, shallow 6, deep 12 |
+| Scoring | §6.5.1–6.5.4, pp48–50 | AUTO CORAL 3/4/6/7, TELEOP 2/3/4/5, processor 6, net 4, leave 3, park 2, shallow 6, deep 12 (by the cage actually climbed; any of the alliance's three cages qualifies) |
 | Ranking points | Table 6-2, p50 | AUTO, CORAL, BARGE bonuses; win 3, tie 1; Coopertition needs two processor ALGAE per alliance and relaxes CORAL to three levels |
 | Robot size | R104, p78 | 42 in starting height and 120 in frame perimeter; G409 restricts inventory to one CORAL + one ALGAE |
 
@@ -49,21 +49,27 @@ your reef and hold **Space**. Aim assist chooses the closest open branch on the 
 with aim assist reduced or the turret disabled, face the branch. The elevator must reach its height
 before placement. L1 accepts multiple pieces; other branches hold one. Staged ALGAE blocks L2 or L3
 on alternating faces until collected. Hold **J** or enable auto-intake with **F** to collect nearby ground
-pieces or reef ALGAE. ALGAE is neutral and can be harvested from either reef.
+pieces or reef ALGAE. ALGAE is neutral and can be harvested from either reef. A robot that can't store it
+(no ALGAE intake, or already holding one) knocks it off the reef onto the carpet instead, which also
+clears the blocked level; the CORAL profile uses this to open L2/L3.
 
 With ALGAE and no CORAL, **Space** launches toward your net using the ballistic solver. **G** feeds
 ALGAE into your processor when nearby. Processor passage scores six points and transfers that ALGAE
 to the opponent's human player. Human players can throw those pieces into their own net only in
-TELEOP. Automatic station feeding supplies nearby robots from the finite CORAL reserve. **H** toggles
-CORAL supply and acts once; the lobby also lets the host choose automatic human players.
+TELEOP. Automatic station feeding supplies nearby robots from the finite CORAL reserve: back your
+intake up to a CORAL STATION opening with intake running and CORAL comes straight from the CHUTE into the
+robot; otherwise it drops onto the carpet in front of the station (never onto a robot parked in the
+opening). **H** toggles CORAL supply and acts once; the lobby also lets the host choose automatic human players.
 
 **X** near your own reef retrieves a scored CORAL at the selected level. Points and branch occupancy
 are adjusted; original AUTO location credit is restored on re-scoring, including the manual's L1
 TELEOP-first removal / AUTO-first restoration order. Opponent CORAL cannot be retrieved.
 
-Choose your shallow/deep cage in robot settings before the match. Drive near the cage corresponding
-to your driver station, then press **C** during TELEOP. **X** descends. Climbing is assisted; cage
-occupation is exclusive. Park/cage points are assessed at the end of the final scoring window.
+Choose your shallow/deep climber in robot settings before the match; per §6.3.5 it also sets the depth of
+the cage nearest your driver station, and cages without a team choosing stay deep. Drive near any of
+your alliance's cages of that depth and press **C** during TELEOP (§6.5.2 accepts any one of the
+alliance's cages). **X** descends. Climbing is assisted; cage occupation is exclusive. Points follow the
+cage climbed. Park/cage points are assessed at the end of the final scoring window.
 
 Scripted AUTO options are leave + L4, leave + L1, leave only and do nothing. Manual AUTO remains a
 practice option, as in the existing 2026 simulator.
@@ -75,7 +81,7 @@ practice option, as in the existing 2026 simulator.
 - G412: CORAL placement requires reef reach; a gentle reverse-intake ejection follows its exception.
 - G403: direct robot contact beyond the opposing barge boundary during AUTO produces a major foul.
 - G405/G418: opponent cage contact produces a major foul; TELEOP also awards the opponent BARGE RP.
-- G421: multiple defenders beyond the barge zones produce a minor foul, then a major every three seconds.
+- G421: multiple defenders beyond the barge zones produce a minor foul, then a major every three seconds (AUTO and TELEOP).
 - G427: direct contact with an opponent in its protected reef/barge zone produces a major foul.
 - G428: direct contact with an opponent climbing in the final 20 seconds awards a major and BARGE RP.
 
