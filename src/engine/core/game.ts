@@ -232,8 +232,8 @@ export class Game {
     if (this.role === 'host') {
       this.state = 'waiting';
       this.hostSync = new HostSync(net!.client, this.setup, this, {
-        humanPlayer: (robot) => {
-          if (robot && this.state === 'running') this.rules.humanPlayerAction(robot.alliance);
+        humanPlayer: (robot, _peer, button) => {
+          if (robot && this.state === 'running' && button <= (this.season.humanPlayerButtons ?? 1)) this.rules.humanPlayerAction(robot.alliance, button);
         },
         allReady: () => {
           if (this.state === 'paused' && this.pausedFrom === 'waiting') {
@@ -335,6 +335,7 @@ export class Game {
         }
         // Edge-triggered inputs apply to the first step only.
         inp.humanPlayer = false;
+        inp.humanPlayerAlt = 0;
       }
       if (steps === 5) this.acc = 0;
     } else if (this.hostSync && now - this.lastIdleSnap > 200) {
@@ -449,7 +450,8 @@ export class Game {
     const mode = this.clock.mode;
     const enabled = mode !== 'disabled';
 
-    if (inp.humanPlayer && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance);
+    if (inp.humanPlayer && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance, 1);
+    if (inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1) && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance, inp.humanPlayerAlt);
 
     for (const r of this.robots) {
       r.enabled = enabled;
@@ -526,6 +528,7 @@ export class Game {
     const p = this.player;
     if (!p || this.clientModal === 'closed') return;
     if (inp.humanPlayer && cs.netState === 'running') this.net!.client.send({ t: 'hp' });
+    if (inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1) && cs.netState === 'running') this.net!.client.send({ t: 'hp', n: inp.humanPlayerAlt });
     const live = cs.netState === 'running' || cs.netState === 'countdown';
     const cmd = live && this.manual(p) && p.enabled ? this.playerCommand(inp, p) : IDLE_COMMAND;
     p.lastCommand = cmd;
@@ -621,7 +624,9 @@ export class Game {
           `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(F)</span></div>` +
           (this.season.maxScoringLevel
             ? `<div>Reef target: L${this.scoringLevel} <span class="dim">(1-4)</span></div><div>Cage: ${this.season.climberLabels?.[p.config.climber.maxLevel] ?? 'Deep'} <span class="dim">(C)</span></div>`
-            : `<div>Climb target: L${this.climbLevel} <span class="dim">(1-${this.season.maxClimbLevel})</span></div>`) +
+            : this.season.climberLabels
+              ? `<div>Climber: ${this.season.climberLabels[p.config.climber.maxLevel] ?? 'None'} <span class="dim">(C)</span></div>`
+              : `<div>Climb target: L${this.climbLevel} <span class="dim">(1-${this.season.maxClimbLevel})</span></div>`) +
           `<div class="dim">? for controls</div>`,
       );
     } else {

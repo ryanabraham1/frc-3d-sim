@@ -31,7 +31,7 @@ function load(sim: HeadlessSim, i: number) { sim.pool.hold(i, sim.robot.id); sim
 
 describe('2025 REEFSCAPE manual implementation', () => {
   it('registers both years and uses the manual match timing and scoring values', () => {
-    expect(SEASONS.map((s) => s.year)).toEqual([2026, 2025]);
+    expect(SEASONS.map((s) => s.year)).toEqual([2026, 2025, 2024]);
     expect(season.timeline.filter((p) => p.mode !== 'disabled').reduce((t, p) => t + p.duration, 0)).toBe(150);
     expect(season.foulValues).toEqual({ minor: 2, major: 6 });
   });

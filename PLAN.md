@@ -217,3 +217,10 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   aim solver, traction only with ground contact (robots wedging under TRENCH), trench arm overhang. Added
   HeadlessSim + tests/physics.test.ts (runs for every season). Mid-air ball collisions kept (user: real
   physics). Details + remaining items: docs/BUGFIX-HANDOFF.md.
+- 2026-09-30: Added **2024 CRESCENDO** from only the 2024 manual (V0, downloaded from a GitHub mirror —
+  FIRST's host was blocked by the sandbox network policy). New season module `src/seasons/2024-crescendo/`,
+  engine additions: ring game pieces, solver `ceilings`/`allowRising`/`minEntryAngle`, `engine/zones.ts`,
+  3 human-player buttons (`humanPlayerButtons`), mirror-symmetric minimap, `SeasonTesting.canScoreFrom`,
+  vitest `testTimeout` 120 s (the physics suite timed out at the 5 s default). 154 tests pass; verified in
+  the browser (single player full match, multiplayer host+guest). Details: docs/CRESCENDO.md; lessons for
+  the next season: INSTRUCTIONS.md.

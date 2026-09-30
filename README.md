@@ -1,11 +1,14 @@
 # FRC 3D Sim
 
-Browser-based 3D FIRST Robotics Competition simulator. Choose **2026 REBUILT** (manual TU22) or
-**2025 REEFSCAPE**, both presented by Haas, on the home screen. Both support single player and multiplayer.
+Browser-based 3D FIRST Robotics Competition simulator. Choose **2026 REBUILT** (manual TU22),
+**2025 REEFSCAPE** or **2024 CRESCENDO**, all presented by Haas, on the home screen. All support single
+player and multiplayer.
+
+> **Adding another game from a manual?** Read **[INSTRUCTIONS.md](INSTRUCTIONS.md)** first.
 
 - **Engine** (`src/engine`) — reusable every year: Three.js rendering, Rapier physics, robot, input,
   cameras, match clock, scoreboard, HUD, game loop.
-- **Season modules** (`src/seasons/2026-rebuilt`, `src/seasons/2025-reefscape`) — each year's field,
+- **Season modules** (`src/seasons/2026-rebuilt`, `src/seasons/2025-reefscape`, `src/seasons/2024-crescendo`) — each year's field,
   rules, scoring, AUTO routines and HUD.
 - See **[docs/FRAMEWORK.md](docs/FRAMEWORK.md)** for what's reusable and the kickoff-day checklist,
   and **[PLAN.md](PLAN.md)** for the full plan and progress log.
@@ -33,6 +36,27 @@ Then open http://localhost:5173.
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build to `dist/` (static — deploy anywhere, e.g. Vercel) |
 | `npm run preview` | Serve the production build locally |
+
+## Playing 2024 CRESCENDO
+
+Select **2024 CRESCENDO** in the season dropdown. Score NOTES (foam rings) in your SPEAKER and AMP,
+AMPLIFY, cooperate, and finish ONSTAGE on a STAGE chain. Your SOURCE is at the *opponent's* end.
+
+| Key | Action |
+|---|---|
+| Space | Shoot at your SPEAKER (hold) · while ONSTAGE: place the NOTE in the TRAP |
+| G | Against your AMP: score in the AMP · elsewhere: pass into your WING |
+| J / F | Hold intake / toggle auto-intake (one NOTE at a time) |
+| C / X | Climb the STAGE chain you're under (TELEOP) / descend |
+| H / B / N | AMP human player: AMPLIFY / Coopertition / throw a HIGH NOTE (last 20 s) |
+| Gamepad | RT shoot · RB amp/pass · LT intake · A climb · B descend · X amplify · LB coopertition · Y camera |
+
+**What's simulated:** full field from the manual (SPEAKERS with hood and SUBWOOFER, AMPS with lights,
+SOURCES, STAGES with chains, TRAPS, MICROPHONES and PODIUMS, 16 AprilTags, all tape zones), all 107 NOTES
++ 6 HIGH NOTES staged per §6.3.4, physical SPEAKER shots under the hood lip, passing, SOURCE drops, HIGH NOTE
+throws, AMPLIFICATION (10 s + lights), Coopertition, LEAVE/PARK/ONSTAGE/SPOTLIT/HARMONY/TRAP, MELODY and
+ENSEMBLE RP, and fouls G404, G405, G414, G422, G423, G424. AMP deposits, chain climbs and TRAP placement
+are assisted animations. Details, manual page references and approximations: [docs/CRESCENDO.md](docs/CRESCENDO.md).
 
 ## Playing 2025 REEFSCAPE
 
@@ -119,3 +143,4 @@ URL waits for the service to wake before it can show the site. Steps: [docs/MULT
 - 2026 Game Manual (TU22) — `2026GameManual.pdf`
 - Official AprilTag layout — WPILib `allwpilib` v2026.2.1, `2026-rebuilt-welded.json`
 - 2025 REEFSCAPE uses only the supplied `2025GameManual.pdf` (ARENA V4, Game Details V13, Game Rules V11).
+- 2024 CRESCENDO uses only `2024GameManual.pdf` (kickoff release V0; no Team Updates).

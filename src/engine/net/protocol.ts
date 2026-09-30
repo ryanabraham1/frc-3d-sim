@@ -103,8 +103,8 @@ export type ClientMsg =
   /** Client finished building its Game and can take snapshots. */
   | { t: 'ready' }
   | { t: 'cmd'; s: number; c: PackedCommand }
-  /** Human-player button (e.g. open the CHUTE) for the sender's alliance. */
-  | { t: 'hp' };
+  /** Human-player button (e.g. open the CHUTE) for the sender's alliance. `n` = button (1 default). */
+  | { t: 'hp'; n?: number };
 
 export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }

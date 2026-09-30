@@ -34,7 +34,7 @@ export interface HostSyncSource {
 
 export interface HostSyncHooks {
   /** A client pressed its human-player button. */
-  humanPlayer(robot: Robot | null, peerId: string): void;
+  humanPlayer(robot: Robot | null, peerId: string, button: number): void;
   /** Everyone expected is ready (or timed out). */
   allReady(): void;
   peerLeft(peerId: string, robot: Robot | null): void;
@@ -113,7 +113,7 @@ export class HostSync {
         break;
       }
       case 'hp':
-        this.hooks.humanPlayer(this.robotForPeer(from), from);
+        this.hooks.humanPlayer(this.robotForPeer(from), from, Number(m.n) || 1);
         break;
     }
   }

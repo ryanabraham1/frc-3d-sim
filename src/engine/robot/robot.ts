@@ -34,6 +34,15 @@ export interface AimTarget {
   clearHeight?: number;
   /** Extra obstacles to clear: `distance` = horizontal distance back from the target, `height` = world y. */
   clearances?: { distance: number; height: number }[];
+  /** Overhangs to pass UNDER: the piece must be at or below `height` (world y) `distance` back from the target. */
+  ceilings?: { distance: number; height: number }[];
+  /**
+   * Accept pieces still rising at the target (a goal entered from below/level, e.g. under a hood). The default
+   * requires a descending entry, as for open-top goals.
+   */
+  allowRising?: boolean;
+  /** With allowRising: the lowest acceptable flight-path angle at the target (radians; negative = slightly descending). */
+  minEntryAngle?: number;
 }
 
 export type ClimbPhase = 'none' | 'align' | 'rise' | 'hanging' | 'lower';
@@ -418,14 +427,14 @@ export class Robot {
    * Game-piece flight model the shot solver mirrors. Set from the season's GamePieceSpec when the robot
    * is created (`robot.projectile = { radius, airDamping }`); defaults are close to a typical ball.
    */
-  get projectile(): { radius: number; airDamping: number } {
+  get projectile(): { radius: number; airDamping: number; halfHeight?: number } {
     return this._projectile;
   }
-  set projectile(p: { radius: number; airDamping: number }) {
+  set projectile(p: { radius: number; airDamping: number; halfHeight?: number }) {
     this._projectile = p;
     this.projectileSet = true;
   }
-  private _projectile = { radius: 0.075, airDamping: 0.02 };
+  private _projectile: { radius: number; airDamping: number; halfHeight?: number } = { radius: 0.075, airDamping: 0.02 };
   private projectileSet = false;
   private static warnedProjectile = false;
 
@@ -437,7 +446,8 @@ export class Robot {
    */
   launcherExit(): { forward: number; up: number } {
     const c = this.config;
-    return { forward: c.frameLength * 0.18, up: Math.max(c.launcher.height, c.height) + this._projectile.radius + 0.03 };
+    // Flat pieces (rings) only need their half-thickness of vertical clearance.
+    return { forward: c.frameLength * 0.18, up: Math.max(c.launcher.height, c.height) + (this._projectile.halfHeight ?? this._projectile.radius) + 0.03 };
   }
 
   /**
@@ -445,14 +455,14 @@ export class Robot {
    * way as the physics step (gravity, Rapier-style linear damping, then position). Also returns the
    * vertical velocity there. null = never got that far (fell below the floor first).
    */
-  simulateFlight(fromY: number, angle: number, speed: number, dists: number[]): ({ y: number; vy: number } | null)[] {
+  simulateFlight(fromY: number, angle: number, speed: number, dists: number[]): ({ y: number; vy: number; vx: number } | null)[] {
     const dt = this.physics.dt;
     const k = 1 / (1 + dt * this._projectile.airDamping);
     let x = 0;
     let y = fromY;
     let vx = speed * Math.cos(angle);
     let vy = speed * Math.sin(angle);
-    const out: ({ y: number; vy: number } | null)[] = dists.map(() => null);
+    const out: ({ y: number; vy: number; vx: number } | null)[] = dists.map(() => null);
     let j = 0;
     for (let i = 0; i < 3000 && j < dists.length; i++) {
       const px = x;
@@ -464,7 +474,7 @@ export class Robot {
       y += vy * dt;
       while (j < dists.length && x >= dists[j]) {
         const f = (dists[j] - px) / Math.max(1e-9, x - px);
-        out[j++] = { y: py + (y - py) * f, vy };
+        out[j++] = { y: py + (y - py) * f, vy, vx };
       }
       if (y < -0.5 || vx < 1e-3) break;
     }
@@ -481,8 +491,9 @@ export class Robot {
     const c = this.config.launcher;
     const d = Math.hypot(target.point.x - from.x, target.point.z - from.z);
     const h = target.point.y - from.y;
-    const obstacles = [...(target.clearances ?? [])];
+    const obstacles: { distance: number; height: number; ceiling?: boolean }[] = [...(target.clearances ?? [])];
     if (target.clearHeight !== undefined) obstacles.push({ distance: target.clearRadius ?? 0, height: target.clearHeight });
+    for (const q of target.ceilings ?? []) obstacles.push({ ...q, ceiling: true });
     // Obstacles in flight order (farthest from the target first), as distances from the launcher.
     const ordered = obstacles.filter((q) => d - q.distance > 0).sort((a, b) => b.distance - a.distance);
     const dists = [...ordered.map((q) => d - q.distance), d];
@@ -510,8 +521,9 @@ export class Robot {
     const clears = (angle: number, v: number): boolean => {
       const pts = this.simulateFlight(from.y, angle, v, dists);
       const atTarget = pts[pts.length - 1];
-      if (!atTarget || atTarget.vy > 0) return false; // must be coming DOWN into the goal
-      return ordered.every((q, i) => (pts[i]?.y ?? -Infinity) >= q.height);
+      if (!atTarget || (atTarget.vy > 0 && !target.allowRising)) return false; // must be coming DOWN into an open-top goal
+      if (target.minEntryAngle !== undefined && Math.atan2(atTarget.vy, atTarget.vx) < target.minEntryAngle) return false;
+      return ordered.every((q, i) => (q.ceiling ? (pts[i]?.y ?? Infinity) <= q.height : (pts[i]?.y ?? -Infinity) >= q.height));
     };
 
     const step = Math.PI / 180;
@@ -728,6 +740,11 @@ export class Robot {
     this.turretYaw = pose.yaw;
     this.fireCooldown = 0;
     this.held.length = 0;
+  }
+
+  /** Hide the generic hopper fill (seasons that draw their own held game piece). */
+  hideHopperFill(): void {
+    this.hopperFill.visible = false;
   }
 
   /** Placement seasons draw their own carriage and held pieces. */

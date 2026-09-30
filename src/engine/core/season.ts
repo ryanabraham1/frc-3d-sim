@@ -98,7 +98,8 @@ export interface SeasonRules {
   passTarget?(robot: Robot): AimTarget | null;
   requestClimb(robot: Robot, level: number): void;
   requestDescend(robot: Robot): void;
-  humanPlayerAction(alliance: Alliance): void;
+  /** A human-player button was pressed (`button` 1 = H; 2 / 3 only for seasons declaring `humanPlayerButtons`). */
+  humanPlayerAction(alliance: Alliance, button?: number): void;
   /** Per rendered frame: lights and other cosmetic effects. */
   updateVisuals(dt: number, time: number): void;
   results(): MatchResults;
@@ -171,6 +172,12 @@ export interface SeasonDefinition {
   autoRoutines: AutoRoutine[];
   /** Optional top-down field features for the menu's starting-spot map. */
   mapShapes?: MapShape[];
+  /** How the red half mirrors the blue `mapShapes`: rotational (default, L−x, W−y) or mirror (L−x, y). */
+  mapSymmetry?: 'rotational' | 'mirror';
+  /** Number of human-player buttons (1 = H only; 2 adds B / gamepad LB; 3 adds N). Default 1. */
+  humanPlayerButtons?: number;
+  /** Menu hint for the human-player option (auto / manual). */
+  humanPlayerHint?: { auto: string; manual: string };
 
   startPose(alliance: Alliance, station: number): FieldPose;
   driverEye(alliance: Alliance, station: number): { x: number; y: number; z: number; yaw: number };
@@ -198,6 +205,11 @@ export interface SeasonTesting {
   scoringSpots(alliance: Alliance): FieldPose[];
   /** Total game pieces that have entered this alliance's goal so far (regardless of whether they scored points). */
   goalCount(ctx: SeasonContext, alliance: Alliance): number;
+  /**
+   * Optional: can a shot at the goal physically succeed from this FIELD position (e.g. not from far off the axis of
+   * a goal with a deep opening)? The shot harness only fires from positions where this is true — as a driver would.
+   */
+  canScoreFrom?(alliance: Alliance, x: number, y: number): boolean;
   /** Goal center (FIELD frame) — used to point a turret-less chassis at the goal. */
   goalCenter(alliance: Alliance): { x: number; y: number };
   /**

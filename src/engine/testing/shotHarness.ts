@@ -45,7 +45,13 @@ export function runShotTrial(season: SeasonDefinition, R: RapierModule, trial: S
   const before = testing.goalCount(sim.ctx, trial.alliance);
   const d = trial.drive ?? { vx: 0, vy: 0 };
   const cmd = { ...IDLE_COMMAND, vx: d.vx, vy: d.vy, omega: d.omega ?? 0, shoot: trial.mode !== 'pass', pass: trial.mode === 'pass' };
-  sim.run(15, cmd, () => sim.robot.held.length === 0);
+  // Fire only where the season says a goal is physically possible (a driver doesn't shoot from impossible spots).
+  const can = testing.canScoreFrom;
+  for (let k = 0; k < Math.round(15 / sim.physics.dt) && sim.robot.held.length > 0; k++) {
+    const p = sim.robot.pose;
+    const ok = trial.mode === 'pass' || !can || can(trial.alliance, p.x, p.y);
+    sim.step(ok ? cmd : { ...cmd, shoot: false });
+  }
   sim.run(trial.settle ?? 3);
   const entered = testing.goalCount(sim.ctx, trial.alliance) - before;
   const misses = sim.pool.indices('field').map((i) => sim.frame.toField(sim.pool.position(i)));

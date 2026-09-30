@@ -144,8 +144,9 @@ function fieldMap(season: SeasonDefinition, s: GameSettings): string {
   const W = season.fieldWidth;
   const pad = 0.5;
   const fy = (y: number) => W - y; // +y is up on screen
+  const mirror = season.mapSymmetry === 'mirror';
   const poly = (m: MapShape, red: boolean) =>
-    m.points.map(([x, y]) => `${(red ? L - x : x).toFixed(3)},${fy(red ? W - y : y).toFixed(3)}`).join(' ');
+    m.points.map(([x, y]) => `${(red ? L - x : x).toFixed(3)},${fy(red && !mirror ? W - y : y).toFixed(3)}`).join(' ');
   const shapes = season.mapShapes ?? [];
   let out = '';
   for (const red of [false, true]) {
@@ -225,7 +226,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
       ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`)}
       ${group('Autonomous', `<div class="seg">${season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, x.id === s.autoRoutine)).join('')}</div>`, routine?.description ?? '')}
-      ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, season.maxScoringLevel ? (s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.') : (s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.'))}
+      ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, season.humanPlayerHint ? (s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual) : season.maxScoringLevel ? (s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.') : (s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.'))}
       ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.')}`;
     const right = `
       <section class="panel map-panel">

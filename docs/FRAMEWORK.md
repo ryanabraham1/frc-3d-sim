@@ -18,8 +18,9 @@ and a step-by-step plan for kickoff day.
 | Field builder | `src/engine/field/builder.ts` | **100%** | `box`, `boxMinMax`, `convex` (ramps/wedges), `cylinder` (rungs/pipes), `tape`, `tapeRect`, `label`, `carpet`. Every primitive = mesh + collider in one call, in field coordinates. |
 | AprilTags | `src/engine/field/apriltags.ts` | **100%** | Drop in the year's WPILib `*.json` layout → tags render at official poses. |
 | CAD overlay | `src/engine/field/cadOverlay.ts` | **100%** | Optional: show an official field GLB as visuals while physics stays procedural. |
-| Game-piece pool | `src/engine/gamepiece/pool.ts` | **~90%** | Sphere and tube shapes; indexed variants permit CORAL and ALGAE in one stable pool. Per-piece collider size, damping and instanced mesh; non-spherical rotations are replicated. Other shapes still need an extension. |
-| Robot | `src/engine/robot/*` | **~85%** | Swerve/tank drive, bumpers, intake, hopper, turret + ballistic solver, feed/pass and kinematic climb. A season can configure robot visuals/projectiles and own an elevator/placement mechanism through `handleMechanisms`. |
+| Game-piece pool | `src/engine/gamepiece/pool.ts` | **~90%** | Sphere, tube and ring (flat torus, e.g. 2024 NOTE; optional tape `stripes`) shapes; indexed variants permit several piece types in one stable pool. Per-piece collider size, damping and instanced mesh; `restHeight(i)` for correct floor placement. |
+| Zone geometry | `src/engine/zones.ts` | **100%** | `pointInPolygon`, `convexOverlap` (SAT), `containedIn` — test bumper rectangles (`robot.corners()`) against zone polygons for "any part of the BUMPERS in…" rules. |
+| Robot | `src/engine/robot/*` | **~85%** | Swerve/tank drive, bumpers, intake, hopper, turret + ballistic solver (min-height `clearances`, max-height `ceilings`, `allowRising`/`minEntryAngle` for hooded goals), feed/pass and kinematic climb. A season can configure robot visuals/projectiles and own an elevator/placement mechanism through `handleMechanisms`. |
 | Input | `src/engine/input/input.ts` | **100%** | Keyboard + gamepad → `DriverInput`; view-relative field-oriented drive. |
 | Cameras | `src/engine/camera/cameras.ts` | **100%** | Driver station, follow (3rd-person, mouse orbit/zoom, camera-relative driving), chase, overhead, free orbit. Season only supplies the driver-eye pose. |
 | Match clock | `src/engine/match/clock.ts` | **100%** | Any list of periods; `displayGroup` gives the continuous field-timer countdown. |
@@ -91,6 +92,8 @@ the same frame as robot code and the official AprilTag JSON, so positions copy s
 
 ---
 
+> **Read [../INSTRUCTIONS.md](../INSTRUCTIONS.md) first** — lessons learned turning a manual into a season.
+
 ## 3. Kickoff-day checklist
 
 Target: playable field in ~1 day, full rules in ~2–3 days.
@@ -136,7 +139,7 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 
 ## 4. Known engine gaps (good next investments)
 
-1. **More piece shapes** — sphere and tube variants are supported; boxes, cones and torus colliders remain extensions.
+1. **More piece shapes** — sphere, tube and ring (flat disc collider) are supported; boxes and cones remain extensions.
 2. **Mechanism library** — generic arm/wrist components; 2025 has a season-owned elevator behind the mechanism hook.
 3. **CAD pipeline** — script to turn the official Onshape/STEP field into a GLB for `cadOverlay.ts` (needs an Onshape account/API key or a STEP→glTF converter).
 4. ~~**Multiplayer**~~ — done (host-authoritative, see `docs/MULTIPLAYER.md`). Next step there: optional dedicated headless host so matches survive the host closing their tab.

@@ -4,9 +4,15 @@ import { GROUPS, PhysicsWorld } from '../physics/world';
 import { FieldFrame } from '../coords';
 
 export interface GamePieceSpec {
-  shape?: 'sphere' | 'tube';
+  /**
+   * sphere (default) · tube (pipe along its length) · ring (a flat torus such as a 2024 NOTE: `radius` = outer
+   * radius, `innerRadius` = hole radius, `length` = thickness; it rests flat and its collider is a flat disc).
+   */
+  shape?: 'sphere' | 'tube' | 'ring';
   length?: number;
   innerRadius?: number;
+  /** Ring only: number of equidistant white tape bands (e.g. 3 for a 2024 HIGH NOTE). */
+  stripes?: number;
   /** Additional piece types use stable index ranges in the same synchronized pool. */
   variants?: { start: number; spec: Omit<GamePieceSpec, 'variants'> }[];
   name: string;
@@ -35,7 +41,39 @@ export type PieceState = 'field' | 'held' | 'reserve';
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
-/** Fixed-size pool of spherical game pieces rendered with a single InstancedMesh. */
+function ringHalfHeight(s: Omit<GamePieceSpec, 'variants'>): number {
+  return (s.length ?? s.radius * 0.28) / 2;
+}
+
+function restHeightOf(s: Omit<GamePieceSpec, 'variants'>): number {
+  return s.shape === 'ring' ? ringHalfHeight(s) : s.radius;
+}
+
+/** Flat torus (hole axis = world up). Striped variants get white tape bands via vertex colors. */
+function ringGeometry(s: Omit<GamePieceSpec, 'variants'>): THREE.BufferGeometry {
+  const inner = s.innerRadius ?? s.radius * 0.7;
+  const tube = (s.radius - inner) / 2;
+  const geo = new THREE.TorusGeometry(inner + tube, tube, 10, 32).rotateX(Math.PI / 2);
+  // Squash the round cross-section to the piece's thickness.
+  geo.scale(1, ringHalfHeight(s) / tube, 1);
+  const stripes = s.stripes ?? 0;
+  if (stripes > 0) {
+    const base = new THREE.Color(s.color);
+    const white = new THREE.Color(0xffffff);
+    const pos = geo.getAttribute('position');
+    const colors = new Float32Array(pos.count * 3);
+    for (let k = 0; k < pos.count; k++) {
+      const a = Math.atan2(pos.getZ(k), pos.getX(k));
+      const band = Math.abs(((a / (2 * Math.PI)) * stripes) % 1);
+      const c = band < 0.12 ? white : base;
+      colors.set([c.r, c.g, c.b], k * 3);
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  }
+  return geo;
+}
+
+/** Fixed-size pool of game pieces (spheres, tubes or rings), one InstancedMesh per piece type. */
 export class GamePiecePool {
   readonly bodies: RAPIER.RigidBody[] = [];
   readonly state: PieceState[] = [];
@@ -73,8 +111,11 @@ export class GamePiecePool {
       const inner = s.innerRadius ?? s.radius * 0.8;
       const geo = s.shape === 'tube'
         ? new THREE.LatheGeometry([new THREE.Vector2(inner, -half), new THREE.Vector2(s.radius, -half), new THREE.Vector2(s.radius, half), new THREE.Vector2(inner, half), new THREE.Vector2(inner, -half)], 16).rotateZ(Math.PI / 2)
-        : new THREE.SphereGeometry(s.radius, 14, 10);
-      const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.65, side: THREE.DoubleSide }), spec.count);
+        : s.shape === 'ring'
+          ? ringGeometry(s)
+          : new THREE.SphereGeometry(s.radius, 14, 10);
+      const striped = s.shape === 'ring' && (s.stripes ?? 0) > 0;
+      const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: striped ? 0xffffff : s.color, vertexColors: striped, roughness: 0.65, side: THREE.DoubleSide }), spec.count);
       mesh.castShadow = mesh.receiveShadow = true;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.frustumCulled = false;
@@ -100,7 +141,10 @@ export class GamePiecePool {
       );
       const col = (piece.shape === 'tube'
         ? R.ColliderDesc.cylinder((piece.length ?? piece.radius * 2) / 2, piece.radius).setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
-        : R.ColliderDesc.ball(piece.radius * (piece.colliderScale ?? 1)))
+        : piece.shape === 'ring'
+          // Flat disc (world y = up); rounded edge so rings slide over each other instead of snagging.
+          ? R.ColliderDesc.roundCylinder(ringHalfHeight(piece) * 0.5, piece.radius * (piece.colliderScale ?? 1) - ringHalfHeight(piece) * 0.5, ringHalfHeight(piece) * 0.5)
+          : R.ColliderDesc.ball(piece.radius * (piece.colliderScale ?? 1)))
         .setMass(piece.mass)
         .setRestitution(piece.restitution)
         .setFriction(piece.friction)
@@ -121,6 +165,10 @@ export class GamePiecePool {
 
   specAt(i: number): GamePieceSpec { return this.specs[i]; }
   radiusAt(i: number): number { return this.specs[i].radius; }
+  /** Height of a resting piece's center above the carpet (a ring lies flat). */
+  restHeight(i: number): number { return restHeightOf(this.specs[i]); }
+  /** Vertical half-extent of the collider (= radius for spheres, half the thickness for rings). */
+  get colliderHalfHeight(): number { return this.spec.shape === 'ring' ? ringHalfHeight(this.spec) : this.colliderRadius; }
 
   /** Put piece i on the field at a WORLD position with optional WORLD velocity. */
   placeWorld(i: number, pos: THREE.Vector3, vel?: THREE.Vector3): void {
@@ -138,7 +186,7 @@ export class GamePiecePool {
 
   /** Put piece i on the field at a FIELD position (x, y, z-up), resting on the carpet if z omitted. */
   placeField(i: number, x: number, y: number, z?: number): void {
-    this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.radiusAt(i) + 0.001, this.tmpP));
+    this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.restHeight(i) + 0.001, this.tmpP));
   }
 
   hold(i: number, ownerId: number): void {
@@ -208,7 +256,7 @@ export class GamePiecePool {
       const b = this.bodies[i];
       if (b.isSleeping()) continue;
       const s = this.specs[i];
-      const inAir = b.translation().y > s.radius + 0.03;
+      const inAir = b.translation().y > restHeightOf(s) + 0.03;
       if (inAir !== this.airborne[i]) {
         this.airborne[i] = inAir;
         b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));

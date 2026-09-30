@@ -27,5 +27,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // Physics suites fire hundreds of real shots per test; the 5 s default times out on slower machines.
+    testTimeout: 120_000,
   },
 });

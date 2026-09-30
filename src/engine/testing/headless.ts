@@ -114,7 +114,7 @@ export class HeadlessSim {
         rules.onLaunch(robot, idx);
         this.fired++;
         this.allClear &&= robot.lastShotClear;
-        this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius));
+        this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius, pool.colliderHalfHeight));
       }
     }
     if (!rules.handlesIntake && cmd.intake && robot.capacityLeft > 0) {
@@ -146,8 +146,11 @@ export class HeadlessSim {
   }
 }
 
-/** Distance from a piece spawned at `p` (world) to the robot's collision box, minus the piece radius. */
-export function spawnClearance(robot: Robot, p: THREE.Vector3, r: number): number {
+/**
+ * Distance from a piece spawned at `p` (world) to the robot's collision box, minus the piece radius.
+ * `halfHeight` < r marks a flat piece (a ring/disc): its vertical and horizontal extents differ.
+ */
+export function spawnClearance(robot: Robot, p: THREE.Vector3, r: number, halfHeight = r): number {
   const t = robot.body.translation();
   const fp = robot.footprint;
   const yaw = robot.pose.yaw;
@@ -159,5 +162,6 @@ export function spawnClearance(robot: Robot, p: THREE.Vector3, r: number): numbe
   const ox = Math.max(0, Math.abs(f) - fp.length / 2);
   const oz = Math.max(0, Math.abs(l) - fp.width / 2);
   const oy = y > robot.config.height ? y - robot.config.height : y < 0 ? -y : 0;
+  if (halfHeight < r) return Math.max(oy - halfHeight, Math.hypot(ox, oz) - r);
   return Math.hypot(ox, oy, oz) - r;
 }
