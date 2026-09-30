@@ -1,0 +1,163 @@
+import type { Alliance } from '../coords';
+import type { HudSlots, MatchResults, ToastKind } from '../core/season';
+
+export interface ModalButton {
+  label: string;
+  primary?: boolean;
+  onClick: () => void;
+}
+
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+/** Generic in-game DOM overlay. Seasons render into the provided slots. */
+export class Hud {
+  readonly root: HTMLDivElement;
+  readonly slots: HudSlots;
+  private redScore: HTMLElement;
+  private blueScore: HTMLElement;
+  private timer: HTMLElement;
+  private period: HTMLElement;
+  private toasts: HTMLElement;
+  private banner: HTMLElement;
+  private modal: HTMLElement;
+  private help: HTMLElement;
+  private info: HTMLElement;
+  private fps: HTMLElement;
+  private bannerTimer = 0;
+  private cache = new Map<HTMLElement, string>();
+
+  constructor(container: HTMLElement, controls: [string, string][]) {
+    this.root = document.createElement('div');
+    this.root.className = 'hud';
+    this.root.innerHTML = `
+      <div class="hud-top">
+        <div class="hud-alliance red"><div class="hud-score" data-r="rs">0</div><div class="hud-slot" data-r="rslot"></div></div>
+        <div class="hud-center">
+          <div class="hud-period" data-r="period">PRE-MATCH</div>
+          <div class="hud-timer" data-r="timer">0:20</div>
+          <div class="hud-slot" data-r="cslot"></div>
+        </div>
+        <div class="hud-alliance blue"><div class="hud-score" data-r="bs">0</div><div class="hud-slot" data-r="bslot"></div></div>
+      </div>
+      <div class="hud-banner" data-r="banner"></div>
+      <div class="hud-toasts" data-r="toasts"></div>
+      <div class="hud-player" data-r="player"></div>
+      <div class="hud-info" data-r="info"></div>
+      <div class="hud-help hidden" data-r="help"></div>
+      <div class="hud-fps" data-r="fps"></div>
+      <div class="hud-modal hidden" data-r="modal"></div>
+    `;
+    container.appendChild(this.root);
+    const q = (r: string) => this.root.querySelector(`[data-r="${r}"]`) as HTMLElement;
+    this.redScore = q('rs');
+    this.blueScore = q('bs');
+    this.timer = q('timer');
+    this.period = q('period');
+    this.toasts = q('toasts');
+    this.banner = q('banner');
+    this.modal = q('modal');
+    this.help = q('help');
+    this.info = q('info');
+    this.fps = q('fps');
+    this.slots = { red: q('rslot'), blue: q('bslot'), center: q('cslot'), player: q('player') };
+    this.help.innerHTML =
+      `<div class="hud-help-title">Controls</div>` +
+      controls.map(([k, v]) => `<div class="hud-help-row"><kbd>${esc(k)}</kbd><span>${esc(v)}</span></div>`).join('');
+  }
+
+  /** Set text only when changed (avoids layout thrash). */
+  setText(el: HTMLElement, text: string): void {
+    if (this.cache.get(el) === text) return;
+    this.cache.set(el, text);
+    el.textContent = text;
+  }
+
+  setHtml(el: HTMLElement, html: string): void {
+    if (this.cache.get(el) === html) return;
+    this.cache.set(el, html);
+    el.innerHTML = html;
+  }
+
+  setScores(red: number, blue: number): void {
+    this.setText(this.redScore, String(red));
+    this.setText(this.blueScore, String(blue));
+  }
+
+  setClock(periodLabel: string, time: string): void {
+    this.setText(this.period, periodLabel);
+    this.setText(this.timer, time);
+  }
+
+  setInfo(html: string): void {
+    this.setHtml(this.info, html);
+  }
+
+  setFps(fps: number): void {
+    this.setText(this.fps, `${Math.round(fps)} fps`);
+  }
+
+  showBanner(text: string, seconds = 2, cls = ''): void {
+    this.banner.textContent = text;
+    this.banner.className = `hud-banner show ${cls}`;
+    this.bannerTimer = seconds;
+  }
+
+  toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance): void {
+    const el = document.createElement('div');
+    el.className = `hud-toast ${kind} ${alliance ?? ''}`;
+    el.textContent = msg;
+    this.toasts.prepend(el);
+    while (this.toasts.children.length > 6) this.toasts.lastElementChild?.remove();
+    setTimeout(() => el.classList.add('fade'), 3200);
+    setTimeout(() => el.remove(), 3800);
+  }
+
+  toggleHelp(force?: boolean): void {
+    this.help.classList.toggle('hidden', force === undefined ? undefined : !force);
+  }
+
+  update(dt: number): void {
+    if (this.bannerTimer > 0) {
+      this.bannerTimer -= dt;
+      if (this.bannerTimer <= 0) this.banner.classList.remove('show');
+    }
+  }
+
+  showModal(title: string, bodyHtml: string, buttons: ModalButton[]): void {
+    this.modal.innerHTML = `<div class="hud-modal-card"><h2>${esc(title)}</h2><div class="hud-modal-body">${bodyHtml}</div><div class="hud-modal-buttons"></div></div>`;
+    const bar = this.modal.querySelector('.hud-modal-buttons')!;
+    for (const b of buttons) {
+      const btn = document.createElement('button');
+      btn.textContent = b.label;
+      if (b.primary) btn.className = 'primary';
+      btn.addEventListener('click', b.onClick);
+      bar.appendChild(btn);
+    }
+    this.modal.classList.remove('hidden');
+  }
+
+  hideModal(): void {
+    this.modal.classList.add('hidden');
+  }
+
+  get modalOpen(): boolean {
+    return !this.modal.classList.contains('hidden');
+  }
+
+  static resultsHtml(r: MatchResults, scores: Record<Alliance, number>): string {
+    const w = r.winner === 'tie' ? 'TIE' : `${r.winner.toUpperCase()} WINS`;
+    const rows = r.rows
+      .map((row) => `<tr class="${row.emphasis ? 'em' : ''}"><td class="red">${esc(String(row.red))}</td><th>${esc(row.label)}</th><td class="blue">${esc(String(row.blue))}</td></tr>`)
+      .join('');
+    const rp = (a: Alliance) => `<div class="rp ${a}"><b>${r.rp[a]} RP</b><div>${r.rpDetail[a].map(esc).join('<br>') || '—'}</div></div>`;
+    return `
+      <div class="results-winner ${r.winner}">${w}</div>
+      <div class="results-scores"><span class="red">${scores.red}</span><span class="dash">–</span><span class="blue">${scores.blue}</span></div>
+      <table class="results-table">${rows}</table>
+      <div class="results-rp">${rp('red')}${rp('blue')}</div>`;
+  }
+
+  dispose(): void {
+    this.root.remove();
+  }
+}
