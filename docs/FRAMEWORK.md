@@ -66,6 +66,8 @@ and a step-by-step plan for kickoff day.
   maxClimbLevel, autoRoutines, rulesSummary?, controlsHelp?,
   maxScoringLevel?, climberLabels?, robotLimits?, configureRobot?,
   normalizeRobotConfig?, robotPresets?, robotSummary?,
+  robotOptions?, robotSpecBars?, robotFields?,   // archetype menu: segmented mechanism choices, spec bars, numeric fields
+  humanPlayerButtons?, humanPlayerHint?,         // up to 4 human-player buttons (H, B, N, M)
   startPose(alliance, station), driverEye(alliance, station),
   buildField(ctx),                   // FieldBuilder calls
   createRules(ctx): SeasonRules,     // stage / onPeriodChange / before+afterStep / onLaunch / aimTarget / passTarget? / climb / human player / visuals / results
@@ -87,6 +89,14 @@ visuals and client collision prediction agree with the host. The 2025 module dem
 robot construction. `robotPresets` provides menu profiles, and `robotSummary` describes their capabilities
 in the multiplayer lobby. Optional placement/processor settings and a total cage rise time coexist with
 the generic projectile launcher and level-based climber used by 2026.
+
+**Robot realism (2024/2025/2026 rework).** `RobotConfig.intake.ground` / `station` / `stationSide` separate a
+floor intake (`Robot.intakeContains`) from a station/funnel intake that catches pieces in the air
+(`Robot.stationContains`). `RobotConfig.autoAlign` enables the engine's chassis auto-align for turretless
+shooters (`Robot.autoAlign`, applied after `SeasonRules.adjustCommand` and before `drive`); `adjustCommand` is
+where a season implements scoring auto-align (2025 reef). `RobotConfig.options` holds season-specific mechanism
+flags. `robotOptions` are the menu's mechanism choices; each `set` should re-run the season's normalize. See
+INSTRUCTIONS.md §3b and `docs/ROBOT-ARCHETYPES.md`.
 
 **Coordinates:** season code uses WPILib field coordinates (meters, blue wall at x = 0). This is
 the same frame as robot code and the official AprilTag JSON, so positions copy straight across.

@@ -113,6 +113,7 @@ export class HeadlessSim {
       if (shot) {
         const idx = robot.held.pop()!;
         pool.placeWorld(idx, shot.pos, shot.vel);
+        robot.noteLaunch(idx);
         rules.onLaunch(robot, idx);
         this.fired++;
         this.allClear &&= robot.lastShotClear;
@@ -123,6 +124,7 @@ export class HeadlessSim {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);
+        if (robot.justLaunched(i)) continue;
         if ((p.y < 0.4 && robot.intakeContains(p, pool.radius)) || robot.stationContains(p, pool.radius)) {
           pool.hold(i, robot.id);
           robot.held.push(i);

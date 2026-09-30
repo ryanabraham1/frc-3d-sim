@@ -650,8 +650,21 @@ export class Robot {
   /** False when the last aimed shot had no trajectory that clears the goal rim (too close/far) — for HUD hints. */
   lastShotClear = true;
 
+  /** Pieces this robot launched in the last ~0.6 s (piece index → seconds left): it can't re-intake its own shot. */
+  private readonly launchedRecently = new Map<number, number>();
+  noteLaunch(i: number): void {
+    this.launchedRecently.set(i, 0.6);
+  }
+  justLaunched(i: number): boolean {
+    return this.launchedRecently.has(i);
+  }
+
   tick(dt: number): void {
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    for (const [i, t] of this.launchedRecently) {
+      if (t <= dt) this.launchedRecently.delete(i);
+      else this.launchedRecently.set(i, t - dt);
+    }
     this.updateClimb(dt);
   }
 

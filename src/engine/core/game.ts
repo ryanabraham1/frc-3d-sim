@@ -479,6 +479,7 @@ export class Game {
         if (shot) {
           const idx = r.held.pop()!;
           this.pool.placeWorld(idx, shot.pos, shot.vel);
+          r.noteLaunch(idx);
           this.rules.onLaunch(r, idx);
         }
       }
@@ -492,6 +493,7 @@ export class Game {
         const p = pool.position(i);
         for (const r of this.robots) {
           if (!r.lastCommand.intake || r.capacityLeft <= 0) continue;
+          if (r.justLaunched(i)) continue;
           if ((p.y <= 0.4 && r.intakeContains(p, pool.radius)) || r.stationContains(p, pool.radius)) {
             pool.hold(i, r.id);
             r.held.push(i);

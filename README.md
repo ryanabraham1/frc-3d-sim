@@ -37,6 +37,14 @@ Then open http://localhost:5173.
 | `npm run build` | Production build to `dist/` (static — deploy anywhere, e.g. Vercel) |
 | `npm run preview` | Serve the production build locally |
 
+## Robot archetypes
+
+Each season's **Robot** panel offers archetype presets based on how real teams built robots for that game, plus
+mechanism options for the real trade-offs: ground intake or not, station/human-player intake, turret vs chassis
+auto-align vs driver aim, shooter type, capacity, height, climber. Use it at kickoff to compare archetypes, e.g.
+"is a ground intake worth it?". Human players feed physical pieces down the real chutes (H), and driver assists
+(chassis auto-align, reef auto-align) are robot options. Research and sources: [docs/ROBOT-ARCHETYPES.md](docs/ROBOT-ARCHETYPES.md).
+
 ## Playing 2024 CRESCENDO
 
 Select **2024 CRESCENDO** in the season dropdown. Score NOTES (foam rings) in your SPEAKER and AMP,
@@ -44,16 +52,17 @@ AMPLIFY, cooperate, and finish ONSTAGE on a STAGE chain. Your SOURCE is at the *
 
 | Key | Action |
 |---|---|
-| Space | Shoot at your SPEAKER (hold) · while ONSTAGE: place the NOTE in the TRAP |
+| Space | Shoot at your SPEAKER (hold; chassis auto-align turns you onto it) · while ONSTAGE: place the NOTE in the TRAP |
 | G | Against your AMP: score in the AMP · elsewhere: pass into your WING |
 | J / F | Hold intake / toggle auto-intake (one NOTE at a time) |
 | C / X | Climb the STAGE chain you're under (TELEOP) / descend |
-| H / B / N | AMP human player: AMPLIFY / Coopertition / throw a HIGH NOTE (last 20 s) |
-| Gamepad | RT shoot · RB amp/pass · LT intake · A climb · B descend · X amplify · LB coopertition · Y camera |
+| H | SOURCE human player: drop a NOTE down the 50° CHUTE toward your robot (TELEOP) |
+| B / N / M | AMP human player: AMPLIFY / Coopertition / throw a HIGH NOTE (last 20 s) |
+| Gamepad | RT shoot · RB amp/pass · LT intake · A climb · B descend · X SOURCE drop · LB amplify · Y camera |
 
 **What's simulated:** full field from the manual (SPEAKERS with hood and SUBWOOFER, AMPS with lights,
 SOURCES, STAGES with chains, TRAPS, MICROPHONES and PODIUMS, 16 AprilTags, all tape zones), all 107 NOTES
-+ 6 HIGH NOTES staged per §6.3.4, physical SPEAKER shots under the hood lip, passing, SOURCE drops, HIGH NOTE
++ 6 HIGH NOTES staged per §6.3.4, physical SPEAKER shots under the hood lip, passing, NOTES sliding down the SOURCE CHUTE, HIGH NOTE
 throws, AMPLIFICATION (10 s + lights), Coopertition, LEAVE/PARK/ONSTAGE/SPOTLIT/HARMONY/TRAP, MELODY and
 ENSEMBLE RP, and fouls G404, G405, G414, G422, G423, G424. AMP deposits, chain climbs and TRAP placement
 are assisted animations. Details, manual page references and approximations: [docs/CRESCENDO.md](docs/CRESCENDO.md).
@@ -61,35 +70,34 @@ are assisted animations. Details, manual page references and approximations: [do
 ## Playing 2025 REEFSCAPE
 
 Select **2025 REEFSCAPE** in the season dropdown. Pick your alliance, driver station, AUTO routine,
-camera and robot. Choose **Shallow cage** or **Deep cage** before starting; this sets your station's cage,
-and you may climb any of your alliance's cages of that depth.
-The 2025 robot editor offers All-rounder, CORAL + cage and ALGAE + cage profiles, individual mechanism
-toggles, elevator level/speed/reach, placement/removal cycle times, net tuning and cage rise time.
-Inventory follows the manual's one-CORAL/one-ALGAE limit rather than an adjustable bulk hopper.
-Drive with W/A/S/D and rotate with Q/E. The other camera and pause controls are shared with 2026.
+camera and robot archetype: *Funnel-fed L4 cycler* (default), *Ground-intake all-rounder*, *L2–L3 elevator*,
+*L1 trough bot* or *ALGAE specialist*. You can also change CORAL levels, CORAL intake (funnel / ground / both),
+ALGAE handling, reef auto-align and the cage climber.
+Inventory follows the manual's one-CORAL/one-ALGAE limit.
 
 | Key | Action |
 |---|---|
 | 1 / 2 / 3 / 4, [ / ] | Choose reef L1–L4 |
-| Space | Place held CORAL on the nearest open branch or L1 trough; with ALGAE only, shoot your NET |
-| J / F | Hold intake / toggle auto-intake; back into a CORAL STATION to catch CORAL; at either reef, collect staged ALGAE (or knock it off if you can't hold it) |
+| Space | Release CORAL from the end effector (with reef auto-align: hold to line up on the nearest open BRANCH first); with ALGAE only, shoot your NET |
+| J / F | Hold intake / toggle auto-intake; funnel robots back up to a CORAL STATION; at a reef, collect staged ALGAE (or knock it off) |
 | G | Feed held ALGAE into your nearby PROCESSOR; with CORAL only, eject it a short distance |
-| C / X | Climb the nearest matching alliance cage / descend; X near your reef retrieves scored CORAL |
-| H | Toggle station CORAL supply and act as HUMAN PLAYER; throw received ALGAE in TELEOP |
+| C / X | Climb the nearest matching alliance cage / descend |
+| H | HUMAN PLAYER: drop a CORAL down the nearest CORAL STATION CHUTE, aimed at your robot |
+| B | HUMAN PLAYER: throw PROCESSOR ALGAE at your NET (TELEOP) |
 | Gamepad | LS drive · RS rotate · D-pad reef level · RT score · RB processor · LT intake · A climb · B descend · X human player · Y camera |
 
-Includes both reefs and all 72 branches, troughs, four coral stations, processors, the barge, nets,
-six physical cages and 22 visual AprilTags. The full 126 CORAL / 18 ALGAE supply, AUTO/TELEOP scoring,
-leave, park, shallow/deep climbs, Coopertition and ranking points are simulated. ALGAE blocks its
-staged branch level until collected. An extended elevator can collide with the barge.
-
-This is an assisted game simulator: CORAL placement and cage engagement use animations, and
-undimensioned field positions are approximated from the supplied PDF. See
-[docs/REEFSCAPE.md](docs/REEFSCAPE.md) for manual source pages, implemented fouls and physics limitations.
+Includes both reefs and all 72 branches, troughs, four coral stations with sloped CHUTES, processors, the barge,
+nets, six physical cages and 22 visual AprilTags. The full 126 CORAL / 18 ALGAE supply, AUTO/TELEOP scoring,
+leave, park, shallow/deep climbs, Coopertition and ranking points are simulated. **CORAL placement is
+physical:** the hollow CORAL leaves the end effector and scores only if a BRANCH ends up inside it, so a robot
+about an inch off misses. Staged ALGAE physically blocks its level until removed. An extended elevator can
+collide with the barge. Cage engagement is an assisted animation. See [docs/REEFSCAPE.md](docs/REEFSCAPE.md)
+for manual source pages, implemented fouls and physics limitations.
 
 ## Playing 2026 REBUILT
 
-Pick alliance, driver station, AUTO mode, camera and robot specs on the home screen, then **Start match**.
+Pick alliance, driver station, AUTO mode, camera and robot archetype (*Turret trench bot*, *Fixed shooter +
+auto-align*, *Big-hopper BUMP bot*, *OUTPOST-fed shooter*) on the home screen, then **Start match**.
 AUTO (20 s): drive it yourself (default) or pick a scripted routine. TELEOP (2:20) is yours.
 
 | Key | Action |
@@ -97,7 +105,7 @@ AUTO (20 s): drive it yourself (default) or pick a scripted routine. TELEOP (2:2
 | W A S D | Drive (field-oriented from your driver station) |
 | Q / E, ← / → | Rotate |
 | Shift | Precision mode |
-| Space | Shoot at your HUB (hold) — aim assist handles the turret & shot speed |
+| Space | Shoot at your HUB (hold) — turret robots aim themselves; turretless robots with chassis auto-align rotate onto the HUB |
 | G | Feed (hold) — lob FUEL back into your ALLIANCE ZONE, clearing the hub/net/trench |
 | F / J | Toggle auto-intake / hold to intake |
 | C / X | Climb / descend (at your TOWER) · 1 2 3 selects the level |
