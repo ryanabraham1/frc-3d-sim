@@ -46,6 +46,7 @@ for (const season of SEASONS) {
     const T = season.testing;
 
     for (const v of VARIANTS) {
+      if (T.mechanism === 'placement') continue; // REEFSCAPE placements are covered by reefscape.test.ts.
       it(`shoots reliably from every scoring spot: ${v.name}`, () => {
         let fired = 0;
         let entered = 0;
@@ -73,6 +74,7 @@ for (const season of SEASONS) {
     }
 
     it('shoots on the move while turning (default and tallest robots)', () => {
+      if (T.mechanism === 'placement') return;
       let fired = 0;
       let entered = 0;
       for (const tall of [false, true]) {
@@ -111,13 +113,13 @@ for (const season of SEASONS) {
             if (pieces) {
               const rng = new Rng(Math.round(lane.from.y * 1000));
               const mid = { x: (lane.from.x + lane.to.x) / 2, y: (lane.from.y + lane.to.y) / 2 };
-              sim.scatter(Array.from({ length: 30 }, () => ({ x: mid.x + rng.range(-0.8, 0.8), y: mid.y + rng.range(-0.5, 0.5) })));
+              sim.scatter(Array.from({ length: T.scatterCount ?? 30 }, () => ({ x: mid.x + rng.range(-0.8, 0.8), y: mid.y + rng.range(-0.5, 0.5) })));
             }
             sim.run(0.4);
             const speed = cfg.maxSpeed;
             sim.run(
               (len / speed) * 3 + 2,
-              { ...IDLE_COMMAND, vx: (dx / len) * speed, vy: (dy / len) * speed },
+              { ...IDLE_COMMAND, vx: (dx / len) * speed, vy: (dy / len) * speed, ...(T.mechanism === 'placement' ? { scoringLevel: 1 } : {}) },
               () => {
                 const p = sim.robot.pose;
                 return (p.x - lane.to.x) * dx + (p.y - lane.to.y) * dy > 0; // passed the end

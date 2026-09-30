@@ -4,6 +4,11 @@ import { GROUPS, PhysicsWorld } from '../physics/world';
 import { FieldFrame } from '../coords';
 
 export interface GamePieceSpec {
+  shape?: 'sphere' | 'tube';
+  length?: number;
+  innerRadius?: number;
+  /** Additional piece types use stable index ranges in the same synchronized pool. */
+  variants?: { start: number; spec: Omit<GamePieceSpec, 'variants'> }[];
   name: string;
   /** Visual radius (m). */
   radius: number;
@@ -44,6 +49,9 @@ export class GamePiecePool {
   readonly mesh: THREE.InstancedMesh;
   readonly radius: number;
   readonly colliderRadius: number;
+  readonly meshes: THREE.InstancedMesh[] = [];
+  private readonly specs: GamePieceSpec[] = [];
+  private readonly meshIndex: number[] = [];
   private readonly tmpM = new THREE.Matrix4();
   private readonly tmpQ = new THREE.Quaternion();
   private readonly tmpP = new THREE.Vector3();
@@ -58,29 +66,44 @@ export class GamePiecePool {
     const R = physics.R;
     this.radius = spec.radius;
     this.colliderRadius = spec.radius * (spec.colliderScale ?? 1);
-    const geo = new THREE.SphereGeometry(spec.radius, 14, 10);
-    const mat = new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.65 });
-    this.mesh = new THREE.InstancedMesh(geo, mat, spec.count);
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.frustumCulled = false;
-    scene.add(this.mesh);
+    const types = [{ start: 0, spec }, ...(spec.variants ?? [])];
+    for (const t of types) {
+      const s = t.spec;
+      const half = (s.length ?? s.radius * 2) / 2;
+      const inner = s.innerRadius ?? s.radius * 0.8;
+      const geo = s.shape === 'tube'
+        ? new THREE.LatheGeometry([new THREE.Vector2(inner, -half), new THREE.Vector2(s.radius, -half), new THREE.Vector2(s.radius, half), new THREE.Vector2(inner, half), new THREE.Vector2(inner, -half)], 16).rotateZ(Math.PI / 2)
+        : new THREE.SphereGeometry(s.radius, 14, 10);
+      const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: s.color, roughness: 0.65, side: THREE.DoubleSide }), spec.count);
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.frustumCulled = false;
+      for (let i = 0; i < spec.count; i++) mesh.setMatrixAt(i, HIDDEN);
+      this.meshes.push(mesh);
+      scene.add(mesh);
+    }
+    this.mesh = this.meshes[0];
 
     for (let i = 0; i < spec.count; i++) {
+      const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
+      const piece = types[type].spec;
+      this.specs.push(piece);
+      this.meshIndex.push(type);
       const body = physics.world.createRigidBody(
         R.RigidBodyDesc.dynamic()
           .setTranslation(0, -10 - i * 0.2, 0)
-          .setLinearDamping(spec.groundDamping ?? 0.5)
-          .setAngularDamping(spec.angularDamping ?? 0.6)
+          .setLinearDamping(piece.groundDamping ?? 0.5)
+          .setAngularDamping(piece.angularDamping ?? 0.6)
           .setCcdEnabled(true)
           .setCanSleep(true)
           .setEnabled(false),
       );
-      const col = R.ColliderDesc.ball(this.colliderRadius)
-        .setMass(spec.mass)
-        .setRestitution(spec.restitution)
-        .setFriction(spec.friction)
+      const col = (piece.shape === 'tube'
+        ? R.ColliderDesc.cylinder((piece.length ?? piece.radius * 2) / 2, piece.radius).setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
+        : R.ColliderDesc.ball(piece.radius * (piece.colliderScale ?? 1)))
+        .setMass(piece.mass)
+        .setRestitution(piece.restitution)
+        .setFriction(piece.friction)
         .setCollisionGroups(GROUPS.piece);
       physics.world.createCollider(col, body);
       this.bodies.push(body);
@@ -95,6 +118,9 @@ export class GamePiecePool {
   get count(): number {
     return this.bodies.length;
   }
+
+  specAt(i: number): GamePieceSpec { return this.specs[i]; }
+  radiusAt(i: number): number { return this.specs[i].radius; }
 
   /** Put piece i on the field at a WORLD position with optional WORLD velocity. */
   placeWorld(i: number, pos: THREE.Vector3, vel?: THREE.Vector3): void {
@@ -112,7 +138,7 @@ export class GamePiecePool {
 
   /** Put piece i on the field at a FIELD position (x, y, z-up), resting on the carpet if z omitted. */
   placeField(i: number, x: number, y: number, z?: number): void {
-    this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.colliderRadius + 0.001, this.tmpP));
+    this.placeWorld(i, this.frame.toWorld(x, y, z ?? this.radiusAt(i) + 0.001, this.tmpP));
   }
 
   hold(i: number, ownerId: number): void {
@@ -177,25 +203,24 @@ export class GamePiecePool {
 
   /** Switch damping between air/ground values. Call once per physics step. */
   updateDamping(): void {
-    const air = this.spec.airDamping ?? 0.02;
-    const ground = this.spec.groundDamping ?? 0.5;
-    const thresh = this.colliderRadius + 0.03;
     for (let i = 0; i < this.bodies.length; i++) {
       if (this.state[i] !== 'field') continue;
       const b = this.bodies[i];
       if (b.isSleeping()) continue;
-      const inAir = b.translation().y > thresh;
+      const s = this.specs[i];
+      const inAir = b.translation().y > s.radius + 0.03;
       if (inAir !== this.airborne[i]) {
         this.airborne[i] = inAir;
-        b.setLinearDamping(inAir ? air : ground);
+        b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
       }
     }
   }
 
   syncVisuals(): void {
     for (let i = 0; i < this.bodies.length; i++) {
+      const mesh = this.meshes[this.meshIndex[i]];
       if (this.state[i] !== 'field') {
-        this.mesh.setMatrixAt(i, HIDDEN);
+        mesh.setMatrixAt(i, HIDDEN);
         continue;
       }
       const b = this.bodies[i];
@@ -204,8 +229,8 @@ export class GamePiecePool {
       this.tmpP.set(t.x, t.y, t.z);
       this.tmpQ.set(r.x, r.y, r.z, r.w);
       this.tmpM.compose(this.tmpP, this.tmpQ, this.one);
-      this.mesh.setMatrixAt(i, this.tmpM);
+      mesh.setMatrixAt(i, this.tmpM);
     }
-    this.mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
   }
 }

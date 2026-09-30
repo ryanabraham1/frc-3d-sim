@@ -80,6 +80,9 @@ export interface MatchResults {
 }
 
 export interface SeasonRules {
+  /** A placement/elevator season can own mechanisms and intake instead of the generic shooter. */
+  handlesIntake?: boolean;
+  handleMechanisms?(robot: Robot, command: RobotCommand, dt: number): boolean;
   /** Stage game pieces and robot preloads for a fresh match. */
   stage(): void;
   onPeriodChange(change: PeriodChange): void;
@@ -157,6 +160,14 @@ export interface SeasonDefinition {
   gamePiece: GamePieceSpec;
   robotDefaults: RobotConfig;
   maxClimbLevel: number;
+  maxScoringLevel?: number;
+  climberLabels?: string[];
+  robotHint?: string;
+  robotLimits?: { capacity: number; preload: number };
+  normalizeRobotConfig?(config: RobotConfig): RobotConfig;
+  robotPresets?: { id: string; label: string; description: string; config: RobotConfig }[];
+  robotSummary?(config: RobotConfig): string;
+  configureRobot?(robot: Robot): void;
   autoRoutines: AutoRoutine[];
   /** Optional top-down field features for the menu's starting-spot map. */
   mapShapes?: MapShape[];
@@ -179,6 +190,10 @@ export interface SeasonDefinition {
 }
 
 export interface SeasonTesting {
+  /** Placement seasons use their mechanism suite rather than projectile-only trials. */
+  mechanism?: 'projectile' | 'placement';
+  /** Season-appropriate floor-piece scatter for traversal regression trials. */
+  scatterCount?: number;
   /** Positions (FIELD frame) where a robot may legally score — e.g. a grid over its scoring zone. */
   scoringSpots(alliance: Alliance): FieldPose[];
   /** Total game pieces that have entered this alliance's goal so far (regardless of whether they scored points). */

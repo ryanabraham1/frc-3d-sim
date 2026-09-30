@@ -105,7 +105,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     <div class="mp-room">
       <div><div class="mp-room-label">Room code</div><div class="mp-room-code">${esc(L.room)}</div></div>
       <button class="bbtn" data-mp="copy">Copy code</button>
-      <div class="mp-room-meta">${L.players.length} player${L.players.length === 1 ? '' : 's'} · ${drivers} driving${L.inMatch ? ' · <b>match in progress</b>' : ''}</div>
+      <div class="mp-room-meta">${ctx.season.year} ${esc(ctx.season.name)} · ${L.players.length} player${L.players.length === 1 ? '' : 's'} · ${drivers} driving${L.inMatch ? ' · <b>match in progress</b>' : ''}</div>
     </div>
     <div class="mp-grid">
       <section class="panel">
@@ -125,7 +125,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
           <div class="mp-pad mp-robot">
             <div class="mp-team">${r.teamNumber}</div>
             <div>
-              <div>${(r.maxSpeed / 0.3048).toFixed(1)} ft/s · ${r.hopperCapacity} ${esc(ctx.season.gamePiece.name)} · ${r.launcher.rate}/s · ${r.climber.maxLevel ? `climbs L${r.climber.maxLevel}` : 'no climber'}</div>
+              <div>${ctx.season.robotSummary ? esc(ctx.season.robotSummary(r)) : `${(r.maxSpeed / 0.3048).toFixed(1)} ft/s · ${r.hopperCapacity} ${esc(ctx.season.gamePiece.name)} · ${r.launcher.rate}/s · ${ctx.season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel ? `climbs L${r.climber.maxLevel}` : 'no climber')}`}</div>
               <div class="dim">AUTO: ${ctx.s.manualAuto ? 'you drive' : esc(routine?.label ?? ctx.s.autoRoutine)}</div>
             </div>
           </div>

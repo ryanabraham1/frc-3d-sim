@@ -152,22 +152,29 @@ export class HostSync {
 
     const pieceIdx: number[] = [];
     const piecePos: number[] = [];
+    const rotations: [number, number, number, number, number][] = [];
     for (let i = 0; i < pool.count; i++) {
       if (pool.state[i] !== 'field') continue;
       const p = pool.position(i);
       const qx = quantize(p.x);
       const qy = quantize(p.y);
       const qz = quantize(p.z);
+      const nonSphere = pool.specAt(i).shape === 'tube';
       const k = i * 3;
-      if (!key && !changedSet!.has(i) && this.lastQ[k] === qx && this.lastQ[k + 1] === qy && this.lastQ[k + 2] === qz) continue;
+      if (!key && !changedSet!.has(i) && !nonSphere && this.lastQ[k] === qx && this.lastQ[k + 1] === qy && this.lastQ[k + 2] === qz) continue;
       this.lastQ[k] = qx;
       this.lastQ[k + 1] = qy;
       this.lastQ[k + 2] = qz;
       pieceIdx.push(i);
       piecePos.push(p.x, p.y, p.z);
+      if (nonSphere) {
+        const q = pool.bodies[i].rotation();
+        rotations.push([i, q.x, q.y, q.z, q.w]);
+      }
     }
 
     const meta: SnapshotMeta = { st: this.src.netState, cd: this.src.countdownLeft, clock: clock.snapshot() };
+    if (rotations.length) meta.rotations = rotations;
     if (key) meta.key = true;
     if (pieces.length) meta.pieces = pieces;
     const sc = score.snapshot();

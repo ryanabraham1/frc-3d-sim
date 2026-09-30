@@ -84,7 +84,7 @@ export class InputManager {
     const precision = this.k('ShiftLeft') || this.k('ShiftRight');
     let levelUp = this.edge('BracketRight');
     let levelDown = this.edge('BracketLeft');
-    let setLevel: number | null = this.edge('Digit1') ? 1 : this.edge('Digit2') ? 2 : this.edge('Digit3') ? 3 : null;
+    let setLevel: number | null = this.edge('Digit1') ? 1 : this.edge('Digit2') ? 2 : this.edge('Digit3') ? 3 : this.edge('Digit4') ? 4 : null;
     let cameraNext = this.edge('KeyV');
     let pause = this.edge('Escape') || this.edge('KeyP');
     const restart = this.edge('KeyR');

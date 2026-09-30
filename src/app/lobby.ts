@@ -16,6 +16,8 @@ import {
 } from '@engine/net/protocol';
 import { cleanName } from '@engine/net/relayProtocol';
 import type { RobotConfig } from '@engine/robot/config';
+import { getSeason } from '@seasons/index';
+import { cloneConfig } from '@engine/robot/config';
 
 export type LobbyStatus = 'idle' | 'connecting' | 'lobby';
 /** Free hosts (Render/Koyeb) sleep when idle; the site pings the relay early so it's awake by the time you click. */
@@ -25,6 +27,7 @@ export type ServerState = 'unknown' | 'waking' | 'online' | 'offline';
 const WAKE_TIMEOUT_MS = 120_000;
 
 interface PlayerChoice {
+  seasonId?: string;
   /** undefined = keep the current station. */
   slot?: SlotId | null;
   robot: RobotConfig | null;
@@ -94,7 +97,7 @@ export class LobbyController {
         autoHumanPlayer: true,
         inMatch: false,
       };
-      if (s) this.applyChoice(this.client.peerId, { slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto });
+      if (s) this.applyChoice(this.client.peerId, { seasonId: s.seasonId, slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto });
     });
   }
 
@@ -180,14 +183,14 @@ export class LobbyController {
   syncMine(force = false, slot?: SlotId | null): void {
     const s = this.settings;
     if (!s || !this.client.connected) return;
-    const choice: PlayerChoice = { robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto };
+    const choice: PlayerChoice = { seasonId: s.seasonId, robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto };
     const key = JSON.stringify(choice);
     if (!force && slot === undefined && key === this.lastSent) return;
     this.lastSent = key;
     if (slot !== undefined) choice.slot = slot;
     if (this.isHost) this.applyChoice(this.client.peerId, choice);
     else {
-      const msg: ClientMsg = { t: 'lobby-set', slot, robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto };
+      const msg: ClientMsg = { t: 'lobby-set', seasonId: s.seasonId, slot, robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto };
       this.client.send(msg);
     }
   }
@@ -200,6 +203,13 @@ export class LobbyController {
 
   canStart(): boolean {
     return !!this.lobby && this.isHost && this.lobby.players.some((p) => p.slot !== null && this.choices.get(p.peerId)?.robot);
+  }
+
+  setSeason(id: string): void {
+    if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.seasonId === id) return;
+    if (getSeason(id).id !== id) return;
+    this.lobby.seasonId = id;
+    this.broadcastLobby();
   }
 
   /** Host: build the MatchSetup from the lobby and start everyone. */
@@ -216,15 +226,15 @@ export class LobbyController {
         slot,
         alliance: slotAlliance(slot),
         station: slotStation(slot),
-        config: c.robot,
-        autoRoutine: c.autoRoutine,
+        config: c.seasonId === lobby.seasonId ? c.robot : { ...cloneConfig(getSeason(lobby.seasonId).robotDefaults), teamNumber: c.robot.teamNumber },
+        autoRoutine: c.seasonId === lobby.seasonId ? c.autoRoutine : getSeason(lobby.seasonId).autoRoutines[0].id,
         manualAuto: c.manualAuto,
         peerId: p.peerId,
         name: p.name,
       });
     }
     const setup: MatchSetup = {
-      seasonId: this.settings?.seasonId ?? lobby.seasonId,
+      seasonId: lobby.seasonId,
       seed: Math.floor(Math.random() * 1e9),
       autoHumanPlayer: lobby.autoHumanPlayer,
       robots,
@@ -250,7 +260,7 @@ export class LobbyController {
   private onClientMsg(from: string, m: ClientMsg): void {
     if (m?.t !== 'lobby-set' || !this.lobby) return;
     const slot = m.slot === undefined ? undefined : m.slot && SLOTS.includes(m.slot) ? m.slot : null;
-    this.applyChoice(from, { slot, robot: m.robot ?? null, autoRoutine: String(m.autoRoutine ?? 'none'), manualAuto: !!m.manualAuto });
+    this.applyChoice(from, { seasonId: m.seasonId, slot, robot: m.robot ?? null, autoRoutine: String(m.autoRoutine ?? 'none'), manualAuto: !!m.manualAuto });
   }
 
   private applyChoice(peerId: string, c: PlayerChoice): void {

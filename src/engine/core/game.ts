@@ -125,6 +125,7 @@ export class Game {
   private fpsFrames = 0;
   private autoIntake: boolean;
   climbLevel: number;
+  scoringLevel = 4;
   private results: MatchResults | null = null;
   private pausedFrom: GameState = 'countdown';
   /** Client-side modal currently shown. */
@@ -157,15 +158,17 @@ export class Game {
 
     // Every robot on the field is driven by a human (locally or over the network) — no bot AI.
     for (const rs of this.setup.robots) {
-      const cfg = sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
+      const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
       robot.controller = 'player';
+      season.configureRobot?.(robot);
       this.robots.push(robot);
       this.robotSetups.set(rs.id, rs);
     }
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     this.player = mine ? this.robots.find((r) => r.id === mine.id)! : null;
+    this.scoringLevel = Math.min(this.scoringLevel, this.player?.config.placement?.maxLevel ?? this.scoringLevel);
     this.climbLevel = Math.min(season.maxClimbLevel, this.player?.config.climber.maxLevel ?? season.maxClimbLevel);
 
     const self = this;
@@ -384,9 +387,16 @@ export class Game {
       else if (this.role === 'host') this.callbacks.onPlayAgain?.();
     }
     const maxLvl = Math.min(this.season.maxClimbLevel, this.player?.config.climber.maxLevel ?? 0);
-    if (inp.setLevel !== null) this.climbLevel = clamp(inp.setLevel, 1, Math.max(1, maxLvl));
-    if (inp.levelUp) this.climbLevel = clamp(this.climbLevel + 1, 1, Math.max(1, maxLvl));
-    if (inp.levelDown) this.climbLevel = clamp(this.climbLevel - 1, 1, Math.max(1, maxLvl));
+    if (this.season.maxScoringLevel) {
+      const maxScoring = Math.min(this.season.maxScoringLevel, this.player?.config.placement?.maxLevel ?? this.season.maxScoringLevel);
+      if (inp.setLevel !== null) this.scoringLevel = clamp(inp.setLevel, 1, maxScoring);
+      if (inp.levelUp) this.scoringLevel = clamp(this.scoringLevel + 1, 1, maxScoring);
+      if (inp.levelDown) this.scoringLevel = clamp(this.scoringLevel - 1, 1, maxScoring);
+    } else {
+      if (inp.setLevel !== null) this.climbLevel = clamp(inp.setLevel, 1, Math.max(1, maxLvl));
+      if (inp.levelUp) this.climbLevel = clamp(this.climbLevel + 1, 1, Math.max(1, maxLvl));
+      if (inp.levelDown) this.climbLevel = clamp(this.climbLevel - 1, 1, Math.max(1, maxLvl));
+    }
     if (inp.toggleIntake) {
       this.autoIntake = !this.autoIntake;
       this.hud.toast(`Auto-intake ${this.autoIntake ? 'ON' : 'OFF'}`);
@@ -413,6 +423,7 @@ export class Game {
       pass: inp.pass,
       climb: inp.climb ? this.climbLevel : null,
       descend: inp.descend,
+      ...(this.season.maxScoringLevel ? { scoringLevel: this.scoringLevel } : {}),
     };
   }
 
@@ -457,7 +468,8 @@ export class Game {
       r.tick(dt);
       const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
       r.aimTurretAt(target, dt);
-      if (enabled && (cmd.shoot || cmd.pass)) {
+      const handled = enabled && this.rules.handleMechanisms?.(r, cmd, dt);
+      if (enabled && !handled && (cmd.shoot || cmd.pass)) {
         const shot = r.launch(target, this.rng);
         if (shot) {
           const idx = r.held.pop()!;
@@ -468,7 +480,7 @@ export class Game {
     }
 
     // Intake: robots swallow pieces inside their capture zone.
-    if (enabled) {
+    if (enabled && !this.rules.handlesIntake) {
       const pool = this.pool;
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
@@ -607,7 +619,9 @@ export class Game {
           `<div>Camera: ${CAMERA_LABELS[this.camera.mode]} <span class="dim">(V)</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +
           `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(F)</span></div>` +
-          `<div>Climb target: L${this.climbLevel} <span class="dim">(1-3)</span></div>` +
+          (this.season.maxScoringLevel
+            ? `<div>Reef target: L${this.scoringLevel} <span class="dim">(1-4)</span></div><div>Cage: ${this.season.climberLabels?.[p.config.climber.maxLevel] ?? 'Deep'} <span class="dim">(C)</span></div>`
+            : `<div>Climb target: L${this.climbLevel} <span class="dim">(1-${this.season.maxClimbLevel})</span></div>`) +
           `<div class="dim">? for controls</div>`,
       );
     } else {

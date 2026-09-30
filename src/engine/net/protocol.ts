@@ -64,8 +64,8 @@ export interface MatchSetup {
 
 // ───────────────────────────── messages ─────────────────────────────
 
-/** [vx, vy, omega, flags, climbLevel (-1 = none)] */
-export type PackedCommand = [number, number, number, number, number];
+/** [vx, vy, omega, flags, climbLevel (-1 = none), optional scoringLevel (1–4)] */
+export type PackedCommand = [number, number, number, number, number, number?];
 
 const F_INTAKE = 1;
 const F_SHOOT = 2;
@@ -75,11 +75,14 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
 export function packCommand(c: RobotCommand): PackedCommand {
   const flags = (c.intake ? F_INTAKE : 0) | (c.shoot ? F_SHOOT : 0) | (c.pass ? F_PASS : 0) | (c.descend ? F_DESCEND : 0);
-  return [r3(c.vx), r3(c.vy), r3(c.omega), flags, c.climb ?? -1];
+  const packed: PackedCommand = [r3(c.vx), r3(c.vy), r3(c.omega), flags, c.climb ?? -1];
+  if (c.scoringLevel !== undefined) packed.push(c.scoringLevel);
+  return packed;
 }
 
 export function unpackCommand(p: unknown): RobotCommand | null {
-  if (!Array.isArray(p) || p.length !== 5 || !p.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  if (!Array.isArray(p) || (p.length !== 5 && p.length !== 6) || !p.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  if (p.length === 6 && (!Number.isInteger(p[5]) || p[5] < 1 || p[5] > 4)) return null;
   const [vx, vy, omega, flags, climb] = p as PackedCommand;
   return {
     vx,
@@ -90,12 +93,13 @@ export function unpackCommand(p: unknown): RobotCommand | null {
     pass: (flags & F_PASS) !== 0,
     descend: (flags & F_DESCEND) !== 0,
     climb: climb >= 0 ? climb : null,
+    ...(p.length === 6 ? { scoringLevel: p[5] } : {}),
   };
 }
 
 export type ClientMsg =
   /** `slot` omitted = keep the current station; null = spectate. */
-  | { t: 'lobby-set'; slot?: SlotId | null; robot: RobotConfig; autoRoutine: string; manualAuto: boolean }
+  | { t: 'lobby-set'; seasonId?: string; slot?: SlotId | null; robot: RobotConfig; autoRoutine: string; manualAuto: boolean }
   /** Client finished building its Game and can take snapshots. */
   | { t: 'ready' }
   | { t: 'cmd'; s: number; c: PackedCommand }
@@ -145,6 +149,8 @@ export interface SnapshotMeta {
   clock: ClockState;
   /** Piece state changes since the previous snapshot (all pieces in a keyframe). */
   pieces?: PieceStateEntry[];
+  /** Orientations of moved non-spherical pieces, [index,x,y,z,w]. */
+  rotations?: [number, number, number, number, number][];
   /** Present when changed (always in a keyframe). */
   score?: ScoreState;
   rules?: unknown;

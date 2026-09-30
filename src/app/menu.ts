@@ -65,8 +65,8 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     { key: 'wid', label: 'Width in', min: 18, max: 36, step: 0.5, get: (c) => +toInch(c.frameWidth).toFixed(1), set: (c, v) => (c.frameWidth = inch(v)) },
     { key: 'speed', label: 'Speed ft/s', min: 6, max: 22, step: 0.5, get: (c) => +(c.maxSpeed / FT).toFixed(1), set: (c, v) => (c.maxSpeed = v * FT) },
     { key: 'accel', label: 'Accel ft/s²', min: 8, max: 45, step: 1, get: (c) => Math.round(c.maxAccel / FT), set: (c, v) => (c.maxAccel = v * FT) },
-    { key: 'cap', label: 'Capacity', min: 1, max: 120, step: 1, get: (c) => c.hopperCapacity, set: (c, v) => (c.hopperCapacity = Math.round(v)) },
-    { key: 'pre', label: 'Preload', min: 0, max: 8, step: 1, get: (c) => c.preload, set: (c, v) => (c.preload = Math.round(v)) },
+    { key: 'cap', label: 'Capacity', min: 1, max: season.robotLimits?.capacity ?? 120, step: 1, get: (c) => c.hopperCapacity, set: (c, v) => (c.hopperCapacity = Math.round(v)) },
+    { key: 'pre', label: 'Preload', min: 0, max: season.robotLimits?.preload ?? 8, step: 1, get: (c) => c.preload, set: (c, v) => (c.preload = Math.round(v)) },
     { key: 'rate', label: 'Shots/s', min: 1, max: 20, step: 0.5, get: (c) => c.launcher.rate, set: (c, v) => (c.launcher.rate = v) },
     {
       key: 'acc',
@@ -86,6 +86,20 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     for (const f of list) {
       if (['speed', 'accel', 'cap', 'rate', 'cspd'].includes(f.key)) delete f.max;
     }
+  }
+  if (season.robotPresets) {
+    const find = (key: string) => list.find((f) => f.key === key)!;
+    find('height').label = 'Starting height in'; find('len').label = 'Frame length in'; find('wid').label = 'Frame width in';
+    find('pre').label = 'CORAL preload'; find('rate').label = 'ALGAE shots/s'; find('rate').min = 0.25; find('rate').max = 4; find('rate').step = 0.25;
+    find('acc').label = 'NET accuracy %'; find('acc').step = 1;
+    Object.assign(find('cspd'), { label: 'Climb rise s', max: 12, get: (c: RobotConfig) => c.climber.secondsToClimb ?? 3.6, set: (c: RobotConfig, v: number) => (c.climber.secondsToClimb = v) });
+    list.push(
+      { key: 'reach', label: 'Mechanism reach in', min: 0, max: 18, step: 0.5, get: (c) => +toInch(c.placement!.reach).toFixed(1), set: (c, v) => (c.placement!.reach = inch(v)) },
+      { key: 'lift', label: 'Elevator in/s', min: 10, max: 98, step: 0.1, get: (c) => +toInch(c.placement!.liftSpeed).toFixed(1), set: (c, v) => (c.placement!.liftSpeed = inch(v)) },
+      { key: 'place', label: 'CORAL cycle s', min: 0.2, max: 3, step: 0.1, get: (c) => c.placement!.cycleSeconds, set: (c, v) => (c.placement!.cycleSeconds = v) },
+      { key: 'harvest', label: 'ALGAE removal s', min: 0.2, max: 3, step: 0.05, get: (c) => c.placement!.harvestSeconds, set: (c, v) => (c.placement!.harvestSeconds = v) },
+      { key: 'release', label: 'ALGAE release in', min: 8, max: toInch(season.maxRobotHeight), step: 0.5, get: (c) => +toInch(c.launcher.height).toFixed(1), set: (c, v) => (c.launcher.height = inch(v)) },
+    );
   }
   return Object.fromEntries(list.map((f) => [f.key, f]));
 }
@@ -211,7 +225,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
       ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`)}
       ${group('Autonomous', `<div class="seg">${season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, x.id === s.autoRoutine)).join('')}</div>`, routine?.description ?? '')}
-      ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.')}
+      ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, season.maxScoringLevel ? (s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.') : (s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.'))}
       ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.')}`;
     const right = `
       <section class="panel map-panel">
@@ -219,22 +233,37 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         <div class="map-wrap">${fieldMap(season, s)}</div>
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Other stations</span><span class="sp">Click a circle to move to that driver station.</span></div>
       </section>`;
+    const placement = !!season.robotPresets;
+    const fields = placement ? ['team', 'height', 'len', 'wid', 'speed', 'accel', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'] : ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'];
+    const mechanismToggle = (key: string, label: string, enabled: boolean, hint = '') => group(label, `<div class="seg">${opt(`data-mechanism="${key}" data-enabled="1"`, 'Enabled', enabled)}${opt(`data-mechanism="${key}" data-enabled="0"`, 'Disabled', !enabled)}</div>`, hint);
+    const profiles = placement ? `<div class="config-presets">${group('2025 robot profiles', `<div class="seg">${season.robotPresets!.map((p) => opt(`data-preset="${p.id}" title="${esc(p.description)}"`, p.label, JSON.stringify({ ...r, teamNumber: 0 }) === JSON.stringify({ ...p.config, teamNumber: 0 }))).join('')}</div>`, 'All-rounder scores both pieces; specialists focus on CORAL or ALGAE and a cage.')}</div>` : '';
+    const seasonalOptions = placement ? `
+      ${mechanismToggle('coral-pickup', 'CORAL intake', !!r.intake.primary, 'One CORAL at a time; preload is 0 or 1 CORAL.')}
+      ${mechanismToggle('algae-pickup', 'ALGAE intake + removal', !!r.intake.secondary, 'One ALGAE at a time; reef removal needs the contacted L2/L3 height.')}
+      ${mechanismToggle('coral', 'CORAL scorer', r.placement!.enabled)}
+      ${group('Highest elevator level', `<div class="seg">${[1, 2, 3, 4].map((n) => opt(`data-reef-level="${n}"`, `L${n}`, r.placement!.maxLevel === n)).join('')}</div>`, 'L1 trough · L2 31⅞ in · L3 47⅝ in · L4 72 in. Also limits reef ALGAE removal.')}
+      ${mechanismToggle('processor', 'ALGAE PROCESSOR feeder', r.processor!.enabled, 'Independent of the NET shooter.')}
+      ${mechanismToggle('net', 'ALGAE NET shooter', r.launcher.enabled)}
+    ` : '';
     const spec = `
       <section class="panel" style="margin-top:22px">
         <div class="panel-head"><span>Spec</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${season.year} defaults</button></div>
+        ${profiles}
         <div class="spec-bars">
           ${specBar('Speed', `${F.speed.get(r)} ft/s`, F.speed.get(r) / 22)}
-          ${specBar(`${season.gamePiece.name} capacity`, `${r.hopperCapacity}`, r.hopperCapacity / 80)}
-          ${specBar('Fire rate', `${r.launcher.rate} /s`, r.launcher.rate / 20)}
-          ${specBar('Accuracy', `${acc}%`, acc / 100)}
-          ${specBar('Climb', r.climber.maxLevel === 0 ? 'None' : `L${r.climber.maxLevel}`, r.climber.maxLevel / Math.max(1, season.maxClimbLevel))}
+          ${placement ? specBar('CORAL reach', r.placement!.enabled ? `L1–L${r.placement!.maxLevel}` : 'Off', r.placement!.enabled ? r.placement!.maxLevel / 4 : 0) : specBar(`${season.gamePiece.name} capacity`, `${r.hopperCapacity}`, r.hopperCapacity / 80)}
+          ${placement ? specBar('ALGAE', !r.intake.secondary ? 'Off' : [r.processor!.enabled ? 'PROCESSOR' : '', r.launcher.enabled ? 'NET' : ''].filter(Boolean).join(' + ') || 'Pickup only', Number(r.intake.secondary) * (Number(r.processor!.enabled) + Number(r.launcher.enabled)) / 2) : specBar('Fire rate', `${r.launcher.rate} /s`, r.launcher.rate / 20)}
+          ${placement ? specBar('Mechanism reach', `${F.reach.get(r)} in`, F.reach.get(r) / 18) : specBar('Accuracy', `${acc}%`, acc / 100)}
+          ${specBar('Climb', season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel === 0 ? 'None' : `L${r.climber.maxLevel}`), r.climber.maxLevel / Math.max(1, season.maxClimbLevel))}
         </div>
-        <div class="tune">${['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'].map((k) => numInput(F[k])).join('')}</div>
+        <div class="tune">${fields.map((k) => numInput(F[k])).join('')}</div>
         <div class="tune-opts">
+          ${seasonalOptions}
           ${group('Aim assist', `<div class="seg">${(['full', 'speed', 'off'] as AimAssist[]).map((a) => opt(`data-aim="${a}"`, { full: 'Full', speed: 'Speed', off: 'Off' }[a], r.aimAssist === a)).join('')}</div>`, 'Full: turret aim + speed · Speed: aim with chassis · Off: manual')}
-          ${group('Turret', `<div class="seg">${opt('data-turret="1"', 'Turret', r.launcher.turret)}${opt('data-turret="0"', 'Fixed', !r.launcher.turret)}</div>`)}
-          ${group('Climber', `<div class="seg">${Array.from({ length: season.maxClimbLevel + 1 }, (_, n) => opt(`data-level="${n}"`, n === 0 ? 'None' : `L${n}`, r.climber.maxLevel === n)).join('')}</div>`, `Max height ${toInch(season.maxRobotHeight).toFixed(0)} in · under 22.25 in fits the TRENCH`)}
+          ${group(placement ? 'Scoring wrist / NET yaw' : 'Turret', `<div class="seg">${opt('data-turret="1"', placement ? 'Pivoting' : 'Turret', r.launcher.turret)}${opt('data-turret="0"', 'Fixed', !r.launcher.turret)}</div>`)}
+          ${group(placement ? 'CAGE choice' : 'Climber', `<div class="seg">${Array.from({ length: season.maxClimbLevel + 1 }, (_, n) => opt(`data-level="${n}"`, season.climberLabels?.[n] ?? (n === 0 ? 'None' : `L${n}`), r.climber.maxLevel === n)).join('')}</div>`, placement ? 'No climber: park 2 · shallow: 6 · deep: 12. Choose your station’s cage before the match.' : season.robotHint ?? `Max height ${toInch(season.maxRobotHeight).toFixed(0)} in · under 22.25 in fits the TRENCH`)}
         </div>
+        ${placement ? `<div class="config-note">${esc(season.robotHint ?? '')}<br/>Inventory is fixed at one of each enabled piece type. Elevator speed, cycle times, drive performance and NET settings are simulator tuning, not manual requirements.</div>` : ''}
       </section>`;
     return `<div class="play-grid"><div class="col">${left}</div><div class="col">${right}</div></div>${spec}`;
   };
@@ -269,6 +298,14 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   };
 
   const render = () => {
+    if (lobby?.lobby && lobby.lobby.seasonId !== s.seasonId) {
+      season = getSeason(lobby.lobby.seasonId);
+      const teamNumber = s.robot.teamNumber;
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera };
+      s.robot.teamNumber = teamNumber;
+    }
+    if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
+    if (lobby) lobby.settings = s;
     // A relay wake/status update can arrive while the user is typing. Keep the form draft and focus.
     const draft = page === 'multiplayer' ? {
       name: el.querySelector<HTMLInputElement>('[data-mp="name"]')?.value,
@@ -292,7 +329,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     el.innerHTML = `
       <header class="topbar">
         <span class="brand">FRC Sim</span><span class="brand-sep"></span>
-        <label class="season-pick"><select data-k="season">${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select></label>
+        <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select></label>
         <div class="team-chip"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i>Team ${s.robot.teamNumber}</div>
       </header>
       <main class="main">
@@ -334,7 +371,10 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station };
+      const teamNumber = s.robot.teamNumber;
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera };
+      s.robot.teamNumber = teamNumber;
+      if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
     };
     all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
@@ -343,6 +383,25 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-routine]').forEach((b) => (b.onclick = () => ((s.autoRoutine = b.dataset.routine!), render())));
     all('[data-aim]').forEach((b) => (b.onclick = () => ((s.robot.aimAssist = b.dataset.aim as AimAssist), render())));
     all('[data-level]').forEach((b) => (b.onclick = () => ((s.robot.climber.maxLevel = Number(b.dataset.level)), render())));
+    all('[data-preset]').forEach((b) => (b.onclick = () => {
+      const preset = season.robotPresets?.find((p) => p.id === b.dataset.preset);
+      if (!preset) return;
+      const team = s.robot.teamNumber; s.robot = cloneConfig(preset.config); s.robot.teamNumber = team;
+      s.autoRoutine = s.robot.placement?.enabled ? season.autoRoutines[0]?.id ?? 'none' : 'leave';
+      render();
+    }));
+    all('[data-reef-level]').forEach((b) => (b.onclick = () => ((s.robot.placement!.maxLevel = Number(b.dataset.reefLevel)), render())));
+    all('[data-mechanism]').forEach((b) => (b.onclick = () => {
+      const on = b.dataset.enabled === '1';
+      switch (b.dataset.mechanism) {
+        case 'coral-pickup': s.robot.intake.primary = on; break;
+        case 'algae-pickup': s.robot.intake.secondary = on; break;
+        case 'coral': s.robot.placement!.enabled = on; break;
+        case 'processor': s.robot.processor!.enabled = on; break;
+        case 'net': s.robot.launcher.enabled = on; break;
+      }
+      render();
+    }));
     all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
     all('[data-turret]').forEach((b) => (b.onclick = () => ((s.robot.launcher.turret = b.dataset.turret === '1'), render())));
     all('[data-toggle]').forEach(
@@ -376,7 +435,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   if (lobby)
     lobby.onChange = () => {
-      if (el.isConnected && page === 'multiplayer') render();
+      if (el.isConnected) render();
     };
 
   render();

@@ -432,6 +432,19 @@
   height: 44px;
   min-width: 0;
 }
+.config-note {
+  padding: 0 20px 22px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.config-presets {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.config-presets .seg {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .link {
   display: inline-flex;
   align-items: center;

@@ -1,11 +1,12 @@
 # FRC 3D Sim
 
-Browser-based 3D simulator of the current FIRST Robotics Competition game, rebuilt every year at
-kickoff from the Game Manual. Current season: **2026 REBUILT presented by Haas** (manual TU22).
+Browser-based 3D FIRST Robotics Competition simulator. Choose **2026 REBUILT** (manual TU22) or
+**2025 REEFSCAPE**, both presented by Haas, on the home screen. Both support single player and multiplayer.
 
 - **Engine** (`src/engine`) — reusable every year: Three.js rendering, Rapier physics, robot, input,
   cameras, match clock, scoreboard, HUD, game loop.
-- **Season module** (`src/seasons/2026-rebuilt`) — this year's field, rules, scoring, AUTO routines, HUD.
+- **Season modules** (`src/seasons/2026-rebuilt`, `src/seasons/2025-reefscape`) — each year's field,
+  rules, scoring, AUTO routines and HUD.
 - See **[docs/FRAMEWORK.md](docs/FRAMEWORK.md)** for what's reusable and the kickoff-day checklist,
   and **[PLAN.md](PLAN.md)** for the full plan and progress log.
 - **Multiplayer** — up to 6 drivers + spectators per room. Design, protocol and hand-off log:
@@ -32,6 +33,34 @@ Then open http://localhost:5173.
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build to `dist/` (static — deploy anywhere, e.g. Vercel) |
 | `npm run preview` | Serve the production build locally |
+
+## Playing 2025 REEFSCAPE
+
+Select **2025 REEFSCAPE** in the season dropdown. Pick your alliance, driver station, AUTO routine,
+camera and robot. Choose **Shallow cage** or **Deep cage** before starting; this sets your station's cage.
+The 2025 robot editor offers All-rounder, CORAL + cage and ALGAE + cage profiles, individual mechanism
+toggles, elevator level/speed/reach, placement/removal cycle times, net tuning and cage rise time.
+Inventory follows the manual's one-CORAL/one-ALGAE limit rather than an adjustable bulk hopper.
+Drive with W/A/S/D and rotate with Q/E. The other camera and pause controls are shared with 2026.
+
+| Key | Action |
+|---|---|
+| 1 / 2 / 3 / 4, [ / ] | Choose reef L1–L4 |
+| Space | Place held CORAL on the nearest open branch or L1 trough; with ALGAE only, shoot your NET |
+| J / F | Hold intake / toggle auto-intake; close to either reef, collect its staged ALGAE |
+| G | Feed held ALGAE into your nearby PROCESSOR; with CORAL only, eject it a short distance |
+| C / X | Climb your driver station's cage / descend; X near your reef retrieves scored CORAL |
+| H | Toggle station CORAL supply and act as HUMAN PLAYER; throw received ALGAE in TELEOP |
+| Gamepad | LS drive · RS rotate · D-pad reef level · RT score · RB processor · LT intake · A climb · B descend · X human player · Y camera |
+
+Includes both reefs and all 72 branches, troughs, four coral stations, processors, the barge, nets,
+six physical cages and 22 visual AprilTags. The full 126 CORAL / 18 ALGAE supply, AUTO/TELEOP scoring,
+leave, park, shallow/deep climbs, Coopertition and ranking points are simulated. ALGAE blocks its
+staged branch level until collected. An extended elevator can collide with the barge.
+
+This is an assisted game simulator: CORAL placement and cage engagement use animations, and
+undimensioned field positions are approximated from the supplied PDF. See
+[docs/REEFSCAPE.md](docs/REEFSCAPE.md) for manual source pages, implemented fouls and physics limitations.
 
 ## Playing 2026 REBUILT
 
@@ -67,7 +96,8 @@ referee-judgement rules are not enforced.
 
 Menu → **Multiplayer** → *Create room* and share the 4-letter code; friends *Join*, pick a driver
 station (or spectate) and bring the robot they configured on the Single player page. The host starts
-the match. The host's browser runs the simulation (keep that tab open — it keeps running in the
+the match. The host chooses the season; joining drivers and spectators automatically use that same
+game. After returning to the lobby, the host can switch between 2025 and 2026. The host's browser runs the simulation (keep that tab open — it keeps running in the
 background); everyone else sends inputs and renders 30 Hz snapshots, with client-side prediction so your
 own robot responds instantly. Test latency locally with `?netlag=200` in a client's URL.
 
@@ -88,3 +118,4 @@ URL waits for the service to wake before it can show the site. Steps: [docs/MULT
 
 - 2026 Game Manual (TU22) — `2026GameManual.pdf`
 - Official AprilTag layout — WPILib `allwpilib` v2026.2.1, `2026-rebuilt-welded.json`
+- 2025 REEFSCAPE uses only the supplied `2025GameManual.pdf` (ARENA V4, Game Details V13, Game Rules V11).

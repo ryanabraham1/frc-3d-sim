@@ -21,6 +21,8 @@ export interface RobotCommand {
   /** Requested climb level, or null. */
   climb: number | null;
   descend: boolean;
+  /** Season scoring selection, e.g. REEFSCAPE elevator L1-L4. */
+  scoringLevel?: number;
 }
 
 export const IDLE_COMMAND: RobotCommand = { vx: 0, vy: 0, omega: 0, intake: false, shoot: false, pass: false, climb: null, descend: false };
@@ -644,7 +646,7 @@ export class Robot {
       this.climbTo = { ...b, z: this.pendingLift };
       this.climbPhase = 'rise';
       this.climbT = 0;
-      this.climbDur = Math.max(0.3, this.config.climber.secondsPerLevel * this.climbTargetLevel);
+      this.climbDur = Math.max(0.3, this.config.climber.secondsToClimb ?? this.config.climber.secondsPerLevel * this.climbTargetLevel);
     } else if (this.climbPhase === 'rise') {
       this.climbPhase = 'hanging';
       this.climbLevel = this.climbTargetLevel;
@@ -726,6 +728,12 @@ export class Robot {
     this.turretYaw = pose.yaw;
     this.fireCooldown = 0;
     this.held.length = 0;
+  }
+
+  /** Placement seasons draw their own carriage and held pieces. */
+  usePlacementVisual(): void {
+    this.turret.visible = false;
+    this.hopperFill.visible = false;
   }
 
   syncVisual(): void {

@@ -87,6 +87,9 @@ export class ClientSync {
     clock.restore(m.clock);
     if (m.score) score.restore(m.score);
     if (m.rules !== undefined && rules.applyNetState) rules.applyNetState(m.rules);
+    for (const [i, x, y, z, w] of m.rotations ?? []) {
+      if (i >= 0 && i < pool.count) pool.bodies[i].setRotation({ x, y, z, w }, false);
+    }
     this.results = m.results ?? (m.st === 'results' ? this.results : null);
 
     const fresh = new Set<number>();
@@ -177,7 +180,7 @@ export class ClientSync {
   sendCommand(cmd: RobotCommand, localMs: number): number | null {
     const packed = packCommand(cmd);
     const key = packed.join(',');
-    const buttons = `${packed[3]},${packed[4]}`;
+    const buttons = `${packed[3]},${packed[4]},${packed[5] ?? ''}`;
     const since = localMs - this.lastSentAt;
     if (buttons === this.lastButtons && !(key !== this.lastKey && since >= 33) && since < 250) return null;
     this.lastKey = key;

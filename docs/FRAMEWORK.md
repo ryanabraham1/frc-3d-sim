@@ -18,8 +18,8 @@ and a step-by-step plan for kickoff day.
 | Field builder | `src/engine/field/builder.ts` | **100%** | `box`, `boxMinMax`, `convex` (ramps/wedges), `cylinder` (rungs/pipes), `tape`, `tapeRect`, `label`, `carpet`. Every primitive = mesh + collider in one call, in field coordinates. |
 | AprilTags | `src/engine/field/apriltags.ts` | **100%** | Drop in the year's WPILib `*.json` layout → tags render at official poses. |
 | CAD overlay | `src/engine/field/cadOverlay.ts` | **100%** | Optional: show an official field GLB as visuals while physics stays procedural. |
-| Game-piece pool | `src/engine/gamepiece/pool.ts` | **~90%** | Spheres today (FUEL, 2022 cargo, 2024 notes ≈ torus → approximate). Non-spherical pieces (cones/cubes/coral) need a collider-shape option — add `shape` to `GamePieceSpec`. |
-| Robot | `src/engine/robot/*` | **~85%** | Swerve/tank drive, bumpers, team numbers, intake zone, hopper, turret + ballistic shot solver (hood range, shoot-on-the-move lead, any number of `clearances` to arc over), separate goal-shot and feed/pass commands, kinematic climb. New mechanism types (elevator/arm scoring) would be added here as generic mechanisms. |
+| Game-piece pool | `src/engine/gamepiece/pool.ts` | **~90%** | Sphere and tube shapes; indexed variants permit CORAL and ALGAE in one stable pool. Per-piece collider size, damping and instanced mesh; non-spherical rotations are replicated. Other shapes still need an extension. |
+| Robot | `src/engine/robot/*` | **~85%** | Swerve/tank drive, bumpers, intake, hopper, turret + ballistic solver, feed/pass and kinematic climb. A season can configure robot visuals/projectiles and own an elevator/placement mechanism through `handleMechanisms`. |
 | Input | `src/engine/input/input.ts` | **100%** | Keyboard + gamepad → `DriverInput`; view-relative field-oriented drive. |
 | Cameras | `src/engine/camera/cameras.ts` | **100%** | Driver station, follow (3rd-person, mouse orbit/zoom, camera-relative driving), chase, overhead, free orbit. Season only supplies the driver-eye pose. |
 | Match clock | `src/engine/match/clock.ts` | **100%** | Any list of periods; `displayGroup` gives the continuous field-timer countdown. |
@@ -62,6 +62,8 @@ and a step-by-step plan for kickoff day.
   gamePiece: GamePieceSpec,          // radius, mass, bounce, count, color…
   robotDefaults: RobotConfig,
   maxClimbLevel, autoRoutines, rulesSummary?, controlsHelp?,
+  maxScoringLevel?, climberLabels?, robotLimits?, configureRobot?,
+  normalizeRobotConfig?, robotPresets?, robotSummary?,
   startPose(alliance, station), driverEye(alliance, station),
   buildField(ctx),                   // FieldBuilder calls
   createRules(ctx): SeasonRules,     // stage / onPeriodChange / before+afterStep / onLaunch / aimTarget / passTarget? / climb / human player / visuals / results
@@ -74,6 +76,15 @@ The engine owns the loop. Per physics step it: advances the clock (→ `onPeriod
 robot's `RobotCommand` (player input in TELEOP, `AutoPilot` in AUTO), drives robots, handles climb
 requests (→ `requestClimb`), aims (`aimTarget`) and launches (→ `onLaunch`), runs intake capture,
 calls `beforeStep`, steps physics, then `afterStep` (where seasons detect scoring).
+
+For placement seasons, `handleMechanisms(robot, command, dt)` returns true to replace generic
+launching; `handlesIntake` transfers intake ownership to the season. Optional `RobotCommand.scoringLevel`
+is carried in multiplayer commands. Season `netState/applyNetState` must include mechanism state so
+visuals and client collision prediction agree with the host. The 2025 module demonstrates this path.
+`normalizeRobotConfig` applies a season's limits and supplies missing legacy mechanism fields before
+robot construction. `robotPresets` provides menu profiles, and `robotSummary` describes their capabilities
+in the multiplayer lobby. Optional placement/processor settings and a total cage rise time coexist with
+the generic projectile launcher and level-based climber used by 2026.
 
 **Coordinates:** season code uses WPILib field coordinates (meters, blue wall at x = 0). This is
 the same frame as robot code and the official AprilTag JSON, so positions copy straight across.
@@ -112,8 +123,9 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 **Day 2 · Physics checks (required)**
 - [ ] Implement `testing` in your SeasonDefinition: `scoringSpots` (grid over the legal scoring zone),
       `goalCount`, `goalCenter`, `traversals` (every lane robots must drive, with height limits).
-- [ ] `npm test` — `tests/physics.test.ts` automatically fires real pieces from every spot with extreme
-      robot designs and drives every lane through loose pieces. Fix the field/rules, not the thresholds.
+- [ ] `npm test` — `tests/physics.test.ts` automatically fires real pieces for projectile seasons and drives
+      every season's lanes through loose pieces. Placement seasons set `testing.mechanism: 'placement'`
+      and provide a dedicated real-physics mechanism suite. `scatterCount` can reflect the game's floor supply.
 
 **Day 2–3 · Polish**
 - [ ] AUTO routines (`autopilot.ts`) — update `BANDS` for the new field.
@@ -124,8 +136,8 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 
 ## 4. Known engine gaps (good next investments)
 
-1. **Non-spherical game pieces** — add `shape: 'sphere' | 'box' | 'cylinder' | 'torus-approx'` to `GamePieceSpec` and switch collider + instanced geometry.
-2. **Mechanism library** — elevator/arm/wrist scorers as generic parts (currently: intake, hopper, turret launcher, climber).
+1. **More piece shapes** — sphere and tube variants are supported; boxes, cones and torus colliders remain extensions.
+2. **Mechanism library** — generic arm/wrist components; 2025 has a season-owned elevator behind the mechanism hook.
 3. **CAD pipeline** — script to turn the official Onshape/STEP field into a GLB for `cadOverlay.ts` (needs an Onshape account/API key or a STEP→glTF converter).
 4. ~~**Multiplayer**~~ — done (host-authoritative, see `docs/MULTIPLAYER.md`). Next step there: optional dedicated headless host so matches survive the host closing their tab.
 5. **Replays** — record `RobotCommand`s + seed; replay deterministically.

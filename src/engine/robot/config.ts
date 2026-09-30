@@ -22,6 +22,9 @@ export interface RobotConfig {
 
   intake: {
     enabled: boolean;
+    /** Optional primary/secondary piece pickup capabilities for mixed-piece seasons. */
+    primary?: boolean;
+    secondary?: boolean;
     /** Width of the intake mouth. */
     width: number;
     /** How far past the front bumper pieces are grabbed. */
@@ -56,11 +59,26 @@ export interface RobotConfig {
   };
   aimAssist: AimAssist;
 
+  /** Optional elevator/placement mechanism; level heights are defined by the season. */
+  placement?: {
+    enabled: boolean;
+    maxLevel: number;
+    liftSpeed: number;
+    /** Mechanism reach beyond the frame perimeter, in meters. */
+    reach: number;
+    cycleSeconds: number;
+    harvestSeconds: number;
+  };
+  /** Processor feeding can be available independently of a projectile launcher. */
+  processor?: { enabled: boolean };
+
   climber: {
     /** Highest level this robot can reach (0 = no climber). */
     maxLevel: number;
     /** Seconds to rise one level. */
     secondsPerLevel: number;
+    /** Optional total rise time for cage games, independent of the cage's point value. */
+    secondsToClimb?: number;
   };
 }
 

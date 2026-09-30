@@ -34,17 +34,18 @@ export class HeadlessSim {
   constructor(
     readonly season: SeasonDefinition,
     R: RapierModule,
-    opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number },
+    opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number; station?: number },
   ) {
     this.physics = new PhysicsWorld(R, 1 / 90);
     const scene = new THREE.Scene();
     this.frame = new FieldFrame(season.fieldLength, season.fieldWidth);
     const builder = new FieldBuilder(this.physics, scene, this.frame);
     this.pool = new GamePiecePool(this.physics, scene, this.frame, season.gamePiece);
-    const cfg = sanitizeConfig(opts.robot, season.maxRobotHeight, season.maxRobotPerimeter);
-    this.robot = new Robot(this.physics, scene, this.frame, cfg, opts.alliance, 0, 1, opts.pose);
+    const cfg = season.normalizeRobotConfig?.(opts.robot) ?? sanitizeConfig(opts.robot, season.maxRobotHeight, season.maxRobotPerimeter);
+    this.robot = new Robot(this.physics, scene, this.frame, cfg, opts.alliance, 0, opts.station ?? 1, opts.pose);
     this.robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
     this.robot.controller = 'player';
+    season.configureRobot?.(this.robot);
     this.rng = new Rng(opts.seed ?? 1);
     const settings: GameSettings = {
       seasonId: season.id,
@@ -104,7 +105,8 @@ export class HeadlessSim {
     robot.tick(dt);
     const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
     robot.aimTurretAt(target, dt);
-    if (cmd.shoot || cmd.pass) {
+    const handled = rules.handleMechanisms?.(robot, cmd, dt);
+    if (!handled && (cmd.shoot || cmd.pass)) {
       const shot = robot.launch(target, this.rng);
       if (shot) {
         const idx = robot.held.pop()!;
@@ -115,7 +117,7 @@ export class HeadlessSim {
         this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius));
       }
     }
-    if (cmd.intake && robot.capacityLeft > 0) {
+    if (!rules.handlesIntake && cmd.intake && robot.capacityLeft > 0) {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);

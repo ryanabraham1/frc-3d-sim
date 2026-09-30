@@ -179,6 +179,18 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   client's first drawn state is already running; empty player HUD box for spectators (`.hud-player:empty`).
   Singleplayer regression-checked (drive + shoot + G407 still work). Docs updated. `render.yaml` added.
 
+## Season selection
+
+Rooms support both 2026 REBUILT and 2025 REEFSCAPE. The host chooses the season with the menu
+dropdown; non-host selectors follow the room and are disabled while joined. Returning to the lobby
+allows a host to switch years and start again. Season changes reset incompatible robot/AUTO settings
+to that year's defaults while preserving each player's team number.
+
+REEFSCAPE sends the selected reef level with driver commands. The host runs placement, harvesting,
+processor/net sensors and climbs; snapshots include CORAL placement records, elevator height, reef
+ALGAE availability and tube rotations alongside the existing score, robot and clock data. Spectators
+receive the same state. Five-element 2026 driver commands remain supported.
+
 ## 8. Deployment
 
 Multiplayer needs a server that holds WebSockets open, so Vercel alone won't work.
