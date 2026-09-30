@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { attachRelay, type Relay } from '../server/relay';
+import { NetClient } from '../src/engine/net/netClient';
 import type { RelayEvent } from '../src/engine/net/relayProtocol';
 
 let server: Server;
@@ -53,6 +54,11 @@ async function peer() {
 }
 
 describe('relay', () => {
+  it('probes readiness over WebSocket without creating a room', async () => {
+    expect(await NetClient.probe(url, 1000)).toBe(true);
+    expect(relay.roomCount()).toBe(0);
+  });
+
   it('creates a room, joins it and routes messages host <-> clients', async () => {
     const host = await peer();
     host.send({ op: 'create', name: 'Host' });

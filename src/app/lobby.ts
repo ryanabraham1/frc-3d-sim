@@ -107,16 +107,13 @@ export class LobbyController {
   }
 
   /**
-   * Ping the relay's /healthz until it answers (or WAKE_TIMEOUT_MS passes). Called when the Multiplayer page
+   * Probe the relay's WebSocket until it opens (or WAKE_TIMEOUT_MS passes). Called when the Multiplayer page
    * opens, so a sleeping free-tier server starts booting while the player types their name.
    */
   wake(force = false): Promise<boolean> {
     if (this.serverState === 'online') return Promise.resolve(true);
     if (this.waking && !force) return this.waking;
-    let url: string;
-    try {
-      url = NetClient.healthUrl(this.relayUrl);
-    } catch {
+    if (!/^wss?:\/\//.test(this.relayUrl)) {
       this.serverState = 'offline';
       this.onChange();
       return Promise.resolve(false);
@@ -133,13 +130,7 @@ export class LobbyController {
     }, 1000);
     const attempt = async (): Promise<boolean> => {
       while (performance.now() - started < WAKE_TIMEOUT_MS) {
-        try {
-          // A sleeping host usually holds this request open until it has booted.
-          const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(30000) });
-          if (res.ok && (await res.text()).startsWith('ok rooms=')) return true;
-        } catch {
-          /* not up yet */
-        }
+        if (await NetClient.probe(this.relayUrl)) return true;
         await new Promise((r) => setTimeout(r, 2000));
       }
       return false;

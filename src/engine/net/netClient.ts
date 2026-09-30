@@ -56,13 +56,30 @@ export class NetClient extends Emitter<NetClientEvents> {
     return this.ws?.readyState === WebSocket.OPEN && !!this.room;
   }
 
-  /** http(s) health URL for a relay ws(s) URL: wss://host/ws → https://host/healthz. */
-  static healthUrl(wsUrl: string): string {
-    const u = new URL(wsUrl);
-    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
-    u.pathname = '/healthz';
-    u.search = '';
-    return u.toString();
+  /** Check relay readiness using the same WebSocket transport as create/join. */
+  static probe(url: string, timeoutMs = 30000): Promise<boolean> {
+    return new Promise((resolve) => {
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(url);
+      } catch {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const finish = (ready: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        ws.onopen = ws.onerror = ws.onclose = null;
+        try { ws.close(); } catch { /* already closed */ }
+        resolve(ready);
+      };
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      ws.onopen = () => finish(true);
+      ws.onerror = () => finish(false);
+      ws.onclose = () => finish(false);
+    });
   }
 
   async connect(url: string, timeoutMs = 15000): Promise<void> {

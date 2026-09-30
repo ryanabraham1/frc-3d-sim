@@ -80,7 +80,7 @@ own robot responds instantly. Test latency locally with `?netlag=200` in a clien
 For a site that loads immediately even when the multiplayer server is asleep, deploy the built `dist/`
 as a **Render Static Site** (or on Vercel) and the WebSocket relay as a **Render Web Service**. Set the
 static site's build-time environment variable `VITE_RELAY_URL=wss://<relay>.onrender.com/ws`.
-The Multiplayer page checks `/healthz`, shows the wake status, and connects when the relay is ready.
+The Multiplayer page probes the WebSocket, shows the wake status, and connects when the relay is ready.
 The included [`render.yaml`](render.yaml) still supports a simpler single-service deployment, but that
 URL waits for the service to wake before it can show the site. Steps: [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) §8.
 

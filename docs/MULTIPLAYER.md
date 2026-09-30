@@ -196,7 +196,7 @@ minute to wake. Its static site stays available while the web service sleeps.
    `VITE_RELAY_URL=wss://<service>.onrender.com/ws`, using the actual web service hostname. Redeploy
    the static site after setting it, because Vite embeds this value during the build.
 4. Share the **static site URL**. The page opens immediately. The Multiplayer page wakes the relay via
-   `/healthz` and shows the elapsed wait. Players can enter a name or join code while it wakes. Creating
+   its WebSocket endpoint and shows the elapsed wait. Players can enter a name or join code while it wakes. Creating
    a new room and getting its share code require the relay to be online.
 
 Vercel can host the static site instead, with the same build command, `dist` output, and
