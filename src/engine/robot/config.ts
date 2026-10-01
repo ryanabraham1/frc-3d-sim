@@ -19,6 +19,11 @@ export interface RobotConfig {
   maxAccel: number;
   maxOmega: number;
   drive: 'swerve' | 'tank';
+  /**
+   * Static friction coefficient of the drive tread on carpet — with `mass` it caps how hard the robot can push or
+   * resist a push (μ·m·g). Default DEFAULT_WHEEL_COF. [EST: blue nitrile ≈ 1.1–1.2, Colson ≈ 1.0, worn ≈ 0.9]
+   */
+  wheelCOF?: number;
 
   intake: {
     enabled: boolean;
@@ -101,6 +106,9 @@ export interface RobotConfig {
   };
 }
 
+/** Tread friction when a config doesn't set `wheelCOF`. [EST: new blue nitrile on FRC carpet] */
+export const DEFAULT_WHEEL_COF = 1.1;
+
 /** Generic defaults; seasons override via their own robotDefaults. */
 export const DEFAULT_ROBOT: RobotConfig = {
   teamNumber: 9999,
@@ -159,6 +167,8 @@ export function sanitizeConfig(c: RobotConfig, maxHeight: number, maxPerimeter?:
       out.frameWidth *= k;
     }
   }
+  out.mass = Math.min(Math.max(out.mass, lb(50)), lb(160));
+  if (out.wheelCOF !== undefined) out.wheelCOF = Math.min(Math.max(out.wheelCOF, 0.5), 1.6);
   out.hopperCapacity = Math.max(0, Math.round(out.hopperCapacity));
   out.preload = Math.min(Math.max(0, Math.round(out.preload)), out.hopperCapacity);
   out.launcher.height = Math.min(out.launcher.height, out.height);

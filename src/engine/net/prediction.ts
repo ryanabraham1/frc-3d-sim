@@ -122,6 +122,7 @@ export class Predictor {
     b.setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] }, true);
     b.setLinvel({ x: 0, y: 0, z: 0 }, true);
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.robot.resetDriveState();
     this.hist.length = 0;
     this.snaps++;
   }

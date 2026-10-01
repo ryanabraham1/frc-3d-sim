@@ -1,5 +1,7 @@
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
+import { BATTERY_MASS } from '@engine/robot/drivetrain';
+import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, CrescendoAutoPilot } from './autopilot';
 import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
@@ -23,6 +25,7 @@ export const crescendo2024: SeasonDefinition = {
   carpetColor: C.COLORS.carpet,
   maxRobotHeight: C.MAX_ROBOT_HEIGHT,
   maxRobotPerimeter: C.MAX_PERIMETER,
+  maxRobotWeight: lb(125 + 15) + BATTERY_MASS, // R103 robot + R407 bumpers, plus the battery
   foulValues: { ...C.FOULS },
   timeline: TIMELINE,
   gamePiece: {
@@ -50,7 +53,7 @@ export const crescendo2024: SeasonDefinition = {
   robotPresets: crescendoRobotPresets(),
   robotOptions: crescendoRobotOptions,
   robotSpecBars: crescendoSpecBars,
-  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'rate', 'acc', 'cspd'],
+  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'rate', 'acc', 'cspd'],
   configureRobot(robot) {
     robot.projectile = { radius: C.NOTE_OUTER_RADIUS, airDamping: 0.03, halfHeight: C.NOTE_THICKNESS / 2 };
   },

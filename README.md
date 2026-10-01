@@ -45,6 +45,11 @@ auto-align vs driver aim, shooter type, capacity, height, climber. Use it at kic
 "is a ground intake worth it?". Human players feed physical pieces down the real chutes (H), and driver assists
 (chassis auto-align, reef auto-align) are robot options. How archetypes are derived for a new game (from past-game patterns plus the manual) and what was built 2022–2026: [docs/ROBOT-ARCHETYPES.md](docs/ROBOT-ARCHETYPES.md).
 
+**Defense is physical.** Each wheel pushes with the lesser of its motor force and its tread grip (μ × the weight on
+it), so pushing matches are decided by **Weight**, **Accel** and **Tread grip μ** (the **Pushing** bar shows the
+result). Flooring it past the tread limit only spins the wheels, a hit off a robot's center turns it, a tank drive is
+hard to shove sideways, and a disabled robot (brake mode) can be pushed.
+
 ## Playing 2024 CRESCENDO
 
 Select **2024 CRESCENDO** in the season dropdown. Score NOTES (foam rings) in your SPEAKER and AMP,

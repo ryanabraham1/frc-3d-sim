@@ -15,7 +15,7 @@ function fakeRobot() {
     setLinvel: () => {},
     setAngvel: () => {},
   };
-  return { robot: { body } as unknown as Robot, pos };
+  return { robot: { body, resetDriveState() {} } as unknown as Robot, pos };
 }
 
 const net = (x: number, z: number, seq = 0): RobotNetState => ({

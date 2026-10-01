@@ -1,6 +1,7 @@
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
-import { inch } from '@engine/units';
+import { BATTERY_MASS } from '@engine/robot/drivetrain';
+import { inch, lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, ReefscapeAutoPilot } from './autopilot';
 import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotOptions, reefscapeRobotPresets, reefscapeRobotSummary, reefscapeSpecBars, startPose, TIMELINE } from './config';
@@ -17,7 +18,7 @@ export const reefscape2025: SeasonDefinition = {
   manualVersion: 'Supplied 2025 manual · ARENA V4 / Game Details V13',
   summary: 'Place CORAL on four reef levels, remove ALGAE and score it in your PROCESSOR or NET, then park or climb a shallow or deep CAGE. Both alliances can earn Coopertition to reduce the CORAL ranking-point threshold.',
   fieldLength: C.FIELD_LENGTH, fieldWidth: C.FIELD_WIDTH, carpetColor: C.COLORS.carpet,
-  maxRobotHeight: inch(42), maxRobotPerimeter: inch(120), foulValues: { minor: 2, major: 6 },
+  maxRobotHeight: inch(42), maxRobotPerimeter: inch(120), maxRobotWeight: lb(135) + BATTERY_MASS /* R408: robot + bumpers, plus the battery */, foulValues: { minor: 2, major: 6 },
   timeline: TIMELINE,
   gamePiece: { name: 'CORAL + ALGAE', shape: 'tube', hollow: true, colliderInnerRadius: C.CORAL_COLLIDER_INNER, radius: C.CORAL_RADIUS, innerRadius: C.CORAL_INNER_RADIUS, length: C.CORAL_LENGTH,
     mass: 0.65, restitution: 0.15, friction: 0.35, color: C.COLORS.coral, count: C.CORAL_COUNT + C.ALGAE_COUNT,
@@ -30,7 +31,7 @@ export const reefscape2025: SeasonDefinition = {
   robotSummary: reefscapeRobotSummary,
   robotOptions: reefscapeRobotOptions,
   robotSpecBars: reefscapeSpecBars,
-  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'],
+  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'],
   humanPlayerButtons: 2,
   humanPlayerHint: {
     auto: 'Your human players drop CORAL down the CHUTE when you wait at a CORAL STATION, and throw PROCESSOR ALGAE into your NET.',

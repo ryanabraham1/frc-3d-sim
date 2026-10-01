@@ -36,6 +36,9 @@ export const GROUPS = {
   piece: collisionGroups(Group.PIECE, Group.FIELD | Group.ROBOT | Group.PIECE | Group.PIECE_ONLY),
 };
 
+/** Contact prediction distance (m): keep it below the tightest overhead clearance robots drive under. */
+export const PREDICTION_DISTANCE = 0.01;
+
 export class PhysicsWorld {
   readonly world: RAPIER.World;
   readonly dt: number;
@@ -46,6 +49,10 @@ export class PhysicsWorld {
   ) {
     this.world = new R.World({ x: 0, y: -9.81, z: 0 });
     this.world.timestep = dt;
+    // Rapier's default 2 cm contact prediction makes speculative contacts that stop a robot dead under a beam it
+    // clears by less than that (a trench bot with ½ in to spare, at speed). 1 cm clears that while keeping resting
+    // and placement contacts as stable as before; fast bodies (game pieces, robots) still have CCD.
+    this.world.integrationParameters.normalizedPredictionDistance = PREDICTION_DISTANCE;
     this.dt = dt;
   }
 

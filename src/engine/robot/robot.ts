@@ -4,7 +4,8 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { RobotConfig, footprint } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, footprint } from './config';
+import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 
@@ -163,9 +164,13 @@ export class Robot {
     }
     const r = 0.015;
     const bh = (c.bumperTop - c.bumperBottom) / 2;
+    // Bumper fabric (cordura over pool noodles): multiplied, it grips another robot's bumper at ≈ 0.45 — enough to
+    // drag or turn a robot you're shoving — while walls, carpet and pieces see about the same friction as before.
+    // [EST: nylon cordura on cordura ≈ 0.4–0.5]
     const bumper = R.ColliderDesc.roundCuboid(this.fp.length / 2 - r, bh - r, this.fp.width / 2 - r, r)
       .setTranslation(0, (c.bumperTop + c.bumperBottom) / 2, 0)
-      .setFriction(0.25)
+      .setFriction(Robot.BUMPER_FRICTION)
+      .setFrictionCombineRule(R.CoefficientCombineRule.Multiply)
       .setRestitution(0.05)
       .setMass(m * 0.15)
       .setCollisionGroups(GROUPS.robot);
@@ -367,7 +372,7 @@ export class Robot {
   traction = 1;
   /** Wheels resting on the field this step (0-4). */
   wheelsDown = 4;
-  /** Seconds the robot has been tipped over, or stuck leaning with no wheel touching anything (0 = fine). */
+  /** Seconds the robot has been tipped over, or stuck at rest with no wheel touching anything (0 = fine). */
   tippedTime = 0;
   private static readonly GROUND_QUERY = collisionGroups(Group.ROBOT, Group.FIELD);
   private static readonly WHEEL_QUERY = collisionGroups(Group.ROBOT, Group.FIELD | Group.PIECE);
@@ -376,10 +381,10 @@ export class Robot {
    * tread, so a robot high-centered on pieces still inches along and can work itself off. [EST]
    */
   static readonly PIECE_GRIP = 0.35;
+  /** Bumper friction coefficient, combined by multiplying (bumper on bumper ≈ 0.45). */
+  static readonly BUMPER_FRICTION = 0.67;
   /** Tipped over = chassis up axis more than 60° from vertical. */
   static readonly TIPPED_UP_Y = Math.cos((60 * Math.PI) / 180);
-  /** A lean past 20° with no wheel down counts as stuck (a robot tilts less than that when it rocks on pieces). */
-  private static readonly LEAN_UP_Y = Math.cos((20 * Math.PI) / 180);
   /** Seconds a tipped-over robot lies there before it is set back on its wheels (sim rule, not the manual). */
   static readonly TIP_RECOVERY_S = 5;
   private static readonly WHEEL_RADIUS = 0.05;
@@ -445,9 +450,36 @@ export class Robot {
     this.traction = grip / 4;
   }
 
+  /** Drive wheels sliding on the carpet this step (0-4): pushed past their grip, or spun up harder than it holds. */
+  wheelsSlipping = 0;
+  private readonly wheel: WheelModel = { motorLimit: 0, stall: 0, freeSpeed: 1, traction: 0 };
+  private readonly tankAxis = { x: 1, z: 0 };
+  private readonly force = { x: 0, z: 0 };
+  private readonly vel = { x: 0, y: 0, z: 0 };
+  /** Velocity right after last step's drive impulses (null = not driving): the gap to now is what else pushed us. */
+  private driven: { x: number; z: number; w: number } | null = null;
+
+  /** Forget last step's drive (call after teleporting the body or setting its velocity, so it isn't read as a shove). */
+  resetDriveState(): void {
+    this.driven = null;
+  }
+
+  /**
+   * Drive toward the commanded field velocity and yaw rate with what the wheels can really push (see
+   * drivetrain.ts): each touching wheel asks for its share of the force that would reach the target this step —
+   * translation split by grip, rotation as tangential force about the center of mass — and is clamped to its motor
+   * curve and tread friction. Another robot leaning on this one is then resisted only that hard, so defense,
+   * pushing matches and spins come out of mass, tread grip, motor limits and where the hit lands.
+   */
   drive(cmd: RobotCommand, dt: number): void {
-    if (this.climbPhase !== 'none') return;
+    if (this.climbPhase !== 'none') {
+      this.driven = null;
+      return;
+    }
     this.updateWheels();
+    this.wheelsSlipping = 0;
+    const prev = this.driven;
+    this.driven = null;
     if (this.traction <= 0) return;
     const c = this.config;
     let tvx = cmd.vx;
@@ -458,50 +490,114 @@ export class Robot {
       tvy *= c.maxSpeed / sp;
     }
     const yaw = this.pose.yaw;
-    if (c.drive === 'tank') {
+    const tank = c.drive === 'tank';
+    if (tank) {
       const along = tvx * Math.cos(yaw) + tvy * Math.sin(yaw);
       tvx = along * Math.cos(yaw);
       tvy = along * Math.sin(yaw);
     }
-    const v = this.body.linvel();
-    // world: x = field vx, z = -field vy
-    let dvx = tvx - v.x;
-    let dvz = -tvy - v.z;
-    const mag = Math.hypot(dvx, dvz);
-    const maxDv = c.maxAccel * this.traction * dt;
-    if (mag > maxDv) {
-      dvx *= maxDv / mag;
-      dvz *= maxDv / mag;
-    }
-    // Wheel force acts where the tread meets the ground (below the center of mass): hard acceleration or
-    // shoving pitches the chassis, and only wheels that touch something can push.
+    const targetW = this.enabled ? clamp(cmd.omega, -c.maxOmega, c.maxOmega) : 0;
+    if (!this.enabled) tvx = tvy = 0;
     const m = this.body.mass();
-    let total = 0;
-    for (const h of this.wheelHits) total += h.grip;
-    for (const h of this.wheelHits) {
-      const k = (m * h.grip) / total;
-      this.body.applyImpulseAtPoint({ x: dvx * k, y: 0, z: dvz * k }, { x: h.x, y: h.y, z: h.z }, true);
+    const v = this.body.linvel();
+    const w = this.body.angvel();
+    const com = this.body.worldCom();
+    const inertia = this.body.effectiveAngularInertia().m22;
+    // Force that would reach the target this step (world: x = field vx, z = -field vy), and the yaw torque. An
+    // enabled robot also leans against what pushed it last step (another robot, a wall, a slope) — the integral
+    // action of a real drive velocity loop — so it holds its spot whenever its wheels have the force to.
+    let fx = (m * (tvx - v.x)) / dt;
+    let fz = (m * (-tvy - v.z)) / dt;
+    let torque = (inertia * (targetW - w.y)) / dt;
+    if (prev && this.enabled) {
+      fx -= (m * (v.x - prev.x)) / dt;
+      fz -= (m * (v.z - prev.z)) / dt;
+      torque -= (inertia * (w.y - prev.w)) / dt;
     }
 
-    const w = this.body.angvel();
-    const targetW = clamp(cmd.omega, -c.maxOmega, c.maxOmega);
-    const maxDw = c.maxOmega * 8 * this.traction * dt;
-    const nw = w.y + clamp(targetW - w.y, -maxDw, maxDw);
-    this.body.setAngvel({ x: w.x, y: nw, z: w.z }, true);
+    let total = 0;
+    let lever = 0;
+    for (const h of this.wheelHits) {
+      total += h.grip;
+      lever += h.grip * ((h.x - com.x) ** 2 + (h.z - com.z) ** 2);
+    }
+    const wm = this.wheel;
+    wm.motorLimit = (m * c.maxAccel) / 4;
+    wm.stall = wm.motorLimit * STALL_RATIO;
+    wm.freeSpeed = c.maxSpeed * FREE_SPEED_RATIO;
+    wm.disabled = !this.enabled;
+    wm.axis = tank ? this.tankAxis : undefined;
+    this.tankAxis.x = Math.cos(yaw);
+    this.tankAxis.z = -Math.sin(yaw);
+    const mu = c.wheelCOF ?? DEFAULT_WHEEL_COF;
+    for (const h of this.wheelHits) {
+      // The weight rides on the wheels that touch something (a robot rocked up on two wheels presses them down
+      // twice as hard); one resting on a game piece grips less.
+      const load = (m * G) / this.wheelHits.length;
+      wm.traction = mu * load * h.grip;
+      const rx = h.x - com.x;
+      const rz = h.z - com.z;
+      const kt = lever > 1e-9 ? (torque * h.grip) / lever : 0;
+      const p = { x: h.x, y: h.y, z: h.z };
+      const pv = this.body.velocityAtPoint(p, this.vel);
+      if (limitWheelForce(wm, (fx * h.grip) / total + kt * rz, (fz * h.grip) / total - kt * rx, pv.x, pv.z, this.force)) this.wheelsSlipping++;
+      // Rolling resistance drags against the wheel's ground motion (never reversing it).
+      const ps = Math.hypot(pv.x, pv.z);
+      const roll = ps > 1e-4 && h.grip === 1 ? Math.min(ROLLING_RESISTANCE * load, (m * ps) / (this.wheelHits.length * dt)) / ps : 0;
+      // Wheel force acts where the tread meets the ground (below the center of mass): hard acceleration or
+      // shoving pitches the chassis, and only wheels that touch something can push.
+      this.body.applyImpulseAtPoint({ x: (this.force.x - pv.x * roll) * dt, y: 0, z: (this.force.z - pv.z * roll) * dt }, p, true);
+    }
+    const nv = this.body.linvel();
+    this.driven = { x: nv.x, z: nv.z, w: this.body.angvel().y };
   }
 
   /**
-   * Count time lying tipped over — or wedged at a lean with every wheel in the air (e.g. a raised elevator
-   * caught under a bar) — and after TIP_RECOVERY_S set the robot back on its wheels where it is.
+   * Count time lying tipped over — or wedged at rest with every wheel in the air (a raised elevator caught under a
+   * bar, high-centered on game pieces) — and after TIP_RECOVERY_S set the robot back on its wheels where it is. A
+   * robot rocking on pieces touches down now and then, which restarts the count.
    */
   private updateTipped(dt: number): void {
-    const wedged = this.traction === 0 && this.uprightness < Robot.LEAN_UP_Y && this.speed < 0.1;
+    const wedged = this.traction === 0 && this.speed < 0.1;
     if (this.climbPhase !== 'none' || !this.body.isDynamic() || !(this.tippedOver || wedged)) {
       this.tippedTime = 0;
       return;
     }
     this.tippedTime += dt;
     if (this.tippedTime >= Robot.TIP_RECOVERY_S) this.setUpright();
+  }
+
+  /**
+   * Slide game pieces lying under the footprint out past the nearest bumper, so a robot set down where it was
+   * high-centered lands on the carpet instead of back on the same pieces.
+   */
+  private clearPiecesUnder(x: number, floor: number, z: number, yaw: number): void {
+    const R = this.physics.R;
+    const hl = this.fp.length / 2;
+    const hw = this.fp.width / 2;
+    const fx = Math.cos(yaw);
+    const fz = -Math.sin(yaw);
+    const box = new R.Cuboid(hl, 0.2, hw);
+    const rot = { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
+    const bodies = new Set<RAPIER.RigidBody>();
+    this.physics.world.intersectionsWithShape({ x, y: floor + 0.2, z }, rot, box, (col) => {
+      const b = col.parent();
+      if (b?.isDynamic()) bodies.add(b);
+      return true;
+    }, undefined, collisionGroups(Group.ROBOT, Group.PIECE), undefined, this.body);
+    const margin = 0.2; // clears the largest pieces (a CORAL lying across) [EST]
+    for (const b of bodies) {
+      const p = b.translation();
+      const dx = p.x - x;
+      const dz = p.z - z;
+      let f = dx * fx + dz * fz;
+      let l = -dx * fz + dz * fx;
+      if (hl - Math.abs(f) < hw - Math.abs(l)) f = (Math.sign(f) || 1) * (hl + margin);
+      else l = (Math.sign(l) || 1) * (hw + margin);
+      b.setTranslation({ x: x + f * fx - l * fz, y: p.y, z: z + f * fz + l * fx }, true);
+      b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      b.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
   }
 
   /** Put the robot back on its wheels at its current spot and heading, on top of whatever field surface is there. */
@@ -512,10 +608,12 @@ export class Robot {
     const top = 3;
     const hit = this.physics.world.castRay(new R.Ray({ x: t.x, y: top, z: t.z }, { x: 0, y: -1, z: 0 }), top + 1, true, undefined, Robot.GROUND_QUERY, undefined, this.body);
     const floor = hit ? top - hit.timeOfImpact : 0;
+    this.clearPiecesUnder(t.x, floor, t.z, yaw);
     this.body.setTranslation({ x: t.x, y: floor + 0.01, z: t.z }, true);
     this.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.resetDriveState();
     this.tippedTime = 0;
   }
 
@@ -950,6 +1048,7 @@ export class Robot {
     this.body.setRotation({ x: 0, y: Math.sin(pose.yaw / 2), z: 0, w: Math.cos(pose.yaw / 2) }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    this.resetDriveState();
     this.climbPhase = 'none';
     this.climbLevel = 0;
     this.climbSlot = null;

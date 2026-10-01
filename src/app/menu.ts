@@ -1,14 +1,17 @@
 import type { CameraMode } from '@engine/camera/cameras';
 import type { GameSettings, MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
-import { cloneConfig, RobotConfig } from '@engine/robot/config';
-import { formatClock, inch, toInch } from '@engine/units';
+import { cloneConfig, DEFAULT_WHEEL_COF, RobotConfig } from '@engine/robot/config';
+import { pushingForce } from '@engine/robot/drivetrain';
+import { formatClock, inch, lb, toInch } from '@engine/units';
 import { SEASONS, getSeason } from '@seasons/index';
 import { icon } from './icons';
 import type { LobbyController } from './lobby';
 import { bindMultiplayer, multiplayerPage } from './multiplayer';
 import './menu.css';
 
+/** Newtons per pound-force. */
+const LBF = 4.4482216;
 const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
@@ -65,6 +68,9 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     { key: 'wid', label: 'Width in', min: 18, max: 36, step: 0.5, get: (c) => +toInch(c.frameWidth).toFixed(1), set: (c, v) => (c.frameWidth = inch(v)) },
     { key: 'speed', label: 'Speed ft/s', min: 6, max: 22, step: 0.5, get: (c) => +(c.maxSpeed / FT).toFixed(1), set: (c, v) => (c.maxSpeed = v * FT) },
     { key: 'accel', label: 'Accel ft/s²', min: 8, max: 45, step: 1, get: (c) => Math.round(c.maxAccel / FT), set: (c, v) => (c.maxAccel = v * FT) },
+    // Defense: weight (with bumpers + battery) and tread grip set how hard the robot pushes and resists a push.
+    { key: 'weight', label: 'Weight lb', min: 60, max: Math.floor((season.maxRobotWeight ?? lb(150)) / lb(1)), step: 1, get: (c) => Math.round(c.mass / lb(1)), set: (c, v) => (c.mass = lb(v)) },
+    { key: 'tread', label: 'Tread grip μ', min: 0.6, max: 1.5, step: 0.05, get: (c) => c.wheelCOF ?? DEFAULT_WHEEL_COF, set: (c, v) => (c.wheelCOF = v) },
     { key: 'cap', label: 'Capacity', min: 1, max: season.robotLimits?.capacity ?? 120, step: 1, get: (c) => c.hopperCapacity, set: (c, v) => (c.hopperCapacity = Math.round(v)) },
     { key: 'pre', label: 'Preload', min: 0, max: season.robotLimits?.preload ?? 8, step: 1, get: (c) => c.preload, set: (c, v) => (c.preload = Math.round(v)) },
     { key: 'rate', label: 'Shots/s', min: 1, max: 20, step: 0.5, get: (c) => c.launcher.rate, set: (c, v) => (c.launcher.rate = v) },
@@ -255,6 +261,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${profiles}
         <div class="spec-bars">
           ${specBar('Speed', `${F.speed.get(r)} ft/s`, F.speed.get(r) / 22)}
+          ${specBar('Pushing', `${Math.round(pushingForce(r) / LBF)} lbf`, pushingForce(r) / LBF / 200)}
           ${bars.map((x) => specBar(x.label, x.value, x.frac)).join('')}
           ${specBar('Climb', season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel === 0 ? 'None' : `L${r.climber.maxLevel}`), r.climber.maxLevel / Math.max(1, season.maxClimbLevel))}
         </div>

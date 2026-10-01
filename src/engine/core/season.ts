@@ -169,6 +169,8 @@ export interface SeasonDefinition {
   carpetColor: number;
   maxRobotHeight: number;
   maxRobotPerimeter: number;
+  /** Heaviest legal robot as it plays, WITH bumpers and battery (kg) — caps the menu's weight field. */
+  maxRobotWeight?: number;
   foulValues: Record<FoulKind, number>;
 
   timeline: MatchPeriod[];

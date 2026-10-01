@@ -1,5 +1,7 @@
 import type { MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
+import { BATTERY_MASS } from '@engine/robot/drivetrain';
+import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
 import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltSpecBars, startPose, TIMELINE } from './config';
@@ -46,6 +48,7 @@ export const rebuilt2026: SeasonDefinition = {
   carpetColor: C.COLORS.carpet,
   maxRobotHeight: C.MAX_ROBOT_HEIGHT,
   maxRobotPerimeter: C.MAX_ROBOT_PERIMETER,
+  maxRobotWeight: lb(135) + BATTERY_MASS, // R408: robot + bumpers, plus the battery
   foulValues: { minor: 5, major: 15 },
 
   timeline: TIMELINE,
@@ -67,7 +70,7 @@ export const rebuilt2026: SeasonDefinition = {
   robotPresets: rebuiltRobotPresets(),
   robotOptions: rebuiltRobotOptions,
   robotSpecBars: rebuiltSpecBars,
-  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'],
+  robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'cap', 'pre', 'rate', 'acc', 'cspd'],
   maxClimbLevel: 3,
   autoRoutines: AUTO_ROUTINES,
   mapShapes: mapShapes(),
