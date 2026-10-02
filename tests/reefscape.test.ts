@@ -184,6 +184,22 @@ describe('2025 REEFSCAPE manual implementation', () => {
       expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
       expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(58); // 59 after the preload, one fed
     });
+    it(`${a}: mashing H feeds every CORAL down the CHUTE one after another without jamming it`, () => {
+      const st = C.stations(a)[0];
+      const sim = make(a, { x: st.x + Math.cos(st.yaw) * 1.5, y: st.y + Math.sin(st.yaw) * 1.5, yaw: st.yaw + Math.PI });
+      sim.rules.stage(); for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      teleop(sim);
+      const before = sim.pool.indices('reserve', `station:${a}`).length;
+      for (let k = 0; k < 20; k++) sim.rules.humanPlayerAction(a, 1); // all within one tick
+      run(sim, 8);
+      expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(before - 20); // every press delivered a CORAL
+      const inChute = sim.pool.indices('field').filter((i) => {
+        if (i >= 126 || i % 63 <= 2) return false;
+        const q = sim.frame.toField(sim.pool.position(i));
+        return Math.hypot(q.x - st.x, q.y - st.y) < 0.9 && q.z > C.STATION_MOUTH_HEIGHT - 0.05; // on the CHUTE floor, not resting on a robot
+      });
+      expect(inChute).toEqual([]); // all rolled out, none wedged
+    });
     it(`${a}: a ground-intake robot without a funnel collects CORAL the human player drops onto the carpet`, () => {
       const st = C.stations(a)[0];
       const sim = make(a, { x: st.x + Math.cos(st.yaw) * 1.1, y: st.y + Math.sin(st.yaw) * 1.1, yaw: st.yaw + Math.PI }, 2, preset('trough'));

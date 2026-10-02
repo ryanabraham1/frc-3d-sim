@@ -34,6 +34,8 @@ export class ReefscapeRules implements SeasonRules {
   private readonly heldVisuals = new Map<number, { coral: THREE.Mesh; algae: THREE.Mesh }>();
   private readonly scoredVisuals = new Map<number, THREE.Mesh>();
   private hpTimer: Record<Alliance, number> = { blue: 0, red: 0 };
+  /** Manual (H) drops waiting for the CHUTE to clear, by station index; a second CORAL dropped on top of one still in the CHUTE would wedge both. */
+  private chuteQueue: Record<Alliance, number[]> = { blue: [], red: [] };
   /** CORAL candidates on a BRANCH / in a trough and how long they've stayed there (s). */
   private readonly candidates = new Map<number, { key: string; t: number }>();
   /** BRANCH keys holding CORAL at the end of AUTO, and L1 counts then (§6.5.1 AUTO credit rules). */
@@ -90,6 +92,7 @@ export class ReefscapeRules implements SeasonRules {
     this.grips.length = 0;
     for (const a of ALLIANCES) for (const cage of this.refs.cages[a]) cage.reset();
     this.hpTimer = { blue: 0, red: 0 };
+    this.chuteQueue = { blue: [], red: [] };
     this.defenderTime = { blue: 0, red: 0 }; this.forcedBarge = { blue: false, red: false };
     for (let i = 0; i < pool.count; i++) pool.reserve(i);
     for (const r of robots) r.held.length = 0;
@@ -540,6 +543,7 @@ export class ReefscapeRules implements SeasonRules {
     if (!this.activeScoring()) return;
     for (const a of ALLIANCES) {
       this.hpTimer[a] -= dt;
+      this.feedQueuedDrops(a);
       if (this.ctx.clock.mode === 'disabled' || !this.ctx.humanPlayerIsAuto(a) || this.hpTimer[a] > 0) continue;
       if (!this.isAuto() && this.ctx.pool.countIn('reserve', `hp:${a}`) > 0) { this.throwAlgae(a); this.hpTimer[a] = 1.7; continue; }
       // The automatic HUMAN PLAYER drops CORAL down the CHUTE for a robot waiting at a station.
@@ -598,7 +602,31 @@ export class ReefscapeRules implements SeasonRules {
     const robot = this.ctx.playerRobot?.alliance === a ? this.ctx.playerRobot : this.ctx.robots.find((r) => r.alliance === a);
     const stations = C.stations(a);
     const k = robot ? (Math.hypot(robot.pose.x - stations[0].x, robot.pose.y - stations[0].y) <= Math.hypot(robot.pose.x - stations[1].x, robot.pose.y - stations[1].y) ? 0 : 1) : 0;
-    if (!this.dropCoral(a, k, robot ?? null)) this.ctx.toast('No CORAL left at the CORAL STATION', 'warn', a);
+    if (this.ctx.pool.indices('reserve', `station:${a}`).length <= this.chuteQueue[a].length) { this.ctx.toast('No CORAL left at the CORAL STATION', 'warn', a); return; }
+    // Fast presses queue up and are fed one at a time, like a human player waiting for the CHUTE to clear.
+    if (this.chuteQueue[a].length > 0 || this.chuteBlocked(a, k, robot ?? null)) { this.chuteQueue[a].push(k); return; }
+    this.dropCoral(a, k, robot ?? null);
+  }
+
+  private feedQueuedDrops(a: Alliance): void {
+    const queue = this.chuteQueue[a];
+    if (queue.length === 0) return;
+    if (this.ctx.clock.mode === 'disabled') { queue.length = 0; return; }
+    const robot = this.ctx.playerRobot?.alliance === a ? this.ctx.playerRobot : this.ctx.robots.find((r) => r.alliance === a) ?? null;
+    if (this.chuteBlocked(a, queue[0], robot)) return;
+    if (!this.dropCoral(a, queue[0], robot)) queue.length = 0;
+    else queue.shift();
+  }
+
+  /** True while another CORAL still sits where the next one would be placed at the top of the CHUTE. CORAL roll down the CHUTE lying across it, so they only need a diameter of room. */
+  private chuteBlocked(a: Alliance, k: number, robot: Robot | null): boolean {
+    const { pool, frame } = this.ctx;
+    const spawn = this.chuteSpawn(a, k, robot);
+    return pool.indices('field').some((i) => {
+      if (i >= C.CORAL_COUNT) return false;
+      const q = frame.toField(pool.position(i));
+      return Math.hypot(q.x - spawn.x, q.y - spawn.y, q.z - spawn.z) < C.CORAL_RADIUS * 2 + 0.05;
+    });
   }
 
   /** A CORAL still rolling in (or just out of) this station's CHUTE — the human player waits for it to clear. */
@@ -621,6 +649,17 @@ export class ReefscapeRules implements SeasonRules {
     if (i === undefined) return false;
     const st = C.stations(a)[k];
     const t = { x: -Math.sin(st.yaw), y: Math.cos(st.yaw) };
+    const p = this.chuteSpawn(a, k, robot);
+    pool.placeWorld(i, frame.toWorld(p.x, p.y, p.z));
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), frame.velToWorld(t.x, t.y, 0).normalize());
+    pool.bodies[i].setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
+    return true;
+  }
+
+  /** Field-frame centre of a CORAL freshly placed at the top of station `k`'s CHUTE, aimed along the opening at `robot`'s intake. */
+  private chuteSpawn(a: Alliance, k: number, robot: Robot | null) {
+    const st = C.stations(a)[k];
+    const t = { x: -Math.sin(st.yaw), y: Math.cos(st.yaw) };
     let along = 0;
     if (robot) {
       // Aim at the robot's funnel side (or its front for a ground intake).
@@ -632,10 +671,7 @@ export class ReefscapeRules implements SeasonRules {
     const top = C.chutePoint(st, along, C.CHUTE_LIP + C.CHUTE_LENGTH - 0.12);
     const n = { x: Math.cos(st.yaw) * Math.sin(C.CHUTE_ANGLE), y: Math.sin(st.yaw) * Math.sin(C.CHUTE_ANGLE), z: Math.cos(C.CHUTE_ANGLE) };
     const r = C.CORAL_RADIUS + 0.004;
-    pool.placeWorld(i, frame.toWorld(top.x + n.x * r, top.y + n.y * r, top.z + n.z * r));
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), frame.velToWorld(t.x, t.y, 0).normalize());
-    pool.bodies[i].setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
-    return true;
+    return { x: top.x + n.x * r, y: top.y + n.y * r, z: top.z + n.z * r };
   }
 
   private throwAlgae(a: Alliance, verbose = false): void {
