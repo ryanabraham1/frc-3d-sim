@@ -40,7 +40,7 @@ missing in ctx) — that is theirs, fixed by their rewrite. Re-read shared files
 - [x] Optional HUD hint: in `src/seasons/2026-rebuilt/hud.ts` show "No clean shot from here" when `p.lastShotClear === false` after shooting.
 - [x] Browser check (live game): 30in/80-cap robot shooting while moving+turning from 3 spots = 30/30; 30in robot correctly blocked at the trench; bump crossing OK. 21in trench-with-loose-FUEL covered by tests/physics.test.ts. Originally: menu → robot height 30, capacity 80 → shoot from around the alliance zone while moving; drive a 21in robot through both trenches, including over loose FUEL.
 - [x] Docs: add the physics suite + `testing` hook to `docs/FRAMEWORK.md` kickoff checklist ("implement `testing` in your season; `npm test` must pass"), and a line in `PLAN.md` log.
-- [ ] Consider (not done): menu "Shot accuracy %" is not a hit-rate — 50% setting ≈ 69% hits, default 83% ≈ ~100%. Could relabel ("Shot consistency") or recalibrate.
+- [x] 2026 menu "Accuracy %" now IS a hit rate (2026-10-02): calibrated at 3 m through the real Rapier loop (`ACCURACY_TABLE` in `src/seasons/2026-rebuilt/config.ts`, hooked in via `SeasonDefinition.shotAccuracy`); default 83% ≈ 83 of 100 in, misses grow with distance. `tests/rebuilt-accuracy.test.ts` re-measures it; `tests/physics.test.ts` fires an ideal (100%) shooter so spread cannot mask mechanical bugs. 2024/2025 keep the raw spread slider.
 
 ## Measured results (headless, real physics)
 - Tall 30in/80-cap, stationary, 14 spots × 10 shots: **140/140** (was 134/140; moving+turning **30/30**, was 17/30).

@@ -88,6 +88,12 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     },
     { key: 'cspd', label: 'Sec/level', min: 0.5, max: 6, step: 0.1, get: (c) => +c.climber.secondsPerLevel.toFixed(1), set: (c, v) => (c.climber.secondsPerLevel = v) },
   ];
+  if (season.shotAccuracy) {
+    const acc = list.find((f) => f.key === 'acc')!;
+    acc.get = season.shotAccuracy.get;
+    acc.set = season.shotAccuracy.set;
+    acc.step = 1;
+  }
   if (season.year === 2026) {
     for (const f of list) {
       if (['speed', 'accel', 'cap', 'rate', 'cspd'].includes(f.key)) delete f.max;

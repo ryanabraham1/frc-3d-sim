@@ -4,7 +4,7 @@ import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
-import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltSpecBars, startPose, TIMELINE } from './config';
+import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltShotAccuracy, rebuiltSpecBars, startPose, TIMELINE } from './config';
 import { buildRebuiltField, RebuiltFieldRefs, side, sideYaw } from './field';
 import { RebuiltHud } from './hud';
 import { RebuiltRules } from './rules';
@@ -70,6 +70,7 @@ export const rebuilt2026: SeasonDefinition = {
   robotPresets: rebuiltRobotPresets(),
   robotOptions: rebuiltRobotOptions,
   robotSpecBars: rebuiltSpecBars,
+  shotAccuracy: rebuiltShotAccuracy,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'cap', 'pre', 'rate', 'acc', 'cspd'],
   maxClimbLevel: 3,
   autoRoutines: AUTO_ROUTINES,

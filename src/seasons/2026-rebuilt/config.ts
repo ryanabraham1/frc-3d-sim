@@ -19,6 +19,58 @@ export const TIMELINE: MatchPeriod[] = [
   { id: 'post', label: 'FINAL SCORING', duration: 3, mode: 'disabled' },
 ];
 
+/**
+ * SHOT ACCURACY. The menu's "Accuracy %" is the share of shots that go IN from a typical scoring range
+ * (REBUILT_ACCURACY_RANGE), measured through the real Rapier loop (HeadlessSim, 3 m, 6 bearings x 100 shots, all
+ * robot types) -- not an abstract spread number. Each FUEL leaves with its own random yaw/pitch error (sigma = the
+ * table's angle, in radians) plus a speed error of 1.25x that; the spread of the stream then makes some shots clip
+ * the rim or land beside the opening, and it grows with distance (closer shots hit more often, farther ones less).
+ * tests/rebuilt-accuracy.test.ts re-measures this, so retuning the physics fails it until the table is recalibrated.
+ */
+export const REBUILT_ACCURACY_RANGE = 3.0; // m from the HUB center [EST: mid-ALLIANCE ZONE]
+export const REBUILT_DEFAULT_ACCURACY = 83;
+const SPEED_ERROR_RATIO = 1.25;
+/** [accuracy %, 1-sigma launch angle (rad)], measured at REBUILT_ACCURACY_RANGE; ordered by falling accuracy. */
+const ACCURACY_TABLE: [number, number][] = [
+  [100, 0.01], [99, 0.016], [95, 0.02], [90, 0.025], [84, 0.03], [74, 0.035], [67, 0.04], [58, 0.05], [51, 0.06],
+  [40, 0.07], [35, 0.085], [31, 0.1], [21, 0.13], [14, 0.17], [8, 0.22], [0, 0.3],
+];
+
+/** Launch-angle sigma (rad) that makes `acc`% of shots go in at REBUILT_ACCURACY_RANGE. */
+export function rebuiltSpreadForAccuracy(acc: number): number {
+  const a = Math.min(100, Math.max(0, acc));
+  for (let i = 1; i < ACCURACY_TABLE.length; i++) {
+    const [a0, s0] = ACCURACY_TABLE[i - 1];
+    const [a1, s1] = ACCURACY_TABLE[i];
+    if (a >= a1) return s0 + ((s1 - s0) * (a0 - a)) / (a0 - a1);
+  }
+  return ACCURACY_TABLE[ACCURACY_TABLE.length - 1][1];
+}
+
+/** Inverse of `rebuiltSpreadForAccuracy`: expected % of shots in at REBUILT_ACCURACY_RANGE for a launch-angle sigma. */
+export function rebuiltAccuracyForSpread(spread: number): number {
+  const t = ACCURACY_TABLE;
+  if (spread <= t[0][1]) return 100;
+  for (let i = 1; i < t.length; i++) {
+    if (spread <= t[i][1]) {
+      const [a0, s0] = t[i - 1];
+      const [a1, s1] = t[i];
+      return a0 + ((a1 - a0) * (spread - s0)) / (s1 - s0);
+    }
+  }
+  return 0;
+}
+
+export function setRebuiltAccuracy(c: RobotConfig, acc: number): void {
+  c.launcher.spread = rebuiltSpreadForAccuracy(acc);
+  c.launcher.speedError = c.launcher.spread * SPEED_ERROR_RATIO;
+}
+
+export const rebuiltShotAccuracy = {
+  get: (c: RobotConfig) => Math.round(rebuiltAccuracyForSpread(c.launcher.spread)),
+  set: setRebuiltAccuracy,
+};
+
 /** Default REBUILT robot: fits under the TRENCH (22.25in), turret shooter, 40-FUEL hopper. */
 export function rebuiltRobotDefaults(): RobotConfig {
   const c = cloneConfig(DEFAULT_ROBOT);
@@ -31,6 +83,7 @@ export function rebuiltRobotDefaults(): RobotConfig {
   // (the shooter faces front).
   c.intake = { ...c.intake, ground: true, groundSide: 'back', station: true, stationSide: 'back' };
   c.autoAlign = true; // used only when the shooter has no turret
+  setRebuiltAccuracy(c, REBUILT_DEFAULT_ACCURACY);
   return c;
 }
 
@@ -42,6 +95,8 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   c.intake.groundSide ??= 'back';
   c.intake.stationSide ??= 'back';
   c.intake.enabled = c.intake.ground || c.intake.station;
+  // Saved configs from before accuracy meant hit rate carry the old near-perfect default spread: re-aim them.
+  if (c.launcher.spread === 0.012 && c.launcher.speedError === 0.015) setRebuiltAccuracy(c, REBUILT_DEFAULT_ACCURACY);
   if ((c.launcher.exits ?? 1) > 1) c.launcher.turret = false; // a robot-wide dumper can't sit on a turret
   c.autoAlign ??= !c.launcher.turret;
   c.preload = Math.min(c.preload, C.FUEL_MAX_PRELOAD, c.hopperCapacity);

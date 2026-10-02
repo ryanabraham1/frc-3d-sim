@@ -225,6 +225,8 @@ export interface SeasonDefinition {
   robotOptions?: RobotOption[];
   /** Numeric robot fields shown on the menu (keys of the menu's field table). Default: the generic shooter set. */
   robotFields?: string[];
+  /** Season-specific meaning of the menu's "Accuracy %" (e.g. calibrated to a real hit rate); default is a raw spread map. */
+  shotAccuracy?: { get(config: RobotConfig): number; set(config: RobotConfig, percent: number): void };
   /** Spec bars summarizing a config on the menu. */
   robotSpecBars?(config: RobotConfig): { label: string; value: string; frac: number }[];
   /** Menu hint for the human-player option (auto / manual). */

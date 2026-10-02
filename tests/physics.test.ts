@@ -23,6 +23,15 @@ beforeAll(async () => {
   await RAPIER.init();
 });
 
+/**
+ * These tests guard mechanics (spawn, aim solver, rim clearance), so they fire an ideal shooter: realistic launch
+ * spread would hide those bugs behind ordinary misses. Spread vs hit rate is covered by tests/rebuilt-accuracy.test.ts.
+ */
+function idealShooter(cfg: RobotConfig, season: SeasonDefinition): RobotConfig {
+  season.shotAccuracy?.set(cfg, 100);
+  return cfg;
+}
+
 type Variant = { name: string; mod: (c: RobotConfig, s: SeasonDefinition) => void; faceGoal?: boolean; minRate: number };
 
 /** Robot designs a user can build from the menu — including the extremes. */
@@ -53,7 +62,7 @@ for (const season of SEASONS) {
         const worst: string[] = [];
         for (const alliance of ['blue', 'red'] as const) {
           for (const spot of T.scoringSpots(alliance)) {
-            const cfg = cloneConfig(season.robotDefaults);
+            const cfg = idealShooter(cloneConfig(season.robotDefaults), season);
             v.mod(cfg, season);
             const g = T.goalCenter(alliance);
             // A turretless robot is driven up facing the goal (chassis auto-align finishes the aim).
@@ -85,7 +94,7 @@ for (const season of SEASONS) {
           { vx: -1.0, vy: -1.2, omega: -2.5 },
           { vx: 1.1, vy: 0, omega: 3 },
         ].entries()) {
-          const cfg = cloneConfig(season.robotDefaults);
+          const cfg = idealShooter(cloneConfig(season.robotDefaults), season);
           if (tall) cfg.height = season.maxRobotHeight;
           const spot = spots[(k * 5 + 3) % spots.length];
           const r = runShotTrial(season, RAPIER, { label: 'moving', robot: cfg, alliance: 'blue', pose: spot, shots: 8, drive });
