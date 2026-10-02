@@ -20,6 +20,8 @@ export const CAMERA_LABELS: Record<CameraMode, string> = {
 
 const CHASE_MARGIN = 0.25;
 const CHASE_MIN_DIST = 0.6;
+/** Extra clear distance (m) required before the chase camera moves back out after being pulled in. */
+const CHASE_RELEASE_BAND = 0.2;
 
 /**
  * Camera rig with the standard FRC viewpoints. `referenceYaw` is the field yaw that "forward" on the
@@ -38,7 +40,10 @@ export class CameraRig {
   /** Set by the game: lets the chase camera stay in front of walls and other solid field elements. */
   occlusion: CameraOcclusion | null = null;
   private readonly anchor = new THREE.Vector3();
-  private readonly toCam = new THREE.Vector3();
+  /** Fraction (0..1) of the chase offset kept after pulling in for obstacles. Snaps in, eases back out. */
+  private chaseScale = 1;
+  private readonly offset = new THREE.Vector3();
+  private readonly probe = new THREE.Vector3();
 
   constructor(
     readonly camera: THREE.PerspectiveCamera,
@@ -65,6 +70,7 @@ export class CameraRig {
       this.orbit.update();
     }
     this.initialized = false;
+    this.chaseScale = 1;
   }
 
   next(): CameraMode {
@@ -113,27 +119,30 @@ export class CameraRig {
         return;
       }
     }
+    if (this.mode === 'chase') this.pullInFromObstacles(dt, t, targetZ);
     this.camera.position.lerp(this.desiredPos, k);
     this.lookAt.lerp(this.desiredLook, k);
-    if (this.mode === 'chase') this.keepInFront(t, targetZ);
     this.camera.lookAt(this.lookAt);
     this.initialized = true;
   }
 
   /**
-   * Pull the camera toward the robot when something solid is between them, so the view is never buried
-   * inside (or hidden behind) a field element. Applied after smoothing so it takes effect immediately.
+   * Shorten the chase offset when something solid is between the robot and the camera's target spot, so the
+   * view is never buried inside a field element. The ray goes to the *target* position (not the smoothed
+   * camera), so the result doesn't feed back into itself: a closer obstacle snaps the offset in, a clearer
+   * view eases it back out slowly, which keeps the camera from jittering along grazing edges.
    */
-  private keepInFront(t: FieldPose, targetZ: number): void {
-    if (!this.occlusion) return;
+  private pullInFromObstacles(dt: number, t: FieldPose, targetZ: number): void {
     this.frame.toWorld(t.x, t.y, targetZ + 0.6, this.anchor);
-    this.toCam.copy(this.camera.position).sub(this.anchor);
-    const len = this.toCam.length();
-    if (len < 1e-3) return;
-    const hit = this.occlusion(this.anchor, this.camera.position);
-    if (hit === null) return;
-    const dist = clamp(hit - CHASE_MARGIN, CHASE_MIN_DIST, len);
-    this.camera.position.copy(this.anchor).addScaledVector(this.toCam, dist / len);
+    const offset = this.offset.copy(this.desiredPos).sub(this.anchor);
+    const len = offset.length();
+    let target = 1;
+    const hit = this.occlusion && len > 1e-3 ? this.occlusion(this.anchor, this.probe.copy(this.desiredPos)) : null;
+    if (hit !== null) target = clamp((hit - CHASE_MARGIN) / len, Math.min(1, CHASE_MIN_DIST / len), 1);
+    if (target < this.chaseScale) this.chaseScale = target;
+    // Dead-band: only back out again when there is clearly more room, so a noisy hit distance can't pump the camera.
+    else if ((target - this.chaseScale) * len > CHASE_RELEASE_BAND) this.chaseScale += (target - this.chaseScale) * (1 - Math.exp(-dt * 2.5));
+    this.desiredPos.copy(this.anchor).addScaledVector(offset, this.chaseScale);
   }
 
   dispose(): void {
