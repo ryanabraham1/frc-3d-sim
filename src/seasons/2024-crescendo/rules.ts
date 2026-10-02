@@ -213,7 +213,8 @@ export class CrescendoRules implements SeasonRules {
     robot.held.splice(robot.held.indexOf(i), 1);
     pool.reserve(i, `amp:${a}`);
     const auto = this.isAuto();
-    score.add(a, auto ? 'autoAmp' : 'amp', ampPoints(auto), this.now);
+    score.add(a, auto ? 'autoAmp' : 'amp', ampPoints(auto), this.now, robot.id);
+    score.tally(robot.id, 'scored');
     score.inc(a, 'notes');
     score.inc(a, 'ampNotes');
     // NOTES delivered during AMPLIFICATION earn points but don't count toward the next one [M 6.5.3].
@@ -235,7 +236,8 @@ export class CrescendoRules implements SeasonRules {
     robot.held.splice(robot.held.indexOf(note), 1);
     this.ctx.pool.reserve(note, `trap:${a}:${c}`);
     this.trapScored[a][c] = true;
-    this.ctx.score.add(a, 'trap', C.POINTS.trap, this.now);
+    this.ctx.score.add(a, 'trap', C.POINTS.trap, this.now, robot.id);
+    this.ctx.score.tally(robot.id, 'scored');
     robot.fireCooldown = 0.8;
     this.ctx.toast(`TRAP +${C.POINTS.trap} · ${C.chainLabel(a, c)}`, 'good', a);
   }
@@ -299,6 +301,7 @@ export class CrescendoRules implements SeasonRules {
   onLaunch(robot: Robot, i: number): void {
     const a = robot.alliance;
     this.launches.set(i, { robotId: robot.id, alliance: a, t: this.now });
+    this.ctx.score.tally(robot.id, 'shots');
     const shot = robot.lastCommand.shoot;
     // G404: in AUTO, a robot completely outside its WING may not send NOTES into it (TECH FOUL).
     if (this.ctx.clock.mode === 'auto' && !this.inWing(robot, a)) this.foul(robot, 'major', 'G404', 'AUTO shot from outside your WING');
@@ -519,11 +522,30 @@ export class CrescendoRules implements SeasonRules {
       const robots: StageRobot[] = this.ctx.robots.filter((r) => r.alliance === a).map((r) => ({ chain: this.onstageChain(r), inStageZone: this.inStageZone(r) }));
       const traps = this.trapScored[a].filter(Boolean).length;
       const pts = stagePoints(robots, this.spotlit[a], traps);
+      this.creditStage(a, robots);
       this.ctx.score.set(a, 'park', pts.park);
       this.ctx.score.set(a, 'onstage', pts.onstage);
       this.ctx.score.set(a, 'harmony', pts.harmony);
       this.ctx.score.counters[a].onstage = pts.onstageCount;
     }
+  }
+
+  /** Credit each robot with its own PARK / ONSTAGE / HARMONY points (mirrors `stagePoints`). */
+  private creditStage(a: Alliance, stage: StageRobot[]): void {
+    const { score, robots } = this.ctx;
+    const mine = robots.filter((r) => r.alliance === a);
+    const seen = [0, 0, 0];
+    mine.forEach((r, k) => {
+      const s = stage[k];
+      let park = 0, onstage = 0, harmony = 0;
+      if (s.chain !== null) {
+        onstage = this.spotlit[a][s.chain] ? C.POINTS.onstageSpotlit : C.POINTS.onstage;
+        if (seen[s.chain]++ > 0) harmony = C.POINTS.harmony;
+      } else if (s.inStageZone) park = C.POINTS.park;
+      score.setCredit(r.id, 'park', park);
+      score.setCredit(r.id, 'onstage', onstage);
+      score.setCredit(r.id, 'harmony', harmony);
+    });
   }
 
   // ─────────────────────────── period changes / per step ───────────────────────────
@@ -538,7 +560,7 @@ export class CrescendoRules implements SeasonRules {
     this.leaveAssessed = true;
     for (const r of this.ctx.robots) {
       if (!this.left.has(r.id)) continue;
-      this.ctx.score.add(r.alliance, 'leave', C.POINTS.leave, this.now);
+      this.ctx.score.add(r.alliance, 'leave', C.POINTS.leave, this.now, r.id);
       this.ctx.score.inc(r.alliance, 'leave');
     }
   }
@@ -576,7 +598,10 @@ export class CrescendoRules implements SeasonRules {
             const auto = this.isAuto();
             const amp = !auto && this.now <= this.amplifiedUntil[a] + 0.25;
             const pts = speakerPoints(auto, amp);
-            score.add(a, auto ? 'autoSpeaker' : amp ? 'speakerAmplified' : 'speaker', pts, this.now);
+            const shooter = this.launches.get(i);
+            const by = shooter?.alliance === a ? shooter.robotId : undefined;
+            score.add(a, auto ? 'autoSpeaker' : amp ? 'speakerAmplified' : 'speaker', pts, this.now, by);
+            if (by !== undefined) score.tally(by, 'scored');
             score.inc(a, 'notes');
             score.inc(a, 'speakerNotes');
             this.ctx.toast(`${a.toUpperCase()} SPEAKER +${pts}${amp ? ' · AMPLIFIED' : ''}`, 'good', a);

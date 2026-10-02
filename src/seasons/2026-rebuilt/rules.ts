@@ -15,7 +15,7 @@ import {
   secondsActiveRemaining,
   secondsUntilActive,
 } from './hubLogic';
-import { autoTowerPoints, rankingPoints, teleopTowerPoints } from './scoring';
+import { autoTowerPoints, POINTS, rankingPoints, teleopTowerPoints } from './scoring';
 import { stageFuel } from './staging';
 import { feedTarget, rowClearances } from './passing';
 
@@ -193,6 +193,14 @@ export class RebuiltRules implements SeasonRules {
         const levels = robots.filter((r) => r.alliance === a && r.climbPhase === 'hanging').map((r) => Math.min(1, r.climbLevel));
         this.towerAuto[a] = autoTowerPoints(levels);
         score.set(a, 'towerAuto', this.towerAuto[a]);
+        // Only the first AUTO_TOWER_MAX_ROBOTS robots at LEVEL 1+ earn points.
+        const hanging = robots.filter((r) => r.alliance === a);
+        let paid = 0;
+        for (const r of hanging) {
+          const earns = r.climbPhase === 'hanging' && r.climbLevel >= 1 && paid < POINTS.autoTowerMaxRobots;
+          if (earns) paid++;
+          score.setCredit(r.id, 'towerAuto', earns ? POINTS.autoTowerL1 : 0);
+        }
       }
       this.g403Called.clear();
     }
@@ -217,6 +225,9 @@ export class RebuiltRules implements SeasonRules {
         const levels = robots.filter((r) => r.alliance === a && r.climbPhase === 'hanging').map((r) => r.climbLevel);
         this.towerTeleop[a] = teleopTowerPoints(levels);
         score.set(a, 'towerTeleop', this.towerTeleop[a]);
+        for (const r of robots.filter((x) => x.alliance === a)) {
+          score.setCredit(r.id, 'towerTeleop', r.climbPhase === 'hanging' ? teleopTowerPoints([r.climbLevel]) : 0);
+        }
       }
     }
   }
@@ -348,7 +359,9 @@ export class RebuiltRules implements SeasonRules {
     const counts = this.hubCounts(a);
     if (counts) {
       const auto = isAutoScoringPeriod(pid);
-      score.add(a, auto ? 'fuelAuto' : 'fuelTeleop', 1, this.now);
+      const by = l?.alliance === a ? l.robotId : undefined;
+      score.add(a, auto ? 'fuelAuto' : 'fuelTeleop', 1, this.now, by);
+      if (by !== undefined) score.tally(by, 'scored');
       score.inc(a, 'fuelActive');
       if (auto) score.inc(a, 'autoFuel');
     } else {
@@ -361,6 +374,7 @@ export class RebuiltRules implements SeasonRules {
 
   onLaunch(robot: Robot, pieceIndex: number): void {
     // Launching anywhere is legal; G407 is assessed if this FUEL ends up in our HUB (see scoreFuel).
+    this.ctx.score.tally(robot.id, 'shots');
     this.launches.set(pieceIndex, {
       robotId: robot.id,
       alliance: robot.alliance,
@@ -476,14 +490,14 @@ export class RebuiltRules implements SeasonRules {
     for (const a of ALLIANCES) {
       rp[a] = rankingPoints({ fuelActive: this.fuelActive(a), towerPoints: this.towerPoints(a), ownScore: s.total(a), oppScore: s.total(opponent(a)) });
     }
-    const row = (label: string, f: (a: Alliance) => string | number, emphasis = false) => ({ label, red: f('red'), blue: f('blue'), emphasis });
+    const row = (label: string, f: (a: Alliance) => string | number, emphasis = false, cats?: string[]) => ({ label, red: f('red'), blue: f('blue'), emphasis, cats });
     return {
       winner: s.winner(),
       rows: [
-        row('AUTO FUEL', (a) => s.category(a, 'fuelAuto')),
-        row('AUTO TOWER', (a) => s.category(a, 'towerAuto')),
-        row('TELEOP FUEL', (a) => s.category(a, 'fuelTeleop')),
-        row('TELEOP TOWER', (a) => s.category(a, 'towerTeleop')),
+        row('AUTO FUEL', (a) => s.category(a, 'fuelAuto'), false, ['fuelAuto']),
+        row('AUTO TOWER', (a) => s.category(a, 'towerAuto'), false, ['towerAuto']),
+        row('TELEOP FUEL', (a) => s.category(a, 'fuelTeleop'), false, ['fuelTeleop']),
+        row('TELEOP TOWER', (a) => s.category(a, 'towerTeleop'), false, ['towerTeleop']),
         row('Foul points received', (a) => s.foulPointsFor(a)),
         row('Fouls committed (minor / major)', (a) => `${s.foulCount(a, 'minor')} / ${s.foulCount(a, 'major')}`),
         row('FUEL into inactive hub (0 pts)', (a) => s.counter(a, 'fuelInactive')),

@@ -18,11 +18,18 @@ export interface ScoreEvent {
   points: number;
 }
 
+/** What one robot (player) earned: points by the same categories as the alliance, plus per-robot counters. */
+export interface RobotScore {
+  points: Record<string, number>;
+  counters: Record<string, number>;
+}
+
 /** Serializable scoreboard state (multiplayer snapshots). Score events are host-only. */
 export interface ScoreState {
   points: Record<Alliance, Record<string, number>>;
   counters: Record<Alliance, Record<string, number>>;
   fouls: FoulRecord[];
+  robots: Record<number, RobotScore>;
 }
 
 /**
@@ -34,12 +41,56 @@ export class Scoreboard {
   readonly counters: Record<Alliance, Record<string, number>> = { red: {}, blue: {} };
   readonly fouls: FoulRecord[] = [];
   readonly events: ScoreEvent[] = [];
+  /**
+   * Per-robot credit (keyed by Robot id) for the post-match player breakdown. These mirror the alliance
+   * categories but only hold what a robot can be credited with; the alliance numbers stay the source of truth.
+   */
+  robots: Record<number, RobotScore> = {};
 
   constructor(readonly foulValues: Record<FoulKind, number> = { minor: 5, major: 15 }) {}
 
-  add(alliance: Alliance, category: string, pts: number, t = 0): void {
+  /** Add points to an alliance category; with `robotId` the robot is credited too. */
+  add(alliance: Alliance, category: string, pts: number, t = 0, robotId?: number): void {
     this.points[alliance][category] = (this.points[alliance][category] ?? 0) + pts;
     this.events.push({ t, alliance, category, points: pts });
+    if (robotId !== undefined) this.credit(robotId, category, pts);
+  }
+
+  private robot(id: number): RobotScore {
+    return (this.robots[id] ??= { points: {}, counters: {} });
+  }
+
+  /** Credit a robot with category points (alliance totals are untouched: use `add` for new points). */
+  credit(robotId: number, category: string, pts: number): void {
+    const r = this.robot(robotId);
+    r.points[category] = (r.points[category] ?? 0) + pts;
+  }
+
+  /** Overwrite a robot's category credit (for assessed-at-end values, mirroring `set`). */
+  setCredit(robotId: number, category: string, pts: number): void {
+    this.robot(robotId).points[category] = pts;
+  }
+
+  tally(robotId: number, counter: string, n = 1): void {
+    const r = this.robot(robotId);
+    r.counters[counter] = (r.counters[counter] ?? 0) + n;
+  }
+
+  setTally(robotId: number, counter: string, n: number): void {
+    this.robot(robotId).counters[counter] = n;
+  }
+
+  robotCategory(robotId: number, category: string): number {
+    return this.robots[robotId]?.points[category] ?? 0;
+  }
+
+  robotCounter(robotId: number, counter: string): number {
+    return this.robots[robotId]?.counters[counter] ?? 0;
+  }
+
+  /** Fouls committed by one robot (they cost its alliance, see `foulPointsFor`). */
+  foulsBy(robotId: number, kind: FoulKind): number {
+    return this.fouls.filter((f) => f.robotId === robotId && f.kind === kind).length;
   }
 
   /** Overwrite a category (for assessed-at-end values like tower points). */
@@ -95,6 +146,7 @@ export class Scoreboard {
       points: { red: { ...this.points.red }, blue: { ...this.points.blue } },
       counters: { red: { ...this.counters.red }, blue: { ...this.counters.blue } },
       fouls: this.fouls.map((f) => ({ ...f })),
+      robots: Object.fromEntries(Object.entries(this.robots).map(([id, r]) => [id, { points: { ...r.points }, counters: { ...r.counters } }])),
     };
   }
 
@@ -105,6 +157,7 @@ export class Scoreboard {
     }
     this.fouls.length = 0;
     this.fouls.push(...s.fouls);
+    this.robots = Object.fromEntries(Object.entries(s.robots ?? {}).map(([id, r]) => [id, { points: { ...r.points }, counters: { ...r.counters } }]));
   }
 
   reset(): void {
@@ -114,5 +167,6 @@ export class Scoreboard {
     }
     this.fouls.length = 0;
     this.events.length = 0;
+    this.robots = {};
   }
 }

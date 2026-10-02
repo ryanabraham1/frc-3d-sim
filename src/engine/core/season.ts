@@ -70,6 +70,23 @@ export interface ResultsRow {
   red: string | number;
   blue: string | number;
   emphasis?: boolean;
+  /**
+   * Scoreboard categories this row sums. Rows that list them also appear in each player's breakdown, valued with
+   * the points credited to that robot (`Scoreboard.add(..., robotId)` / `setCredit`).
+   */
+  cats?: string[];
+}
+
+/** One robot's line in the post-match player breakdown. */
+export interface PlayerResults {
+  id: number;
+  alliance: Alliance;
+  name: string;
+  team: number;
+  /** Points credited to this robot (alliance foul points and bonuses are not included). */
+  total: number;
+  rows: { label: string; value: number }[];
+  stats: { label: string; value: string | number }[];
 }
 
 export interface MatchResults {
@@ -77,6 +94,10 @@ export interface MatchResults {
   rows: ResultsRow[];
   rp: Record<Alliance, number>;
   rpDetail: Record<Alliance, string[]>;
+  /** Per-robot breakdown, added by the engine once the match ends. */
+  players?: PlayerResults[];
+  /** Points an alliance earned that no robot could be credited with. */
+  uncredited?: Record<Alliance, number>;
 }
 
 export interface SeasonRules {

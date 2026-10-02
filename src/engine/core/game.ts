@@ -5,6 +5,7 @@ import { GamePiecePool } from '../gamepiece/pool';
 import { Hud } from '../hud/hud';
 import { DEFAULT_CONTROLS_HELP, DriverInput, InputManager } from '../input/input';
 import { MatchClock, PeriodChange } from '../match/clock';
+import { buildPlayerResults } from '../match/playerResults';
 import { Scoreboard } from '../match/scoreboard';
 import { ClientSync } from '../net/clientSync';
 import { HostSync } from '../net/hostSync';
@@ -712,6 +713,7 @@ export class Game {
   private showResults(): void {
     this.state = 'results';
     const res = this.rules.results();
+    Object.assign(res, buildPlayerResults(res, this.score, this.setup.robots.map((rs) => ({ id: rs.id, alliance: rs.alliance, name: rs.name, team: rs.config.teamNumber })), this.season.foulValues, 'Game pieces'));
     this.results = res;
     const html = Hud.resultsHtml(res, { red: this.score.total('red'), blue: this.score.total('blue') });
     if (this.role === 'host') {

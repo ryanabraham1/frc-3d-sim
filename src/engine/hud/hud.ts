@@ -1,5 +1,5 @@
 import type { Alliance } from '../coords';
-import type { HudSlots, MatchResults, ToastKind } from '../core/season';
+import type { HudSlots, MatchResults, PlayerResults, ToastKind } from '../core/season';
 
 export interface ModalButton {
   label: string;
@@ -154,7 +154,29 @@ export class Hud {
       <div class="results-winner ${r.winner}">${w}</div>
       <div class="results-scores"><span class="red">${scores.red}</span><span class="dash">–</span><span class="blue">${scores.blue}</span></div>
       <table class="results-table">${rows}</table>
-      <div class="results-rp">${rp('red')}${rp('blue')}</div>`;
+      <div class="results-rp">${rp('red')}${rp('blue')}</div>
+      ${Hud.playersHtml(r)}`;
+  }
+
+  /** Per-player breakdown: one card per robot, grouped by alliance. */
+  static playersHtml(r: MatchResults): string {
+    if (!r.players?.length) return '';
+    const card = (p: PlayerResults) => {
+      const rows = p.rows.map((x) => `<tr class="${x.value ? '' : 'zero'}"><th>${esc(x.label)}</th><td>${x.value}</td></tr>`).join('');
+      const stats = p.stats.map((x) => `<tr><th>${esc(x.label)}</th><td>${esc(String(x.value))}</td></tr>`).join('');
+      return `<div class="player-card ${p.alliance}">
+        <div class="player-head"><span class="player-name">${esc(p.name)}</span><span class="player-team">#${p.team}</span><b class="player-total">${p.total}</b></div>
+        <table class="player-table">${rows}</table>
+        <table class="player-table stats">${stats}</table>
+      </div>`;
+    };
+    const col = (a: Alliance) => {
+      const mine = r.players!.filter((p) => p.alliance === a);
+      if (!mine.length) return '';
+      const rest = r.uncredited?.[a] ?? 0;
+      return `<div class="players-col ${a}">${mine.map(card).join('')}${rest ? `<div class="players-rest">${rest} pts not credited to a player</div>` : ''}</div>`;
+    };
+    return `<h3 class="results-sub">Player breakdown</h3><div class="results-players">${col('red')}${col('blue')}</div>`;
   }
 
   dispose(): void {

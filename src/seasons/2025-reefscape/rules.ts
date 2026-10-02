@@ -301,6 +301,7 @@ export class ReefscapeRules implements SeasonRules {
     this.ctx.pool.setIgnoreRobots(i, true);
     this.passThrough.set(i, this.simTime + 0.5);
     this.launchedBy.set(i, { robotId: robot.id, at: this.ctx.clock.elapsed });
+    this.ctx.score.tally(robot.id, 'shots');
     robot.fireCooldown = robot.config.placement!.cycleSeconds;
     this.alignNoise.delete(robot.id);
   }
@@ -457,6 +458,26 @@ export class ReefscapeRules implements SeasonRules {
       this.ctx.score.set(a, 'autoCoral', autoPts);
       this.ctx.score.set(a, 'teleopCoral', telePts);
       for (let l = 1; l <= 4; l++) this.ctx.score.counters[a][`coralL${l}`] = counts[l];
+      this.creditCoral(a);
+    }
+  }
+
+  /** Attribute this alliance's placements to the robot that last released each CORAL. */
+  private creditCoral(a: Alliance): void {
+    const { score, robots } = this.ctx;
+    const mine = robots.filter((r) => r.alliance === a);
+    const got = new Map<number, { auto: number; tele: number; n: number }>(mine.map((r) => [r.id, { auto: 0, tele: 0, n: 0 }]));
+    for (const p of this.placements) {
+      if (p.alliance !== a) continue;
+      const g = got.get(this.launchedBy.get(p.i)?.robotId ?? -1);
+      if (!g) continue;
+      g.n++;
+      if (p.auto) g.auto += coralPoints(p.level, true); else g.tele += coralPoints(p.level, false);
+    }
+    for (const [id, g] of got) {
+      score.setCredit(id, 'autoCoral', g.auto);
+      score.setCredit(id, 'teleopCoral', g.tele);
+      score.setTally(id, 'scored', g.n + score.robotCounter(id, 'algaeScored'));
     }
   }
 
@@ -498,6 +519,7 @@ export class ReefscapeRules implements SeasonRules {
   }
   onLaunch(robot: Robot, i: number): void {
     this.launchedBy.set(i, { robotId: robot.id, at: this.ctx.clock.elapsed });
+    this.ctx.score.tally(robot.id, 'shots');
     if (i < C.CORAL_COUNT && !C.inReefZone(robot.alliance, robot.pose, robot.footprint.length, robot.footprint.width)) {
       this.ctx.score.foul({ t: this.ctx.clock.elapsed, alliance: robot.alliance, kind: 'major', rule: 'G412', robotId: robot.id });
     }
@@ -514,7 +536,7 @@ export class ReefscapeRules implements SeasonRules {
     for (const r of this.ctx.robots) {
       const line = r.alliance === 'blue' ? C.START_LINE : C.FIELD_LENGTH - C.START_LINE;
       const xs = r.corners().map((p) => p.x);
-      if (Math.max(...xs) < line || Math.min(...xs) > line) { this.ctx.score.inc(r.alliance, 'leave'); this.ctx.score.add(r.alliance, 'leave', 3); }
+      if (Math.max(...xs) < line || Math.min(...xs) > line) { this.ctx.score.inc(r.alliance, 'leave'); this.ctx.score.add(r.alliance, 'leave', 3, 0, r.id); }
     }
   }
   private assessBarge(): void {
@@ -523,11 +545,19 @@ export class ReefscapeRules implements SeasonRules {
     for (const a of ALLIANCES) {
       let points = 0;
       for (const r of this.ctx.robots.filter((r) => r.alliance === a)) {
-        if (r.climbPhase === 'hanging' && r.elevation > 0.03 && r.climbSlot !== null) points += C.CAGE_POINTS[this.refs.cageDepth[a][r.climbSlot]];
-        else if (this.inBargeZone(r)) points += 2;
+        let mine = 0;
+        if (r.climbPhase === 'hanging' && r.elevation > 0.03 && r.climbSlot !== null) mine = C.CAGE_POINTS[this.refs.cageDepth[a][r.climbSlot]];
+        else if (this.inBargeZone(r)) mine = 2;
+        points += mine;
+        this.ctx.score.setCredit(r.id, 'barge', mine);
       }
       this.ctx.score.set(a, 'barge', points);
     }
+  }
+  /** The robot that last released piece `i`, if it is on alliance `a`. */
+  private scorer(i: number, a: Alliance): number | undefined {
+    const id = this.launchedBy.get(i)?.robotId;
+    return id !== undefined && this.ctx.robots.find((r) => r.id === id)?.alliance === a ? id : undefined;
   }
   inBargeZone(robot: Robot): boolean {
     const corners = robot.corners();
@@ -570,14 +600,18 @@ export class ReefscapeRules implements SeasonRules {
         const pr = C.processor(a);
         const pastWall = a === 'blue' ? p.y < 0.05 : p.y > C.FIELD_WIDTH - 0.05;
         if (pastWall && Math.abs(p.x - pr.x) < inch(14) - C.ALGAE_RADIUS * 0.5 && p.z > inch(7) + C.ALGAE_RADIUS * 0.75 && p.z < inch(27) - C.ALGAE_RADIUS * 0.5) {
-          score.add(a, 'processor', 6, this.ctx.clock.elapsed); score.inc(a, 'processor');
+          const by = this.scorer(i, a);
+          score.add(a, 'processor', 6, this.ctx.clock.elapsed, by); score.inc(a, 'processor');
+          if (by !== undefined) score.tally(by, 'algaeScored');
           pool.reserve(i, `hp:${opponent(a)}`);
           this.ctx.toast(`${a.toUpperCase()} PROCESSOR · +6 · ALGAE delivered to ${opponent(a).toUpperCase()} human player`, 'good', a);
           break;
         }
         const n = C.netCenter(a);
         if (Math.abs(p.x - n.x) <= C.NET_WIDTH / 2 - C.ALGAE_RADIUS * 0.7 && Math.abs(p.y - n.y) <= C.NET_LENGTH / 2 - C.ALGAE_RADIUS * 0.7 && p.z >= C.NET_HEIGHT && p.z <= C.NET_HEIGHT + C.ALGAE_RADIUS + 0.08 && pool.velocity(i).y <= 0.3) {
-          score.add(a, 'net', 4, this.ctx.clock.elapsed); const count = score.inc(a, 'net');
+          const by = this.scorer(i, a);
+          score.add(a, 'net', 4, this.ctx.clock.elapsed, by); const count = score.inc(a, 'net');
+          if (by !== undefined) score.tally(by, 'algaeScored');
           pool.reserve(i, `net:${a}:${count}`); this.ctx.toast(`${a.toUpperCase()} NET · +4`, 'good', a); break;
         }
       }

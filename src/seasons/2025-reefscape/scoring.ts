@@ -19,7 +19,7 @@ export function reefscapeResults(score: Scoreboard, robotCounts: Record<Alliance
     if (winner === a) { rp[a] += 3; rpDetail[a].push('WIN +3'); }
     else if (winner === 'tie') { rp[a]++; rpDetail[a].push('TIE +1'); }
   }
-  const row = (label: string, category: string) => ({ label, blue: score.category('blue', category), red: score.category('red', category) });
+  const row = (label: string, category: string) => ({ label, cats: [category], blue: score.category('blue', category), red: score.category('red', category) });
   return {
     winner, rp, rpDetail,
     rows: [row('AUTO leave', 'leave'), row('AUTO coral', 'autoCoral'), row('TELEOP coral', 'teleopCoral'), row('Algae · processor', 'processor'), row('Algae · net', 'net'), row('Park / cages', 'barge'),

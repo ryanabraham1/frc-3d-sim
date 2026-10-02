@@ -53,7 +53,7 @@ export function crescendoResults(score: Scoreboard, coop: boolean, forcedEnsembl
     if (winner === a) { rp[a] += 2; rpDetail[a].push('WIN +2'); }
     else if (winner === 'tie') { rp[a] += 1; rpDetail[a].push('TIE +1'); }
   }
-  const row = (label: string, ...cats: string[]) => ({ label, blue: cats.reduce((s, c) => s + score.category('blue', c), 0), red: cats.reduce((s, c) => s + score.category('red', c), 0) });
+  const row = (label: string, ...cats: string[]) => ({ label, cats, blue: cats.reduce((s, c) => s + score.category('blue', c), 0), red: cats.reduce((s, c) => s + score.category('red', c), 0) });
   const count = (label: string, counter: string) => ({ label, blue: score.counter('blue', counter), red: score.counter('red', counter) });
   return {
     winner, rp, rpDetail,
