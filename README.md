@@ -116,6 +116,7 @@ AUTO (20 s): drive it yourself (default) or pick a scripted routine. TELEOP (2:2
 | C / X | Climb / descend (at your TOWER) · 1 2 3 selects the level |
 | H | Human player: open/close the CHUTE |
 | V | Cycle camera (driver station, chase, overhead, orbit) |
+| T | Chase camera: look along the intake side (default) or the shooter side |
 | Mouse drag / wheel | Orbit / zoom the Follow camera (W always drives away from the camera) |
 | P / Esc | Pause |
 | Gamepad | LS drive · RS rotate · RT shoot · RB feed · LT intake · A climb · B descend · X human player · Y camera |

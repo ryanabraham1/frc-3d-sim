@@ -56,4 +56,33 @@ describe('chase camera', () => {
     for (let i = 0; i < 600; i++) r.update(1 / 60, robot, undefined, 0);
     expect(cam.position.distanceTo(frame.toWorld(robot.x, robot.y, 0.6))).toBeGreaterThan(near + 0.5);
   });
+
+  it('looks along the intake side by default and swings to the shooter side on request', () => {
+    const { r, cam, frame } = rig(null);
+    r.chaseIntakeOffset = Math.PI; // intake on the back of the robot
+    const dir = new THREE.Vector3();
+    const heading = (): number => {
+      cam.getWorldDirection(dir);
+      return Math.atan2(-dir.z, dir.x); // field yaw the camera looks along
+    };
+    for (let i = 0; i < 240; i++) r.update(1 / 60, robot, undefined, 0);
+    expect(Math.cos(heading() - (robot.yaw + Math.PI))).toBeGreaterThan(0.99);
+    expect(cam.position.x).toBeGreaterThan(frame.toWorld(robot.x, robot.y).x); // camera is on the shooter side
+    expect(r.label).toBe('Chase (intake view)');
+    r.toggleChaseFacing();
+    for (let i = 0; i < 240; i++) r.update(1 / 60, robot, undefined, 0);
+    expect(Math.cos(heading() - robot.yaw)).toBeGreaterThan(0.99);
+    expect(cam.position.x).toBeLessThan(frame.toWorld(robot.x, robot.y).x);
+    expect(r.label).toBe('Chase (shooter view)');
+  });
+
+  it('has no flip for a front-mounted intake', () => {
+    const { r, cam } = rig(null);
+    r.chaseIntakeOffset = 0;
+    for (let i = 0; i < 120; i++) r.update(1 / 60, robot, undefined, 0);
+    const before = cam.position.clone();
+    r.toggleChaseFacing();
+    for (let i = 0; i < 120; i++) r.update(1 / 60, robot, undefined, 0);
+    expect(cam.position.distanceTo(before)).toBeLessThan(1e-3);
+  });
 });

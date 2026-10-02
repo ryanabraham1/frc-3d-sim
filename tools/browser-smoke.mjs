@@ -45,7 +45,7 @@ for (const mode of ['driver', 'overhead', 'chase']) {
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${out}/camera-${mode}.png` });
 }
-const idle = { forward: 0, left: 0, rotate: 0, shoot: false, pass: false, intake: false, climb: false, descend: false, humanPlayer: false, humanPlayerAlt: 0, precision: false, levelUp: false, levelDown: false, setLevel: null, cameraNext: false, pause: false, restart: false, toggleIntake: false, toggleHelp: false };
+const idle = { forward: 0, left: 0, rotate: 0, shoot: false, pass: false, intake: false, climb: false, descend: false, humanPlayer: false, humanPlayerAlt: 0, precision: false, levelUp: false, levelDown: false, setLevel: null, cameraNext: false, cameraFlip: false, pause: false, restart: false, toggleIntake: false, toggleHelp: false };
 const result = await page.evaluate((idle) => {
   const g = window.game;
   const dt = g.physics.dt;

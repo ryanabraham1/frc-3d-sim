@@ -1,5 +1,5 @@
 import type { Vector3 } from 'three';
-import { CameraRig, CAMERA_LABELS } from '../camera/cameras';
+import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
 import { GamePiecePool } from '../gamepiece/pool';
@@ -396,6 +396,7 @@ export class Game {
     this.rules.updateVisuals(dt, this.time);
     for (const r of this.robots) r.syncVisual();
     this.pool.syncVisuals();
+    this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.pose ?? null, undefined, this.player?.elevation ?? 0);
     this.updateHud(dt);
     this.renderer.render();
@@ -429,8 +430,12 @@ export class Game {
   private handleUiInput(inp: DriverInput): void {
     if (inp.toggleHelp) this.hud.toggleHelp();
     if (inp.cameraNext) {
-      const m = this.camera.next();
-      this.hud.toast(`Camera: ${CAMERA_LABELS[m]}`);
+      this.camera.next();
+      this.hud.toast(`Camera: ${this.camera.label}`);
+    }
+    if (inp.cameraFlip && this.camera.mode === 'chase') {
+      this.camera.toggleChaseFacing();
+      this.hud.toast(`Camera: ${this.camera.label}`);
     }
     if (inp.pause) {
       if (this.role === 'client') this.toggleClientMenu();
@@ -697,7 +702,7 @@ export class Game {
         `<div><b>${p.config.teamNumber}</b> · ${p.alliance.toUpperCase()} ${p.station}</div>` +
           (p.tippedTime > 0.5 ? `<div class="bad">${p.tippedOver ? 'TIPPED OVER' : 'STUCK'} · upright in ${Math.ceil(p.rightingIn)} s</div>` : '') +
           net +
-          `<div>Camera: ${CAMERA_LABELS[this.camera.mode]} <span class="dim">(V)</span></div>` +
+          `<div>Camera: ${this.camera.label} <span class="dim">(V${this.camera.mode === 'chase' ? ' · T flips' : ''})</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +
           `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(I)</span></div>` +
           (this.season.maxScoringLevel
@@ -708,7 +713,7 @@ export class Game {
           `<div class="dim">? for controls</div>`,
       );
     } else {
-      this.hud.setInfo(`<div><b>Spectating</b></div>${net}<div>Camera: ${CAMERA_LABELS[this.camera.mode]} <span class="dim">(V)</span></div>`);
+      this.hud.setInfo(`<div><b>Spectating</b></div>${net}<div>Camera: ${this.camera.label} <span class="dim">(V${this.camera.mode === 'chase' ? ' · T flips' : ''})</span></div>`);
     }
     this.seasonHud.update();
   }

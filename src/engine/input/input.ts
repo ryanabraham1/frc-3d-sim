@@ -24,6 +24,8 @@ export interface DriverInput {
   levelDown: boolean;
   setLevel: number | null;
   cameraNext: boolean;
+  /** Swing the chase camera between the intake side and the shooter side. */
+  cameraFlip: boolean;
   pause: boolean;
   restart: boolean;
   toggleIntake: boolean;
@@ -89,6 +91,7 @@ export class InputManager {
     let levelDown = this.edge('BracketLeft');
     let setLevel: number | null = this.edge('Digit1') ? 1 : this.edge('Digit2') ? 2 : this.edge('Digit3') ? 3 : this.edge('Digit4') ? 4 : null;
     let cameraNext = this.edge('KeyV');
+    const cameraFlip = this.edge('KeyT');
     let pause = this.edge('Escape') || this.edge('KeyP');
     const restart = this.edge('KeyR');
     const toggleIntake = this.edge('KeyI');
@@ -145,6 +148,7 @@ export class InputManager {
       levelDown,
       setLevel,
       cameraNext,
+      cameraFlip,
       pause,
       restart,
       toggleIntake,
@@ -164,6 +168,7 @@ export const DEFAULT_CONTROLS_HELP: [string, string][] = [
   ['1 2 3  or  [ ]', 'Select climb level'],
   ['H', 'Human player: release chute'],
   ['V', 'Cycle camera'],
+  ['T', 'Chase camera: look along the intake side / the shooter side'],
   ['Mouse drag / wheel', 'Orbit / zoom (Follow camera)'],
   ['P / Esc', 'Pause'],
   ['?', 'Toggle this help'],

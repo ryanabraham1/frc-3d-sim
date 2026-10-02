@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FieldFrame, FieldPoint, FieldPose } from '../coords';
-import { clamp } from '../units';
+import { clamp, wrapAngle } from '../units';
 
 /**
  * Casts a ray through the solid field (and other robots) from `from` toward `to` (world coords). Returns
@@ -27,7 +27,8 @@ const CHASE_RELEASE_BAND = 0.2;
  * Camera rig with the standard FRC viewpoints. `referenceYaw` is the field yaw that "forward" on the
  * sticks maps to — fixed for driver-station/overhead (field-oriented driving), camera yaw otherwise.
  *
- * chase:  locked behind the robot's heading; pulled in toward the robot when field elements are in the way.
+ * chase:  locked behind the robot, looking along its intake side (so you see where you're about to intake)
+ *         or its shooter side (toggle with `toggleChaseFacing`); pulled in when field elements are in the way.
  */
 export class CameraRig {
   mode: CameraMode = 'driver';
@@ -42,6 +43,11 @@ export class CameraRig {
   private readonly anchor = new THREE.Vector3();
   /** Fraction (0..1) of the chase offset kept after pulling in for obstacles. Snaps in, eases back out. */
   private chaseScale = 1;
+  /** Which end of the robot the chase camera looks toward. */
+  chaseFacing: 'intake' | 'shooter' = 'intake';
+  /** Yaw offset (0 or π) from the robot's heading to its floor-intake direction; the game keeps it current. */
+  chaseIntakeOffset = 0;
+  private chaseFlip = 0;
   private readonly offset = new THREE.Vector3();
   private readonly probe = new THREE.Vector3();
 
@@ -73,6 +79,18 @@ export class CameraRig {
     this.chaseScale = 1;
   }
 
+  /** Swing the chase view between the intake side and the shooter side. */
+  toggleChaseFacing(): 'intake' | 'shooter' {
+    this.chaseFacing = this.chaseFacing === 'intake' ? 'shooter' : 'intake';
+    return this.chaseFacing;
+  }
+
+  /** Display name of the current view (chase says which end it is looking along). */
+  get label(): string {
+    if (this.mode !== 'chase') return CAMERA_LABELS[this.mode];
+    return `Chase (${this.chaseFacing === 'intake' ? 'intake view' : 'shooter view'})`;
+  }
+
   next(): CameraMode {
     const i = CAMERA_MODES.indexOf(this.mode);
     this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
@@ -101,9 +119,12 @@ export class CameraRig {
         break;
       }
       case 'chase': {
+        const want = this.chaseFacing === 'intake' ? this.chaseIntakeOffset : 0;
+        this.chaseFlip = this.initialized ? this.chaseFlip + wrapAngle(want - this.chaseFlip) * (1 - Math.exp(-dt * 5)) : want;
+        const yaw = t.yaw + this.chaseFlip;
         const back = 2.6;
-        f.toWorld(t.x - Math.cos(t.yaw) * back, t.y - Math.sin(t.yaw) * back, targetZ + 1.7, this.desiredPos);
-        f.toWorld(t.x + Math.cos(t.yaw) * 2.5, t.y + Math.sin(t.yaw) * 2.5, targetZ + 0.3, this.desiredLook);
+        f.toWorld(t.x - Math.cos(yaw) * back, t.y - Math.sin(yaw) * back, targetZ + 1.7, this.desiredPos);
+        f.toWorld(t.x + Math.cos(yaw) * 2.5, t.y + Math.sin(yaw) * 2.5, targetZ + 0.3, this.desiredLook);
         break;
       }
       case 'overhead': {
