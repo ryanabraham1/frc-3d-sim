@@ -4,6 +4,7 @@ import { ALLIANCES, opponent, type Alliance } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
+import { groundSideSign, stationSideSign } from '@engine/robot/config';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
@@ -332,12 +333,6 @@ export class ReefscapeRules implements SeasonRules {
 
   private release(robot: Robot, i: number): void { robot.held.splice(robot.held.indexOf(i), 1); }
 
-  /** Floor pickup zone at the front bumper (independent of the CORAL-only `ground` flag, for ALGAE). */
-  private inFrontZone(robot: Robot, p: { x: number; y: number; z: number }, radius: number): boolean {
-    const { f, l } = robot.toLocal(p);
-    const front = robot.footprint.length / 2;
-    return f > front - 0.06 && f < front + robot.config.intake.reach + radius && Math.abs(l) < robot.config.intake.width / 2;
-  }
 
   private intake(robot: Robot): void {
     const { pool } = this.ctx;
@@ -350,9 +345,9 @@ export class ReefscapeRules implements SeasonRules {
       const p = pool.position(i);
       let take = false;
       if (!isAlgae && robot.config.intake.primary) {
-        take = (p.y <= 0.35 && robot.config.intake.ground !== false && this.inFrontZone(robot, p, C.CORAL_RADIUS)) || robot.stationContains(p, C.CORAL_RADIUS);
+        take = (p.y <= 0.35 && robot.config.intake.ground !== false && robot.groundMouthContains(p, C.CORAL_RADIUS)) || robot.stationContains(p, C.CORAL_RADIUS);
       } else if (isAlgae && robot.config.intake.secondary && robot.config.options?.algaeGround) {
-        take = p.y <= 0.65 && this.inFrontZone(robot, p, C.ALGAE_RADIUS);
+        take = p.y <= 0.65 && robot.groundMouthContains(p, C.ALGAE_RADIUS);
       }
       if (take) { pool.hold(i, robot.id); robot.held.push(i); }
     }
@@ -700,8 +695,8 @@ export class ReefscapeRules implements SeasonRules {
     const t = { x: -Math.sin(st.yaw), y: Math.cos(st.yaw) };
     let along = 0;
     if (robot) {
-      // Aim at the robot's funnel side (or its front for a ground intake).
-      const side = robot.config.intake.station ? (robot.config.intake.stationSide === 'back' ? -1 : 1) : 1;
+      // Aim at the robot's funnel side (or its ground-intake face).
+      const side = robot.config.intake.station ? stationSideSign(robot.config) : groundSideSign(robot.config);
       const d = robot.footprint.length / 2 * side;
       const fx = robot.pose.x + Math.cos(robot.pose.yaw) * d, fy = robot.pose.y + Math.sin(robot.pose.yaw) * d;
       along = clamp((fx - st.x) * t.x + (fy - st.y) * t.y, -C.STATION_MOUTH_WIDTH / 2 + C.CORAL_LENGTH / 2 + 0.03, C.STATION_MOUTH_WIDTH / 2 - C.CORAL_LENGTH / 2 - 0.03);

@@ -30,6 +30,7 @@ export function reefscapeRobotDefaults() {
   c.intake.secondary = false;
   c.intake.ground = false;
   c.intake.station = true;
+  c.intake.groundSide = 'back';
   c.intake.stationSide = 'back';
   c.options = { algaeGround: false };
   c.placement = { enabled: true, maxLevel: 4, liftSpeed: 1.3, reach: inch(18), cycleSeconds: 0.6, harvestSeconds: 0.45 };
@@ -53,7 +54,7 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   const c = sanitizeConfig(config, inch(42), inch(120)), d = reefscapeRobotDefaults();
   const bounded = (v: number | undefined, fallback: number, lo: number, hi: number) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v!)) : fallback;
   c.intake.primary ??= true; c.intake.secondary ??= true;
-  c.intake.ground ??= true; c.intake.station ??= false; c.intake.stationSide ??= 'back';
+  c.intake.ground ??= true; c.intake.groundSide ??= 'back'; c.intake.station ??= false; c.intake.stationSide ??= 'back';
   c.options = { ...d.options, ...c.options };
   c.placement = { ...d.placement!, ...c.placement };
   const p = c.placement;

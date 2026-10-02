@@ -62,7 +62,7 @@ export const reefscape2025: SeasonDefinition = {
     ['1 / 2 / 3 / 4 · [ / ]', 'Select reef L1–L4 (gamepad D-pad changes level)'],
     ['Space / RT', 'Release CORAL from the end effector (with reef auto-align: hold to line up on the nearest open BRANCH first); with ALGAE only, shoot your NET'],
     ['G / RB', 'Feed ALGAE into your PROCESSOR nearby; with CORAL only, eject it a short distance'],
-    ['J / LT · F', 'Intake (funnel: back up to a CORAL STATION; ground: drive over CORAL) / remove or knock off reef ALGAE · toggle automatic intake'],
+    ['J / LT · F', 'Intake (funnel: back up to a CORAL STATION; ground: drive the back intake over CORAL) / remove or knock off reef ALGAE · toggle automatic intake'],
     ['C / A · X / B', 'Climb the nearest of your alliance’s CAGES that matches your climber · descend'],
     ['H / gamepad X', 'HUMAN PLAYER: drop a CORAL down the nearest CORAL STATION CHUTE (aimed at your robot)'],
     ['B / gamepad LB', 'HUMAN PLAYER: throw PROCESSOR ALGAE at your NET (TELEOP)'],

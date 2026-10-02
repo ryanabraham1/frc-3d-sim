@@ -56,8 +56,8 @@ describe('2026 REBUILT robot archetypes', () => {
       const sim = make('blue', { x: 3, y: 2, yaw: 0 }, cfg);
       empty(sim);
       const fp = footprint(sim.robot.config);
-      sim.pool.placeField(0, 3 + fp.length / 2 + 0.08, 2);
-      run(sim, 0.6, { ...IDLE_COMMAND, intake: true, vx: 0.4 });
+      sim.pool.placeField(0, 3 - fp.length / 2 - 0.08, 2); // the ground intake is on the back
+      run(sim, 0.6, { ...IDLE_COMMAND, intake: true, vx: -0.4 });
       expect(sim.robot.held.length, id).toBe(expected);
     }
   });

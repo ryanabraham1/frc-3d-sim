@@ -30,8 +30,9 @@ export function crescendoRobotDefaults(): RobotConfig {
   c.bumperTop = inch(5.75);
   c.hopperCapacity = 1; // G409: one NOTE at a time
   c.preload = 1; // [M 6.3.4 D] one preload per ROBOT
-  // Under-the-bumper ground intake plus SOURCE intake (catching NOTES out of the CHUTE) at the front.
-  c.intake = { enabled: true, width: inch(20), reach: inch(4), maxHeight: inch(5), ground: true, station: true, stationSide: 'front' };
+  // Under-the-bumper ground intake plus SOURCE intake (catching NOTES out of the CHUTE) on the BACK, opposite the
+  // shooter (the same intake mouth does both on real robots).
+  c.intake = { enabled: true, width: inch(20), reach: inch(4), maxHeight: inch(5), ground: true, groundSide: 'back', station: true, stationSide: 'back' };
   c.maxSpeed = 4.6;
   c.maxAccel = 9;
   c.launcher = {
@@ -64,7 +65,8 @@ export function normalizeCrescendoConfig(config: RobotConfig): RobotConfig {
   c.intake.maxHeight = Math.max(c.intake.maxHeight, inch(3));
   c.intake.ground ??= true;
   c.intake.station ??= true;
-  c.intake.stationSide ??= 'front';
+  c.intake.groundSide ??= 'back';
+  c.intake.stationSide ??= 'back';
   c.intake.enabled = c.intake.ground || c.intake.station;
   c.options = { amp: true, shooter: c.launcher.enabled ? 'pivot' : 'none', ...c.options };
   if (!c.launcher.enabled) c.options.shooter = 'none';

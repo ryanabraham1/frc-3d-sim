@@ -29,8 +29,8 @@ export class ReefscapeHud implements SeasonHud {
     const lateral = app ? (-(app.x - r.pose.x) * Math.sin(r.pose.yaw) + (app.y - r.pose.y) * Math.cos(r.pose.yaw)) / 0.0254 : 0;
     const align = r.config.autoAlign ? 'hold Space: auto-align + place' : `Space: release · line up the BRANCH (${lateral >= 0 ? 'left' : 'right'} ${Math.abs(lateral).toFixed(1)} in)`;
     const intakeHint = !r.config.intake.primary ? 'ALGAE: intake on carpet or J at reef'
-      : r.config.intake.ground && r.config.intake.station ? 'CORAL: from the carpet, or back up to a CORAL STATION (H drops one)'
-      : r.config.intake.ground ? 'CORAL: from the carpet (no funnel — H drops one onto the floor)' : 'CORAL: back your funnel up to a CORAL STATION (H drops one)';
+      : r.config.intake.ground && r.config.intake.station ? 'CORAL: back the orange INTAKE over it, or back up to a CORAL STATION (H drops one)'
+      : r.config.intake.ground ? 'CORAL: back the orange INTAKE over it (no funnel — H drops one onto the floor)' : 'CORAL: back your funnel up to a CORAL STATION (H drops one)';
     const reef = coral ? !r.config.placement!.enabled ? 'No CORAL scorer · G ejects CORAL' : blocked ? `<span class="bad">L${m?.level} blocked by ALGAE${knock}</span>` : near ? `<span class="ok">L${m?.level ?? 4} · ${align}</span>` : 'Drive to your REEF · 1–4 selects the level' : intakeHint;
     const depth = this.rules.climberDepth(r)?.toUpperCase();
     const slot = r.climbSlot ?? -1;

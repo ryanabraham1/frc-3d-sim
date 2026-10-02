@@ -284,7 +284,7 @@ describe('2024 CRESCENDO — manual facts', () => {
   const atSource = (a: Alliance, gap: number, config = cloneConfig(season.robotDefaults)): FieldPose => {
     const n = C.sideYaw(C.sourceEnd(a), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x));
     const w = C.sourcePoint(a, 0.5, config.frameLength / 2 + config.bumperThickness + gap);
-    return { x: w.x, y: w.y, yaw: n + Math.PI };
+    return { x: w.x, y: w.y, yaw: n }; // the intake is on the back: back it up to the SOURCE
   };
   const emptyHanded = (sim: HeadlessSim, a: Alliance) => {
     sim.rules.stage();

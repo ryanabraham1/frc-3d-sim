@@ -15,9 +15,14 @@ it('IntakeZone matches intakeContains / stationContains for ground, station and 
   const rng = new Rng(7);
   let hits = 0;
   for (const season of SEASONS) {
-    for (const variant of [{ ground: true, station: false }, { ground: false, station: true }, { ground: true, station: true, back: true }]) {
+    for (const variant of [
+      { ground: true, station: false },
+      { ground: false, station: true },
+      { ground: true, station: true, back: true },
+      { ground: true, station: true, groundFront: true },
+    ]) {
       const cfg = cloneConfig(season.robotDefaults);
-      cfg.intake = { ...cfg.intake, enabled: true, ground: variant.ground, station: variant.station, stationSide: variant.back ? 'back' : 'front' };
+      cfg.intake = { ...cfg.intake, enabled: true, ground: variant.ground, station: variant.station, stationSide: variant.back ? 'back' : 'front', groundSide: variant.groundFront ? 'front' : 'back' };
       const sim = new HeadlessSim(season, RAPIER, { robot: cfg, alliance: 'blue', pose: { x: 5, y: 4, yaw: rng.range(-3, 3) } });
       const r = sim.robot;
       const z = r.intakeZone()!;
@@ -32,4 +37,29 @@ it('IntakeZone matches intakeContains / stationContains for ground, station and 
     }
   }
   expect(hits).toBeGreaterThan(100);
+});
+
+// The scoring mechanism (launcher / elevator) faces front, so every season's floor intake is on the BACK by default.
+it('every season puts the floor intake on the back, opposite the scoring face', () => {
+  for (const season of SEASONS) {
+    expect(season.robotDefaults.intake.groundSide, season.id).toBe('back');
+    for (const preset of season.robotPresets ?? []) {
+      expect(preset.config.intake.groundSide, `${season.id}/${preset.id}`).toBe('back');
+    }
+  }
+});
+
+it('a back-mounted ground intake takes pieces behind the robot and ignores ones in front', () => {
+  const season = SEASONS[0];
+  const cfg = cloneConfig(season.robotDefaults);
+  cfg.intake = { ...cfg.intake, enabled: true, ground: true, station: false, groundSide: 'back' };
+  const sim = new HeadlessSim(season, RAPIER, { robot: cfg, alliance: 'blue', pose: { x: 5, y: 4, yaw: 0 } });
+  const r = sim.robot;
+  const t = r.body.translation();
+  const half = r.footprint.length / 2;
+  const at = (f: number) => ({ x: t.x + f, y: 0.05, z: t.z });
+  expect(r.intakeContains(at(-(half + 0.05)), 0.075)).toBe(true);
+  expect(r.intakeContains(at(half + 0.05), 0.075)).toBe(false);
+  expect(r.intakeYawOffset).toBeCloseTo(Math.PI);
+  sim.dispose();
 });

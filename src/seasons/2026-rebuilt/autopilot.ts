@@ -71,7 +71,7 @@ export class RebuiltAutoPilot implements AutoPilot {
       if (r.held.length >= Math.min(20, r.config.hopperCapacity) || (tLeft < back + 1.5 && r.held.length > 0)) this.phase = 'return';
       const p = this.pickPiece();
       if (p) {
-        const face = dist(r.pose, p) < 2.5 ? Math.atan2(p.y - r.pose.y, p.x - r.pose.x) : null;
+        const face = dist(r.pose, p) < 2.5 ? Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.intakeYawOffset : null; // intake face leads
         this.steer(cmd, p, face);
       }
       return cmd;

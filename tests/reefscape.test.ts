@@ -202,7 +202,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     });
     it(`${a}: a ground-intake robot without a funnel collects CORAL the human player drops onto the carpet`, () => {
       const st = C.stations(a)[0];
-      const sim = make(a, { x: st.x + Math.cos(st.yaw) * 1.1, y: st.y + Math.sin(st.yaw) * 1.1, yaw: st.yaw + Math.PI }, 2, preset('trough'));
+      const sim = make(a, { x: st.x + Math.cos(st.yaw) * 1.1, y: st.y + Math.sin(st.yaw) * 1.1, yaw: st.yaw }, 2, preset('trough'));
       sim.rules.stage(); for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
       teleop(sim);
       sim.rules.humanPlayerAction(a, 1);
@@ -255,7 +255,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     for (const [id, expected] of [['funnel-l4', 0], ['trough', 1]] as const) {
       const sim = make('blue', { x: 2, y: 2, yaw: 0 }, 2, preset(id)); teleop(sim);
       for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
-      sim.pool.placeField(0, 2.63, 2, C.CORAL_RADIUS);
+      sim.pool.placeField(0, 1.37, 2, C.CORAL_RADIUS); // behind the robot: the ground intake is on the back
       run(sim, 0.4, { ...IDLE_COMMAND, intake: true });
       expect(sim.robot.held.filter((i) => i < 126), id).toHaveLength(expected);
     }
@@ -263,7 +263,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
   it('enforces one CORAL and one ALGAE even with an oversized submitted hopper', () => {
     const sim = make('blue', { x: 2, y: 2, yaw: 0 }, 2, preset('all-rounder')); sim.robot.config.hopperCapacity = 80;
     teleop(sim);
-    for (const i of [0, 1, 126, 127]) sim.pool.placeField(i, 2.63, 2);
+    for (const i of [0, 1, 126, 127]) sim.pool.placeField(i, 1.37, 2);
     run(sim, 0.2, { ...IDLE_COMMAND, intake: true });
     expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
     expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
@@ -300,7 +300,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     load(sim, 126); run(sim, 1.6, { ...IDLE_COMMAND, pass: true, intake: true });
     expect(sim.ctx.score.counter('blue', 'processor')).toBe(1);
     sim.robot.resetTo({ x: 2, y: 2, yaw: 0 }); sim.pool.placeField(0, 2.63, 2);
-    run(sim, 0.2, { ...IDLE_COMMAND, intake: true }); expect(sim.robot.held).toHaveLength(0);
+    run(sim, 0.2, { ...IDLE_COMMAND, intake: true }); expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(0); // no CORAL pickup (a staged ALGAE may sit in the back mouth)
   });
   it('limits driver scoring commands to the configured elevator level', () => {
     const config = cloneConfig(season.robotDefaults); config.placement!.maxLevel = 2;

@@ -126,8 +126,18 @@ const CAMERAS: [CameraMode, string][] = [
   ['overhead', 'Overhead'],
 ];
 
-function robotArt(alliance: 'red' | 'blue', team: number): string {
+/**
+ * Isometric robot. The shooter/scorer barrel points to the far (upper-right) edge, the orange intake roller sits on
+ * the opposite near (lower-left) edge when the intake is on the back — and the other way round for a front intake.
+ */
+function robotArt(alliance: 'red' | 'blue', team: number, groundSide: 'front' | 'back' = 'back'): string {
   const c = alliance === 'red' ? '#ef4444' : '#4f8cff';
+  const back = groundSide !== 'front';
+  // Near edge (lower-left) and far edge (upper-right) of the base diamond, offset outward by the roller thickness.
+  const near = '<line x1="33" y1="103" x2="101" y2="137" stroke="#ff7a1a" stroke-width="8" stroke-linecap="round"/><line x1="33" y1="101" x2="101" y2="135" stroke="#ffb066" stroke-width="2" stroke-linecap="round"/>';
+  const far = '<line x1="109" y1="55" x2="177" y2="89" stroke="#ff7a1a" stroke-width="8" stroke-linecap="round"/><line x1="109" y1="53" x2="177" y2="87" stroke="#ffb066" stroke-width="2" stroke-linecap="round"/>';
+  const label = (x: number, y: number, t: string, fill: string) =>
+    `<text x="${x}" y="${y}" transform="rotate(27 ${x} ${y})" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="11" fill="${fill}" letter-spacing="1.5">${t}</text>`;
   return `<svg viewBox="0 0 210 150" aria-hidden="true">
     <ellipse cx="105" cy="112" rx="88" ry="26" fill="none" stroke="#2f2f3c" stroke-width="1.5"/>
     <polygon points="105,62 172,96 105,130 38,96" fill="${c}"/>
@@ -137,6 +147,11 @@ function robotArt(alliance: 'red' | 'blue', team: number): string {
     <polygon points="105,30 130,42 130,84 105,96 80,84 80,42" fill="#8b6cf6"/>
     <polygon points="105,30 130,42 105,54 80,42" fill="#a48bff"/>
     <polygon points="105,54 130,42 130,84 105,96" fill="#6c4fd8"/>
+    <polygon points="118,36 150,52 150,60 118,44" fill="#d9d9e8"/>
+    <polygon points="150,52 156,55 156,63 150,60" fill="#8f8fa6"/>
+    ${back ? near : far}
+    ${label(back ? 60 : 150, back ? 140 : 62, 'INTAKE', '#ff9a3c')}
+    ${label(back ? 160 : 60, back ? 82 : 140, 'SHOOTER', '#c9c9d8')}
     <text x="105" y="112" text-anchor="middle" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="15" fill="#fff" letter-spacing="1">${team}</text>
   </svg>`;
 }
@@ -176,6 +191,7 @@ function fieldMap(season: SeasonDefinition, s: GameSettings): string {
       out += `<g transform="translate(${p.x} ${fy(p.y)}) rotate(${deg})">
         <rect x="${-fl / 2}" y="${-fw / 2}" width="${fl}" height="${fw}" rx="0.06" fill="#8b6cf6" fill-opacity=".35" stroke="#a48bff" stroke-width="2.5" vector-effect="non-scaling-stroke"/>
         <polygon points="${fl / 2 + 0.3},0 ${fl / 2 + 0.04},-0.16 ${fl / 2 + 0.04},0.16" fill="#a48bff"/>
+        <rect x="${s.robot.intake.groundSide === 'front' ? fl / 2 - 0.02 : -fl / 2 - 0.1}" y="${-fw * 0.4}" width="0.12" height="${fw * 0.8}" rx="0.04" fill="#ff7a1a"/>
       </g>
       <text x="${p.x}" y="${fy(p.y)}" text-anchor="middle" dominant-baseline="central" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="0.42" fill="#fff">${s.robot.teamNumber}</text>`;
     } else {
@@ -197,7 +213,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       ...stored.robot,
       launcher: { ...d.launcher, ...stored.robot.launcher },
       climber: { ...d.climber, ...stored.robot.climber },
-      intake: { ...d.intake, ...stored.robot.intake },
+      // Intake faces aren't editable: always the season's (a saved front-mounted intake predates the back-mounted default).
+      intake: { ...d.intake, ...stored.robot.intake, groundSide: d.intake.groundSide, stationSide: d.intake.stationSide },
     };
   }
   let page: Page = opts.page ?? 'play';
@@ -224,7 +241,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const left = `
       <section class="panel robot-card ${s.alliance}">
         <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
-        <div class="robot-art">${robotArt(s.alliance, r.teamNumber)}</div>
+        <div class="robot-art">${robotArt(s.alliance, r.teamNumber, r.intake.groundSide)}</div>
         <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
         <button class="wide-btn" data-k="resetRobot"><span>Reset robot</span>${icon.reset(18)}</button>
       </section>

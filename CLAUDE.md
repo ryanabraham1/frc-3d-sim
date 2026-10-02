@@ -38,6 +38,12 @@ build for the game (no turrets on pick-and-place robots). Human-player stations 
 chute geometry (button H), driver assists (chassis auto-align, scoring auto-align) are robot options, and placing
 a piece is physical: misaligned placements miss.
 
+**Intake faces opposite the scoring mechanism.** The launcher, elevator and arm always face the robot's front (+x), so
+the floor intake goes on the back (`intake.groundSide`, default `'back'`; station funnels use `stationSide`, also
+`'back'`). Use `groundSideSign` / `stationSideSign` (`src/engine/robot/config.ts`) and `Robot.groundMouthContains` /
+`intakeContains` instead of testing "in front of the bumper", drive bot/auto-pilot collection with `robot.intakeYawOffset`
+(intake-first heading), and keep the orange intake model in `Robot.buildGroundIntake` in sync with the capture zone.
+
 ## Other conventions
 
 - Field coordinates are WPILib's (meters, blue alliance wall at x = 0). Tag manual values with their

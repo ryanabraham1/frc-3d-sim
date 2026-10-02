@@ -1,5 +1,17 @@
 import { inch, lb } from '../units';
 
+export type IntakeSide = 'front' | 'back';
+
+/** +1 = chassis front, -1 = back, for the floor intake (default back, opposite the scoring mechanism). */
+export function groundSideSign(c: RobotConfig): 1 | -1 {
+  return c.intake.groundSide === 'front' ? 1 : -1;
+}
+
+/** +1 = chassis front, -1 = back, for the human-player station intake (funnel / hopper mouth). */
+export function stationSideSign(c: RobotConfig): 1 | -1 {
+  return c.intake.stationSide === 'back' ? -1 : 1;
+}
+
 export type AimAssist = 'full' | 'speed' | 'off';
 
 /** Everything that defines a simulated robot. All values SI. */
@@ -41,6 +53,12 @@ export interface RobotConfig {
      * player feeds it (see `station`) — one of the main archetype trade-offs every season.
      */
     ground?: boolean;
+    /**
+     * Which face of the chassis the floor intake is on. Default 'back': the scoring mechanism (launcher, elevator,
+     * arm) faces front, and real robots put the intake on the opposite face so they can collect with their back to
+     * the goal and turn to score.
+     */
+    groundSide?: 'front' | 'back';
     /**
      * Takes pieces straight from a human-player station while they fall/roll out of it: a funnel, hopper mouth
      * or shooter intake at the top of the robot. Captures airborne pieces entering the zone at `stationSide`.

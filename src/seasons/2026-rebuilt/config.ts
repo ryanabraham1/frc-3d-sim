@@ -27,8 +27,9 @@ export function rebuiltRobotDefaults(): RobotConfig {
   c.hopperCapacity = 40;
   c.preload = C.FUEL_MAX_PRELOAD;
   c.climber.maxLevel = 3;
-  // Full-width ground intake plus a hopper opening that catches FUEL from the OUTPOST CHUTE.
-  c.intake = { ...c.intake, ground: true, station: true, stationSide: 'front' };
+  // Full-width ground intake plus a hopper opening that catches FUEL from the OUTPOST CHUTE, both on the back
+  // (the shooter faces front).
+  c.intake = { ...c.intake, ground: true, groundSide: 'back', station: true, stationSide: 'back' };
   c.autoAlign = true; // used only when the shooter has no turret
   return c;
 }
@@ -38,7 +39,8 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   const c = sanitizeConfig(config, C.MAX_ROBOT_HEIGHT, C.MAX_ROBOT_PERIMETER);
   c.intake.ground ??= true;
   c.intake.station ??= true;
-  c.intake.stationSide ??= 'front';
+  c.intake.groundSide ??= 'back';
+  c.intake.stationSide ??= 'back';
   c.intake.enabled = c.intake.ground || c.intake.station;
   c.autoAlign ??= !c.launcher.turret;
   c.preload = Math.min(c.preload, C.FUEL_MAX_PRELOAD, c.hopperCapacity);

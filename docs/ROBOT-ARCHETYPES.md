@@ -147,3 +147,10 @@ summaries). A new game won't have sources like these at kickoff; use the procedu
 - Team 254 robot write-ups: [1](https://www.team254.com/?p=18644), [2](https://www.team254.com/?p=18432).
 - [Chief Delphi: Stop overcomplicating REBUILT](https://www.chiefdelphi.com/t/stop-overcomplicating-rebuilt/513157): 2026 archetypes, hopper-first design.
 - [DeLaSalle Robotics 2024 repository](https://github.com/DeLaSalle-Robotics/DLS-Robot-2024): a 2024 team repository (also the mirror of the 2024 manual PDF).
+
+## Intake side
+
+Every archetype puts the floor intake on the **back** of the chassis (`intake.groundSide: 'back'`), opposite the
+scoring mechanism (shooter, elevator or arm at the front). Real robots do this so the driver collects with their back
+to the goal, then turns (or lets auto-align turn) to score. The orange roller, striped bumper and glowing pickup patch
+in the 3D model, and the INTAKE/SHOOTER labels on the menu robot, mark the side. [derived]

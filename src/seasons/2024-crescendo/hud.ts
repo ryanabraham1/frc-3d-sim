@@ -46,9 +46,9 @@ export class CrescendoHud implements SeasonHud {
       hint = rules.nearAmp(r) && c.options?.amp !== false ? `<b class="ok">G: score in the AMP</b> · ${shoot}` : `${shoot} · ${amp}${c.launcher.enabled ? ' / pass' : ''}`;
     } else {
       const i = r.config.intake;
-      hint = i.ground && i.station ? 'Intake a NOTE from the carpet, or face your SOURCE (opponent end) and catch one from the CHUTE'
-        : i.ground ? 'Intake a NOTE from the carpet (no SOURCE intake: let SOURCE drops land first)'
-        : 'No ground intake: face your SOURCE (opponent end) and catch a NOTE from the CHUTE (H drops one)';
+      hint = i.ground && i.station ? 'Back the orange INTAKE over a NOTE, or back it up to your SOURCE (opponent end) to catch one from the CHUTE'
+        : i.ground ? 'Back the orange INTAKE over a NOTE on the carpet (no SOURCE intake: let SOURCE drops land first)'
+        : 'No ground intake: back your intake up to your SOURCE (opponent end) and catch a NOTE from the CHUTE (H drops one)';
     }
     const climb = r.isClimbing ? '' : rules.chainFor(r) && rules.isTeleop() ? '<div class="ok">C: climb this chain</div>' : '';
     const unclear = holding && !r.lastShotClear ? '<div class="bad">No clean SPEAKER shot from here</div>' : '';

@@ -4,7 +4,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, footprint } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, footprint, groundSideSign, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
@@ -54,7 +54,7 @@ export interface IntakeZone {
   cos: number;
   sin: number;
   halfLength: number;
-  ground: { reach: number; halfWidth: number; maxHeight: number } | null;
+  ground: { side: number; reach: number; halfWidth: number; maxHeight: number } | null;
   station: { side: number; halfWidth: number; minHeight: number; maxHeight: number } | null;
 }
 
@@ -69,7 +69,10 @@ export function intakeZoneContains(z: IntakeZone, p: { x: number; y: number; z: 
   const l = -dx * z.sin - dz * z.cos;
   const h = p.y - z.y;
   const g = z.ground;
-  if (g && p.y <= groundMaxY && f > z.halfLength - 0.06 && f < z.halfLength + g.reach + pieceRadius && Math.abs(l) < g.halfWidth && h < g.maxHeight) return true;
+  if (g && p.y <= groundMaxY && Math.abs(l) < g.halfWidth && h < g.maxHeight) {
+    const gout = g.side * f - z.halfLength; // + = outside the bumper on the intake face
+    if (gout > -0.06 && gout < g.reach + pieceRadius) return true;
+  }
   const s = z.station;
   if (!s) return false;
   const out = s.side * f - z.halfLength;
@@ -266,16 +269,11 @@ export class Robot {
       }
     }
 
-    // Intake roller at the front.
-    if (c.intake.enabled) {
-      const roller = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.03, 0.03, c.intake.width, 12),
-        new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.6 }),
-      );
-      roller.rotation.x = Math.PI / 2;
-      roller.position.set(L / 2 + 0.03, 0.09, 0);
-      this.visual.add(roller);
-    }
+    // Floor intake (orange) on the face opposite the scoring mechanism, funnel (station intake) on its own face.
+    const groundVisible = c.intake.enabled && (c.intake.ground !== false || !!c.options?.algaeGround);
+    if (groundVisible) this.buildGroundIntake(groundSideSign(c), dark);
+    if (c.intake.enabled && c.intake.station) this.buildFunnel(stationSideSign(c), alu);
+    this.buildScoringFace(dark);
 
     // Turret + barrel.
     this.turret = new THREE.Group();
@@ -307,11 +305,110 @@ export class Robot {
     this.visual.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) {
-        m.castShadow = true;
+        m.castShadow = !m.userData.noShadow;
         m.receiveShadow = true;
       }
     });
     scene.add(this.visual);
+  }
+
+  /**
+   * Orange intake assembly on chassis face `side` (+1 front, -1 back): a roller bar just outside the bumper, side
+   * arms back to the frame, a stripe along the bumper, an INTAKE label and a glowing patch on the carpet showing
+   * exactly where pieces get picked up. Orange is reserved for the intake so it reads at a glance from any camera.
+   */
+  private buildGroundIntake(side: 1 | -1, dark: THREE.Material): void {
+    const c = this.config;
+    const L = this.fp.length;
+    const bt = c.bumperThickness;
+    const orange = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.55, emissive: 0xff5a00, emissiveIntensity: 0.25 });
+    const w = Math.min(c.intake.width, this.fp.width - 0.04);
+    const edge = L / 2;
+    const g = new THREE.Group();
+    // Roller bar (two stacked drums, like a real under-bumper roller pair).
+    for (const [dx, dy] of [[0.035, 0.085], [0.0, 0.14]] as const) {
+      const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, w, 14), orange);
+      roller.rotation.x = Math.PI / 2;
+      roller.position.set(side * (edge + dx), dy, 0);
+      g.add(roller);
+    }
+    // Arms from the roller ends back to the frame.
+    for (const sz of [-1, 1]) {
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(bt + 0.05, 0.035, 0.03), dark);
+      arm.position.set(side * (edge - bt / 2 + 0.015), 0.115, sz * (w / 2 - 0.015));
+      g.add(arm);
+    }
+    // Stripe along the whole bumper face on this side.
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, this.fp.width * 0.98), orange);
+    stripe.position.set(side * (edge + 0.002), c.bumperTop + 0.002, 0);
+    g.add(stripe);
+    // INTAKE label on the bumper face.
+    const label = new THREE.Mesh(
+      new THREE.PlaneGeometry(Math.min(this.fp.width * 0.8, 0.5), (c.bumperTop - c.bumperBottom) * 0.8),
+      new THREE.MeshBasicMaterial({ map: makeTextTexture('INTAKE', { color: '#ff9a3c', width: 256, height: 96 }), transparent: true }),
+    );
+    label.position.set(side * (edge + 0.004), (c.bumperTop + c.bumperBottom) / 2, 0);
+    label.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    g.add(label);
+    // Capture zone on the carpet (the same strip `groundMouthContains` tests).
+    const zone = new THREE.Mesh(
+      new THREE.PlaneGeometry(c.intake.reach, c.intake.width),
+      new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.28, depthWrite: false }),
+    );
+    zone.rotation.x = -Math.PI / 2;
+    zone.position.set(side * (edge + c.intake.reach / 2), 0.006, 0);
+    zone.userData.noShadow = true;
+    g.add(zone);
+    // Inward chevrons on the zone: pieces get pulled toward the robot.
+    const chevShape = new THREE.Shape();
+    chevShape.moveTo(0.06, 0);
+    chevShape.lineTo(-0.04, 0.1);
+    chevShape.lineTo(-0.04, 0.06);
+    chevShape.lineTo(0.02, 0);
+    chevShape.lineTo(-0.04, -0.06);
+    chevShape.lineTo(-0.04, -0.1);
+    const chevGeo = new THREE.ShapeGeometry(chevShape);
+    const chevMat = new THREE.MeshBasicMaterial({ color: 0xff7a1a, side: THREE.DoubleSide });
+    for (let k = 0; k < 2; k++) {
+      const chev = new THREE.Mesh(chevGeo, chevMat);
+      chev.rotation.set(-Math.PI / 2, 0, side > 0 ? Math.PI : 0); // lies flat, tip toward the robot
+      chev.position.set(side * (edge + c.intake.reach * (0.72 - k * 0.38)), 0.012, 0);
+      chev.userData.noShadow = true;
+      g.add(chev);
+    }
+    this.visual.add(g);
+  }
+
+  /** Funnel / hopper mouth for pieces fed from a human-player station: two flared plates above the bumper. */
+  private buildFunnel(side: 1 | -1, alu: THREE.Material): void {
+    const c = this.config;
+    const mat = new THREE.MeshStandardMaterial({ color: 0x4aa3ff, roughness: 0.5, transparent: true, opacity: 0.75 });
+    const mouth = Math.max(c.intake.width, 0.5);
+    const y = Math.max(c.bumperTop + 0.05, c.height * 0.7);
+    for (const sz of [-1, 1]) {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.012), mat);
+      plate.position.set(side * (this.fp.length / 2 - 0.04), y, sz * (mouth / 2 + 0.02));
+      plate.rotation.y = side * sz * 0.35;
+      this.visual.add(plate);
+    }
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, mouth + 0.06), alu);
+    lip.position.set(side * (this.fp.length / 2 + 0.01), y - 0.09, 0);
+    this.visual.add(lip);
+  }
+
+  /** Dark shooter / scoring port plate on the front bumper, so front (score) vs. intake face is obvious. */
+  private buildScoringFace(dark: THREE.Material): void {
+    const c = this.config;
+    if (!c.launcher.enabled && !c.placement?.enabled) return;
+    const port = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.05, Math.min(this.fp.width * 0.45, 0.3)), dark);
+    port.position.set(this.fp.length / 2 + 0.003, c.bumperTop + 0.045, 0);
+    this.visual.add(port);
+    // Forward arrow on the roof.
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 3), new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.6 }));
+    arrow.rotation.set(0, 0, -Math.PI / 2);
+    arrow.scale.set(1, 1, 0.25);
+    arrow.position.set(c.frameLength * 0.38, c.height + 0.005, 0);
+    this.visual.add(arrow);
   }
 
   // ───────────────────────── state accessors ─────────────────────────
@@ -629,9 +726,26 @@ export class Robot {
   intakeContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
     const c = this.config;
     if (!c.intake.enabled || c.intake.ground === false || this.climbPhase !== 'none' || this.tippedOver) return false;
-    const { f, l, h } = this.toLocal(p);
-    const front = this.fp.length / 2;
-    return f > front - 0.06 && f < front + c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2 && h < c.intake.maxHeight;
+    return this.groundMouthContains(p, pieceRadius) && this.toLocal(p).h < c.intake.maxHeight;
+  }
+
+  /**
+   * Plan-view test of the floor-intake mouth (the strip just outside the bumper on the intake face), without the
+   * height check or the mechanism-enabled checks — for seasons with their own pickup rules.
+   */
+  groundMouthContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
+    const c = this.config;
+    const { f, l } = this.toLocal(p);
+    const out = groundSideSign(c) * f - this.fp.length / 2;
+    return out > -0.06 && out < c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2;
+  }
+
+  /**
+   * Yaw offset (0 or π) from the direction of travel to the heading that points the floor intake along it: add it to
+   * a "drive toward X" heading to arrive intake-first.
+   */
+  get intakeYawOffset(): number {
+    return groundSideSign(this.config) > 0 ? 0 : Math.PI;
   }
 
   /**
@@ -643,7 +757,7 @@ export class Robot {
     const c = this.config;
     if (!c.intake.enabled || !c.intake.station || this.climbPhase !== 'none' || this.tippedOver) return false;
     const { f, l, h } = this.toLocal(p);
-    const s = c.intake.stationSide === 'back' ? -1 : 1;
+    const s = stationSideSign(c);
     const out = s * f - this.fp.length / 2; // + = outside the bumper on that side
     const halfW = Math.max(c.intake.width, 0.5) / 2 + 0.04;
     // The mouth is at the bumper face: a piece must come out of the station (not be caught through its wall).
@@ -663,9 +777,9 @@ export class Robot {
     const yaw = yawFromQuat(this.body.rotation());
     return {
       x: t.x, y: t.y, z: t.z, cos: Math.cos(yaw), sin: Math.sin(yaw), halfLength: this.fp.length / 2,
-      ground: ground ? { reach: c.intake.reach, halfWidth: c.intake.width / 2, maxHeight: c.intake.maxHeight } : null,
+      ground: ground ? { side: groundSideSign(c), reach: c.intake.reach, halfWidth: c.intake.width / 2, maxHeight: c.intake.maxHeight } : null,
       station: c.intake.station
-        ? { side: c.intake.stationSide === 'back' ? -1 : 1, halfWidth: Math.max(c.intake.width, 0.5) / 2 + 0.04, minHeight: Math.max(0.25, c.height * 0.55), maxHeight: c.height + 0.35 }
+        ? { side: stationSideSign(c), halfWidth: Math.max(c.intake.width, 0.5) / 2 + 0.04, minHeight: Math.max(0.25, c.height * 0.55), maxHeight: c.height + 0.35 }
         : null,
     };
   }

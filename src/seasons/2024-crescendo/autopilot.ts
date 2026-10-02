@@ -98,10 +98,12 @@ export class CrescendoAutoPilot implements AutoPilot {
       const back = r.footprint.length / 2 + 0.02;
       const to = { x: p.x - Math.cos(u) * back, y: p.y - Math.sin(u) * back };
       const d = Math.hypot(to.x - r.pose.x, to.y - r.pose.y);
+      // The ground intake is on the back: face away from the NOTE so the intake face leads into it.
+      const heading = u + r.intakeYawOffset;
       if (d > 0.9) {
         // Line up behind the NOTE first.
-        this.steer(cmd, { x: to.x - Math.cos(u) * 0.35, y: to.y - Math.sin(u) * 0.35 }, u);
-      } else this.steer(cmd, to, u, 1.8);
+        this.steer(cmd, { x: to.x - Math.cos(u) * 0.35, y: to.y - Math.sin(u) * 0.35 }, heading);
+      } else this.steer(cmd, to, heading, 1.8);
       cmd.intake = true;
       if (this.ctx.clock.periodRemaining < 0.5) this.visited.add(i);
       return cmd;
