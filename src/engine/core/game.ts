@@ -1,3 +1,4 @@
+import type { Vector3 } from 'three';
 import { CameraRig, CAMERA_LABELS } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
@@ -14,7 +15,7 @@ import type { NetClient } from '../net/netClient';
 import type { HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
 import { slotId } from '../net/protocol';
 import { Ticker } from '../net/ticker';
-import { PhysicsWorld, RapierModule } from '../physics/world';
+import { collisionGroups, Group, PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { Renderer } from '../render/renderer';
 import { sanitizeConfig } from '../robot/config';
@@ -274,6 +275,7 @@ export class Game {
     const eye = this.player ?? this.robots[0];
     const eyePos = eye ? season.driverEye(eye.alliance, eye.station) : season.driverEye(settings.alliance, settings.station);
     this.camera = new CameraRig(this.renderer.camera, this.renderer.renderer.domElement, this.frame, eyePos);
+    this.camera.occlusion = (from, to) => this.cameraOcclusion(from, to);
     this.camera.setMode(this.player ? (settings.camera ?? 'driver') : 'overhead');
     this.seasonHud = season.createHud(this.ctx, this.rules, this.hud.slots);
     if (this.state === 'waiting') this.hud.showBanner('WAITING FOR PLAYERS…', 60);
@@ -402,6 +404,19 @@ export class Game {
       this.fpsAcc = 0;
       this.fpsFrames = 0;
     }
+  }
+
+  /** Distance along from→to to the first solid field element or other robot (own robot excluded), or null. */
+  private cameraOcclusion(from: Vector3, to: Vector3): number | null {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 1e-3) return null;
+    const ray = new this.physics.R.Ray(from, { x: dx / len, y: dy / len, z: dz / len });
+    const filter = collisionGroups(Group.ALL, Group.FIELD | Group.ROBOT);
+    const hit = this.physics.world.castRay(ray, len, true, undefined, filter, undefined, this.player?.body);
+    return hit ? hit.timeOfImpact : null;
   }
 
   private handleUiInput(inp: DriverInput): void {

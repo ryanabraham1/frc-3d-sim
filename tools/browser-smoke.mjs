@@ -40,7 +40,7 @@ await page.click('[data-toggle="manualAuto"]');
 await page.click('[data-k="start"]');
 await page.waitForFunction(() => !!window.game, null, { timeout: 60000 });
 await page.waitForTimeout(2500);
-for (const mode of ['driver', 'overhead', 'follow']) {
+for (const mode of ['driver', 'overhead', 'chase']) {
   await page.evaluate((m) => window.game.camera.setMode(m), mode);
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${out}/camera-${mode}.png` });

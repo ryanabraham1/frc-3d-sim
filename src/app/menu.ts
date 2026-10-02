@@ -121,9 +121,8 @@ function group(label: string, body: string, hint = ''): string {
 }
 
 const CAMERAS: [CameraMode, string][] = [
-  ['follow', 'Third person'],
-  ['driver', 'Driver station'],
   ['chase', 'Chase'],
+  ['driver', 'Driver station'],
   ['overhead', 'Overhead'],
 ];
 
