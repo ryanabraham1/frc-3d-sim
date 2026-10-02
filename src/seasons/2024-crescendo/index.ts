@@ -68,7 +68,7 @@ export const crescendo2024: SeasonDefinition = {
   ],
   humanPlayerButtons: 4,
   humanPlayerHint: {
-    auto: 'Your SOURCE human player drops a NOTE down the CHUTE whenever you wait at the SOURCE; your AMP human player uses Coopertition, AMPLIFIES at 2 NOTES and throws HIGH NOTES in the last 20 s.',
+    auto: 'Your SOURCE human player drops a NOTE down the CHUTE whenever you wait at the SOURCE; your AMP human player uses Coopertition and throws HIGH NOTES in the last 20 s. AMPLIFY is always manual: press B (LB) with 2 AMP NOTES banked.',
     manual: 'You are the human players: H = drop a NOTE down the SOURCE CHUTE toward your robot, B = AMPLIFY, N = Coopertition, M = throw a HIGH NOTE (last 20 s).',
   },
   startPose,

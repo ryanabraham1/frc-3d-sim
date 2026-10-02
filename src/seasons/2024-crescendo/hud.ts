@@ -13,7 +13,7 @@ export class CrescendoHud implements SeasonHud {
     for (const a of ALLIANCES) {
       const amp = rules.amplified(a);
       const lights = `${rules.bank[a] >= 1 ? '●' : '○'}${rules.bank[a] >= 2 ? '●' : '○'}`;
-      const ampLine = amp ? `<b class="ok">AMPLIFIED ${Math.ceil(rules.amplifyRemaining(a))} s</b>` : `AMP ${lights}${rules.bank[a] >= 2 ? ' · <b class="ok">ready</b>' : ''}`;
+      const ampLine = amp ? `<b class="ok">AMPLIFIED ${Math.ceil(rules.amplifyRemaining(a))} s</b>` : `AMP ${lights}${rules.bank[a] >= 2 ? ' · <b class="ok">ready: press B</b>' : ''}`;
       const notes = ctx.score.counter(a, 'notes');
       const coopLine = rules.coopUsed[a] ? (coop ? 'COOP ✓ bonus' : 'COOP pressed') : rules.coopWindowOpen() || rules.isAuto() ? 'COOP open' : 'COOP —';
       const spot = rules.spotlit[a].filter(Boolean).length;

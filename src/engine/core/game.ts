@@ -667,7 +667,7 @@ export class Game {
           net +
           `<div>Camera: ${CAMERA_LABELS[this.camera.mode]} <span class="dim">(V)</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +
-          `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(F)</span></div>` +
+          `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(I)</span></div>` +
           (this.season.maxScoringLevel
             ? `<div>Reef target: L${this.scoringLevel} <span class="dim">(1-4)</span></div><div>Cage: ${this.season.climberLabels?.[p.config.climber.maxLevel] ?? 'Deep'} <span class="dim">(C)</span></div>`
             : this.season.climberLabels

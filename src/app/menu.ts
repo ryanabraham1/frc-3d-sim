@@ -329,6 +329,9 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ? (save(s), multiplayerPage(lobby, { s, season, rerender: render, goto: (p) => ((page = p), render()) }))
         : null;
     const t = titles[page];
+    // innerHTML below rebuilds the scroll container; keep the user's place when changing a setting on the same page.
+    const prevPage = el.dataset.page;
+    const scrollTop = el.querySelector<HTMLElement>('.main')?.scrollTop ?? 0;
     const tab = (p: Page, label: string) => `<button class="bbtn ${page === p ? 'on' : ''}" data-page="${p}">${label}</button>`;
     el.innerHTML = `
       <header class="topbar">
@@ -349,6 +352,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}`
         }
       </footer>`;
+    el.dataset.page = page;
+    if (prevPage === page) {
+      const main = el.querySelector<HTMLElement>('.main');
+      if (main) main.scrollTop = scrollTop;
+    }
     bind();
     if (draft && page === 'multiplayer') {
       for (const key of ['name', 'code', 'url'] as const) {

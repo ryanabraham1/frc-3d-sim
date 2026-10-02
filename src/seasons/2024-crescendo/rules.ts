@@ -445,13 +445,12 @@ export class CrescendoRules implements SeasonRules {
     this.dropNote(a, false, robot);
   }
 
-  /** Automatic AMP human player: Coopertition early, AMPLIFY when 2 NOTES are banked, HIGH NOTES in END GAME. */
+  /** Automatic AMP human player: Coopertition early, HIGH NOTES in END GAME. AMPLIFY is never automatic: press B. */
   private autoAmpHuman(a: Alliance, dt: number): void {
     // An alliance with no robots on the field (single player) has nothing for its human player to do.
     if (!this.ctx.humanPlayerIsAuto(a) || !this.isTeleop() || !this.ctx.robots.some((r) => r.alliance === a)) return;
     const oppHasRobots = this.ctx.robots.some((r) => r.alliance === opponent(a));
     if (oppHasRobots && !this.coopUsed[a] && this.coopWindowOpen() && this.bank[a] >= 1) this.pressCoop(a);
-    if (this.bank[a] >= 2 && !this.amplified(a)) this.pressAmplify(a);
     this.autoHpTimer[a] -= dt;
     const endgameT = this.teleopElapsed() - (C.TELEOP_SECONDS - C.ENDGAME_SECONDS);
     if (this.isEndgame() && endgameT > 4 && this.autoHpTimer[a] <= 0 && this.highNotesLeft[a] > 0) {

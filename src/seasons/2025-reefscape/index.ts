@@ -58,7 +58,7 @@ export const reefscape2025: SeasonDefinition = {
   createAutoPilot(_ctx, rules, robot, routine) { return new ReefscapeAutoPilot(rules as ReefscapeRules, robot, routine); },
   createHud(ctx, rules, slots) { return new ReefscapeHud(ctx, rules as ReefscapeRules, slots); },
   controlsHelp: [
-    ...DEFAULT_CONTROLS_HELP.filter(([key]) => !['Space', 'G', 'F', 'C / X', '1 2 3  or  [ ]', 'H', 'Gamepad'].includes(key)),
+    ...DEFAULT_CONTROLS_HELP.filter(([key]) => !['Space', 'G', 'I', 'C / X', '1 2 3  or  [ ]', 'H', 'Gamepad'].includes(key)),
     ['1 / 2 / 3 / 4 · [ / ]', 'Select reef L1–L4 (gamepad D-pad changes level)'],
     ['Space / RT', 'Release CORAL from the end effector (with reef auto-align: hold to line up on the nearest open BRANCH first); with ALGAE only, shoot your NET'],
     ['G / RB', 'Feed ALGAE into your PROCESSOR nearby; with CORAL only, eject it a short distance'],

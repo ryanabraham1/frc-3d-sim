@@ -59,7 +59,7 @@ AMPLIFY, cooperate, and finish ONSTAGE on a STAGE chain. Your SOURCE is at the *
 |---|---|
 | Space | Shoot at your SPEAKER (hold; chassis auto-align turns you onto it) · while ONSTAGE: place the NOTE in the TRAP |
 | G | Against your AMP: score in the AMP · elsewhere: pass into your WING |
-| J / F | Hold intake / toggle auto-intake (one NOTE at a time) |
+| J / I | Hold intake / toggle auto-intake (one NOTE at a time) |
 | C / X | Climb the STAGE chain you're under (TELEOP) / descend |
 | H | SOURCE human player: drop a NOTE down the 50° CHUTE toward your robot (TELEOP) |
 | B / N / M | AMP human player: AMPLIFY / Coopertition / throw a HIGH NOTE (last 20 s) |
@@ -84,7 +84,7 @@ Inventory follows the manual's one-CORAL/one-ALGAE limit.
 |---|---|
 | 1 / 2 / 3 / 4, [ / ] | Choose reef L1–L4 |
 | Space | Release CORAL from the end effector (with reef auto-align: hold to line up on the nearest open BRANCH first); with ALGAE only, shoot your NET |
-| J / F | Hold intake / toggle auto-intake; funnel robots back up to a CORAL STATION; at a reef, collect staged ALGAE (or knock it off) |
+| J / I | Hold intake / toggle auto-intake; funnel robots back up to a CORAL STATION; at a reef, collect staged ALGAE (or knock it off) |
 | G | Feed held ALGAE into your nearby PROCESSOR; with CORAL only, eject it a short distance |
 | C / X | Climb the nearest matching alliance cage / descend |
 | H | HUMAN PLAYER: drop a CORAL down the nearest CORAL STATION CHUTE, aimed at your robot |
@@ -112,7 +112,7 @@ AUTO (20 s): drive it yourself (default) or pick a scripted routine. TELEOP (2:2
 | Shift | Precision mode |
 | Space | Shoot at your HUB (hold) — turret robots aim themselves; turretless robots with chassis auto-align rotate onto the HUB |
 | G | Feed (hold) — lob FUEL back into your ALLIANCE ZONE, clearing the hub/net/trench |
-| F / J | Toggle auto-intake / hold to intake |
+| I / J | Toggle auto-intake / hold to intake |
 | C / X | Climb / descend (at your TOWER) · 1 2 3 selects the level |
 | H | Human player: open/close the CHUTE |
 | V | Cycle camera (driver station, follow, chase, overhead, orbit) |

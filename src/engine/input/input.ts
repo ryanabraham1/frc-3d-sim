@@ -91,7 +91,7 @@ export class InputManager {
     let cameraNext = this.edge('KeyV');
     let pause = this.edge('Escape') || this.edge('KeyP');
     const restart = this.edge('KeyR');
-    const toggleIntake = this.edge('KeyF');
+    const toggleIntake = this.edge('KeyI');
     const toggleHelp = this.edge('Slash') || this.edge('F1');
 
     // Gamepad (standard mapping): LS move, RS-x rotate, RT shoot, LT intake, A climb, B descend,
@@ -159,7 +159,7 @@ export const DEFAULT_CONTROLS_HELP: [string, string][] = [
   ['Shift', 'Precision (slow) mode'],
   ['Space', 'Shoot at goal (hold)'],
   ['G', 'Feed / pass toward your alliance zone (hold)'],
-  ['F', 'Toggle auto-intake · J = hold intake'],
+  ['I', 'Toggle auto-intake · J = hold intake'],
   ['C / X', 'Climb / descend'],
   ['1 2 3  or  [ ]', 'Select climb level'],
   ['H', 'Human player: release chute'],
