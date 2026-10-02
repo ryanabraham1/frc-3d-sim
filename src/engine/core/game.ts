@@ -80,6 +80,9 @@ export function localSetup(s: GameSettings): MatchSetup {
  * Orchestrates one match: builds the world from a SeasonDefinition, runs a fixed-step simulation,
  * routes input (or the AUTO autopilot, or remote drivers) to robots, and drives HUD + camera. Year-agnostic.
  */
+/** How long a live driver cue stays up without being refreshed. */
+const CUE_SECONDS = 0.6;
+
 export class Game {
   readonly role: GameRole;
   readonly setup: MatchSetup;
@@ -196,6 +199,9 @@ export class Game {
       toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance, robot?: Robot) {
         self.toast(msg, kind, alliance, robot);
       },
+      cue(robot: Robot, text: string, cls?: string) {
+        self.cue(robot, text, cls);
+      },
       humanPlayerIsAuto(a: Alliance) {
         if (self.role === 'local') return !self.player || a !== self.player.alliance || self.settings.autoHumanPlayer;
         return self.setup.autoHumanPlayer || !self.setup.robots.some((r) => r.alliance === a);
@@ -226,6 +232,7 @@ export class Game {
         net!.client.on('msg', ({ data }) => {
           const m = data as HostMsg;
           if (m?.t === 'toast') this.hud.toast(m.msg, m.kind, m.alliance);
+          if (m?.t === 'cue') this.hud.showBanner(m.text, CUE_SECONDS, m.cls);
           if (m?.t === 'notice') this.hud.toast(m.message, 'warn');
         }),
       );
@@ -568,6 +575,15 @@ export class Game {
   }
 
   /** Show a toast here and (host) forward it — to one driver if `robot` is given, else to everyone. */
+  /** Live status for one driver (see SeasonContext.cue): only that robot's screen shows it. */
+  private cue(robot: Robot, text: string, cls?: string): void {
+    if (robot === this.player) this.hud.showBanner(text, CUE_SECONDS, cls);
+    else {
+      const peer = this.hostSync?.peerForRobot(robot);
+      if (peer) this.hostSync!.send({ t: 'cue', text, cls }, peer);
+    }
+  }
+
   private toast(msg: string, kind: ToastKind, alliance?: Alliance, robot?: Robot): void {
     if (robot && robot !== this.player) {
       const peer = this.hostSync?.peerForRobot(robot);

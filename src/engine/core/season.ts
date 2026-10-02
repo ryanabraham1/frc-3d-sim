@@ -61,6 +61,11 @@ export interface SeasonContext {
    * everyone does (in multiplayer the host forwards it to all clients).
    */
   toast(msg: string, kind?: ToastKind, alliance?: Alliance, robot?: Robot): void;
+  /**
+   * Live on-screen status for one robot's driver (e.g. "PINNING 254"): shown big in the middle of the screen, and it
+   * fades if not refreshed within a moment. `cls` styles it ('pin', 'pin danger').
+   */
+  cue?(robot: Robot, text: string, cls?: string): void;
   /** Should this alliance's human player act automatically (vs. a driver pressing the HP button)? */
   humanPlayerIsAuto(alliance: Alliance): boolean;
 }

@@ -272,6 +272,24 @@ kbd {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
+/* Live PINNING cue for the pinning robot's driver (G420 / G425 / G418). */
+.hud-banner.pin {
+  top: 20%;
+  font-size: 30px;
+  font-weight: 700;
+  color: #b45309;
+  text-shadow: 0 2px 14px rgba(255, 255, 255, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+.hud-banner.pin.danger {
+  color: #c62828;
+  animation: pin-flash 0.5s steps(2, jump-none) infinite;
+}
+@keyframes pin-flash {
+  50% {
+    opacity: 0.55;
+  }
+}
 .hud-toasts {
   position: absolute;
   top: 130px;

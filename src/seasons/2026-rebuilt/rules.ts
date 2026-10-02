@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
+import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import type { AimTarget, Robot } from '@engine/robot/robot';
 import * as C from './constants';
 import { dir, RebuiltFieldRefs, side, towerSlots } from './field';
@@ -54,6 +55,8 @@ export class RebuiltRules implements SeasonRules {
   private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; t: number; team: number }>();
   private g407Cooldown = new Map<number, number>();
   private g403Called = new Set<number>();
+  /** G418: 3-count on PINS. */
+  private readonly pins = new PinTracker({ rule: 'G418', countSeconds: 3, separation: PIN_SEPARATION });
   private climbHintAt = -99;
   private towerAuto: Record<Alliance, number> = { red: 0, blue: 0 };
   private towerTeleop: Record<Alliance, number> = { red: 0, blue: 0 };
@@ -163,6 +166,7 @@ export class RebuiltRules implements SeasonRules {
 
   stage(): void {
     const { pool, robots, rng } = this.ctx;
+    this.pins.reset();
     const st = stageFuel(
       robots.map((r) => Math.min(r.config.preload, r.config.hopperCapacity)),
       rng,
@@ -341,6 +345,7 @@ export class RebuiltRules implements SeasonRules {
         toast(`MAJOR FOUL G403 — ${r.config.teamNumber} crossed the CENTER LINE in AUTO`, 'foul', r.alliance);
       }
     }
+    if (clock.started && clock.mode !== 'disabled') reportPins(this.pins.updateRobots(dt, robots, this.ctx.physics), this.ctx, t);
     for (const [id, cd] of this.g407Cooldown) this.g407Cooldown.set(id, cd - dt);
     for (const [idx, l] of this.launches) if (pool.state[idx] !== 'field' || t - l.t > 8) this.launches.delete(idx);
   }

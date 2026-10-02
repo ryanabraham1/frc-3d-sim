@@ -327,7 +327,19 @@ describe('2024 CRESCENDO — manual facts', () => {
     });
   }
 
-  it('SOURCE human players only drop in TELEOP, one NOTE in the CHUTE at a time', () => {
+  it('a manual SOURCE drop releases more NOTES even while earlier ones are still in the CHUTE', () => {
+    const sim = make('blue', atSource('blue', 0.6));
+    emptyHanded(sim, 'blue');
+    startMatch(sim);
+    jump(sim, TELEOP + 1);
+    const before = sim.ctx.pool.indices('field').length;
+    expect(rules(sim).dropNote('blue', true)).toBe(true);
+    expect(rules(sim).dropNote('blue', true)).toBe(true);
+    expect(rules(sim).dropNote('blue', true)).toBe(true);
+    expect(sim.ctx.pool.indices('field').length).toBe(before + 3);
+  });
+
+  it('SOURCE human players only drop in TELEOP; the automatic one waits for a clear CHUTE', () => {
     const sim = make('blue', atSource('blue', 0.6));
     emptyHanded(sim, 'blue');
     startMatch(sim);

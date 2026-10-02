@@ -114,8 +114,12 @@ practice option, as in the existing 2026 simulator.
 - G427: direct contact with an opponent in its protected reef/barge zone produces a major foul.
 - G428: direct contact with an opponent climbing in the final 20 seconds awards a major and BARGE RP.
 
+- G425: pinning is a 3-count: a robot holding an opponent boxed in (stopped, driven, against a wall, FIELD element or
+  robot) for 3 s gets a minor foul, then a major foul for every further 3 s. The pinning driver sees a live
+  "PINNING nnnn" countdown (`src/engine/match/pinning.ts`).
+
 Minor and major foul values are two and six points. Intent, herding, transitive contact through pieces,
-pinning, damage, cards, inspection, human safety rules and tournament administration are not referee
+damage, cards, inspection, human safety rules and tournament administration are not referee
 simulations. Climbing/placement controls prevent several illegal actions instead of assessing penalties.
 
 ## Simulation approximations

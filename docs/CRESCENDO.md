@@ -49,8 +49,13 @@ Page numbers are the manual's printed pages.
 - **G403 / G409** — impossible by construction (1-NOTE capacity).
 - NOTES that leave the FIELD are not returned to play (§6.8).
 
-Not enforced (referee judgement or intent): G406/G407 intent, G410, G411–G413, G415–G421 (pins,
-tipping, damage, collusion), G425–G429 (humans).
+- **G420** — PINS, a 5-count: a robot holding an opponent (stopped, driven, boxed in against a wall, FIELD element or
+  robot) for 5 s gets a FOUL, then a TECH FOUL for every further 5 s. The pinning driver sees a live "PINNING nnnn"
+  countdown. Shared engine tracker `src/engine/match/pinning.ts` (also used by 2025 G425 and 2026 G418); see its header
+  for the simplifications (a pin that stays broken for 1 s restarts the count; chains of robots are not followed).
+
+Not enforced (referee judgement or intent): G406/G407 intent, G410, G411–G413, G415–G419 and G421 (tipping,
+damage, collusion), G425–G429 (humans).
 
 ## How each action is simulated
 

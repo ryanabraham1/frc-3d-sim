@@ -3,6 +3,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { ALLIANCES, opponent, type Alliance } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
+import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
@@ -50,6 +51,8 @@ export class ReefscapeRules implements SeasonRules {
   private forcedBarge: Record<Alliance, boolean> = { blue: false, red: false };
   private readonly cageContacts = new Set<string>();
   private readonly protectedContacts = new Set<string>();
+  /** G425: 3-count on PINS. */
+  private readonly pins = new PinTracker({ rule: 'G425', countSeconds: 3, separation: PIN_SEPARATION });
   private readonly notices = new Map<number, number>();
   private readonly grips: CageGrip[] = [];
   private readonly launchedBy = new Map<number, { robotId: number; at: number }>();
@@ -86,7 +89,7 @@ export class ReefscapeRules implements SeasonRules {
 
   stage(): void {
     const { pool, robots } = this.ctx;
-    this.placements.length = 0; this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear();
+    this.placements.length = 0; this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear(); this.pins.reset();
     this.autoTrough = { blue: 0, red: 0 };
     this.autoAssessed = this.bargeAssessed = false;
     this.grips.length = 0;
@@ -592,6 +595,7 @@ export class ReefscapeRules implements SeasonRules {
     for (const a of ALLIANCES) this.refs.algaeColliders[a].forEach((c, f) => c.setEnabled(this.reefAlgae(a, f)));
     if (!this.activeScoring()) return;
     this.enforceProtectedContact();
+    if (this.ctx.clock.mode !== 'disabled') reportPins(this.pins.updateRobots(dt, this.ctx.robots, this.ctx.physics), this.ctx, this.ctx.clock.elapsed);
     const { pool, frame, score } = this.ctx;
     for (let i = C.CORAL_COUNT; i < pool.count; i++) {
       if (pool.state[i] !== 'field') continue;

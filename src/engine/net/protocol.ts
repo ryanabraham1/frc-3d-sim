@@ -112,6 +112,7 @@ export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }
   | { t: 'start'; setup: MatchSetup }
   | { t: 'toast'; msg: string; kind: ToastKind; alliance?: Alliance }
+  | { t: 'cue'; text: string; cls?: string }
   | { t: 'to-lobby' }
   | { t: 'notice'; message: string };
 

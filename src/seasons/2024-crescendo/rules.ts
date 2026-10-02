@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ALLIANCES, opponent, type Alliance, type FieldPoint } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
+import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch } from '@engine/units';
 import { convexOverlap } from '@engine/zones';
@@ -49,6 +50,8 @@ export class CrescendoRules implements SeasonRules {
   private readonly launches = new Map<number, Launch>();
   private readonly g414: Record<Alliance, number> = { blue: 0, red: 0 };
   private readonly contacts = new Set<string>();
+  /** G420: 5-count on PINS. */
+  private readonly pins = new PinTracker({ rule: 'G420', countSeconds: 5, separation: PIN_SEPARATION });
   private readonly notices = new Map<number, number>();
   private sourceTimer: Record<Alliance, number> = { blue: 0, red: 0 };
   private autoHpTimer: Record<Alliance, number> = { blue: 0, red: 0 };
@@ -149,7 +152,7 @@ export class CrescendoRules implements SeasonRules {
     this.highNotesLeft = { blue: C.HIGH_NOTES_PER_ALLIANCE, red: C.HIGH_NOTES_PER_ALLIANCE };
     this.forcedEnsemble = { blue: false, red: false };
     this.ampAnim = { blue: 0, red: 0 };
-    this.left.clear(); this.launches.clear(); this.contacts.clear(); this.prevZ.clear();
+    this.left.clear(); this.launches.clear(); this.contacts.clear(); this.pins.reset(); this.prevZ.clear();
     this.g414.blue = this.g414.red = 0;
     this.leaveAssessed = this.stageAssessed = false;
     for (let i = 0; i < pool.count; i++) pool.reserve(i);
@@ -404,29 +407,44 @@ export class CrescendoRules implements SeasonRules {
   /**
    * SOURCE human player [M 5.4]: put a NOTE into the top of the 50° CHUTE, on the part of the 75¼ in opening nearest
    * the robot. It slides down and out of the opening; physics decides whether a SOURCE intake catches it or it
-   * lands on the carpet.
+   * lands on the carpet. A manual press (`stack`) releases another NOTE even while earlier ones are still in the
+   * CHUTE or in front of it, sliding along the opening to a free spot; the automatic human player waits for a clear
+   * CHUTE.
    */
-  dropNote(a: Alliance, verbose = false, robot = this.sourceRobot(a)): boolean {
+  dropNote(a: Alliance, verbose = false, robot = this.sourceRobot(a), stack = verbose): boolean {
     const say = (m: string) => verbose && this.ctx.toast(m, 'info', a);
     if (!this.isTeleop()) return say('SOURCE human players feed NOTES in TELEOP'), false;
-    if (this.noteAtSource(a)) return say('A NOTE is already in the CHUTE'), false;
+    if (!stack && this.noteAtSource(a)) return false;
     const { pool, frame } = this.ctx;
     const idx = pool.indices('reserve', `source:${a}`)[0];
     if (idx === undefined) return say('The SOURCE is empty'), false;
-    let t = 0.5;
+    let t0 = 0.5;
     if (robot) {
       let bestD = Infinity;
       for (let k = 0.05; k <= 0.95; k += 0.025) {
         const q = C.sourcePoint(a, k, 0);
         const dd = Math.hypot(q.x - robot.pose.x, q.y - robot.pose.y);
-        if (dd < bestD) { bestD = dd; t = k; }
+        if (dd < bestD) { bestD = dd; t0 = k; }
       }
     }
     const span = (C.SOURCE_OPENING_WIDTH / 2 - C.NOTE_OUTER_RADIUS - inch(1)) / C.SOURCE_WALL_LENGTH;
-    t = clamp(t, 0.5 - span, 0.5 + span);
+    const spawnAt = (k: number) => C.chutePoint(a, clamp(k, 0.5 - span, 0.5 + span), C.CHUTE_LENGTH - C.NOTE_OUTER_RADIUS + inch(2));
+    // Preferred spot first, then alternate sides of it, until one isn't occupied by a NOTE already released.
+    const others = pool.indices('field').map((i) => frame.toField(pool.position(i)));
+    const clear = (k: number) => {
+      const q = spawnAt(k);
+      return !others.some((o) => Math.hypot(o.x - q.x, o.y - q.y, o.z - q.z) < C.NOTE_OUTER_RADIUS * 2 + 0.03);
+    };
+    const step = (C.NOTE_OUTER_RADIUS * 2 + 0.05) / C.SOURCE_WALL_LENGTH;
+    let t: number | undefined;
+    for (let j = 0; j <= 2 * Math.ceil(span / step) && t === undefined; j++) {
+      const k = clamp(t0 + (j % 2 ? 1 : -1) * Math.ceil(j / 2) * step, 0.5 - span, 0.5 + span);
+      if (clear(k)) t = k;
+    }
+    if (t === undefined) return say('The top of the CHUTE is jammed with NOTES'), false;
     const n = C.sideYaw(C.sourceEnd(a), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x));
     const nrm = { x: Math.cos(n) * Math.sin(C.CHUTE_ANGLE), y: Math.sin(n) * Math.sin(C.CHUTE_ANGLE), z: Math.cos(C.CHUTE_ANGLE) };
-    const q = C.chutePoint(a, t, C.CHUTE_LENGTH - C.NOTE_OUTER_RADIUS + inch(2));
+    const q = spawnAt(t);
     const lift = C.NOTE_THICKNESS / 2 + 0.006;
     const down = 0.4; // released with a small push down the slope
     const dv = { x: Math.cos(n) * Math.cos(C.CHUTE_ANGLE) * down, y: Math.sin(n) * Math.cos(C.CHUTE_ANGLE) * down, z: -Math.sin(C.CHUTE_ANGLE) * down };
@@ -575,7 +593,7 @@ export class CrescendoRules implements SeasonRules {
     }
   }
 
-  afterStep(_dt: number): void {
+  afterStep(dt: number): void {
     // Sensors always run (pieces entering goals are removed even outside a match); points need the match.
     const { pool, frame, score } = this.ctx;
     // LEAVE: BUMPERS completely clear of the ROBOT STARTING ZONE at any point in AUTO.
@@ -613,7 +631,10 @@ export class CrescendoRules implements SeasonRules {
       // NOTES that leave the FIELD are not returned to play [M 6.8].
       if (p.x < -0.35 || p.x > C.L + 0.35 || p.y < -0.35 || p.y > C.W + 0.35 || p.z < -0.3) pool.reserve(i, 'out');
     }
-    if (this.ctx.clock.started && this.ctx.clock.mode !== 'disabled') this.checkContacts();
+    if (this.ctx.clock.started && this.ctx.clock.mode !== 'disabled') {
+      this.checkContacts();
+      reportPins(this.pins.updateRobots(dt, this.ctx.robots, this.ctx.physics), this.ctx, this.now);
+    }
   }
 
   /** A HIGH NOTE dropping over a MICROPHONE top (ring around the pipe) SPOTLIGHTS that chain [M 6.5.4]. */
