@@ -4,7 +4,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, footprint, groundSideSign, stationSideSign } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
@@ -278,13 +278,17 @@ export class Robot {
     // Turret + barrel.
     this.turret = new THREE.Group();
     // Launcher sits on top of the robot (see launcherExit()).
-    this.turret.position.set(c.frameLength * 0.18, Math.max(c.launcher.height, c.height) - 0.02, 0);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.06, 20), dark);
-    this.turret.add(base);
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.14), alu);
-    barrel.position.set(0.06, 0.07, 0);
-    barrel.rotation.z = c.launcher.angle * 0.6;
-    this.turret.add(barrel);
+    if ((c.launcher.exits ?? 1) > 1) {
+      this.buildDumper(dark, alu);
+    } else {
+      this.turret.position.set(c.frameLength * 0.18, Math.max(c.launcher.height, c.height) - 0.02, 0);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.06, 20), dark);
+      this.turret.add(base);
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.14), alu);
+      barrel.position.set(0.06, 0.07, 0);
+      barrel.rotation.z = c.launcher.angle * 0.6;
+      this.turret.add(barrel);
+    }
     if (c.launcher.enabled) this.visual.add(this.turret);
 
     // Climber arm (extends while climbing).
@@ -394,6 +398,39 @@ export class Robot {
     const lip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, mouth + 0.06), alu);
     lip.position.set(side * (this.fp.length / 2 + 0.01), y - 0.09, 0);
     this.visual.add(lip);
+  }
+
+  /**
+   * Dumper shooter: a flywheel housing as wide as the robot along the front edge, with one open chute per exit (the
+   * dark gaps are where each stream of pieces leaves; see `launcherExitOffsets`).
+   */
+  private buildDumper(dark: THREE.Material, alu: THREE.Material): void {
+    const c = this.config;
+    const offsets = launcherExitOffsets(c);
+    const exitY = Math.max(c.launcher.height, c.height) - 0.02;
+    this.turret.position.set(c.frameLength * 0.4, exitY, 0);
+    const w = c.frameWidth * 0.98;
+    const housing = new THREE.MeshStandardMaterial({ color: 0x8c96a3, roughness: 0.5, transparent: true, opacity: 0.55 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, w), housing);
+    body.position.set(-0.05, 0.0, 0);
+    this.turret.add(body);
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, w), alu);
+    lip.position.set(0.06, -0.05, 0);
+    this.turret.add(lip);
+    // One glowing chute mouth per exit, where its stream of FUEL leaves.
+    const mouthMat = new THREE.MeshStandardMaterial({ color: 0xf2c200, emissive: 0xf2c200, emissiveIntensity: 0.45, roughness: 0.6 });
+    for (const side of offsets) {
+      const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.09, 0.13), mouthMat);
+      mouth.position.set(0.055, 0.0, -side);
+      this.turret.add(mouth);
+    }
+    // Dividers between chutes.
+    for (let i = 0; i < offsets.length - 1; i++) {
+      const gap = (offsets[i] + offsets[i + 1]) / 2;
+      const div = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.13, 0.015), dark);
+      div.position.set(-0.05, 0.0, -gap);
+      this.turret.add(div);
+    }
   }
 
   /** Dark shooter / scoring port plate on the front bumper, so front (score) vs. intake face is obvious. */
@@ -845,10 +882,11 @@ export class Robot {
    * inside the robot that fired it. (Bug fixed 2026-09-29: a 30in robot with a 19in launcher spawned
    * every ball inside its own frame collider and physics shoved it out sideways → misses.)
    */
-  launcherExit(): { forward: number; up: number } {
+  launcherExit(side = 0): { forward: number; up: number; side: number } {
     const c = this.config;
+    // A dumper (several exits) shoots from the front edge of the frame; a single launcher sits near the center.
     // Flat pieces (rings) only need their half-thickness of vertical clearance.
-    return { forward: c.frameLength * 0.18, up: Math.max(c.launcher.height, c.height) + (this._projectile.halfHeight ?? this._projectile.radius) + 0.03 };
+    return { forward: c.frameLength * ((c.launcher.exits ?? 1) > 1 ? 0.4 : 0.18), side, up: Math.max(c.launcher.height, c.height) + (this._projectile.halfHeight ?? this._projectile.radius) + 0.03 };
   }
 
   /**
@@ -950,7 +988,8 @@ export class Robot {
    * Returns null if the launcher can't fire this tick.
    */
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
-    const c = this.config.launcher;
+    const c0 = this.config;
+    const c = c0.launcher;
     if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none' || this.tippedOver) return null;
     // Auto-align robots hold fire until the chassis points at the target (~3°).
     if (target && !c.turret && this.config.autoAlign && Math.abs(this.alignError) > 0.05) return null;
@@ -961,10 +1000,12 @@ export class Robot {
     this.fireCooldown = 1 / c.rate;
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
-    const ex = this.launcherExit();
+    // A multi-exit dumper alternates between its exits, so shots leave as several parallel streams.
+    const offsets = launcherExitOffsets(c0);
+    const ex = this.launcherExit(offsets[this.exitIndex++ % offsets.length]);
     // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
     // (the aim below assumes a level robot, so a rocking or tipping robot misses — as it would for real).
-    const pos = this.localToWorld(ex.forward, ex.up, 0, new THREE.Vector3());
+    const pos = this.localToWorld(ex.forward, ex.up, -ex.side, new THREE.Vector3());
 
     let speed = c.manualSpeed;
     let theta = c.angle;
@@ -1004,6 +1045,9 @@ export class Robot {
     vel.z += rv.z;
     return { pos, vel };
   }
+
+  /** Next exit a multi-exit dumper fires from. */
+  private exitIndex = 0;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;

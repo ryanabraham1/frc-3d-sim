@@ -101,7 +101,7 @@ for manual source pages, implemented fouls and physics limitations.
 
 ## Playing 2026 REBUILT
 
-Pick alliance, driver station, AUTO mode, camera and robot archetype (*Turret trench bot*, *Fixed shooter +
+Pick alliance, driver station, AUTO mode, camera and robot archetype (*Turret trench bot*, *Dumper +
 auto-align*, *Big-hopper BUMP bot*, *OUTPOST-fed shooter*) on the home screen, then **Start match**.
 AUTO (20 s): drive it yourself (default) or pick a scripted routine. TELEOP (2:20) is yours.
 

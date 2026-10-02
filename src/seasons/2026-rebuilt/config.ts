@@ -42,12 +42,16 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   c.intake.groundSide ??= 'back';
   c.intake.stationSide ??= 'back';
   c.intake.enabled = c.intake.ground || c.intake.station;
+  if ((c.launcher.exits ?? 1) > 1) c.launcher.turret = false; // a robot-wide dumper can't sit on a turret
   c.autoAlign ??= !c.launcher.turret;
   c.preload = Math.min(c.preload, C.FUEL_MAX_PRELOAD, c.hopperCapacity);
   return c;
 }
 
-type Build = { intake: 'both' | 'ground' | 'outpost'; aim: 'turret' | 'align' | 'driver'; hopper: number; tall: boolean; rate: number; climb: 0 | 1 | 2 | 3 };
+/** Streams on a wide dumper: Team 9072's "Sandstorm" had a "4 ball wide shooter" (docs/ROBOT-ARCHETYPES.md). */
+const DUMPER_EXITS = 4;
+
+type Build = { intake: 'both' | 'ground' | 'outpost'; aim: 'turret' | 'align' | 'driver'; dumper?: boolean; hopper: number; tall: boolean; rate: number; climb: 0 | 1 | 2 | 3 };
 function build(b: Build): RobotConfig {
   const c = rebuiltRobotDefaults();
   c.intake.ground = b.intake !== 'outpost';
@@ -58,6 +62,7 @@ function build(b: Build): RobotConfig {
   c.height = b.tall ? inch(30) : inch(21);
   c.launcher.height = b.tall ? inch(26) : inch(19);
   c.launcher.rate = b.rate;
+  c.launcher.exits = b.dumper ? DUMPER_EXITS : 1;
   c.climber.maxLevel = b.climb;
   return normalizeRebuiltConfig(c);
 }
@@ -66,7 +71,7 @@ function build(b: Build): RobotConfig {
 export function rebuiltRobotPresets() {
   return [
     { id: 'turret', label: 'Turret trench bot', description: 'Under 22¼ in so it drives through the TRENCH; full-width ground intake, turret shooter that scores on the move, 40-FUEL hopper, climbs to LEVEL 3.', config: build({ intake: 'both', aim: 'turret', hopper: 40, tall: false, rate: 8, climb: 3 }) },
-    { id: 'fixed', label: 'Fixed shooter + auto-align', description: 'Trench-height robot with a double-wide fixed shooter aimed by rotating the chassis (auto-align), 50-FUEL hopper, LEVEL 1 climb. The most common competitive design.', config: build({ intake: 'both', aim: 'align', hopper: 50, tall: false, rate: 12, climb: 1 }) },
+    { id: 'fixed', label: 'Dumper + auto-align', description: 'Trench-height robot whose shooter spans the whole front of the robot (a "dumper"): FUEL leaves in four parallel streams instead of one, at the same balls-per-second. Aimed by rotating the chassis (auto-align), 50-FUEL hopper, LEVEL 1 climb. The most common competitive design.', config: build({ intake: 'both', aim: 'align', dumper: true, hopper: 50, tall: false, rate: 12, climb: 1 }) },
     { id: 'big-hopper', label: 'Big-hopper BUMP bot', description: 'Tall (30 in) with an 80-FUEL hopper and a fast multi-wheel shooter: too tall for the TRENCH, so it crosses the BUMPs. Auto-align, LEVEL 2 climb.', config: build({ intake: 'both', aim: 'align', hopper: 80, tall: true, rate: 16, climb: 2 }) },
     { id: 'outpost', label: 'OUTPOST-fed shooter', description: 'No ground intake: loads FUEL from its OUTPOST CHUTE, relying on the human player; auto-align shooter, 30-FUEL hopper, LEVEL 1 climb.', config: build({ intake: 'outpost', aim: 'align', hopper: 30, tall: false, rate: 8, climb: 1 }) },
   ];
@@ -82,7 +87,13 @@ export const rebuiltRobotOptions: RobotOption[] = [
     'Without a ground intake you can only reload at your OUTPOST (the human player opens the CHUTE with H).'),
   opt('aim', 'Shooter aiming', [['turret', 'Turret'], ['align', 'Chassis auto-align', 'Holding Space rotates the robot onto the HUB, then fires'], ['driver', 'Driver aims']],
     (c) => (c.launcher.turret ? 'turret' : c.autoAlign ? 'align' : 'driver'),
-    (c, v) => { c.launcher.turret = v === 'turret'; c.autoAlign = v === 'align'; }),
+    (c, v) => { c.launcher.turret = v === 'turret'; c.autoAlign = v === 'align'; if (v === 'turret') c.launcher.exits = 1; }),
+  opt('exits', 'Shooter exit', [['single', 'Single stream', 'All FUEL leaves from one point on the robot'], ['dumper', `Dumper (${DUMPER_EXITS} streams)`, 'A shooter as wide as the robot: FUEL leaves in parallel streams at the same balls-per-second. No turret.']],
+    (c) => ((c.launcher.exits ?? 1) > 1 ? 'dumper' : 'single'),
+    (c, v) => {
+      c.launcher.exits = v === 'dumper' ? DUMPER_EXITS : 1;
+      if (v === 'dumper' && c.launcher.turret) { c.launcher.turret = false; c.autoAlign = true; }
+    }),
   opt('hopper', 'Hopper', [['15', '15'], ['30', '30'], ['50', '50'], ['80', '80']],
     (c) => String([15, 30, 50, 80].reduce((b, x) => (Math.abs(x - c.hopperCapacity) < Math.abs(b - c.hopperCapacity) ? x : b), 30)),
     (c, v) => { c.hopperCapacity = Number(v); c.preload = Math.min(C.FUEL_MAX_PRELOAD, c.hopperCapacity); },
@@ -103,6 +114,7 @@ export function rebuiltSpecBars(config: RobotConfig) {
   return [
     { label: 'FUEL hopper', value: `${c.hopperCapacity}`, frac: c.hopperCapacity / 80 },
     { label: 'Fire rate', value: `${c.launcher.rate} /s`, frac: c.launcher.rate / 16 },
+    { label: 'Shooter', value: (c.launcher.exits ?? 1) > 1 ? `Dumper ×${c.launcher.exits}` : 'Single stream', frac: (c.launcher.exits ?? 1) > 1 ? 1 : 0.4 },
     { label: 'Aiming', value: c.launcher.turret ? 'Turret' : c.autoAlign ? 'Auto-align' : 'Driver', frac: c.launcher.turret ? 1 : c.autoAlign ? 0.7 : 0.3 },
     { label: 'Intake', value: intake, frac: (Number(c.intake.ground) * 2 + Number(c.intake.station)) / 3 },
   ];

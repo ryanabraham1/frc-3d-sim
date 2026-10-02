@@ -120,12 +120,17 @@ shooter)*, *AMP + TRAP specialist*. See [CRESCENDO.md](CRESCENDO.md#robot-archet
 - **Hopper size and fire rate** decide cycle time: "how much FUEL can you carry, and how fast can you empty it".
 - **Turret vs fixed shooter**: turrets allow shooting on the move. Fixed double-wide shooters with chassis
   auto-align were more common and simpler.
+- **Dumpers**: the shooter spans the whole front of the robot and FUEL leaves in several parallel streams (derived
+  from Chief Delphi build threads; e.g. Team 9072 "Sandstorm": a 4-ball-wide shooter, 75-ball hopper, ~19 balls/s,
+  and Team 7769's 2.75-ball-wide shooter). Throughput is the total balls/s, so the streams only widen the footprint
+  of the shot (easier to hit the HUB opening, no turret). Modelled as `launcher.exits` / `launcher.exitSpan`: shots
+  rotate through the exits, `rate` stays the total. Never combined with a turret.
 - **Trench-capable (≤ 22¼ in)** robots take the short path under the TRENCH. Taller robots with bigger hoppers
   must cross the BUMPs.
 - **OUTPOST-fed** robots (no ground intake) depend on the human player's CHUTE.
 - Climbers ranged from TOWER LEVEL 1 to LEVEL 3.
 
-Presets: *Turret trench bot* (default), *Fixed shooter + auto-align*, *Big-hopper BUMP bot*, *OUTPOST-fed
+Presets: *Turret trench bot* (default), *Dumper + auto-align*, *Big-hopper BUMP bot*, *OUTPOST-fed
 shooter*.
 
 ## Earlier seasons (patterns only, not yet in the simulator)

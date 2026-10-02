@@ -1,9 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
+import * as THREE from 'three';
 import type { Alliance, FieldPose } from '../src/engine/coords';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND, type RobotCommand } from '../src/engine/robot/robot';
-import { cloneConfig, footprint, type RobotConfig } from '../src/engine/robot/config';
+import { cloneConfig, footprint, launcherExitOffsets, type RobotConfig } from '../src/engine/robot/config';
 import { rebuilt2026 as season } from '../src/seasons/2026-rebuilt';
 import { normalizeRebuiltConfig, rebuiltRobotOptions, rebuiltRobotPresets } from '../src/seasons/2026-rebuilt/config';
 import { side, sideYaw } from '../src/seasons/2026-rebuilt/field';
@@ -109,5 +110,68 @@ describe('2026 REBUILT robot archetypes', () => {
     const auto = season.createAutoPilot(sim.ctx, sim.rules, sim.robot, 'shoot-only');
     run(sim, 20, () => (sim.ctx.clock.mode === 'auto' ? auto.update(sim.physics.dt) : IDLE_COMMAND));
     expect(season.testing!.goalCount(sim.ctx, 'blue')).toBe(8);
+  });
+
+  describe('dumper (multi-stream shooter)', () => {
+    it('the auto-align preset is a 4-exit dumper; a turret is not', () => {
+      expect(preset('fixed').launcher.exits).toBe(4);
+      expect(preset('fixed').launcher.turret).toBe(false);
+      expect(preset('turret').launcher.exits).toBe(1);
+      const exits = rebuiltRobotOptions.find((o) => o.id === 'exits')!;
+      const cfg = preset('turret');
+      exits.set(cfg, 'dumper');
+      expect(cfg.launcher.exits).toBe(4);
+      expect(cfg.launcher.turret).toBe(false);
+      expect(cfg.autoAlign).toBe(true);
+      rebuiltRobotOptions.find((o) => o.id === 'aim')!.set(cfg, 'turret');
+      expect(cfg.launcher.exits).toBe(1);
+      expect(cfg.launcher.turret).toBe(true);
+    });
+
+    it('exits are spread symmetrically across the front, within the frame width', () => {
+      const cfg = preset('fixed');
+      const off = launcherExitOffsets(cfg);
+      expect(off).toHaveLength(4);
+      expect(off[0]).toBeCloseTo(-off[3]);
+      expect(off[1]).toBeCloseTo(-off[2]);
+      expect(Math.abs(off[3] - off[0])).toBeLessThan(cfg.frameWidth);
+      expect(launcherExitOffsets(preset('turret'))).toEqual([0]);
+    });
+
+    it('shots leave from every exit in turn, in parallel streams', () => {
+      const sim = make('blue', { x: 2.4, y: 2.6, yaw: Math.PI / 2 }, preset('fixed'));
+      sim.rules.stage();
+      const r = sim.robot;
+      const off = launcherExitOffsets(r.config);
+      const lateral: number[] = [];
+      const heading: number[] = [];
+      const q = new THREE.Quaternion(r.body.rotation().x, r.body.rotation().y, r.body.rotation().z, r.body.rotation().w).invert();
+      for (let k = 0; k < 8; k++) {
+        r.fireCooldown = 0;
+        const shot = r.launch(null, sim.ctx.rng)!;
+        const t = r.body.translation();
+        const local = shot.pos.clone().sub(new THREE.Vector3(t.x, t.y, t.z)).applyQuaternion(q);
+        lateral.push(-local.z); // robot left = +
+        heading.push(Math.atan2(shot.vel.z, shot.vel.x));
+      }
+      // Cycles through every exit, in order, and repeats.
+      expect(lateral.slice(0, 4).map((x) => +x.toFixed(3))).toEqual(off.map((x) => +x.toFixed(3)));
+      expect(lateral.slice(4).map((x) => +x.toFixed(3))).toEqual(lateral.slice(0, 4).map((x) => +x.toFixed(3)));
+      // The streams are parallel (all along the robot heading), not converging on one point.
+      expect(Math.max(...heading) - Math.min(...heading)).toBeLessThan(0.15);
+    });
+
+    it('fires the same balls per second as a single-stream robot with the same rate', () => {
+      const fired = (exits: number) => {
+        const cfg = preset('fixed');
+        cfg.launcher.exits = exits;
+        const sim = make('blue', { x: 2.4, y: 2.6, yaw: Math.PI / 2 }, cfg);
+        sim.rules.stage();
+        sim.rules.onPeriodChange(sim.ctx.clock.start());
+        run(sim, 2, { ...IDLE_COMMAND, shoot: true });
+        return sim.fired;
+      };
+      expect(fired(4)).toBe(fired(1));
+    });
   });
 });

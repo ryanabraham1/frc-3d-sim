@@ -84,6 +84,14 @@ export interface RobotConfig {
     height: number;
     /** True = turret can yaw independently of the drivetrain. */
     turret: boolean;
+    /**
+     * Number of side-by-side exits across the front of the robot (default 1). A "dumper" has a shooter as wide as the
+     * robot with several exits (e.g. 4): shots cycle through them, so FUEL leaves in parallel streams. `rate` is the
+     * total shots/s across all exits, so throughput is unchanged. Incompatible with a turret.
+     */
+    exits?: number;
+    /** Distance between the outermost exits as a fraction of the frame width (default 0.8). */
+    exitSpan?: number;
     /** 1-sigma random error (radians) applied to yaw & pitch. */
     spread: number;
     /** 1-sigma random speed error (fraction). */
@@ -122,6 +130,14 @@ export interface RobotConfig {
     /** Optional total rise time for cage games, independent of the cage's point value. */
     secondsToClimb?: number;
   };
+}
+
+/** Lateral offsets (m, robot frame; + = robot left) of the launcher's exits: one at the center, or `exits` spread evenly. */
+export function launcherExitOffsets(c: RobotConfig): number[] {
+  const n = Math.max(1, Math.round(c.launcher.exits ?? 1));
+  if (n === 1) return [0];
+  const span = c.frameWidth * (c.launcher.exitSpan ?? 0.8);
+  return Array.from({ length: n }, (_, i) => -span / 2 + (span * i) / (n - 1));
 }
 
 /** Tread friction when a config doesn't set `wheelCOF`. [EST: new blue nitrile on FRC carpet] */
