@@ -19,5 +19,5 @@
       "@seasons/*": ["src/seasons/*"]
     }
   },
-  "include": ["src", "tests", "server", "vite.config.ts"]
+  "include": ["src", "tests", "server", "tools/*.ts", "vite.config.ts"]
 }

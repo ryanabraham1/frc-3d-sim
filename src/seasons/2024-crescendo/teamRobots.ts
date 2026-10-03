@@ -91,6 +91,9 @@ registerRobotModel('vortex-254', (k: ModelKit) => {
     for (const sz of [-1, 1]) fly.push(roller(t, 0.052, 0.06, wheelM, x, y * k2, sz * 0.135));
     fly.push(roller(t, 0.035, 0.17, black, x, y * k2, 0));
   }
+  box(t, 0.25, 0.012, 0.17, black, -0.02, 0.03, 0);
+  const guide = box(t, 0.26, 0.008, 0.17, blue, -0.02, 0.16 * k2, 0);
+  guide.rotation.z = 0.6;
   // Feeder rollers inside the plates and the moving hood.
   const feed = [roller(t, 0.025, 0.17, blue, -0.06, 0.12 * k2), roller(t, 0.025, 0.17, blue, 0.04, 0.24 * k2)];
   const hood = pivot(t, 0.2, 0.33 * k2);
@@ -171,6 +174,8 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
     wheelShaft(head, 0.11, -0.03, { n: 4, r: 0.026, w: 0.025, span: 0.24, colors: [0x3a3d42] }),
     wheelShaft(head, 0.0, 0.0, { n: 3, r: 0.02, w: 0.02, span: 0.22, colors: [0x2a5bd7] }),
   ];
+  box(head, 0.19, 0.008, 0.3, black, 0.035, -0.052, 0);
+  box(pv, armLen, 0.006, 0.26, mat(0x7f8995, { metal: 0.3 }), armLen / 2, -0.012, 0);
   const held = pivot(head, 0.04, 0.0);
   // Two thin black J-hooks on telescoping posts.
   const hooks = new THREE.Group();
@@ -240,6 +245,7 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
   k.visual.add(stage);
   for (const sz of [-1, 1]) bar(stage, [ex + 0.035, bt + 0.05, sz * (ez - 0.03)], [ex + 0.035, H - 0.06, sz * (ez - 0.03)], 0.026, silverTube);
   bar(stage, [ex + 0.035, H - 0.06, -(ez - 0.03)], [ex + 0.035, H - 0.06, ez - 0.03], 0.022, silverTube);
+  box(stage, 0.08, 0.1, 0.24, dark, ex + 0.035, H - 0.12, 0);
   // Shooter carriage: pocketed silver side plates, two shafts of big gray/white flywheels.
   const carriage = pivot(k.visual, ex + 0.1, H - 0.12);
   sidePlates(carriage, [[-0.08, -0.09], [0.15, -0.09], [0.21, 0.0], [0.17, 0.11], [-0.08, 0.11]], 0.125, silver, [[-0.03, 0.0, 0.025], [0.05, 0.04, 0.02], [0.05, -0.05, 0.018], [0.13, -0.03, 0.016]]);
@@ -248,6 +254,8 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
     wheelShaft(carriage, 0.15, 0.06, { n: 2, r: 0.052, w: 0.045, span: 0.12, colors: [0x8d9299, 0xe8e8e8] }),
     wheelShaft(carriage, 0.1, -0.05, { n: 2, r: 0.052, w: 0.045, span: 0.12, colors: [0xe8e8e8, 0x8d9299] }),
   ];
+  box(carriage, 0.23, 0.01, 0.25, dark, 0.025, -0.087, 0);
+  box(carriage, 0.06, 0.12, 0.2, silver, -0.07, 0, 0);
   const held = pivot(carriage, 0.0, 0.0);
   // One tall perforated climber tube at the front corner, a hook on its sliding inner tube.
   const cx = L / 2 - 0.07;
@@ -268,7 +276,7 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
       intake.update(s);
       const up = s.passing || s.climb > 0.2;
       lift = approach(lift, up ? inch(14) : 0, 5, s.dt);
-      stage.position.y = lift * 0.5;
+      stage.position.y = lift;
       carriage.position.y = H - 0.12 + lift;
       // Up for the SPEAKER, pitched down when raised (AMP / TRAP).
       tilt = approach(tilt, up ? -0.6 : (s.hood - 0.6) * 0.6, 8, s.dt);

@@ -94,6 +94,21 @@ describe('real team robots', () => {
     }
   }
 
+  it('every REEFSCAPE team carries its held piece in the moving end effector at L4', () => {
+    const season = SEASONS.find(s => s.year === 2025)!;
+    for (const team of season.teamRobots!) {
+      const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(team.config), alliance: 'blue', pose: season.testing!.scoringSpots('blue')[0] });
+      sims.push(sim);
+      const robot = sim.robot;
+      expect(robot.modelHeldAnchor, team.id).toBeDefined();
+      robot.placeAnim = { height: 1.75, forward: 0.7, level: 4 };
+      for (let frame = 0; frame < 120; frame++) robot.syncVisual(1 / 60);
+      robot.visual.updateMatrixWorld(true);
+      const center = robot.visual.worldToLocal(robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3()));
+      expect(center.distanceTo(new THREE.Vector3(0.7, 1.75, 0)), team.id).toBeLessThan(0.2);
+    }
+  });
+
   it('team robots with a launcher still score from the season scoring spots', () => {
     for (const season of SEASONS) {
       if (season.testing?.mechanism === 'placement') continue;

@@ -102,6 +102,7 @@ export function mat(color: number, o: { metal?: number; rough?: number; opacity?
     transparent: o.opacity !== undefined,
     opacity: o.opacity ?? 1,
     depthWrite: o.opacity === undefined,
+    side: o.opacity !== undefined ? THREE.DoubleSide : THREE.FrontSide,
     emissive: o.emissive ?? 0x000000,
     emissiveIntensity: o.emissive ? 0.35 : 0,
   });
@@ -174,16 +175,22 @@ export function elevator(parent: THREE.Object3D, o: { x: number; y0: number; hei
   };
 }
 
-/** Hood plate shell over a flywheel: a curved strip of `n` segments around the wheel, opening toward +x. */
-export function hoodShell(parent: THREE.Object3D, radius: number, width: number, m: THREE.Material, n = 5): THREE.Group {
+/** Continuous curved hood plate over a flywheel, opening toward +x. */
+export function hoodShell(parent: THREE.Object3D, radius: number, width: number, m: THREE.Material, n = 16): THREE.Group {
   const g = new THREE.Group();
-  for (let i = 0; i < n; i++) {
-    const a = Math.PI * 0.15 + (i / (n - 1)) * Math.PI * 0.6;
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.7, 0.008, width), m);
-    seg.position.set(-Math.cos(a) * radius * 1.25 + radius * 0.4, Math.sin(a) * radius * 1.25, 0);
-    seg.rotation.z = Math.PI / 2 - a;
-    g.add(seg);
-  }
+  // A continuous bent sheet, rather than disconnected rectangular tiles.
+  const outer = radius * 1.25;
+  const inner = outer - 0.008;
+  const shape = new THREE.Shape();
+  const start = Math.PI * 0.25;
+  const end = Math.PI * 0.95;
+  shape.absarc(radius * 0.4, 0, outer, start, end, false);
+  shape.lineTo(radius * 0.4 + Math.cos(end) * inner, Math.sin(end) * inner);
+  shape.absarc(radius * 0.4, 0, inner, end, start, true);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, curveSegments: n });
+  geo.translate(0, 0, -width / 2);
+  g.add(new THREE.Mesh(geo, m));
   parent.add(g);
   return g;
 }
@@ -197,27 +204,39 @@ export function hopperWalls(parent: THREE.Object3D, o: { x: number; y0: number; 
   box(g, o.length, o.height, t, o.m, 0, o.height / 2, -o.width / 2);
   box(g, t, o.height, o.width, o.m, o.length / 2, o.height / 2, 0);
   box(g, t, o.height, o.width, o.m, -o.length / 2, o.height / 2, 0);
+  // Floor and edge caps make the enclosure read as a finished hopper from above.
+  const frame = o.frame ?? DARK_METAL;
+  box(g, o.length, 0.008, o.width, frame, 0, 0.004, 0);
+  for (const sz of [-1, 1]) box(g, o.length, 0.018, 0.018, frame, 0, o.height, sz * o.width / 2);
+  for (const sx of [-1, 1]) box(g, 0.018, 0.018, o.width, frame, sx * o.length / 2, o.height, 0);
   if (o.frame) for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.022, o.height, 0.022, o.frame, (sx * o.length) / 2, o.height / 2, (sz * o.width) / 2);
   parent.add(g);
   return g;
 }
 
 /**
- * "Pieces inside" gauge: a block in the piece color that fills the hopper from the floor up with `set(fill)` (0–1),
- * so the fraction of capacity in use reads at a glance.
+ * Round FUEL inside the hopper, filled from the floor up with `set(fill)` (0–1).
+ * Instancing preserves the recognizable game-piece shape without one draw call per ball.
  */
 export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number }): { set(f: number): void } {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(o.length, 1, o.width), mat(o.color, { rough: 0.75, metal: 0 }));
-  m.position.set(o.x, o.y0, 0);
-  parent.add(m);
-  return {
-    set(f: number) {
-      const h = Math.max(0.001, f * o.height);
-      m.scale.y = h;
-      m.position.y = o.y0 + h / 2;
-      m.visible = f > 0.001;
-    },
-  };
+  // A single instanced draw call gives FUEL a readable round silhouette instead of a solid yellow cube.
+  const r = Math.min(0.06, o.length / 6, o.width / 6);
+  const nx = Math.max(1, Math.floor(o.length / (r * 2)));
+  const nz = Math.max(1, Math.floor(o.width / (r * 2)));
+  const ny = Math.max(1, Math.floor(o.height / (r * 1.75)));
+  const count = nx * nz * ny;
+  const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 10, 7), mat(o.color, { rough: 0.8, metal: 0 }), count);
+  const transform = new THREE.Object3D();
+  let i = 0;
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
+    transform.position.set(o.x + (x - (nx - 1) / 2) * r * 2, o.y0 + r + y * r * 1.75, (z - (nz - 1) / 2) * r * 2);
+    transform.updateMatrix();
+    mesh.setMatrixAt(i++, transform.matrix);
+  }
+  mesh.computeBoundingSphere();
+  mesh.count = 0;
+  parent.add(mesh);
+  return { set(f) { mesh.count = Math.min(count, Math.round(Math.max(0, f) * count)); mesh.visible = mesh.count > 0; } };
 }
 
 /**
@@ -284,7 +303,7 @@ const MOTOR = new THREE.MeshStandardMaterial({ color: 0x1b1d21, metalness: 0.4, 
  * four swerve modules (wheel + steering housing + two motors) that steer and roll with the robot's real motion.
  * Returns an updater for the modules.
  */
-export function drivebase(kit: ModelKit, o: { tube?: THREE.Material; motorRing?: number; crossRails?: number[] } = {}): { update(s: RobotAnimState): void; deckY: number } {
+export function drivebase(kit: ModelKit, o: { tube?: THREE.Material; motorRing?: number; crossRails?: number[]; outline?: [number, number][]; modulePositions?: [number, number][] } = {}): { update(s: RobotAnimState): void; deckY: number } {
   const c = kit.config;
   const tube = o.tube ?? kit.mats.alu;
   const L = c.frameLength;
@@ -292,44 +311,57 @@ export function drivebase(kit: ModelKit, o: { tube?: THREE.Material; motorRing?:
   const y = c.bumperBottom + 0.03; // tube centerline (2 in tall tubing inside the bumpers)
   const th = 0.05;
   const tw = 0.025;
-  // Perimeter + cross rails.
-  box(kit.visual, L, th, tw, tube, 0, y, W / 2 - tw / 2);
-  box(kit.visual, L, th, tw, tube, 0, y, -W / 2 + tw / 2);
-  box(kit.visual, tw, th, W - 2 * tw, tube, L / 2 - tw / 2, y, 0);
-  box(kit.visual, tw, th, W - 2 * tw, tube, -L / 2 + tw / 2, y, 0);
-  for (const x of o.crossRails ?? [L * 0.18, -L * 0.18]) box(kit.visual, tw, th, W - 2 * tw, tube, x, y, 0);
-  // Bellypan.
-  box(kit.visual, L - 0.03, 0.004, W - 0.03, mat(0x30343b, { metal: 0.5, rough: 0.6 }), 0, y - th / 2 - 0.002, 0);
+  // Match nonrectangular team's actual outline instead of leaving square corners outside its bumpers.
+  if (o.outline) {
+    const shape = new THREE.Shape(o.outline.map(([x, z]) => new THREE.Vector2(x, -z)));
+    const pan = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.008, bevelEnabled: false }), mat(0x30343b));
+    pan.rotation.x = -Math.PI / 2;
+    pan.position.y = y - th / 2;
+    kit.visual.add(pan);
+    o.outline.forEach(([x, z], i) => {
+      const next = o.outline![(i + 1) % o.outline!.length];
+      bar(kit.visual, [x, y, z], [next[0], y, next[1]], 0.035, tube);
+    });
+  } else {
+    box(kit.visual, L, th, tw, tube, 0, y, W / 2 - tw / 2);
+    box(kit.visual, L, th, tw, tube, 0, y, -W / 2 + tw / 2);
+    box(kit.visual, tw, th, W - 2 * tw, tube, L / 2 - tw / 2, y, 0);
+    box(kit.visual, tw, th, W - 2 * tw, tube, -L / 2 + tw / 2, y, 0);
+    for (const x of o.crossRails ?? [L * 0.18, -L * 0.18]) box(kit.visual, tw, th, W - 2 * tw, tube, x, y, 0);
+    box(kit.visual, L - 0.03, 0.004, W - 0.03, mat(0x30343b, { metal: 0.5, rough: 0.6 }), 0, y - th / 2 - 0.002, 0);
+    // Bumper backing supports the upper mechanisms all the way down to the drivetrain.
+    for (const sz of [-1, 1]) box(kit.visual, L - 0.04, Math.max(0.025, c.bumperTop - y), 0.022, tube, 0, (y + c.bumperTop) / 2, sz * (W / 2 - 0.025));
+  }
   // Swerve modules in the corners.
   const ring = mat(o.motorRing ?? 0xcfd3d8, { metal: 0.6 });
-  const modules: { steer: THREE.Group; wheel: THREE.Mesh; x: number; z: number }[] = [];
+  const modules: { steer: THREE.Group; wheel: THREE.Group; x: number; z: number }[] = [];
   const inset = 0.075;
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const x = sx * (L / 2 - inset);
-      const z = sz * (W / 2 - inset);
-      box(kit.visual, 0.12, 0.008, 0.12, kit.mats.alu, x, y + th / 2 + 0.004, z); // module top plate
-      for (const [mx, mz] of [[0.025, 0.025], [-0.025, -0.025]] as const) {
-        const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.065, 14), MOTOR);
-        motor.position.set(x + mx, y + th / 2 + 0.04, z + mz);
-        kit.visual.add(motor);
-        const band = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.008, 14), ring);
-        band.position.set(x + mx, y + th / 2 + 0.06, z + mz);
-        kit.visual.add(band);
-      }
-      const steer = new THREE.Group();
-      steer.position.set(x, 0.05, z);
-      box(steer, 0.025, 0.07, 0.07, kit.mats.alu, 0, 0.03, 0.03); // fork
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.035, 18), WHEEL);
-      wheel.rotation.x = Math.PI / 2;
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.037, 10), HUB);
-      wheel.add(hub);
-      const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.038, 0.01), HUB);
-      wheel.add(spoke);
-      steer.add(wheel);
-      kit.visual.add(steer);
-      modules.push({ steer, wheel, x, z });
+  const positions = o.modulePositions ?? [-1, 1].flatMap(sx => [-1, 1].map(sz => [sx * (L / 2 - inset), sz * (W / 2 - inset)] as [number, number]));
+  for (const [x, z] of positions) {
+    box(kit.visual, 0.12, 0.008, 0.12, kit.mats.alu, x, y + th / 2 + 0.004, z); // module top plate
+    for (const [mx, mz] of [[0.025, 0.025], [-0.025, -0.025]] as const) {
+      const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.065, 14), MOTOR);
+      motor.position.set(x + mx, y + th / 2 + 0.04, z + mz);
+      kit.visual.add(motor);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.008, 14), ring);
+      band.position.set(x + mx, y + th / 2 + 0.06, z + mz);
+      kit.visual.add(band);
     }
+    const steer = new THREE.Group();
+    steer.position.set(x, 0.05, z);
+    box(steer, 0.025, 0.07, 0.07, kit.mats.alu, 0, 0.03, 0.03); // fork
+    const wheel = new THREE.Group();
+    const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.035, 18), WHEEL);
+    tire.rotation.x = Math.PI / 2;
+    wheel.add(tire);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.037, 10), HUB);
+    hub.rotation.x = Math.PI / 2;
+    wheel.add(hub);
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.012, 0.038), HUB);
+    wheel.add(spoke);
+    steer.add(wheel);
+    kit.visual.add(steer);
+    modules.push({ steer, wheel, x, z });
   }
   let roll = 0;
   return {
@@ -349,7 +381,7 @@ export function drivebase(kit: ModelKit, o: { tube?: THREE.Material; motorRing?:
           while (ang - cur < -Math.PI / 2) ang += Math.PI;
           m.steer.rotation.y = approach(cur, ang, 18, s.dt);
         }
-        m.wheel.rotation.y = roll; // spin about the wheel's own axle (applied before the axle is laid sideways)
+        m.wheel.rotation.z = roll; // axle remains across the steering fork
       }
     },
   };
@@ -398,6 +430,7 @@ export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: num
   const dy = hingeY - 0.05;
   const len = Math.hypot(dx, dy);
   const down = Math.atan2(dy, dx); // angle below horizontal when deployed
+  for (const sz of [-1, 1]) bar(kit.visual, [side * (halfFrame - 0.04), c.bumperTop - 0.02, sz * (w / 2 + 0.012)], [side * (halfFrame + 0.01), hingeY, sz * (w / 2 + 0.012)], 0.035, o.frame ?? kit.mats.alu);
   const arms = new THREE.Group();
   hinge.add(arms);
   const frameM = o.frame ?? kit.mats.alu;
@@ -406,6 +439,7 @@ export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: num
   const rollers: THREE.Group[] = [];
   const nr = o.rollers ?? 2;
   for (let i = 0; i < nr; i++) rollers.push(roller(arms, 0.03, w, orange, side * (len - i * 0.075), 0, 0));
+  sidePlates(arms, [[side * (len - nr * 0.075), -0.035], [side * (len + 0.04), -0.035], [side * (len + 0.04), 0.035], [side * (len - nr * 0.075), 0.035]], w / 2 + 0.012, frameM);
   box(arms, 0.012, 0.012, w, frameM, side * (len * 0.5), 0.02, 0);
   let speed = 0;
   return {

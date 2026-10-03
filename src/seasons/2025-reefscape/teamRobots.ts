@@ -25,6 +25,7 @@ function endEffector(parent: THREE.Object3D, plateM: THREE.Material, roll: THREE
   const wrist = pivot(parent, 0, 0);
   sidePlates(wrist, [[-0.02, -0.07], [0.17, -0.07], [0.2, -0.02], [0.2, 0.05], [0.14, 0.075], [-0.02, 0.07]], w / 2, plateM, [[0.06, 0, 0.025]]);
   box(wrist, 0.04, 0.03, w + 0.01, plateM, -0.01, 0, 0);
+  box(wrist, 0.16, 0.008, w, plateM, 0.06, -0.065, 0);
   const rollers = [roller(wrist, 0.028, w - 0.01, roll, 0.13, 0.045), roller(wrist, 0.028, w - 0.01, roll, 0.13, -0.045)];
   return { wrist, rollers };
 }
@@ -66,11 +67,18 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
     k.visual.add(g);
     stages.push(g);
   }
+  for (const sz of [-1, 1]) {
+    bar(k.visual, [-L * 0.36, bt, sz * W * 0.34], [ex - 0.03, H * 0.7, sz * ez], 0.025, blue);
+    bar(k.visual, [ex, bt, sz * ez], [ex, H - 0.04, sz * ez], 0.008, black);
+  }
+  box(k.visual, 0.08, 0.08, 0.3, black, ex - 0.025, bt + 0.04, 0);
   // End effector on the inner stage.
   const carriage = new THREE.Group();
   k.visual.add(carriage);
   box(carriage, 0.05, 0.16, 0.24, black, 0, 0, 0);
-  const eff = endEffector(carriage, mat(0x8a9099, { opacity: 0.55, metal: 0.2 }), black);
+  const eff = endEffector(carriage, mat(0x8a9099, { metal: 0.2 }), black);
+  const reach = box(carriage, 1, 0.03, 0.16, blue);
+  const held = pivot(eff.wrist, 0.1, 0);
   // Smoked CORAL funnel on the back: an open chute leaning back toward the station, NASA logo on both sides.
   const fun = new THREE.Group();
   fun.position.set(-L / 2 + 0.2, H - 0.62, 0);
@@ -85,6 +93,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
     decal(fun, 'NASA', { w: 0.13, h: 0.13, round: true, background: '#1d4fa3', x: -0.05, y: fh * 0.6, z: sz * (fw / 2 + 0.006), rotY: sz > 0 ? 0 : Math.PI });
     bar(fun, [-0.16, 0, (sz * fw) / 2], [-0.3, fh, (sz * fw) / 2], 0.012, black); // edge trim
   }
+  for (const sz of [-1, 1]) bar(k.visual, [-L * 0.32, bt, sz * fw * 0.38], [fun.position.x, fun.position.y + 0.04, sz * fw * 0.38], 0.03, black);
   // Black sponsor plate on the side.
   plate(k.visual, [[-L * 0.25, bt], [0.02, bt], [0.02, bt + 0.2], [-L * 0.2, bt + 0.24]], 0.005, black, -W / 2 + 0.03);
   let y = bt + 0.19;
@@ -103,13 +112,18 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
   let deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'funnel', 'climber'],
+    heldAnchor: held,
     lightAt: [ex - 0.015, H - 0.01, 0],
     update(s) {
       const p = place(s);
       ext = approach(ext, Math.max(0, p.height - (H - 0.15)), 14, s.dt);
       stages[0].position.y = ext * 0.5;
       stages[1].position.y = ext;
-      carriage.position.set(ex + 0.07, p.height, 0);
+      const carriageY = p.height <= H - 0.15 ? p.height : H - 0.15 + ext;
+      carriage.position.set(ex + 0.07, carriageY, 0);
+      const forward = Math.max(0.06, p.forward - ex - 0.17);
+      reach.scale.x = forward; reach.position.x = forward / 2;
+      eff.wrist.position.x = forward;
       wrist = approach(wrist, wristFor(p.level), 8, s.dt);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
@@ -163,8 +177,11 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
   truss(mid, 0.06, 0.085);
   truss(inner, 0.045, 0.065);
   ledStrip(inner, [0.02, 0.026, 0], [seg - 0.02, 0.026, 0], GREEN);
+  box(arm, seg, 0.014, 0.11, black, seg / 2, -0.048, 0);
+  box(mid, seg, 0.012, 0.075, mat(0x69717a, { metal: 0.5 }), seg / 2, -0.034, 0);
   const tip = pivot(arm, seg, 0);
   const eff = endEffector(tip, black, mat(0x6f757d, { metal: 0.3 }), 0.2);
+  const held = pivot(eff.wrist, 0.1, 0);
   // Climber: a carriage with blue compliant wheels that slides along the arm and grabs the CAGE.
   const climber = new THREE.Group();
   arm.add(climber);
@@ -174,6 +191,7 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
   let wrist = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    heldAnchor: held,
     lightAt: [-L * 0.42, bt + 0.03, W * 0.3],
     update(s) {
       const p = place(s);
@@ -225,6 +243,8 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
   sprocket.rotation.x = Math.PI / 2;
   sprocket.position.set(px, py, 0.185);
   k.visual.add(sprocket);
+  box(k.visual, 0.26, 0.04, 0.34, black, px, bt + 0.02, 0);
+  bar(k.visual, [px - 0.16, bt + 0.08, -0.17], [px - 0.16, bt + 0.08, 0.17], 0.025, blue);
   const tilt = pivot(k.visual, px, py);
   // Four nested blue stages along the elevator (local +y), each with a black cable chain on its side.
   const stageLen = 0.5;
@@ -237,6 +257,7 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
       bar(g, [0.025, -0.03, sz * (half + 0.018)], [0.025, stageLen - 0.04, sz * (half + 0.018)], 0.012, chain);
     }
     bar(g, [0, stageLen - 0.01, -half], [0, stageLen - 0.01, half], 0.02, i === 3 ? black : blue);
+    box(g, 0.012, stageLen * 0.85, 0.014, chain, -0.023 - i * 0.004, stageLen * 0.45, 0);
     if (i === 0) bar(g, [0, -0.05, -half], [0, -0.05, half], 0.025, blue);
     tilt.add(g);
     stages.push(g);

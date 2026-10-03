@@ -29,6 +29,10 @@ npm run dev
 
 Then open http://localhost:5173.
 
+For close-up inspection of all 12 team robot models, open `/tools/robot-gallery.html` on the dev server.
+Choose a season and mechanism pose, switch sides or alliance colors, and click a robot to enlarge it.
+The gallery uses the same models and animation path as the game; it is a development tool.
+
 | Command | What it does |
 |---|---|
 | `npm run dev` | Dev server with hot reload (multiplayer relay included at `/ws`; add `-- --host` for LAN play) |
