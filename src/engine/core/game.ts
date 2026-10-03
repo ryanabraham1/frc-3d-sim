@@ -22,6 +22,7 @@ import { cloneConfig, footprint, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
 import { checkStartSpot, fieldToSpot, footprintPoly, polysOverlap, resolveStartPose, spotToField } from '../startPose';
 import { clamp, formatClock } from '../units';
+import { aiOrders, radioFor } from '../ai/team';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
 type GameState = NetGameState;
@@ -89,12 +90,13 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
     for (const alliance of ['blue', 'red'] as const) {
       for (let station = 1; station <= 3; station++) {
         if (alliance === s.alliance && station === s.station) continue;
-        const difficulty = alliance === s.alliance ? 'normal' : s.aiDifficulty ?? 'normal';
-        const config = cloneConfig(season.botRobotConfig?.(difficulty) ?? season.robotDefaults);
-        if (alliance !== s.alliance) {
-          config.maxSpeed *= difficulty === 'easy' ? 0.8 : difficulty === 'hard' ? 1.2 : 1;
-          if (difficulty === 'hard') config.launcher.speedError *= 0.25;
-          config.launcher.spread *= difficulty === 'easy' ? 2 : difficulty === 'hard' ? 0.2 : 1;
+        const orders = aiOrders(s, alliance);
+        const difficulty = orders.skill;
+        const config = cloneConfig(season.botRobotConfig?.(difficulty, orders.roles[station]) ?? season.robotDefaults);
+        if (difficulty !== 'normal') {
+          config.maxSpeed *= { easy: 0.8, normal: 1, hard: 1.2, elite: 1.25 }[difficulty];
+          if (difficulty === 'hard' || difficulty === 'elite') config.launcher.speedError *= difficulty === 'elite' ? 0.15 : 0.25;
+          config.launcher.spread *= { easy: 2, normal: 1, hard: 0.2, elite: 0.12 }[difficulty];
         }
         config.teamNumber = 9000 + setup.robots.length;
         const dims = { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry };
@@ -735,8 +737,17 @@ export class Game {
 
   // ─────────────────────────── HUD / modals ───────────────────────────
 
+  private radioSeq = 0;
+
   private updateHud(dt: number): void {
     this.hud.update(dt);
+    if (this.role === 'local' && this.botPilots.size) {
+      const show = this.settings.aiRadio ?? 'all';
+      for (const m of radioFor(this.ctx).since(this.radioSeq)) {
+        this.radioSeq = m.seq;
+        if (show === 'all' || (show === 'team' && m.alliance === this.settings.alliance)) this.hud.radio(m.from, m.text, m.alliance);
+      }
+    }
     this.hud.setScores(this.score.total('red'), this.score.total('blue'));
     if (this.state === 'waiting') this.hud.setClock('WAITING', '—');
     else if (this.state === 'countdown' || (!this.clock.started && this.state === 'paused')) this.hud.setClock('PRE-MATCH', String(Math.max(0, Math.ceil(this.countdown))));

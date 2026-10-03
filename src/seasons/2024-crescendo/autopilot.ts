@@ -6,13 +6,14 @@ import type { CrescendoRules } from './rules';
 
 export const AUTO_ROUTINES: AutoRoutine[] = [
   { id: 'wing-4', label: 'Speaker + 3 wing notes', description: 'Shoot the preload into the SPEAKER, then collect and shoot each NOTE on your WING SPIKE MARKS.' },
+  { id: 'center-2', label: 'Speaker + 2 center notes', description: 'Shoot the preload, then bring back the two CENTER LINE NOTES on your side of the field and shoot them from the WING.' },
   { id: 'amp-2', label: 'Amp + wing note', description: 'Score the preload in the AMP, then collect the AMP-side WING NOTE and shoot it.' },
   { id: 'shoot-leave', label: 'Shoot + leave', description: 'Shoot the preload and drive out of the ROBOT STARTING ZONE for LEAVE.' },
   { id: 'leave', label: 'Leave only', description: 'Drive out of the ROBOT STARTING ZONE (2 pts).' },
   { id: 'none', label: 'Do nothing', description: 'Stay still during AUTO.' },
 ];
 
-type Phase = 'shoot' | 'amp' | 'collect' | 'leave' | 'idle';
+type Phase = 'shoot' | 'amp' | 'collect' | 'return' | 'leave' | 'idle';
 
 /** Scripted AUTO for a player's robot (drivers may not control robots in AUTO [M 6.4]). */
 export class CrescendoAutoPilot implements AutoPilot {
@@ -20,9 +21,11 @@ export class CrescendoAutoPilot implements AutoPilot {
   private shootTime = 0;
   private readonly visited = new Set<number>();
   private shots = 0;
+  private readonly startY: number;
 
   constructor(private readonly ctx: SeasonContext, private readonly rules: CrescendoRules, private readonly robot: Robot, private readonly routine: string) {
     this.phase = routine === 'none' ? 'idle' : routine === 'leave' ? 'leave' : routine === 'amp-2' ? 'amp' : 'shoot';
+    this.startY = robot.pose.y;
   }
 
   private faceSpeaker(): number {
@@ -43,8 +46,14 @@ export class CrescendoAutoPilot implements AutoPilot {
   private nextNote(): number | null {
     const { pool, frame } = this.ctx;
     const r = this.robot;
-    const wing = r.alliance === 'blue' ? [0, 1, 2] : [3, 4, 5];
+    const wing = this.routine === 'center-2' ? [6, 7, 8, 9, 10] : r.alliance === 'blue' ? [0, 1, 2] : [3, 4, 5];
+    if (this.routine === 'center-2' && this.shots >= 3) return null;
     const options = wing.filter((i) => pool.state[i] === 'field' && !this.visited.has(i));
+    if (this.routine === 'center-2') {
+      // Our side of the CENTER LINE, nearest our starting lane first (the other center robot takes the other end).
+      options.sort((x, y) => Math.abs(frame.toField(pool.position(x)).y - this.startY) - Math.abs(frame.toField(pool.position(y)).y - this.startY));
+      return options.filter((i) => Math.abs(frame.toField(pool.position(i)).x - C.L / 2) < 0.3)[0] ?? null;
+    }
     if (this.routine === 'amp-2') options.sort((x, y) => y - x); // AMP-side note first
     else options.sort((x, y) => {
       const px = frame.toField(pool.position(x)), py = frame.toField(pool.position(y));
@@ -60,6 +69,11 @@ export class CrescendoAutoPilot implements AutoPilot {
     const a = r.alliance;
 
     if (this.phase === 'shoot') {
+      // G404: never launch from completely outside the WING.
+      if (!this.rules.inWing(r, a, false) || C.fromWall(a, r.pose.x) > C.WING_DEPTH - 0.3) {
+        this.steer(cmd, C.side(a, 3.4, C.SPEAKER_Y), this.faceSpeaker(), 3.4);
+        return cmd;
+      }
       this.shootTime += dt;
       const turret = r.config.launcher.turret && r.config.aimAssist === 'full';
       if (!turret) cmd.omega = turnToward(r.pose.yaw, this.faceSpeaker(), r.config.maxOmega);
@@ -67,7 +81,7 @@ export class CrescendoAutoPilot implements AutoPilot {
       if (this.rules.heldNote(r) === undefined || this.shootTime > 2.5) {
         this.shootTime = 0;
         this.shots++;
-        this.phase = this.routine === 'shoot-leave' ? 'leave' : this.routine === 'wing-4' || this.routine === 'amp-2' ? 'collect' : 'idle';
+        this.phase = this.routine === 'shoot-leave' ? 'leave' : this.routine === 'wing-4' || this.routine === 'amp-2' || this.routine === 'center-2' ? 'collect' : 'idle';
         if (this.routine === 'amp-2') this.phase = 'idle';
       }
       return cmd;
@@ -84,7 +98,8 @@ export class CrescendoAutoPilot implements AutoPilot {
 
     if (this.phase === 'collect') {
       if (this.rules.heldNote(r) !== undefined) {
-        this.phase = 'shoot';
+        // From the CENTER LINE, come back inside the WING first (G404: AUTO shots must start in the WING).
+        this.phase = this.routine === 'center-2' ? 'return' : 'shoot';
         return cmd;
       }
       const i = this.nextNote();
@@ -106,6 +121,12 @@ export class CrescendoAutoPilot implements AutoPilot {
       } else this.steer(cmd, to, heading, 1.8);
       cmd.intake = true;
       if (this.ctx.clock.periodRemaining < 0.5) this.visited.add(i);
+      return cmd;
+    }
+
+    if (this.phase === 'return') {
+      const spot = C.side(a, 3.4, C.SPEAKER_Y + (this.startY > C.SPEAKER_Y - 0.5 ? 0.9 : -0.2));
+      if (this.steer(cmd, spot, this.faceSpeaker(), 3.4) < 0.4) this.phase = 'shoot';
       return cmd;
     }
 

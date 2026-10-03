@@ -1,4 +1,4 @@
-import { createReefscapeBot } from './bots';
+import { createReefscapeBot, REEFSCAPE_AI_ROLES, REEFSCAPE_AI_STRATEGIES } from './bots';
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { BATTERY_MASS } from '@engine/robot/drivetrain';
@@ -73,8 +73,25 @@ export const reefscape2025: SeasonDefinition = {
   ],
   buildField(ctx) { fields.set(ctx, buildReefscapeField(ctx)); },
   createRules(ctx) { const refs = fields.get(ctx); if (!refs) throw new Error('Build REEFSCAPE field first'); return new ReefscapeRules(ctx, refs); },
-  createAutoPilot(_ctx, rules, robot, routine) { return new ReefscapeAutoPilot(rules as ReefscapeRules, robot, routine); },
-  botRobotConfig(difficulty) { return difficulty === 'hard' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
+  createAutoPilot(ctx, rules, robot, routine) {
+    if (routine !== 'reef-cycle') return new ReefscapeAutoPilot(rules as ReefscapeRules, robot, routine);
+    // Scripted L4 preload, then the TELEOP brain keeps cycling CORAL for the rest of AUTO.
+    const preload = new ReefscapeAutoPilot(rules as ReefscapeRules, robot, 'reef-l4');
+    let cycle: ReturnType<typeof createReefscapeBot> | null = null;
+    let started = false;
+    return {
+      update(dt) {
+        if (robot.held.some((i) => i < C.CORAL_COUNT) && !started) return preload.update(dt);
+        started = true;
+        cycle ??= createReefscapeBot(ctx, rules as ReefscapeRules, robot);
+        return cycle.update(dt);
+      },
+    };
+  },
+  botAutoRoutine() { return 'reef-cycle'; },
+  aiStrategies: REEFSCAPE_AI_STRATEGIES,
+  aiRoles: REEFSCAPE_AI_ROLES,
+  botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
   createBotPilot(ctx, rules, robot) { return createReefscapeBot(ctx, rules as ReefscapeRules, robot); },
   createHud(ctx, rules, slots) { return new ReefscapeHud(ctx, rules as ReefscapeRules, slots); },
   controlsHelp: [

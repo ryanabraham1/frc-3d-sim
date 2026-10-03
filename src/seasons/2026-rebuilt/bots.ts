@@ -1,115 +1,255 @@
-import { CycleBot } from '@engine/ai/cycleBot';
+import { aroundCircles, CycleBot } from '@engine/ai/cycleBot';
 import { dist, routeThroughBands } from '@engine/ai/steering';
-import type { SeasonContext } from '@engine/core/season';
-import { type Robot, type RobotCommand } from '@engine/robot/robot';
+import { TeamBrain } from '@engine/ai/team';
+import type { FieldPoint } from '@engine/coords';
+import type { AiChoice, SeasonContext } from '@engine/core/season';
+import { IDLE_COMMAND, type Robot, type RobotCommand } from '@engine/robot/robot';
+import { clamp } from '@engine/units';
 import { BANDS } from './autopilot';
 import * as C from './constants';
 import { side } from './field';
 import type { RebuiltRules } from './rules';
 
+export const REBUILT_AI_STRATEGIES: AiChoice[] = [
+  { id: 'auto', label: 'Shift control', description: 'Everyone scores: fill hoppers while your HUB is inactive, stage at the zone line, dump the moment it lights up, then climb as high as possible. Benchmarked as the strongest plan.' },
+  { id: 'stockpile', label: 'Stockpile', description: 'A dedicated feeder stays in the NEUTRAL ZONE lobbing FUEL into your zone all match; scorers shoot from the pile.' },
+  { id: 'defense', label: 'Lockdown', description: 'A dedicated defender contests the opponents’ best shooter whenever their HUB is active.' },
+];
+
+export const REBUILT_AI_ROLES: AiChoice[] = [
+  { id: 'scorer', label: 'Scorer', description: 'Collects to a full hopper, stages at the zone line and scores during active shifts.' },
+  { id: 'feeder', label: 'Feeder', description: 'Works the NEUTRAL ZONE, intaking and lobbing FUEL into your ALLIANCE ZONE for the scorers.' },
+  { id: 'defender', label: 'Defender', description: 'Scores during your active shifts and contests opponent shooters during theirs.' },
+];
+
+/** Robots fit for the scoring role first: biggest hopper × fire rate. */
+const scoringPower = (r: Robot) => r.config.hopperCapacity * r.config.launcher.rate * (r.config.launcher.enabled ? 1 : 0);
+
+function planRoles(team: TeamBrain): Map<number, string> {
+  const roles = new Map<number, string>();
+  const robots = team.members;
+  const free: Robot[] = [];
+  for (const r of robots) {
+    const ordered = team.orderedRole(r);
+    if (ordered !== 'auto') roles.set(r.id, ordered);
+    else if (r === team.ctx.playerRobot) roles.set(r.id, 'scorer');
+    else free.push(r);
+  }
+  free.sort((a, b) => scoringPower(a) - scoringPower(b));
+  const taken = (role: string) => [...roles.values()].includes(role);
+  for (const r of free) roles.set(r.id, 'scorer');
+  const weakest = free[0];
+  if (weakest && robots.length >= 3) {
+    if (team.strategy === 'stockpile' && !taken('feeder')) roles.set(weakest.id, 'feeder');
+    if (team.strategy === 'defense' && !taken('defender')) roles.set(weakest.id, 'defender');
+  }
+  return roles;
+}
+
+interface RebuiltPlan {
+  /** Last hub state announced on the radio. */
+  announced: string;
+}
+
 export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Robot): CycleBot {
-  const spot = side(r.alliance, 2.6, C.HUB_CENTER.y + (r.station - 2) * 1.35);
-  const supply = { ...side(r.alliance, 1.1, C.OUTPOST_AREA_WIDTH / 2), yaw: r.alliance === 'blue' ? 0 : Math.PI };
-  let defending = 0;
-  let retreatUntil = 0;
-  let feeding = false;
-  const fromWall = (x: number) => r.alliance === 'blue' ? x : C.FIELD_LENGTH - x;
-  const nearestHomeFuel = () => {
-    let best: { x: number; y: number } | null = null, cost = Infinity;
+  const team = TeamBrain.for(ctx, r.alliance);
+  team.usePlanner(planRoles);
+  const plan = team.memo<RebuiltPlan>('rebuilt', () => ({ announced: '' }));
+  const enemy = r.alliance === 'blue' ? 'red' : 'blue';
+  const fromWall = (x: number) => (r.alliance === 'blue' ? x : C.FIELD_LENGTH - x);
+  const half = Math.max(r.footprint.width, r.footprint.length) / 2;
+  const speed = () => r.config.maxSpeed * bot.pace * 0.8;
+  const laneY = (k: number) => [1.35, C.FIELD_WIDTH - 1.35, C.FIELD_WIDTH / 2 + 1.75][k % 3];
+  const myLane = () => laneY(r.station - 1);
+  // Shooting spot inside the ALLIANCE ZONE, ~2-3 m from the HUB (best accuracy), on our own lane when far away.
+  const shootSpot = (): FieldPoint => {
+    const p = r.pose;
+    const y = clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
+    return { x: side(r.alliance, 2.7, 0).x, y };
+  };
+  const towerCenter = side(r.alliance, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
+  const tower = { ...towerCenter, r: Math.hypot(C.TOWER_DEPTH, C.TOWER_WIDTH) / 2 + half * 0.7 };
+  const travelTime = (goal: FieldPoint) => dist(r.pose, goal) / Math.max(1, speed()) + (routeThroughBands(r.pose, goal, BANDS, half, r.config.height) !== goal ? 1.2 : 0.3);
+  const inZone = () => rules.inAllianceZone(r);
+  const insideZone = () => fromWall(r.pose.x) < C.ALLIANCE_ZONE_DEPTH - half - 0.05;
+
+  // Fuel on the carpet, scanned once per tick for the whole alliance.
+  const fuel = () => team.memo('fuelScan', () => ({ t: -1, pts: [] as { i: number; p: FieldPoint }[] }));
+  const scanFuel = () => {
+    const s = fuel();
+    if (s.t === ctx.clock.elapsed) return s.pts;
+    s.t = ctx.clock.elapsed;
+    s.pts = [];
     for (let i = 0; i < ctx.pool.count; i++) {
       if (ctx.pool.state[i] !== 'field') continue;
       const p = ctx.frame.toField(ctx.pool.position(i));
-      if (p.z > 0.25 || fromWall(p.x) > C.ALLIANCE_ZONE_DEPTH - 0.35 || fromWall(p.x) < 0.65 || p.y < 0.55 || p.y > C.FIELD_WIDTH - 0.55) continue;
-      const d = dist(r.pose, p);
-      if (ctx.robots.some((o) => o !== r && o.alliance === r.alliance && o.capacityLeft > 0 && dist(o.pose, p) < d + 0.5)) continue;
-      if (d < cost) { best = p; cost = d; }
+      if (p.z > 0.25 || p.x < 0.5 || p.x > C.FIELD_LENGTH - 0.5 || p.y < 0.5 || p.y > C.FIELD_WIDTH - 0.5) continue;
+      s.pts.push({ i, p });
+    }
+    return s.pts;
+  };
+  // FUEL tucked against either TOWER can't be reached by an intake.
+  const nearTower = (p: FieldPoint) => (['blue', 'red'] as const).some((a) => {
+    const t = side(a, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
+    return Math.abs(p.x - t.x) < C.TOWER_DEPTH / 2 + 0.35 && Math.abs(p.y - t.y) < C.TOWER_WIDTH / 2 + 0.35;
+  });
+  // FUEL we chased without getting closer (wedged against a wall, under a robot) is skipped for a while.
+  const blocked: { p: FieldPoint; until: number }[] = [];
+  let chase: { p: FieldPoint; best: number; since: number } | null = null;
+  const isBlocked = (p: FieldPoint) => blocked.some((b) => b.until > ctx.clock.elapsed && dist(b.p, p) < 0.6);
+  /** Nearest worthwhile FUEL under `filter`, spreading teammates over different patches. */
+  const nearestFuel = (filter: (p: FieldPoint) => boolean, maxCost = Infinity): FieldPoint | null => {
+    const mates = team.members.filter((o) => o !== r && o.capacityLeft > 0 && !o.isClimbing);
+    let best: FieldPoint | null = null, cost = maxCost;
+    for (const { p } of scanFuel()) {
+      if (!filter(p) || fromWall(p.x) > C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 || isBlocked(p) || nearTower(p)) continue;
+      // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
+      const inRow = Math.abs(fromWall(p.x) - C.HUB_CENTER.x) < C.HUB_SIZE / 2 + 0.3;
+      let c = dist(r.pose, p) + (inRow ? 1.5 : 0);
+      for (const m of mates) if (dist(m.pose, p) + 0.4 < dist(r.pose, p)) c += 2.5;
+      if (c < cost) { cost = c; best = p; }
     }
     return best;
   };
-  const scoreOnMove = (): RobotCommand => {
-    const piece = r.capacityLeft > 0 ? nearestHomeFuel() : null;
-    const goal = rules.inAllianceZone(r) && piece ? piece : spot;
-    const yaw = piece ? Math.atan2(piece.y - r.pose.y, piece.x - r.pose.x) + r.intakeYawOffset : undefined;
-    const cmd = bot.driveTo(goal, yaw);
+  const trackChase = (p: FieldPoint) => {
+    const d = dist(r.pose, p), t = ctx.clock.elapsed;
+    if (!chase || dist(chase.p, p) > 0.5 || d < chase.best - 0.25) chase = { p, best: d, since: t };
+    else if (t - chase.since > 1.8) { blocked.push({ p, until: t + 6 }); chase = null; }
+    if (blocked.length > 40) blocked.splice(0, blocked.length - 40);
+  };
+  const collect = (p: FieldPoint, extra?: Partial<RobotCommand>): RobotCommand => {
+    trackChase(p);
+    const yaw = dist(r.pose, p) < 3 ? Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.intakeYawOffset : undefined;
+    return { ...bot.driveTo(p, yaw), intake: r.capacityLeft > 0, ...extra };
+  };
+
+  const shootingCommand = (active: boolean): RobotCommand => {
+    // In the zone with FUEL: shoot, and keep scooping up FUEL lying in the zone (fed stockpile, misses).
+    const zoneFuel = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7, 4) : null;
+    const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(insideZone() && inZone() ? r.pose : shootSpot());
+    if (!zoneFuel && insideZone()) { cmd.vx *= 0.5; cmd.vy *= 0.5; }
     cmd.intake = r.capacityLeft > 0;
-    cmd.shoot = rules.inAllianceZone(r) && rules.hubActive(r.alliance);
+    cmd.shoot = inZone() && active && r.held.length > 0;
     return cmd;
   };
-  const hardTactics = (dt: number): RobotCommand | null => {
-    const active = rules.hubActive(r.alliance), untilActive = rules.secondsUntilActive(r.alliance);
-    const travelHome = dist(r.pose, spot) / (r.config.maxSpeed * 0.65) + 2;
-    const enemyAlliance = r.alliance === 'blue' ? 'red' : 'blue';
-    const enemyActive = rules.hubActive(enemyAlliance);
-    const shooter = ctx.robots.find((o) => o.alliance === enemyAlliance && o.lastCommand.shoot && o.held.length > 0);
-    const ownScoringRate = r.held.length >= 8 ? r.config.launcher.rate : nearestHomeFuel() ? r.config.launcher.rate * 0.5 : 0;
-    const denyRate = shooter?.config.launcher.rate ?? 0;
-    const defendWorthwhile = enemyActive && (!active || r.held.length < 8 && denyRate > ownScoringRate * 1.3);
-    // Defend during the enemy's active shift; when both hubs are active, compare the potential
-    // points denied with this robot's scoring opportunity instead of always sacrificing a scorer.
-    // Release contact early and separate fully rather than holding a pin against a wall.
-    if (r.station === 3 && defendWorthwhile && ctx.robots.some((o) => o !== r && o.alliance === r.alliance) && ctx.clock.matchRemaining > 30) {
-      const enemies = ctx.robots.filter((o) => o.alliance !== r.alliance && !o.isClimbing && !o.tippedOver);
-      enemies.sort((a, b) => Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || Number(b === ctx.playerRobot) - Number(a === ctx.playerRobot) || b.held.length - a.held.length || dist(r.pose, a.pose) - dist(r.pose, b.pose));
-      const enemy = enemies[0];
-      if (enemy) {
-        const p = enemy.pose, v = enemy.fieldVelocity;
-        if (dist(r.pose, p) < 1.25) defending += dt; else defending = Math.max(0, defending - dt);
-        if (defending > 1.6) { retreatUntil = ctx.clock.elapsed + 3.3; defending = 0; }
-        if (ctx.clock.elapsed < retreatUntil) {
-          return bot.driveTo({ x: C.CENTER_X + (r.alliance === 'blue' ? -0.7 : 0.7), y: Math.max(0.8, Math.min(C.FIELD_WIDTH - 0.8, r.pose.y)) });
-        }
-        // Cut across the opponent's route, with a brief physical challenge when close.
-        return bot.driveTo({ x: p.x + v.vx * 0.3, y: p.y + v.vy * 0.3 }, Math.atan2(p.y - r.pose.y, p.x - r.pose.x), enemy);
+
+  /** Neutral-zone conveyor: intake while lobbing FUEL into our ALLIANCE ZONE for the scorers. */
+  const feedCommand = (keep: number): RobotCommand => {
+    const p = nearestFuel((q) => fromWall(q.x) > C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE + 0.3);
+    const lane = side(r.alliance, C.CENTER_X - 1.6, 0).x;
+    const cmd = p ? collect(p) : bot.driveTo({ x: lane, y: myLane() });
+    cmd.intake = r.capacityLeft > 0;
+    cmd.pass = !inZone() && r.held.length > keep && fromWall(r.pose.x) > C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE / 2 + 0.8 && Math.abs(r.pose.y - C.HUB_CENTER.y) > 0.9;
+    return cmd;
+  };
+
+  let defending = 0, retreatUntil = 0;
+  const defendCommand = (dt: number): RobotCommand | null => {
+    const targets = ctx.robots.filter((o) => o.alliance === enemy && !o.isClimbing && !o.tippedOver && o.held.length > 0);
+    targets.sort((a, b) => Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || b.held.length * b.config.launcher.rate - a.held.length * a.config.launcher.rate || dist(r.pose, a.pose) - dist(r.pose, b.pose));
+    const target = targets[0];
+    if (!target) return null;
+    team.say(r, `Defending ${team.label(target).replace('You', 'the driver')}`, `defend:${r.id}:${target.id}`, 15);
+    const p = target.pose, v = target.fieldVelocity;
+    if (dist(r.pose, p) < 1.25) defending += dt; else defending = Math.max(0, defending - dt);
+    // Break contact before a 5-count pin (G418) and come back.
+    if (defending > 1.8) { retreatUntil = ctx.clock.elapsed + 1.6; defending = 0; }
+    if (ctx.clock.elapsed < retreatUntil) {
+      const away = Math.atan2(r.pose.y - p.y, r.pose.x - p.x);
+      return bot.driveTo({ x: r.pose.x + Math.cos(away) * 1.5, y: clamp(r.pose.y + Math.sin(away) * 1.5, 0.8, C.FIELD_WIDTH - 0.8) });
+    }
+    team.pushing(r);
+    // Get between the shooter and its HUB, then lean on it.
+    const hub = rules.hubCenter(enemy);
+    const k = dist(r.pose, p) > 2 ? 0.35 : 0;
+    const goal = { x: p.x + (hub.x - p.x) * k + v.vx * 0.3, y: p.y + (hub.y - p.y) * k + v.vy * 0.3 };
+    return bot.driveTo(goal, Math.atan2(p.y - r.pose.y, p.x - r.pose.x), target);
+  };
+
+  const climbTime = () => {
+    const slot = rules.freeSlot(r);
+    return slot ? travelTime(slot.pose) + r.config.climber.secondsPerLevel * r.config.climber.maxLevel + 1.5 : Infinity;
+  };
+
+  const announce = () => {
+    const key = `${rules.hubActive(r.alliance)}:${ctx.clock.current.id}`;
+    if (plan.announced === key) return;
+    plan.announced = key;
+    if (ctx.clock.current.id === 'endgame') team.say(null, 'END GAME — dump everything, then climb', 'phase', 5);
+    else if (rules.hubActive(r.alliance)) team.say(null, 'HUB ACTIVE — dump it all!', 'phase', 5);
+    else team.say(null, `HUB inactive for ${Math.round(rules.secondsUntilActive(r.alliance))} s — fill up and stage at the line`, 'phase', 5);
+  };
+
+  const think = (dt: number): RobotCommand => {
+    if (r.isClimbing) return { ...IDLE_COMMAND };
+    if (bot.smart) announce();
+    const role = bot.role;
+    const active = rules.hubActive(r.alliance);
+    const untilActive = rules.secondsUntilActive(r.alliance);
+    const activeLeft = active ? rules.secondsActiveRemaining(r.alliance) + 2 : 0;
+    const spot = shootSpot();
+    const toSpot = travelTime(spot);
+    const remaining = ctx.clock.driveRemaining;
+
+    // END GAME climb: empty the hopper on the way, start early enough to reach the top rung.
+    if (r.config.climber.maxLevel > 0 && remaining < climbTime() + 2) {
+      const slot = rules.freeSlot(r);
+      if (slot) {
+        team.say(r, `Climbing to LEVEL ${r.config.climber.maxLevel}`, `climb:${r.id}`, 30);
+        // Line up in front of the slot first so the approach doesn't wedge against the TOWER's side.
+        const pre = { x: slot.pose.x - Math.cos(slot.pose.yaw) * 0.8, y: slot.pose.y - Math.sin(slot.pose.yaw) * 0.8 };
+        const lined = dist(r.pose, pre) < 0.35 || slot.dist < 0.75;
+        const cmd = bot.driveTo(lined ? slot.pose : pre, slot.pose.yaw);
+        cmd.shoot = inZone() && r.held.length > 0 && slot.dist > 0.5;
+        if (slot.dist < 0.75 && (r.held.length === 0 || remaining < r.config.climber.secondsPerLevel * r.config.climber.maxLevel + 1.5)) cmd.climb = r.config.climber.maxLevel;
+        return cmd;
       }
     }
-    if (active || untilActive < travelHome + 2) {
-      feeding = false;
-      defending = 0;
-      if (r.held.length && (rules.inAllianceZone(r) || r.held.length >= 8 || r.capacityLeft === 0 || rules.secondsActiveRemaining(r.alliance) < travelHome + 3)) return scoreOnMove();
-      return null;
+
+    // A feeder keeps the zone stocked until END GAME, then scores like everyone else.
+    if (role === 'feeder' && ctx.clock.current.id !== 'endgame') return feedCommand(active ? 0 : 6);
+
+    if (role === 'defender' && !active && rules.hubActive(enemy) && bot.smart && team.members.length > 1 && remaining > 30) {
+      const d = defendCommand(dt);
+      if (d) { d.intake = r.capacityLeft > 0; return d; }
     }
-    if (!ctx.robots.some((o) => o !== r && o.alliance === r.alliance)) {
-      if (r.held.length >= 24) { const cmd = bot.driveTo(spot); cmd.intake = r.capacityLeft > 0; return cmd; }
-      return null;
+
+    if (active || untilActive < toSpot + 0.4) {
+      const live = active || untilActive < 0.6; // shots land after activation
+      if (r.held.length > 0 && (inZone() || r.capacityLeft === 0 || r.held.length >= Math.min(r.config.hopperCapacity, 48) || activeLeft < toSpot + r.held.length / r.config.launcher.rate + 1 || !active)) {
+        return shootingCommand(live);
+      }
+      // Empty (or nearly): refill nearby; head back before the shift runs out.
+      const near = nearestFuel((p) => travelTime(p) + travelTime(spot) < Math.max(4, activeLeft - 1));
+      if (near) return collect(near, { shoot: inZone() && live && r.held.length > 0 });
+      return shootingCommand(live);
     }
-    // Keep recycling neutral-zone fuel home instead of parking with a full hopper.
-    // Stations use separate feeding lanes; launch through the normal ballistic pass solver.
-    if (!r.held.length) feeding = false;
-    if (r.held.length >= (r.station === 2 ? 12 : 28) || r.capacityLeft === 0) feeding = true;
-    if (feeding) {
-      const laneY = 1.1 + (r.station - 1) * 2.4;
-      const goal = side(r.alliance, C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE / 2 + 1.3, laneY);
-      const cmd = bot.driveTo(goal);
-      cmd.intake = r.capacityLeft > 0;
-      cmd.pass = !rules.inAllianceZone(r) && dist(r.pose, goal) < 0.9;
-      return cmd;
+
+    // Our HUB is inactive: fill the hopper, keep the zone stocked, and be at the line when it lights up.
+    if (r.capacityLeft > 0) {
+      const p = nearestFuel((q) => travelTime(q) + travelTime(spot) < untilActive + 0.5);
+      if (p) return collect(p);
     }
-    return null;
+    // Full: wait at the line (benchmarks: conveyor-feeding or defending while full scores less than being ready).
+    if (r.capacityLeft === 0) team.say(r, `Full (${r.held.length}) — staged at the line`, `full:${r.id}`, 25);
+    const cmd = bot.driveTo(spot);
+    cmd.intake = r.capacityLeft > 0;
+    return cmd;
   };
+
   const bot: CycleBot = new CycleBot(ctx, r, {
-    batch: 12,
-    tactics: (dt) => bot.hard ? hardTactics(dt) : null,
-    wantsScore: () => bot.hard ? false : rules.secondsUntilActive(r.alliance) > 2 && r.capacityLeft > 0 ? false : undefined,
-    endgame: () => {
-      if (ctx.clock.matchRemaining > 20 || !r.config.climber.maxLevel) return null;
-      const slot = rules.freeSlot(r);
-      if (!slot) return null;
-      const cmd = bot.driveTo(slot.pose, slot.pose.yaw);
-      if (slot.dist < 0.75) cmd.climb = r.config.climber.maxLevel;
-      return cmd;
+    batch: Infinity,
+    // Every decision is made by `think`; the generic collector is only the fallback.
+    tactics: (dt) => think(dt),
+    accepts: (_i, p) => fromWall(p.x) < C.CENTER_X,
+    supply: () => ({ ...side(r.alliance, 1.1, C.OUTPOST_AREA_WIDTH / 2), yaw: r.alliance === 'blue' ? 0 : Math.PI }),
+    onStuck: () => { if (chase) blocked.push({ p: chase.p, until: ctx.clock.elapsed + 8 }); chase = null; },
+    release: () => r.climbPhase === 'hanging' && ctx.clock.driveRemaining > 40,
+    route: (goal) => {
+      const via = routeThroughBands(r.pose, goal, BANDS, half, r.config.height, bot.hard);
+      return via === goal ? aroundCircles(r.pose, goal, [tower]) : via;
     },
-    accepts: (_i, p) => bot.hard ? fromWall(p.x) < C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.5 : fromWall(p.x) < C.CENTER_X + 0.3,
-    supply: () => supply,
-    route: (goal) => routeThroughBands(r.pose, goal, BANDS, Math.max(r.footprint.width, r.footprint.length) / 2, r.config.height, bot.hard),
-    score: () => {
-      const waiting = rules.secondsUntilActive(r.alliance) > 3;
-      const patrol = side(r.alliance, C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE / 2 + 1.1, 1.2 + (r.station - 1) * 2.4);
-      const cmd = bot.driveTo(waiting ? patrol : spot);
-      cmd.intake = r.capacityLeft > 0;
-      // A teammate or parked driver may occupy the preferred spot; the whole alliance zone allows shots.
-      cmd.shoot = rules.inAllianceZone(r) && rules.hubActive(r.alliance);
-      return cmd;
-    },
+    score: () => shootingCommand(rules.hubActive(r.alliance)),
   });
   return bot;
 }

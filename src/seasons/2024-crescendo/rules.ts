@@ -394,9 +394,12 @@ export class CrescendoRules implements SeasonRules {
   private noteAtSource(a: Alliance): boolean {
     const { pool, frame } = this.ctx;
     const mid = C.sourcePoint(a, 0.5, 0);
+    // Still in the CHUTE / falling out of it, or lying right in front of the opening. A NOTE knocked aside along
+    // the wall doesn't stop the human player feeding the next one.
     return pool.indices('field').some((i) => {
       const q = frame.toField(pool.position(i));
-      return Math.hypot(q.x - mid.x, q.y - mid.y) < 1.4;
+      const d = Math.hypot(q.x - mid.x, q.y - mid.y);
+      return d < 1.4 && (q.z > 0.12 || d < 0.55);
     });
   }
 

@@ -734,6 +734,17 @@ export class ReefscapeRules implements SeasonRules {
     return robot.config.climber.maxLevel === 1 ? 'shallow' : robot.config.climber.maxLevel >= 2 ? 'deep' : null;
   }
 
+  /** Approach poses for every alliance cage matching this climber (slot = cage index), free or not. */
+  cageApproaches(robot: Robot): { slot: number; x: number; y: number; yaw: number; occupied: boolean }[] {
+    const depth = this.climberDepth(robot), yaw = C.sideYaw(robot.alliance, 0);
+    return this.refs.cages[robot.alliance].flatMap((cage, slot) => {
+      if (this.refs.cageDepth[robot.alliance][slot] !== depth) return [];
+      const p = cage.fieldPosition(), reach = this.gripReach(robot);
+      const occupied = this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.isClimbing && r.climbSlot === slot);
+      return [{ slot, x: p.x - Math.cos(yaw) * reach, y: p.y - Math.sin(yaw) * reach, yaw, occupied }];
+    });
+  }
+
   /** Plan a physical approach to the closest unoccupied cage matching this climber. */
   climbApproach(robot: Robot): { x: number; y: number; yaw: number } | null {
     const depth = this.climberDepth(robot), yaw = C.sideYaw(robot.alliance, 0);

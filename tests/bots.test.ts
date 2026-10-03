@@ -9,6 +9,7 @@ import { fieldToSpot, footprintPoly, polysOverlap } from '../src/engine/startPos
 import { footprint } from '../src/engine/robot/config';
 import { defaultSettings } from '../src/app/menu';
 import { SEASONS } from '../src/seasons';
+import { runMatch } from '../src/engine/testing/match';
 
 let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
@@ -96,68 +97,21 @@ describe.each(SEASONS)('$name Hard challenge', (season) => {
   });
 });
 
-// Run the same fleet mechanism/physics order as the engine, including a stationary human player.
-describe.each(SEASONS)('$name six-robot match', (season) => {
-  it('keeps all five AI robots playing through TELEOP traffic', () => {
-    const settings = { ...defaultSettings(season), aiDifficulty: 'hard' as const };
-    const setup = localSetup(settings, season);
-    const sim = new HeadlessSim(season, R, {
-      robot: setup.robots[0].config, alliance: settings.alliance, station: settings.station, pose: setup.robots[0].start!,
-      extraRobots: setup.robots.slice(1).map((r) => ({ ...r, pose: r.start! })),
-    });
-    try {
-      sim.ctx.settings.aiDifficulty = 'hard';
-      sim.ctx.humanPlayerIsAuto = () => true;
-      sim.rules.stage();
-      sim.rules.onPeriodChange(sim.ctx.clock.start());
-      for (const change of sim.ctx.clock.advance(season.timeline.filter((p) => p.mode !== 'teleop').slice(0, 2).reduce((s, p) => s + p.duration, 0))) sim.rules.onPeriodChange(change);
-      const pilots = sim.ctx.robots.map((r) => r === sim.robot ? null : season.createBotPilot!(sim.ctx, sim.rules, r));
-      const dt = sim.physics.dt;
-      let feeds = 0, defenseFrames = 0;
-      const scoringPeriods = new Map<number, Set<string>>();
-      for (let step = 0; step < 85 / dt; step++) {
-        for (const change of sim.ctx.clock.advance(dt)) sim.rules.onPeriodChange(change);
-        for (const [i, r] of sim.ctx.robots.entries()) {
-          r.enabled = true;
-          let cmd = pilots[i]?.update(dt) ?? { ...IDLE_COMMAND };
-          if (sim.rules.adjustCommand) cmd = sim.rules.adjustCommand(r, cmd, dt);
-          const target = cmd.pass && !cmd.shoot && sim.rules.passTarget ? sim.rules.passTarget(r) : sim.rules.aimTarget(r);
-          cmd = r.autoAlign(cmd, target);
-          if (season.year === 2026 && r.alliance !== settings.alliance && r.station === 3 && Math.hypot(r.pose.x - sim.robot.pose.x, r.pose.y - sim.robot.pose.y) < 1.4) defenseFrames++;
-          r.lastCommand = cmd; r.drive(cmd, dt); r.tick(dt); r.aimTurretAt(target, dt);
-          const handled = sim.rules.handleMechanisms?.(r, cmd, dt);
-          if (!handled && (cmd.shoot || cmd.pass)) {
-            const shot = r.launch(target, sim.rng);
-            if (shot) {
-              if (cmd.pass) feeds++;
-              else { if (!scoringPeriods.has(r.id)) scoringPeriods.set(r.id, new Set()); scoringPeriods.get(r.id)!.add(sim.ctx.clock.current.id); }
-              const piece = r.held.pop()!; sim.pool.placeWorld(piece, shot.pos, shot.vel); r.noteLaunch(piece); sim.rules.onLaunch(r, piece); }
-          }
-        }
-        if (!sim.rules.handlesIntake) for (const r of sim.ctx.robots) {
-          if (!r.lastCommand.intake || r.capacityLeft <= 0) continue;
-          for (let piece = 0; piece < sim.pool.count; piece++) {
-            if (sim.pool.state[piece] !== 'field' || r.justLaunched(piece)) continue;
-            const p = sim.pool.position(piece);
-            if ((p.y <= 0.4 && r.intakeContains(p, sim.pool.radius)) || r.stationContains(p, sim.pool.radius)) {
-              sim.pool.hold(piece, r.id); r.held.push(piece); if (!r.capacityLeft) break;
-            }
-          }
-        }
-        sim.rules.beforeStep(dt); sim.pool.updateDamping(); sim.physics.step(); sim.rules.afterStep(dt);
-      }
-      const points = sim.ctx.robots.slice(1).map((r) => Object.values(sim.ctx.score.robots[r.id]?.points ?? {}).reduce((sum, n) => sum + n, 0));
-      console.log(season.id, 'fleet points', points, 'shots', sim.ctx.robots.slice(1).map((r) => sim.ctx.score.robotCounter(r.id, 'shots')));
-      if (season.year === 2026) {
-        console.log('REBUILT tactics', { feeds, defenseFrames, shootingPeriods: [...scoringPeriods].map(([id, periods]) => [id, [...periods]]) });
-        expect(feeds).toBeGreaterThan(10);
-        expect(defenseFrames).toBeGreaterThan(10);
-        for (const r of sim.ctx.robots.filter((r) => r.alliance !== settings.alliance && r.station !== 3)) expect(scoringPeriods.get(r.id)!.size).toBeGreaterThanOrEqual(2);
-      }
-      for (const [i, pointsScored] of points.entries()) if (season.year !== 2026 || setup.robots[i + 1].alliance === settings.alliance || setup.robots[i + 1].station !== 3) expect(pointsScored).toBeGreaterThan(0);
-      for (const r of sim.ctx.robots.slice(1).filter((r) => season.year !== 2026 || r.alliance === settings.alliance || r.station !== 3)) expect(sim.ctx.score.robotCounter(r.id, 'shots')).toBeGreaterThan(r.config.preload);
-    } finally { sim.dispose(); }
-  });
+// A whole all-AI match (the player's station driven by a bot too) through the engine's step order.
+describe.each(SEASONS)('$name all-AI match', (season) => {
+  it('every robot scores, the alliance plan runs and fouls stay rare', () => {
+    const settings = { ...defaultSettings(season), seed: 3, alliance: 'blue' as const, aiDifficulty: 'hard' as const, aiAlly: { skill: 'hard' as const } };
+    const res = runMatch(season, R, settings, { playerBot: true });
+    console.log(season.id, 'all-AI', res.score, JSON.stringify(res.categories), 'fouls', res.foulList);
+    for (const pts of res.robotPoints) expect(pts).toBeGreaterThan(0);
+    for (const a of ['blue', 'red'] as const) {
+      expect(res.fouls[a]).toBeLessThan(res.score[a === 'blue' ? 'red' : 'blue'] * 0.15);
+      const cat = res.categories[a];
+      if (season.year === 2024) { expect(cat.speakerAmplified ?? 0).toBeGreaterThan(0); expect((cat.onstage ?? 0) + (cat.park ?? 0)).toBeGreaterThan(0); }
+      if (season.year === 2025) { expect(cat.autoCoral ?? 0).toBeGreaterThan(21); expect(cat.barge ?? 0).toBeGreaterThanOrEqual(24); }
+      if (season.year === 2026) { expect(cat.towerTeleop ?? 0).toBeGreaterThanOrEqual(60); expect(cat.towerAuto ?? 0).toBeGreaterThan(0); expect(res.counters[a].fuelActive).toBeGreaterThan(600); }
+    }
+  }, 300_000);
 });
 
 it('two AI robots pass head-on without needing the player to bump them', () => {
@@ -181,7 +135,7 @@ it('two AI robots pass head-on without needing the player to bump them', () => {
   } finally { sim.dispose(); }
 });
 
-it('REBUILT defense reduces a shooter’s physical scoring instead of just following it', () => {
+it('REBUILT defender role reduces a shooter’s physical scoring instead of just following it', () => {
   const season = SEASONS[0];
   const totals: number[] = [];
   for (const defense of [false, true]) {
@@ -193,12 +147,14 @@ it('REBUILT defense reduces a shooter’s physical scoring instead of just follo
       ] });
     try {
       sim.ctx.settings.aiDifficulty = 'hard';
+      sim.ctx.settings.aiOpponent = { roles: { 3: 'defender' } };
       sim.rules.stage();
       sim.load(72);
-      // With both hubs active, an empty defender can deny more than it could score.
       for (const piece of sim.ctx.robots[1].held.splice(0)) sim.pool.reserve(piece);
       sim.rules.onPeriodChange(sim.ctx.clock.start());
-      for (const change of sim.ctx.clock.advance(23)) sim.rules.onPeriodChange(change);
+      // SHIFT 1 with red's HUB inactive: the defender's moment.
+      while (sim.ctx.clock.current.id !== 'shift1') for (const change of sim.ctx.clock.advance(0.1)) sim.rules.onPeriodChange(change);
+      (sim.rules as unknown as { firstInactive: string }).firstInactive = 'red';
       const defender = season.createBotPilot!(sim.ctx, sim.rules, sim.ctx.robots[1]);
       const dt = sim.physics.dt;
       for (let i = 0; i < 12 / dt; i++) {

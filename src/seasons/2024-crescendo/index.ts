@@ -1,4 +1,4 @@
-import { createCrescendoBot } from './bots';
+import { createCrescendoBot, CRESCENDO_AI_ROLES, CRESCENDO_AI_STRATEGIES } from './bots';
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import type { StartArea } from '@engine/startPose';
@@ -97,7 +97,10 @@ export const crescendo2024: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new CrescendoAutoPilot(ctx, rules as CrescendoRules, robot, routine);
   },
-  botRobotConfig(difficulty) { return difficulty === 'hard' ? crescendoRobotPresets().find((p) => p.id === 'turret')!.config : this.robotDefaults; },
+  botAutoRoutine(station) { return station === 2 ? 'wing-4' : 'center-2'; },
+  aiStrategies: CRESCENDO_AI_STRATEGIES,
+  aiRoles: CRESCENDO_AI_ROLES,
+  botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' ? crescendoRobotPresets().find((p) => p.id === 'turret')!.config : this.robotDefaults; },
   createBotPilot(ctx, rules, robot) { return createCrescendoBot(ctx, rules as CrescendoRules, robot); },
   createHud(ctx, rules, slots) {
     return new CrescendoHud(ctx, rules as CrescendoRules, slots);
