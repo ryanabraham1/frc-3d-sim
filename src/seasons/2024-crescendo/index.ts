@@ -1,3 +1,4 @@
+import { createCrescendoBot } from './bots';
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import type { StartArea } from '@engine/startPose';
@@ -96,6 +97,8 @@ export const crescendo2024: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new CrescendoAutoPilot(ctx, rules as CrescendoRules, robot, routine);
   },
+  botRobotConfig(difficulty) { return difficulty === 'hard' ? crescendoRobotPresets().find((p) => p.id === 'turret')!.config : this.robotDefaults; },
+  createBotPilot(ctx, rules, robot) { return createCrescendoBot(ctx, rules as CrescendoRules, robot); },
   createHud(ctx, rules, slots) {
     return new CrescendoHud(ctx, rules as CrescendoRules, slots);
   },

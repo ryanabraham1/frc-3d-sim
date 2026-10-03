@@ -41,6 +41,9 @@ export interface GameSettings {
   autoIntake: boolean;
   seed: number;
   shadows: boolean;
+  /** Fill the remaining single-player stations with AI (default true). */
+  aiOpponents?: boolean;
+  aiDifficulty?: 'easy' | 'normal' | 'hard';
 }
 
 export type ToastKind = 'info' | 'good' | 'foul' | 'warn';
@@ -147,7 +150,7 @@ export interface SeasonRules {
 
 /**
  * Drives a robot without driver input — used for the AUTO period (drivers may not control robots in
- * AUTO). Not an opponent AI: the sim is singleplayer until multiplayer lands.
+ * AUTO), or throughout TELEOP for an AI opponent.
  */
 export interface AutoPilot {
   update(dt: number): RobotCommand;
@@ -260,6 +263,9 @@ export interface SeasonDefinition {
   buildField(ctx: SeasonContext): void;
   createRules(ctx: SeasonContext): SeasonRules;
   createAutoPilot(ctx: SeasonContext, rules: SeasonRules, robot: Robot, routine: string): AutoPilot;
+  botAutoRoutine?(station: number): string;
+  botRobotConfig?(difficulty: NonNullable<GameSettings['aiDifficulty']>): RobotConfig;
+  createBotPilot?(ctx: SeasonContext, rules: SeasonRules, robot: Robot): AutoPilot;
   createHud(ctx: SeasonContext, rules: SeasonRules, slots: HudSlots): SeasonHud;
   controlsHelp?: [string, string][];
   /** Key rules/points shown on the menu's "Game rules" page. */

@@ -1,3 +1,4 @@
+import { createReefscapeBot } from './bots';
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { BATTERY_MASS } from '@engine/robot/drivetrain';
@@ -73,6 +74,8 @@ export const reefscape2025: SeasonDefinition = {
   buildField(ctx) { fields.set(ctx, buildReefscapeField(ctx)); },
   createRules(ctx) { const refs = fields.get(ctx); if (!refs) throw new Error('Build REEFSCAPE field first'); return new ReefscapeRules(ctx, refs); },
   createAutoPilot(_ctx, rules, robot, routine) { return new ReefscapeAutoPilot(rules as ReefscapeRules, robot, routine); },
+  botRobotConfig(difficulty) { return difficulty === 'hard' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
+  createBotPilot(ctx, rules, robot) { return createReefscapeBot(ctx, rules as ReefscapeRules, robot); },
   createHud(ctx, rules, slots) { return new ReefscapeHud(ctx, rules as ReefscapeRules, slots); },
   controlsHelp: [
     ...DEFAULT_CONTROLS_HELP.filter(([key]) => !['Space', 'G', 'I', 'C / X', '1 2 3  or  [ ]', 'H', 'Gamepad'].includes(key)),

@@ -1,3 +1,4 @@
+import { createRebuiltBot } from './bots';
 import type { MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { BATTERY_MASS } from '@engine/robot/drivetrain';
@@ -96,6 +97,13 @@ export const rebuilt2026: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new RebuiltAutoPilot(ctx, rules as RebuiltRules, robot, routine);
   },
+  botAutoRoutine(station) { return ['shoot-only', 'shoot-depot', 'shoot-collect'][station - 1]; },
+  botRobotConfig(difficulty) {
+    const config = rebuiltRobotDefaults();
+    if (difficulty === 'hard') { config.hopperCapacity = 80; config.launcher.rate = 16; }
+    return config;
+  },
+  createBotPilot(ctx, rules, robot) { return createRebuiltBot(ctx, rules as RebuiltRules, robot); },
   createHud(ctx, rules, slots) {
     return new RebuiltHud(ctx, rules as RebuiltRules, slots);
   },

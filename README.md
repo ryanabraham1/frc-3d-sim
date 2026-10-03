@@ -41,6 +41,23 @@ The gallery uses the same models and animation path as the game; it is a develop
 | `npm run build` | Production build to `dist/` (static — deploy anywhere, e.g. Vercel) |
 | `npm run preview` | Serve the production build locally |
 
+## Single-player AI
+
+Choose **3 vs 3** to play with two AI teammates against three AI opponents in any season, or **Solo practice**
+for an empty field. **Easy / Normal / Hard** changes opponent driving speed, shooting accuracy and collection
+pace; teammates stay on Normal. Hard uses competitive builds, shoots while moving in shooting seasons,
+seeks open high-value reef branches, coordinates AMP amplification, and attempts endgame climbs. Bots
+reserve separate pieces and reef faces, sidestep stalled approaches, and skip temporarily unreachable pieces.
+REBUILT Hard assigns scorer, feeder and defender roles: continuous collection and shooting during active
+shifts, physical feeding from the neutral zone, and a defender contesting scoring while the opponent hub is active. During its own active shift it scores;
+when both hubs are active it compares scoring opportunity with the shooting rate it could deny. The defender releases contact and separates to avoid sustained pins, then returns to contest the route.
+Bots take the center of crossing lanes and can reach fuel inside a trench or bump band.
+Teammates follow a consistent passing direction to break head-on deadlocks. AUTO routines spread across
+preload scoring, depot collection and neutral collection rather than sending everyone down the same path.
+Bots run scripted AUTO routines, then collect and score through the same
+physical mechanisms as the player in TELEOP. They route around major field structures and nearby robots.
+Custom player starts move overlapping bots to another legal starting spot. AI settings are saved with the menu.
+
 ## Robot archetypes
 
 Each season's **Robot** panel offers archetype presets based on how real teams built robots for that game, plus

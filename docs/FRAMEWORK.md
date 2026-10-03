@@ -162,3 +162,14 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 3. **CAD pipeline** — script to turn the official Onshape/STEP field into a GLB for `cadOverlay.ts` (needs an Onshape account/API key or a STEP→glTF converter).
 4. ~~**Multiplayer**~~ — done (host-authoritative, see `docs/MULTIPLAYER.md`). Next step there: optional dedicated headless host so matches survive the host closing their tab.
 5. **Replays** — record `RobotCommand`s + seed; replay deterministically.
+
+### Single-player AI
+
+`GameSettings.aiOpponents` fills the five other stations by default; false keeps solo practice.
+`aiDifficulty` accepts `easy`, `normal`, or `hard` and affects opponents only. Seasons may supply `botRobotConfig` and `botAutoRoutine` for competitive builds and varied AUTO assignments.
+Seasons implement the optional
+`createBotPilot(ctx, rules, robot)` hook for TELEOP. AUTO still uses `createAutoPilot`; multiplayer retains human
+drivers. `engine/ai/cycleBot.ts` supplies repeated physical collection/scoring, target selection, teammate
+yielding, nearby-robot avoidance, clockwise teammate passing and stalled-approach recovery. `BotStrategy.tactics` lets
+seasons apply coordinated behavior before the generic collector, while `endgame` handles climbs. Each season supplies scoring and supply
+poses, eligible pieces and structure routing. Bots use normal mechanisms and receive no free pieces or points.

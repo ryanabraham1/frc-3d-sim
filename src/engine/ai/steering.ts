@@ -59,7 +59,7 @@ export function dist(a: FieldPoint, b: FieldPoint): number {
  * Next waypoint on the way from `from` to `to`, routing through band gaps when a band lies between them.
  * Returns `to` when no band is in the way.
  */
-export function routeThroughBands(from: FieldPoint, to: FieldPoint, bands: BarrierBand[], robotHalfWidth: number, robotHeight: number): FieldPoint {
+export function routeThroughBands(from: FieldPoint, to: FieldPoint, bands: BarrierBand[], robotHalfWidth: number, robotHeight: number, centerLanes = false): FieldPoint {
   const side = (b: BarrierBand, x: number) => (x < b.xMin ? -1 : x > b.xMax ? 1 : 0);
   // Consider the band nearest to the robot first.
   const ordered = [...bands].sort((a, b) => Math.abs((a.xMin + a.xMax) / 2 - from.x) - Math.abs((b.xMin + b.xMax) / 2 - from.x));
@@ -74,7 +74,7 @@ export function routeThroughBands(from: FieldPoint, to: FieldPoint, bands: Barri
       const lo = g.yMin + robotHalfWidth + margin;
       const hi = g.yMax - robotHalfWidth - margin;
       if (lo > hi) continue;
-      const gy = clamp((from.y + to.y) / 2, lo, hi);
+      const gy = centerLanes ? (lo + hi) / 2 : clamp((from.y + to.y) / 2, lo, hi);
       const cost = Math.abs(from.y - gy) + Math.abs(to.y - gy);
       if (!best || cost < best.cost) best = { y: gy, cost };
     }
@@ -87,7 +87,12 @@ export function routeThroughBands(from: FieldPoint, to: FieldPoint, bands: Barri
     const entry = { x: nearEdge + sf * 0.55, y: best.y };
     const aligned = Math.abs(from.y - best.y) < 0.18;
     const close = Math.abs(from.x - nearEdge) < 1.0;
-    if (aligned && close) return { x: st < 0 ? b.xMin - 0.7 : b.xMax + 0.7, y: best.y };
+    if (aligned && close) {
+      // A target under a trench/on a bump lies INSIDE the band. Drive into its lane instead
+      // of repeatedly returning the exit on the same side and never reaching the piece.
+      if (st === 0) return Math.abs(to.y - best.y) < 0.18 ? to : { x: to.x, y: best.y };
+      return { x: st < 0 ? b.xMin - 0.7 : b.xMax + 0.7, y: best.y };
+    }
     return entry;
   }
   return to;

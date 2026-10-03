@@ -18,9 +18,9 @@ import { Ticker } from '../net/ticker';
 import { collisionGroups, Group, PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { Renderer } from '../render/renderer';
-import { footprint, sanitizeConfig } from '../robot/config';
+import { cloneConfig, footprint, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
-import { resolveStartPose } from '../startPose';
+import { checkStartSpot, fieldToSpot, footprintPoly, polysOverlap, resolveStartPose, spotToField } from '../startPose';
 import { clamp, formatClock } from '../units';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
@@ -54,10 +54,10 @@ const PRE_MATCH_COUNTDOWN = 3;
 /** Host streams a snapshot every N physics steps (90 Hz / 3 = 30 Hz). */
 const SNAPSHOT_EVERY_STEPS = 3;
 
-/** Singleplayer: a one-robot MatchSetup from the menu settings. */
+/** Singleplayer: the driver plus five AI robots, or a solo practice field. */
 export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetup {
   const fp = footprint(s.robot);
-  return {
+  const setup: MatchSetup = {
     seasonId: s.seasonId,
     seed: s.seed,
     autoHumanPlayer: s.autoHumanPlayer,
@@ -85,6 +85,43 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
       },
     ],
   };
+  if (s.aiOpponents !== false && season.createBotPilot) {
+    for (const alliance of ['blue', 'red'] as const) {
+      for (let station = 1; station <= 3; station++) {
+        if (alliance === s.alliance && station === s.station) continue;
+        const difficulty = alliance === s.alliance ? 'normal' : s.aiDifficulty ?? 'normal';
+        const config = cloneConfig(season.botRobotConfig?.(difficulty) ?? season.robotDefaults);
+        if (alliance !== s.alliance) {
+          config.maxSpeed *= difficulty === 'easy' ? 0.8 : difficulty === 'hard' ? 1.2 : 1;
+          if (difficulty === 'hard') config.launcher.speedError *= 0.25;
+          config.launcher.spread *= difficulty === 'easy' ? 2 : difficulty === 'hard' ? 0.2 : 1;
+        }
+        config.teamNumber = 9000 + setup.robots.length;
+        const dims = { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry };
+        const botFootprint = footprint(config);
+        let start = season.startPose(alliance, station);
+        const overlaps = (pose: typeof start) => setup.robots.some((other) => {
+          const otherFootprint = footprint(other.config);
+          return polysOverlap(footprintPoly(pose, botFootprint.length + 0.1, botFootprint.width + 0.1),
+            footprintPoly(other.start ?? season.startPose(other.alliance, other.station), otherFootprint.length, otherFootprint.width));
+        });
+        if (overlaps(start) && season.startArea) {
+          const spot = fieldToSpot(dims, alliance, start);
+          for (let y = season.startArea.rect.y0; y <= season.startArea.rect.y1; y += 0.15) {
+            const candidate = { ...spot, y };
+            const pose = spotToField(dims, alliance, candidate);
+            if (checkStartSpot(season.startArea, candidate, botFootprint.length, botFootprint.width).ok && !overlaps(pose)) { start = pose; break; }
+          }
+        }
+        setup.robots.push({
+          id: setup.robots.length, slot: slotId(alliance, station), alliance, station, config,
+          autoRoutine: season.botAutoRoutine?.(station) ?? season.autoRoutines[0]?.id ?? 'none', manualAuto: false,
+          start, peerId: '', name: `AI ${alliance === 'blue' ? 'Blue' : 'Red'} ${station}`,
+        });
+      }
+    }
+  }
+  return setup;
 }
 
 /**
@@ -113,6 +150,7 @@ export class Game {
   readonly input = new InputManager();
   /** AUTO-period drivers per robot id (drivers can't control robots in AUTO). */
   private readonly autoPilots = new Map<number, AutoPilot>();
+  private readonly botPilots = new Map<number, AutoPilot>();
   private readonly robotSetups = new Map<number, RobotSetup>();
   private readonly seasonHud: SeasonHud;
   /** The robot driven from this screen (null = multiplayer spectator). */
@@ -178,12 +216,12 @@ export class Game {
     this.pool = new GamePiecePool(this.physics, this.renderer.scene, this.frame, season.gamePiece);
     this.autoIntake = settings.autoIntake;
 
-    // Every robot on the field is driven by a human (locally or over the network) — no bot AI.
+    // Local AI fills the other stations; network matches retain their human drivers.
     for (const rs of this.setup.robots) {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
-      robot.controller = 'player';
+      robot.controller = this.role === 'local' && rs.id !== 0 ? 'bot' : 'player';
       season.configureRobot?.(robot);
       this.robots.push(robot);
       this.robotSetups.set(rs.id, rs);
@@ -252,6 +290,7 @@ export class Game {
       for (const r of this.robots) {
         const rs = this.robotSetups.get(r.id)!;
         this.autoPilots.set(r.id, season.createAutoPilot(this.ctx, this.rules, r, rs.autoRoutine));
+        if (r.controller === 'bot' && season.createBotPilot) this.botPilots.set(r.id, season.createBotPilot(this.ctx, this.rules, r));
       }
     }
 
@@ -529,6 +568,7 @@ export class Game {
       if (enabled) {
         if (!this.manual(r)) cmd = this.autoPilots.get(r.id)?.update(dt) ?? IDLE_COMMAND;
         else if (r === this.player) cmd = this.playerCommand(inp, r);
+        else if (r.controller === 'bot') cmd = this.botPilots.get(r.id)?.update(dt) ?? IDLE_COMMAND;
         else cmd = this.hostSync?.command(r.id) ?? IDLE_COMMAND;
       }
       // Driver-assist layers: season assists (e.g. reef auto-align) then chassis auto-align onto the shot target.

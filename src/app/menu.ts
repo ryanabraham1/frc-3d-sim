@@ -49,6 +49,8 @@ export function defaultSettings(season: SeasonDefinition): GameSettings {
     autoIntake: true,
     seed: Math.floor(Math.random() * 1e6),
     shadows: true,
+    aiOpponents: true,
+    aiDifficulty: 'normal',
   };
 }
 
@@ -229,6 +231,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         <button class="wide-btn" data-k="resetRobot"><span>Reset robot</span>${icon.reset(18)}</button>
       </section>
       ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
+      ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
+      ${s.aiOpponents !== false ? group('AI difficulty', `<div class="seg">${(['easy', 'normal', 'hard'] as const).map((d) => opt(`data-difficulty="${d}"`, d[0].toUpperCase() + d.slice(1), (s.aiDifficulty ?? 'normal') === d)).join('')}</div>`, (s.aiDifficulty === 'hard' ? 'Competitive builds, continuous scoring cycles, coordinated support, and endgame climbs. Teammates use Normal.' : 'Opponent speed, aim accuracy, and collection pace. Teammates use Normal.')) : ''}
       ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`)}
       ${group('Autonomous', `<div class="seg">${season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, x.id === s.autoRoutine)).join('')}</div>`, routine?.description ?? '')}
       ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, season.humanPlayerHint ? (s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual) : season.maxScoringLevel ? (s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.') : (s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.'))}
@@ -311,7 +315,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     if (lobby?.lobby && lobby.lobby.seasonId !== s.seasonId) {
       season = getSeason(lobby.lobby.seasonId);
       const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera };
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty };
       s.robot.teamNumber = teamNumber;
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
@@ -391,7 +395,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);
       const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera };
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty };
       s.robot.teamNumber = teamNumber;
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
@@ -417,6 +421,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       season.robotOptions?.find((o) => o.id === b.dataset.opt)?.set(s.robot, b.dataset.choice!);
       render();
     }));
+    all('[data-difficulty]').forEach((b) => (b.onclick = () => ((s.aiDifficulty = b.dataset.difficulty as GameSettings['aiDifficulty']), render())));
+    all('[data-ai]').forEach((b) => (b.onclick = () => ((s.aiOpponents = b.dataset.ai === '1'), render())));
     all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
     all('[data-toggle]').forEach(
       (b) =>

@@ -34,7 +34,8 @@ export class HeadlessSim {
   constructor(
     readonly season: SeasonDefinition,
     R: RapierModule,
-    opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number; station?: number },
+    opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number; station?: number;
+      extraRobots?: { config: RobotConfig; alliance: Alliance; station: number; pose: FieldPose; id: number }[] },
   ) {
     this.physics = new PhysicsWorld(R, 1 / 90);
     const scene = new THREE.Scene();
@@ -76,6 +77,14 @@ export class HeadlessSim {
       toast() {},
       humanPlayerIsAuto: () => false,
     };
+    for (const extra of opts.extraRobots ?? []) {
+      const config = season.normalizeRobotConfig?.(extra.config) ?? sanitizeConfig(extra.config, season.maxRobotHeight, season.maxRobotPerimeter);
+      const robot = new Robot(this.physics, scene, this.frame, config, extra.alliance, extra.id, extra.station, extra.pose);
+      robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.controller = 'bot';
+      season.configureRobot?.(robot);
+      this.ctx.robots.push(robot);
+    }
     season.buildField(this.ctx);
     this.rules = season.createRules(this.ctx);
   }

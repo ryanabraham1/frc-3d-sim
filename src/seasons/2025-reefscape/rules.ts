@@ -135,14 +135,14 @@ export class ReefscapeRules implements SeasonRules {
   static key(a: Alliance, level: number, face: number, branch: number): string {
     return `${a}:${level}:${face}:${branch}`;
   }
-  private occupied(a: Alliance, level: number, face: number, branch: number): boolean {
+  occupied(a: Alliance, level: number, face: number, branch: number): boolean {
     return level > 1 && this.placements.some((p) => p.alliance === a && p.level === level && p.face === face && p.branch === branch);
   }
   private troughCount(a: Alliance, face: number, half: number): number {
     return this.placements.filter((p) => p.alliance === a && p.level === 1 && p.face === face && p.branch === half).length;
   }
   /** Staged ALGAE on this face blocks L3 (even faces) or L2 (odd faces) until removed. */
-  private blocked(a: Alliance, level: number, face: number): boolean {
+  blocked(a: Alliance, level: number, face: number): boolean {
     return level > 1 && level === (face % 2 === 0 ? 3 : 2) && this.reefAlgae(a, face);
   }
 
@@ -732,6 +732,18 @@ export class ReefscapeRules implements SeasonRules {
   /** The robot's climber hangs from cages of its own type; the preselected depth comes from its menu choice. */
   climberDepth(robot: Robot): C.CageDepth | null {
     return robot.config.climber.maxLevel === 1 ? 'shallow' : robot.config.climber.maxLevel >= 2 ? 'deep' : null;
+  }
+
+  /** Plan a physical approach to the closest unoccupied cage matching this climber. */
+  climbApproach(robot: Robot): { x: number; y: number; yaw: number } | null {
+    const depth = this.climberDepth(robot), yaw = C.sideYaw(robot.alliance, 0);
+    const options = this.refs.cages[robot.alliance].flatMap((cage, slot) => {
+      if (this.refs.cageDepth[robot.alliance][slot] !== depth || this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.isClimbing && r.climbSlot === slot)) return [];
+      const p = cage.fieldPosition(), reach = this.gripReach(robot);
+      return [{ x: p.x - Math.cos(yaw) * reach, y: p.y - Math.sin(yaw) * reach, yaw }];
+    });
+    options.sort((a, b) => Math.hypot(a.x - robot.pose.x, a.y - robot.pose.y) - Math.hypot(b.x - robot.pose.x, b.y - robot.pose.y));
+    return options[0] ?? null;
   }
 
   /** §6.5.2: CAGE points come from any one of the alliance's three cages, not only the driver station's. */
