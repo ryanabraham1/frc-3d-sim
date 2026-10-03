@@ -1,9 +1,10 @@
-import type { Alliance } from '../coords';
+import type { Alliance, FieldPose } from '../coords';
 import type { MatchResults, ToastKind } from '../core/season';
 import type { ClockState } from '../match/clock';
 import type { ScoreState } from '../match/scoreboard';
 import type { RobotConfig } from '../robot/config';
 import type { RobotCommand } from '../robot/robot';
+import type { StartSpot } from '../startPose';
 
 /**
  * Game-level multiplayer protocol (carried inside relay `send`/`msg` envelopes, see relayProtocol.ts),
@@ -27,6 +28,12 @@ export interface LobbyPlayer {
   slot: SlotId | null;
   team: number;
   host: boolean;
+  /** Bumpered footprint (m) of this driver's robot — lets everyone draw it on the placement map. */
+  dims?: { length: number; width: number };
+  /** Chosen starting position (blue frame); null = the station's preset. */
+  spot?: StartSpot | null;
+  /** Locked in during the placement phase. */
+  ready?: boolean;
 }
 
 export interface LobbyState {
@@ -37,6 +44,8 @@ export interface LobbyState {
   /** Human players act automatically for every alliance (otherwise drivers press H). */
   autoHumanPlayer: boolean;
   inMatch: boolean;
+  /** Starting-position phase: drivers place their robots, then lock in; the match starts when everyone is ready. */
+  placing?: boolean;
 }
 
 export interface RobotSetup {
@@ -48,6 +57,8 @@ export interface RobotSetup {
   config: RobotConfig;
   autoRoutine: string;
   manualAuto: boolean;
+  /** Starting pose (field frame) — the driver's custom spot, or absent for the station preset. */
+  start?: FieldPose;
   /** Relay peer id of the driver ('' in singleplayer). */
   peerId: string;
   name: string;
@@ -100,6 +111,8 @@ export function unpackCommand(p: unknown): RobotCommand | null {
 export type ClientMsg =
   /** `slot` omitted = keep the current station; null = spectate. */
   | { t: 'lobby-set'; seasonId?: string; slot?: SlotId | null; robot: RobotConfig; autoRoutine: string; manualAuto: boolean }
+  /** Placement phase: where this driver wants to start (blue frame; null = preset) and whether they're locked in. */
+  | { t: 'place'; spot: StartSpot | null; ready: boolean }
   /** Client finished building its Game and can take snapshots. */
   | { t: 'ready' }
   | { t: 'cmd'; s: number; c: PackedCommand }
@@ -140,6 +153,9 @@ export interface RobotNetState {
   climbLevel: number;
   climbSlot: number | null;
   climbProgress: number;
+  /** Mechanism animation bits (1 = intaking, 2 = passing) and last shot elevation (rad) — visuals only. */
+  act?: number;
+  hood?: number;
   /** Last client command sequence the host applied (for prediction/reconciliation). */
   cmdSeq: number;
 }
@@ -186,7 +202,7 @@ export interface Snapshot {
 export const SNAPSHOT_KIND = 3;
 /** The clock only drives the HUD timer on clients (whole seconds): ~10 Hz is plenty. */
 export const CLOCK_EVERY = 3;
-const ROBOT_BYTES = 1 + 9 * 4 + 7 + 4;
+const ROBOT_BYTES = 1 + 9 * 4 + 7 + 4 + 2;
 /** Piece positions are sent as int16 millimetres (±32.7 m covers any FRC field). */
 export const PIECE_QUANTUM = 0.001;
 
@@ -233,6 +249,8 @@ export function encodeSnapshot(s: Snapshot): ArrayBuffer {
     v.setUint8(o++, Math.round(Math.max(0, Math.min(1, r.climbProgress)) * 255));
     v.setUint32(o, r.cmdSeq >>> 0, true);
     o += 4;
+    v.setUint8(o++, (r.act ?? 0) & 0xff);
+    v.setUint8(o++, Math.round(Math.max(0, Math.min(127, ((r.hood ?? 0) * 180) / Math.PI)) * 2));
   }
   v.setUint16(o, n, true);
   o += 2;
@@ -274,7 +292,9 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot | null {
     const climbProgress = v.getUint8(o++) / 255;
     const cmdSeq = v.getUint32(o, true);
     o += 4;
-    robots.push({ id, x: f[0], y: f[1], z: f[2], yaw: f[3], rot: [f[5], f[6], f[7], f[8]], tipped, turretYaw: f[4], held, enabled, climbPhase, climbLevel, climbSlot: slot < 0 ? null : slot, climbProgress, cmdSeq });
+    const act = v.getUint8(o++);
+    const hood = ((v.getUint8(o++) / 2) * Math.PI) / 180;
+    robots.push({ id, x: f[0], y: f[1], z: f[2], yaw: f[3], rot: [f[5], f[6], f[7], f[8]], tipped, turretYaw: f[4], held, enabled, climbPhase, climbLevel, climbSlot: slot < 0 ? null : slot, climbProgress, cmdSeq, act, hood });
   }
   const n = v.getUint16(o, true);
   o += 2;

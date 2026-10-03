@@ -108,6 +108,11 @@ export interface RobotConfig {
   autoAlign?: boolean;
   /** Season-specific archetype options (keys defined by the season module). */
   options?: Record<string, string | number | boolean>;
+  /**
+   * Visual model of a real team's robot (`registerRobotModel` id, see src/engine/robot/models.ts). Purely visual:
+   * everything the robot can do still comes from the rest of this config. Unset = the generic robot.
+   */
+  model?: string;
 
   /** Optional elevator/placement mechanism; level heights are defined by the season. */
   placement?: {

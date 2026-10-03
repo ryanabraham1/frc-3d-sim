@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coords';
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
@@ -8,6 +9,7 @@ import { DEFAULT_WHEEL_COF, RobotConfig, footprint, groundSideSign, launcherExit
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
+import { robotModelBuilder, type ModelPart, type RobotAnimState, type RobotModel } from './models';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
 export interface RobotCommand {
@@ -114,6 +116,17 @@ export class Robot {
   private climberArm!: THREE.Mesh;
   private statusLight!: THREE.Mesh;
   private readonly tmp = new THREE.Vector3();
+  /** Generic parts a team model may replace (see models.ts). */
+  private readonly parts = new Map<ModelPart, THREE.Object3D[]>();
+  /** Real-team visual model (config.model), animated from `anim` every frame. */
+  private model: RobotModel | null = null;
+  private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, hood: 0, fill: 0, climb: 0, place: null, vx: 0, vz: 0, omega: 0 };
+  private lastFrame = -1;
+  private lastHeld = 0;
+  /** Replicated mechanism bits (1 intake, 2 pass) on multiplayer clients; null = read lastCommand. */
+  private netAct: number | null = null;
+  /** Placement-season end effector pose for team models (set by the season each frame). */
+  placeAnim: { height: number; forward: number; level: number } | null = null;
 
   constructor(
     readonly physics: PhysicsWorld,
@@ -190,7 +203,7 @@ export class Robot {
   private buildVisual(scene: THREE.Scene): void {
     const c = this.config;
     const color = ALLIANCE_COLORS[this.alliance];
-    const bumperMat = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+    const bumperMat = new THREE.MeshStandardMaterial({ color, roughness: 0.92 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.5, roughness: 0.5 });
     const alu = new THREE.MeshStandardMaterial({ color: 0xa8adb5, metalness: 0.7, roughness: 0.35 });
     const bt = c.bumperThickness;
@@ -200,16 +213,18 @@ export class Robot {
     const W = this.fp.width;
 
     // Bumpers (local +x = robot forward, local -z = robot left).
+    // Rounded segments read as fabric-covered pool-noodle bumpers; the sides run the full length so the corners wrap.
     const mk = (sx: number, sz: number, px: number, pz: number) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, bh, sz), bumperMat);
+      const m = new THREE.Mesh(new RoundedBoxGeometry(sx, bh, sz, 3, Math.min(bh, bt) * 0.42), bumperMat);
       m.position.set(px, by, pz);
       m.castShadow = true;
       this.visual.add(m);
+      this.addPart('bumpers', m);
     };
     mk(bt, W, L / 2 - bt / 2, 0);
     mk(bt, W, -L / 2 + bt / 2, 0);
-    mk(L - 2 * bt, bt, 0, W / 2 - bt / 2);
-    mk(L - 2 * bt, bt, 0, -W / 2 + bt / 2);
+    mk(L, bt, 0, W / 2 - bt / 2);
+    mk(L, bt, 0, -W / 2 + bt / 2);
 
     // Team numbers on both sides + back.
     const numTex = makeTextTexture(String(c.teamNumber), { color: '#ffffff', width: 256, height: 96 });
@@ -220,20 +235,28 @@ export class Robot {
       n.position.set(0, by, side * (W / 2 + 0.002));
       n.rotation.y = side > 0 ? 0 : Math.PI;
       this.visual.add(n);
+      this.addPart('bumpers', n);
     }
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W * 0.8, 0.5), bh * 0.9), numMat);
-    back.position.set(-L / 2 - 0.002, by, 0);
-    back.rotation.y = -Math.PI / 2;
-    this.visual.add(back);
+    // Back number, unless the floor intake's INTAKE label is on that face (they'd overlap).
+    const groundOnBack = c.intake.enabled && (c.intake.ground !== false || !!c.options?.algaeGround) && groundSideSign(c) < 0;
+    if (!groundOnBack) {
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W * 0.8, 0.5), bh * 0.9), numMat);
+      back.position.set(-L / 2 - 0.002, by, 0);
+      back.rotation.y = -Math.PI / 2;
+      this.visual.add(back);
+      this.addPart('bumpers', back);
+    }
 
     // Belly pan + frame rails.
     const pan = new THREE.Mesh(new THREE.BoxGeometry(c.frameLength, 0.02, c.frameWidth), dark);
     pan.position.y = c.bumperBottom + 0.01;
     this.visual.add(pan);
+    this.addPart('chassis', pan);
     for (const sz of [-1, 1]) {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(c.frameLength, 0.05, 0.025), alu);
       rail.position.set(0, c.bumperTop - 0.02, sz * (c.frameWidth / 2 - 0.02));
       this.visual.add(rail);
+      this.addPart('chassis', rail);
     }
     // Wheels
     const wheelGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.04, 16);
@@ -244,6 +267,7 @@ export class Robot {
         w.rotation.x = Math.PI / 2;
         w.position.set(sx * (c.frameLength / 2 - 0.08), 0.05, sz * (c.frameWidth / 2 - 0.08));
         this.visual.add(w);
+        this.addPart('chassis', w);
       }
     }
 
@@ -253,6 +277,7 @@ export class Robot {
     const hopper = new THREE.Mesh(new THREE.BoxGeometry(c.frameLength * 0.7, hopperH, c.frameWidth * 0.85), hopperMat);
     hopper.position.set(-c.frameLength * 0.1, c.bumperTop + hopperH / 2, 0);
     this.visual.add(hopper);
+    this.addPart('hopper', hopper);
     this.hopperFill = new THREE.Mesh(
       new THREE.BoxGeometry(c.frameLength * 0.68, hopperH, c.frameWidth * 0.83),
       new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.7 }),
@@ -266,6 +291,7 @@ export class Robot {
         const post = new THREE.Mesh(new THREE.BoxGeometry(0.025, hopperH, 0.025), alu);
         post.position.set(-c.frameLength * 0.1 + sx * c.frameLength * 0.35, c.bumperTop + hopperH / 2, sz * c.frameWidth * 0.425);
         this.visual.add(post);
+        this.addPart('hopper', post);
       }
     }
 
@@ -289,6 +315,7 @@ export class Robot {
       barrel.rotation.z = c.launcher.angle * 0.6;
       this.turret.add(barrel);
     }
+    this.addPart('launcher', ...this.turret.children);
     if (c.launcher.enabled) this.visual.add(this.turret);
 
     // Climber arm (extends while climbing).
@@ -297,13 +324,15 @@ export class Robot {
     this.climberArm.scale.y = Math.max(0.05, c.height - c.bumperTop);
     this.climberArm.visible = c.climber.maxLevel > 0;
     this.visual.add(this.climberArm);
+    this.addPart('climber', this.climberArm);
+    this.buildModel({ dark, alu, bumper: bumperMat });
 
     // Status light (on = enabled)
     this.statusLight = new THREE.Mesh(
       new THREE.BoxGeometry(0.05, 0.03, 0.05),
       new THREE.MeshStandardMaterial({ color: 0xff8800, emissive: 0xff8800, emissiveIntensity: 1 }),
     );
-    this.statusLight.position.set(-L / 2 + 0.1, c.height + 0.02, 0);
+    this.statusLight.position.set(...(this.model?.lightAt ?? ([-L / 2 + 0.1, c.height + 0.02, 0] as const)));
     this.visual.add(this.statusLight);
 
     this.visual.traverse((o) => {
@@ -335,12 +364,14 @@ export class Robot {
       roller.rotation.x = Math.PI / 2;
       roller.position.set(side * (edge + dx), dy, 0);
       g.add(roller);
+      this.addPart('intakeRollers', roller);
     }
     // Arms from the roller ends back to the frame.
     for (const sz of [-1, 1]) {
       const arm = new THREE.Mesh(new THREE.BoxGeometry(bt + 0.05, 0.035, 0.03), dark);
       arm.position.set(side * (edge - bt / 2 + 0.015), 0.115, sz * (w / 2 - 0.015));
       g.add(arm);
+      this.addPart('intakeRollers', arm);
     }
     // Stripe along the whole bumper face on this side.
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, this.fp.width * 0.98), orange);
@@ -394,10 +425,74 @@ export class Robot {
       plate.position.set(side * (this.fp.length / 2 - 0.04), y, sz * (mouth / 2 + 0.02));
       plate.rotation.y = side * sz * 0.35;
       this.visual.add(plate);
+      this.addPart('funnel', plate);
     }
     const lip = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, mouth + 0.06), alu);
     lip.position.set(side * (this.fp.length / 2 + 0.01), y - 0.09, 0);
     this.visual.add(lip);
+    this.addPart('funnel', lip);
+  }
+
+  private addPart(part: ModelPart, ...objs: THREE.Object3D[]): void {
+    const list = this.parts.get(part) ?? [];
+    list.push(...objs);
+    this.parts.set(part, list);
+  }
+
+  /** Where the team model holds a game piece (seasons parent their held-piece mesh here), if it has one. */
+  get modelHeldAnchor(): THREE.Object3D | undefined {
+    return this.model?.heldAnchor;
+  }
+
+  /** True when this robot's team model draws `part` itself (seasons hide their own version of it, e.g. the mast). */
+  modelReplaces(part: ModelPart): boolean {
+    return !!this.model?.replaces.includes(part);
+  }
+
+  /** Build the config's team model (if registered) and hide the generic parts it replaces. */
+  private buildModel(mats: { dark: THREE.Material; alu: THREE.Material; bumper: THREE.Material }): void {
+    const build = robotModelBuilder(this.config.model);
+    if (!build) return;
+    const c = this.config;
+    this.anim.hood = c.launcher.angle;
+    this.model = build({
+      config: c, alliance: this.alliance, fp: this.fp, visual: this.visual, turret: this.turret, mats,
+      groundSide: groundSideSign(c), stationSide: stationSideSign(c),
+    });
+    for (const part of this.model.replaces) for (const o of this.parts.get(part) ?? []) o.visible = false;
+    if (this.model.replaces.includes('hopper')) this.hopperFill.visible = false;
+  }
+
+  /** Advance the team model's animation (called from syncVisual, once per rendered frame). */
+  private animateModel(frameDt?: number): void {
+    const model = this.model;
+    if (!model) return;
+    const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
+    const a = this.anim;
+    a.dt = frameDt ?? (this.lastFrame < 0 ? 0 : clamp(now - this.lastFrame, 0, 0.1));
+    this.lastFrame = now;
+    a.time += a.dt;
+    a.enabled = this.enabled;
+    const act = this.netAct ?? (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0);
+    a.intaking = (act & 1) !== 0;
+    a.passing = (act & 2) !== 0;
+    // A piece leaving the robot (shot, placed or fed) flashes the shooter / end effector.
+    if (this.held.length < this.lastHeld) a.firing = 1;
+    this.lastHeld = this.held.length;
+    a.firing = Math.max(0, a.firing - a.dt / 0.35);
+    a.hood = this.lastShotAngle || this.config.launcher.angle;
+    a.fill = clamp(this.held.length / Math.max(1, this.config.hopperCapacity), 0, 1);
+    const target = this.climbPhase === 'align' ? 1 : this.climbPhase === 'none' ? 0 : 0.25;
+    a.climb = a.dt > 0 ? target + (a.climb - target) * Math.exp(-6 * a.dt) : target;
+    a.place = this.placeAnim;
+    // Chassis-frame velocity for swerve module steering / wheel spin.
+    const v = this.body.linvel();
+    const r = this.body.rotation();
+    this.tmp.set(v.x, 0, v.z).applyQuaternion(this.q.set(r.x, r.y, r.z, r.w).invert());
+    a.vx = this.tmp.x;
+    a.vz = this.tmp.z;
+    a.omega = this.body.angvel().y;
+    model.update(a);
   }
 
   /**
@@ -440,12 +535,14 @@ export class Robot {
     const port = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.05, Math.min(this.fp.width * 0.45, 0.3)), dark);
     port.position.set(this.fp.length / 2 + 0.003, c.bumperTop + 0.045, 0);
     this.visual.add(port);
+    this.addPart('chassis', port);
     // Forward arrow on the roof.
     const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.14, 3), new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.6 }));
     arrow.rotation.set(0, 0, -Math.PI / 2);
     arrow.scale.set(1, 1, 0.25);
     arrow.position.set(c.frameLength * 0.38, c.height + 0.005, 0);
     this.visual.add(arrow);
+    this.addPart('chassis', arrow);
   }
 
   // ───────────────────────── state accessors ─────────────────────────
@@ -1033,6 +1130,7 @@ export class Robot {
       }
     }
     this.lastShotAngle = theta;
+    this.anim.firing = 1;
     const yawN = aimYaw + rng.gauss(0, c.spread);
     const pitchN = theta + rng.gauss(0, c.spread);
     const sN = speed * (1 + rng.gauss(0, c.speedError));
@@ -1170,6 +1268,8 @@ export class Robot {
       climbSlot: this.climbSlot,
       climbProgress: this.climbProgress,
       cmdSeq,
+      act: (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0),
+      hood: this.lastShotAngle,
     };
   }
 
@@ -1194,6 +1294,8 @@ export class Robot {
     this.climbLevel = s.climbLevel;
     this.climbSlot = s.climbSlot;
     this.replicaClimbProgress = s.climbProgress;
+    if (s.act !== undefined) this.netAct = s.act;
+    if (s.hood !== undefined) this.lastShotAngle = s.hood;
   }
 
   // ───────────────────────── misc ─────────────────────────
@@ -1226,7 +1328,8 @@ export class Robot {
     this.hopperFill.visible = false;
   }
 
-  syncVisual(): void {
+  /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
+  syncVisual(frameDt?: number): void {
     const t = this.body.translation();
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);
@@ -1243,6 +1346,7 @@ export class Robot {
     this.climberArm.position.y = this.config.bumperTop + armLen / 2;
     const lm = this.statusLight.material as THREE.MeshStandardMaterial;
     lm.emissiveIntensity = this.enabled ? 1.6 : 0.1;
+    this.animateModel(frameDt);
   }
 
   dispose(scene: THREE.Scene): void {

@@ -10,6 +10,7 @@ import type { CameraMode } from '../camera/cameras';
 import type { Rng } from '../random';
 import type { RobotConfig } from '../robot/config';
 import type { AimTarget, Robot, RobotCommand } from '../robot/robot';
+import type { StartArea, StartSpot } from '../startPose';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -25,6 +26,8 @@ export interface GameSettings {
   seasonId: string;
   alliance: Alliance;
   station: number;
+  /** Custom starting position (blue frame, see startPose.ts); null/undefined = the driver station's preset. */
+  startSpot?: StartSpot | null;
   robot: RobotConfig;
   /** Player robot's autonomous routine id. */
   autoRoutine: string;
@@ -167,6 +170,18 @@ export interface MapShape {
   points: [number, number][];
 }
 
+export interface TeamRobot {
+  id: string;
+  team: number;
+  /** Robot name, e.g. "Vortex". */
+  name: string;
+  /** One-line summary for the menu. */
+  description: string;
+  /** Where the details came from (Chief Delphi thread, tech binder). */
+  source: string;
+  config: RobotConfig;
+}
+
 export interface RobotOption {
   id: string;
   label: string;
@@ -209,6 +224,11 @@ export interface SeasonDefinition {
   robotLimits?: { capacity: number; preload: number };
   normalizeRobotConfig?(config: RobotConfig): RobotConfig;
   robotPresets?: { id: string; label: string; description: string; config: RobotConfig }[];
+  /**
+   * Real robots from that season (top teams), playable as-is: config approximates their capabilities and
+   * `config.model` names a simplified animated 3D model (src/engine/robot/models.ts). Optional QoL for past seasons.
+   */
+  teamRobots?: TeamRobot[];
   robotSummary?(config: RobotConfig): string;
   configureRobot?(robot: Robot): void;
   autoRoutines: AutoRoutine[];
@@ -233,6 +253,8 @@ export interface SeasonDefinition {
   humanPlayerHint?: { auto: string; manual: string };
 
   startPose(alliance: Alliance, station: number): FieldPose;
+  /** Where robots may legally start (blue frame): lets players place their robot anywhere inside it, at any heading. */
+  startArea?: StartArea;
   driverEye(alliance: Alliance, station: number): { x: number; y: number; z: number; yaw: number };
 
   buildField(ctx: SeasonContext): void;

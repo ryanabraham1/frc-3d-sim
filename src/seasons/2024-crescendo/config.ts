@@ -88,7 +88,7 @@ export const FIXED_MAX_SPEED = 8.5;
 type Build = {
   ground: boolean; source: boolean; shooter: 'none' | 'fixed' | 'pivot'; aim: 'turret' | 'align' | 'driver'; amp: boolean; climb: 0 | 1 | 2;
 };
-function build(b: Build): RobotConfig {
+export function build(b: Build): RobotConfig {
   const c = crescendoRobotDefaults();
   c.intake.ground = b.ground;
   c.intake.station = b.source;

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { setRobotEnvironment } from '../robot/models';
 
 /** Dynamic resolution never renders below this many device pixels per CSS pixel. */
 const MIN_PIXEL_RATIO = 0.75;
@@ -37,6 +39,11 @@ export class Renderer {
     this.renderer.shadowMap.enabled = opts.shadows ?? true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
+    // Studio reflections for team robot models only (the field keeps its plain lighting): metal and polycarbonate
+    // read as aluminum / smoked plastic instead of flat gray.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    setRobotEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
+    pmrem.dispose();
 
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.05, 200);
     this.camera.position.set(0, 10, 12);

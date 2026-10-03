@@ -5,6 +5,7 @@ import { inch, lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, ReefscapeAutoPilot } from './autopilot';
 import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotOptions, reefscapeRobotPresets, reefscapeRobotSummary, reefscapeSpecBars, startPose, TIMELINE } from './config';
+import { reefscapeTeamRobots } from './teamRobots';
 import { buildReefscapeField, type ReefscapeFieldRefs } from './field';
 import { ReefscapeHud } from './hud';
 import { ReefscapeRules } from './rules';
@@ -30,6 +31,7 @@ export const reefscape2025: SeasonDefinition = {
   normalizeRobotConfig: normalizeReefscapeConfig, robotPresets: reefscapeRobotPresets(),
   robotSummary: reefscapeRobotSummary,
   robotOptions: reefscapeRobotOptions,
+  teamRobots: reefscapeTeamRobots(),
   robotSpecBars: reefscapeSpecBars,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'],
   humanPlayerButtons: 2,
@@ -39,6 +41,21 @@ export const reefscape2025: SeasonDefinition = {
   },
   robotHint: 'R104: 42 in starting height / 120 in perimeter · R105: 18 in mechanism reach · G409: 1 CORAL + 1 ALGAE',
   autoRoutines: AUTO_ROUTINES, startPose, driverEye,
+  /**
+   * Bumpers touching the starting line (the preset straddles it, and LEAVE needs the robot clear of it, so a start
+   * fully behind the line would score LEAVE for free), anywhere along it except the REEF, the corner CORAL STATIONs
+   * and the PROCESSOR [EST footprints].
+   */
+  startArea: {
+    rect: { x0: 0, x1: C.START_LINE + 1.5, y0: 0, y1: C.FIELD_WIDTH },
+    line: C.START_LINE,
+    keepOut: [
+      Array.from({ length: 6 }, (_, f) => [C.REEF_X + reefR * Math.cos(Math.PI / 6 + f * Math.PI / 3), C.REEF_Y + reefR * Math.sin(Math.PI / 6 + f * Math.PI / 3)] as [number, number]),
+      [[0, 0], [1.7, 0], [0, 1.25]],
+      [[0, C.FIELD_WIDTH], [1.7, C.FIELD_WIDTH], [0, C.FIELD_WIDTH - 1.25]],
+      rect(5.45, 0, 1.1, 0.35),
+    ],
+  },
   configureRobot(robot) {
     robot.usePlacementVisual();
     robot.config.hopperCapacity = Math.min(2, robot.config.hopperCapacity);

@@ -81,7 +81,7 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
 }
 
 type Build = { coral: 'none' | 'l1' | 'l3' | 'l4'; intake: 'funnel' | 'ground' | 'both' | 'none'; algae: 'none' | 'reef' | 'reefGround'; algaeScore: 'none' | 'processor' | 'net' | 'both'; climb: 0 | 1 | 2; align: boolean };
-function build(b: Build): RobotConfig {
+export function build(b: Build): RobotConfig {
   const c = reefscapeRobotDefaults();
   c.placement!.enabled = b.coral !== 'none';
   c.placement!.maxLevel = { none: 4, l1: 1, l3: 3, l4: 4 }[b.coral];

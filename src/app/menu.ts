@@ -1,11 +1,13 @@
 import type { CameraMode } from '@engine/camera/cameras';
-import type { GameSettings, MapShape, SeasonDefinition } from '@engine/core/season';
+import type { GameSettings, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
-import { cloneConfig, DEFAULT_WHEEL_COF, RobotConfig } from '@engine/robot/config';
+import { cloneConfig, DEFAULT_WHEEL_COF, footprint, RobotConfig } from '@engine/robot/config';
+import { checkStartSpot, clampToArea, type StartSpot } from '@engine/startPose';
 import { pushingForce } from '@engine/robot/drivetrain';
 import { formatClock, inch, lb, toInch } from '@engine/units';
 import { SEASONS, getSeason } from '@seasons/index';
 import { icon } from './icons';
+import { bindHeadingControls, bindPlacementMap, placementDragging, headingControls, placementMap, presetSpot, rotateSpot, syncHeadingControls, type MineState } from './placement';
 import type { LobbyController } from './lobby';
 import { bindMultiplayer, multiplayerPage } from './multiplayer';
 import './menu.css';
@@ -162,52 +164,6 @@ function robotArt(alliance: 'red' | 'blue', team: number, groundSide: 'front' | 
   </svg>`;
 }
 
-const SHAPE_OPACITY: Record<MapShape['kind'], number> = { zone: 0.07, hub: 0.28, bump: 0.16, trench: 0.12, tower: 0.1, depot: 0.08, outpost: 0.1 };
-
-/** Top-down field with the player's start position; other driver stations are clickable. */
-function fieldMap(season: SeasonDefinition, s: GameSettings): string {
-  const L = season.fieldLength;
-  const W = season.fieldWidth;
-  const pad = 0.5;
-  const fy = (y: number) => W - y; // +y is up on screen
-  const mirror = season.mapSymmetry === 'mirror';
-  const poly = (m: MapShape, red: boolean) =>
-    m.points.map(([x, y]) => `${(red ? L - x : x).toFixed(3)},${fy(red && !mirror ? W - y : y).toFixed(3)}`).join(' ');
-  const shapes = season.mapShapes ?? [];
-  let out = '';
-  for (const red of [false, true]) {
-    const col = red ? '#ef4444' : '#4f8cff';
-    for (const m of shapes) {
-      const neutral = m.kind === 'tower' || m.kind === 'depot' || m.kind === 'outpost';
-      out += `<polygon points="${poly(m, red)}" fill="${neutral ? '#ffffff' : col}" fill-opacity="${SHAPE_OPACITY[m.kind]}" stroke="${m.kind === 'zone' ? 'none' : col}" stroke-opacity="${m.kind === 'hub' ? 0.9 : 0.4}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
-    }
-  }
-  const zone = shapes.find((m) => m.kind === 'zone');
-  const zx = zone ? Math.max(...zone.points.map((p) => p[0])) : season.startPose('blue', 1).x;
-  out += `<line x1="${zx}" y1="0" x2="${zx}" y2="${W}" stroke="#4f8cff" stroke-opacity=".7" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
-  out += `<line x1="${L - zx}" y1="0" x2="${L - zx}" y2="${W}" stroke="#ef4444" stroke-opacity=".7" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
-  out += `<line x1="${L / 2}" y1="0" x2="${L / 2}" y2="${W}" stroke="#fff" stroke-opacity=".25" stroke-width="1.5" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>`;
-
-  const fl = s.robot.frameLength + 2 * s.robot.bumperThickness;
-  const fw = s.robot.frameWidth + 2 * s.robot.bumperThickness;
-  for (const n of [1, 2, 3]) {
-    const p = season.startPose(s.alliance, n);
-    if (n === s.station) {
-      const deg = (-p.yaw * 180) / Math.PI;
-      out += `<g transform="translate(${p.x} ${fy(p.y)}) rotate(${deg})">
-        <rect x="${-fl / 2}" y="${-fw / 2}" width="${fl}" height="${fw}" rx="0.06" fill="#8b6cf6" fill-opacity=".35" stroke="#a48bff" stroke-width="2.5" vector-effect="non-scaling-stroke"/>
-        <polygon points="${fl / 2 + 0.3},0 ${fl / 2 + 0.04},-0.16 ${fl / 2 + 0.04},0.16" fill="#a48bff"/>
-        <rect x="${s.robot.intake.groundSide === 'front' ? fl / 2 - 0.02 : -fl / 2 - 0.1}" y="${-fw * 0.4}" width="0.12" height="${fw * 0.8}" rx="0.04" fill="#ff7a1a"/>
-      </g>
-      <text x="${p.x}" y="${fy(p.y)}" text-anchor="middle" dominant-baseline="central" font-family="Barlow Condensed, sans-serif" font-weight="800" font-size="0.42" fill="#fff">${s.robot.teamNumber}</text>`;
-    } else {
-      out += `<circle class="st-hit" data-station="${n}" cx="${p.x}" cy="${fy(p.y)}" r="0.5"/><circle class="st-dot" cx="${p.x}" cy="${fy(p.y)}" r="0.24" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
-    }
-  }
-  return `<svg viewBox="${-pad} ${-pad} ${L + 2 * pad} ${W + 2 * pad}" preserveAspectRatio="xMidYMid meet">
-    <rect x="0" y="0" width="${L}" height="${W}" fill="#0f0f15" stroke="#e7e7ee" stroke-opacity=".8" stroke-width="1.5" vector-effect="non-scaling-stroke"/>${out}</svg>`;
-}
-
 export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => void, opts: { lobby?: LobbyController; page?: Page } = {}): void {
   const stored = load();
   let season = getSeason(stored?.seasonId ?? SEASONS[0].id);
@@ -239,6 +195,27 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     return `<div class="spec-bar"><div class="top"><span>${esc(label)}</span><b>${esc(value)}</b></div><div class="segs">${Array.from({ length: 10 }, (_, i) => `<i class="${i < n ? 'f' : ''}"></i>`).join('')}</div></div>`;
   };
 
+  /** Where the robot starts: the custom spot, else the station preset (blue frame). */
+  const curSpot = (): StartSpot => s.startSpot ?? presetSpot(season, s.alliance, s.station);
+  const mapHtml = () => {
+    const fp = footprint(s.robot);
+    return placementMap(
+      season,
+      [{ alliance: s.alliance, spot: curSpot(), length: fp.length, width: fp.width, label: String(s.robot.teamNumber), mine: true, intakeFront: s.robot.intake.groundSide === 'front' }],
+      { zones: [s.alliance], stations: [1, 2, 3].map((n) => ({ alliance: s.alliance, station: n, spot: presetSpot(season, s.alliance, n) })) },
+    );
+  };
+  /** A saved spot can stop being legal (bigger robot, other season): nudge it back inside the zone or fall back to the preset. */
+  const sanitizeSpot = () => {
+    const area = season.startArea;
+    if (!s.startSpot) return;
+    if (!area) return void (s.startSpot = null);
+    const fp = footprint(s.robot);
+    if (checkStartSpot(area, s.startSpot, fp.length, fp.width).ok) return;
+    const fit = clampToArea(area, s.startSpot, fp.length, fp.width);
+    s.startSpot = checkStartSpot(area, fit, fp.length, fp.width).ok ? fit : null;
+  };
+
   const playPage = () => {
     const F = numFields(season);
     const r = s.robot;
@@ -248,7 +225,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       <section class="panel robot-card ${s.alliance}">
         <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
         <div class="robot-art">${robotArt(s.alliance, r.teamNumber, r.intake.groundSide)}</div>
-        <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
+        <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}${s.startSpot ? ' · custom start' : ''}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
         <button class="wide-btn" data-k="resetRobot"><span>Reset robot</span>${icon.reset(18)}</button>
       </section>
       ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
@@ -259,15 +236,21 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const right = `
       <section class="panel map-panel">
         <div class="panel-head"><span>Starting spot</span><span class="dim" style="margin-left:auto">${season.year} ${esc(season.name)} · ${formatClock(matchLength())} match</span></div>
-        <div class="map-wrap">${fieldMap(season, s)}</div>
-        <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Other stations</span><span class="sp">Click a circle to move to that driver station.</span></div>
+        <div class="map-wrap">${mapHtml()}</div>
+        ${season.startArea ? `<div class="place-wrap">${headingControls(curSpot().yaw, `<button class="link" data-place="reset">${icon.reset(13)} Station preset</button>`)}</div>` : ''}
+        <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Station presets</span>${season.startArea ? '<span class="lg"><i class="sw zone"></i>Legal start zone</span>' : ''}<span class="sp">${season.startArea ? 'Drag your robot anywhere in the green zone, drag the knob on its nose to rotate (Shift = 15° steps), or click a ring for a station preset.' : 'Click a circle to move to that driver station.'}</span></div>
       </section>`;
     const fields = season.robotFields ?? ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'];
     const same = (c: RobotConfig) => JSON.stringify({ ...r, teamNumber: 0 }) === JSON.stringify({ ...c, teamNumber: 0 });
     const presets = season.robotPresets ?? [];
     const current = presets.find((p) => same(p.config));
+    const teams = season.teamRobots ?? [];
+    const team = teams.find((t) => same(t.config));
+    const teamPicker = teams.length
+      ? `<div class="config-presets">${group('Play as a real robot', `<div class="seg">${teams.map((t) => opt(`data-team-robot="${t.id}" title="${esc(t.description)}"`, `${t.team} ${esc(t.name)}`, t === team)).join('')}</div>`, team ? `${team.description} Source: ${team.source}.` : `Top ${season.year} robots, simplified and animated — capabilities from their Chief Delphi reveals and tech binders.`)}</div>`
+      : '';
     const profiles = presets.length
-      ? `<div class="config-presets">${group('Robot archetype', `<div class="seg">${presets.map((p) => opt(`data-preset="${p.id}" title="${esc(p.description)}"`, p.label, p === current)).join('')}</div>`, current ? current.description : 'Custom build — pick an archetype to start from, then change mechanisms below.')}</div>`
+      ? `<div class="config-presets">${group('Robot archetype', `<div class="seg">${presets.map((p) => opt(`data-preset="${p.id}" title="${esc(p.description)}"`, p.label, p === current)).join('')}</div>`, current ? current.description : team ? `Playing as ${team.team} ${team.name} — changing a mechanism below turns it into a custom build.` : 'Custom build — pick an archetype to start from, then change mechanisms below.')}</div>`
       : '';
     const options = (season.robotOptions ?? [])
       .map((o) => group(o.label, `<div class="seg">${o.choices.map((ch) => opt(`data-opt="${o.id}" data-choice="${ch.id}"${ch.title ? ` title="${esc(ch.title)}"` : ''}`, ch.label, o.get(r) === ch.id)).join('')}</div>`, o.hint ?? ''))
@@ -280,6 +263,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const spec = `
       <section class="panel" style="margin-top:22px">
         <div class="panel-head"><span>Robot</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${season.year} defaults</button></div>
+        ${teamPicker}
         ${profiles}
         <div class="spec-bars">
           ${specBar('Speed', `${F.speed.get(r)} ft/s`, F.speed.get(r) / 22)}
@@ -331,6 +315,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       s.robot.teamNumber = teamNumber;
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
+    sanitizeSpot();
     if (lobby) lobby.settings = s;
     // A relay wake/status update can arrive while the user is typing. Keep the form draft and focus.
     const draft = page === 'multiplayer' ? {
@@ -412,8 +397,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       render();
     };
     all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
-    all('[data-station]').forEach((b) => (b.onclick = () => ((s.station = Number(b.dataset.station)), render())));
-    all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
+        all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
     all('[data-routine]').forEach((b) => (b.onclick = () => ((s.autoRoutine = b.dataset.routine!), render())));
     all('[data-preset]').forEach((b) => (b.onclick = () => {
       const preset = season.robotPresets?.find((p) => p.id === b.dataset.preset);
@@ -421,7 +405,15 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       const team = s.robot.teamNumber; s.robot = cloneConfig(preset.config); s.robot.teamNumber = team;
       render();
     }));
+    all('[data-team-robot]').forEach((b) => (b.onclick = () => {
+      const t = season.teamRobots?.find((x) => x.id === b.dataset.teamRobot);
+      if (!t) return;
+      s.robot = cloneConfig(t.config);
+      render();
+    }));
     all('[data-opt]').forEach((b) => (b.onclick = () => {
+      // A real team's robot is a fixed build: changing a mechanism makes it a custom robot with the generic model.
+      delete s.robot.model;
       season.robotOptions?.find((o) => o.id === b.dataset.opt)?.set(s.robot, b.dataset.choice!);
       render();
     }));
@@ -450,6 +442,22 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         render();
       };
     });
+    const wrap = el.querySelector<HTMLElement>('.map-wrap');
+    if (wrap && page === 'play') {
+      const fp = footprint(s.robot);
+      const mine = (): MineState => ({ alliance: s.alliance, spot: curSpot(), length: fp.length, width: fp.width, blockers: [] });
+      const redraw = () => {
+        wrap.innerHTML = mapHtml();
+        syncHeadingControls(el, curSpot().yaw);
+      };
+      bindPlacementMap(wrap, season, {
+        mine,
+        set: (spot) => ((s.startSpot = spot), redraw()),
+        station: (n) => ((s.station = n), (s.startSpot = null), render()),
+      });
+      bindHeadingControls(el, (yaw) => ((s.startSpot = rotateSpot(season, mine(), yaw)), render()));
+      el.querySelector<HTMLElement>('[data-place="reset"]')?.addEventListener('click', () => ((s.startSpot = null), render()));
+    }
     const startBtn = el.querySelector<HTMLButtonElement>('[data-k="start"]');
     if (startBtn) startBtn.onclick = start;
     if (page === 'multiplayer' && lobby) bindMultiplayer(el, lobby, { s, season, rerender: render, goto: (p) => ((page = p), render()) });
@@ -457,7 +465,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   if (lobby)
     lobby.onChange = () => {
-      if (el.isConnected) render();
+      // Don't rebuild the page under a robot being dragged on the placement map.
+      if (el.isConnected && !placementDragging()) render();
     };
 
   render();

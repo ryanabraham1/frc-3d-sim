@@ -1,16 +1,26 @@
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
+import type { StartArea } from '@engine/startPose';
 import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, CrescendoAutoPilot } from './autopilot';
 import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
+import { crescendoTeamRobots } from './teamRobots';
 import { buildCrescendoField, type CrescendoFieldRefs } from './field';
 import { CrescendoHud } from './hud';
 import { CrescendoRules } from './rules';
 
 const fields = new WeakMap<SeasonContext, CrescendoFieldRefs>();
 const pts = (p: { x: number; y: number }[]): [number, number][] => p.map((q) => [q.x, q.y]);
+
+/** ROBOT STARTING ZONE [M 5.2, G303]; the SUBWOOFER is the only field element inside it. */
+function crescendoStartArea(): StartArea {
+  const z = C.startZone('blue');
+  const xs = z.map((p) => p.x), ys = z.map((p) => p.y);
+  const sub: [number, number][] = [[0, C.SPEAKER_Y - C.SUBWOOFER_BACK_HALF_WIDTH], [C.SUBWOOFER_DEPTH, C.SPEAKER_Y - C.SUBWOOFER_FRONT_HALF_WIDTH], [C.SUBWOOFER_DEPTH, C.SPEAKER_Y + C.SUBWOOFER_FRONT_HALF_WIDTH], [0, C.SPEAKER_Y + C.SUBWOOFER_BACK_HALF_WIDTH]];
+  return { rect: { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }, keepOut: [sub] };
+}
 
 export const crescendo2024: SeasonDefinition = {
   id: '2024-crescendo',
@@ -52,6 +62,7 @@ export const crescendo2024: SeasonDefinition = {
   normalizeRobotConfig: normalizeCrescendoConfig,
   robotPresets: crescendoRobotPresets(),
   robotOptions: crescendoRobotOptions,
+  teamRobots: crescendoTeamRobots(),
   robotSpecBars: crescendoSpecBars,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'rate', 'acc', 'cspd'],
   configureRobot(robot) {
@@ -72,6 +83,7 @@ export const crescendo2024: SeasonDefinition = {
     manual: 'You are the human players: H = drop a NOTE down the SOURCE CHUTE toward your robot, B = AMPLIFY, N = Coopertition, M = throw a HIGH NOTE (last 20 s).',
   },
   startPose,
+  startArea: crescendoStartArea(),
   driverEye,
   buildField(ctx) {
     fields.set(ctx, buildCrescendoField(ctx));

@@ -5,6 +5,7 @@ import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
 import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltShotAccuracy, rebuiltSpecBars, startPose, TIMELINE } from './config';
+import { rebuiltTeamRobots } from './teamRobots';
 import { buildRebuiltField, RebuiltFieldRefs, side, sideYaw } from './field';
 import { RebuiltHud } from './hud';
 import { RebuiltRules } from './rules';
@@ -69,12 +70,18 @@ export const rebuilt2026: SeasonDefinition = {
   normalizeRobotConfig: normalizeRebuiltConfig,
   robotPresets: rebuiltRobotPresets(),
   robotOptions: rebuiltRobotOptions,
+  teamRobots: rebuiltTeamRobots(),
   robotSpecBars: rebuiltSpecBars,
   shotAccuracy: rebuiltShotAccuracy,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'cap', 'pre', 'rate', 'acc', 'cspd'],
   maxClimbLevel: 3,
   autoRoutines: AUTO_ROUTINES,
   mapShapes: mapShapes(),
+  /** Anywhere in the ALLIANCE ZONE behind the ROBOT STARTING LINE except the TOWER, DEPOT and OUTPOST. */
+  startArea: {
+    rect: { x0: 0, x1: C.ALLIANCE_ZONE_DEPTH - C.TAPE_WIDTH, y0: 0, y1: C.FIELD_WIDTH },
+    keepOut: mapShapes().filter((m) => m.kind === 'tower' || m.kind === 'depot' || m.kind === 'outpost').map((m) => m.points),
+  },
 
   startPose: (a, s) => startPose(a, s),
   driverEye,

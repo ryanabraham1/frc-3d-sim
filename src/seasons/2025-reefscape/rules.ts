@@ -60,6 +60,7 @@ export class ReefscapeRules implements SeasonRules {
   private autoAssessed = false;
   private bargeAssessed = false;
   private readonly coralGeo = coralGeometry();
+  private readonly tmpQ = new THREE.Quaternion();
   private readonly algaeGeo = new THREE.SphereGeometry(C.ALGAE_RADIUS, 18, 12);
   private readonly coralMat = new THREE.MeshStandardMaterial({ color: C.COLORS.coral, roughness: 0.65, side: THREE.DoubleSide });
   private readonly algaeMat = new THREE.MeshStandardMaterial({ color: C.COLORS.algae, roughness: 0.7 });
@@ -868,7 +869,11 @@ export class ReefscapeRules implements SeasonRules {
         const height = Math.max(robot.config.height, m.height + 0.15);
         rail.scale.y = (height - 0.2) / (robot.config.height - 0.2);
         rail.position.y = height / 2 + 0.1;
+        rail.visible = !robot.modelReplaces('mast');
       }
+      // Team models (254's elevator, 2910's telescoping arm…) draw their own mast and follow the end effector.
+      arm.visible = !robot.modelReplaces('mast');
+      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level };
       const held = this.heldVisuals.get(robot.id)!;
       held.coral.visible = pool.owner.some((owner, i) => owner === robot.id && pool.state[i] === 'held' && i < C.CORAL_COUNT);
       held.algae.visible = pool.owner.some((owner, i) => owner === robot.id && pool.state[i] === 'held' && i >= C.CORAL_COUNT);
@@ -876,6 +881,16 @@ export class ReefscapeRules implements SeasonRules {
       held.coral.position.set(m.forward, 0, 0);
       const dir = m.level === 4 ? new THREE.Vector3(0, -1, 0) : m.level === 1 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(Math.cos(C.BRANCH_ANGLE), -Math.sin(C.BRANCH_ANGLE), 0);
       held.coral.quaternion.setFromUnitVectors(up, dir);
+      // A team model with its own end effector holds the pieces there (same robot-frame orientation).
+      const anchor = robot.modelHeldAnchor;
+      if (anchor) {
+        if (held.coral.parent !== anchor) anchor.add(held.coral, held.algae);
+        robot.visual.updateMatrixWorld(true);
+        const inv = anchor.getWorldQuaternion(this.tmpQ).invert().multiply(robot.visual.quaternion);
+        held.coral.position.set(0, 0, 0);
+        held.coral.quaternion.premultiply(inv);
+        held.algae.position.set(0.05, -0.14, 0);
+      }
     }
     for (const mesh of this.scoredVisuals.values()) mesh.visible = false;
     for (let i = C.CORAL_COUNT; i < pool.count; i++) {

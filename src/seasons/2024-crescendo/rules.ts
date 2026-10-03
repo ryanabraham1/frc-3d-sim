@@ -68,7 +68,10 @@ export class CrescendoRules implements SeasonRules {
       m.rotation.x = Math.PI / 2;
       m.position.set(0, r.config.bumperTop + C.NOTE_THICKNESS, 0);
       m.visible = false;
-      r.visual.add(m);
+      // Real-team models carry the NOTE inside their shooter (it tilts and lifts with it).
+      const anchor = r.modelHeldAnchor;
+      if (anchor) m.position.set(0, 0, 0);
+      (anchor ?? r.visual).add(m);
       this.heldVisuals.set(r.id, m);
     }
   }

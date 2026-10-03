@@ -107,7 +107,7 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
 const DUMPER_EXITS = 4;
 
 type Build = { intake: 'both' | 'ground' | 'outpost'; aim: 'turret' | 'align' | 'driver'; dumper?: boolean; hopper: number; tall: boolean; rate: number; climb: 0 | 1 | 2 | 3 };
-function build(b: Build): RobotConfig {
+export function build(b: Build): RobotConfig {
   const c = rebuiltRobotDefaults();
   c.intake.ground = b.intake !== 'outpost';
   c.intake.station = b.intake !== 'ground';

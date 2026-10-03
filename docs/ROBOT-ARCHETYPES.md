@@ -159,3 +159,27 @@ Every archetype puts the floor intake on the **back** of the chassis (`intake.gr
 scoring mechanism (shooter, elevator or arm at the front). Real robots do this so the driver collects with their back
 to the goal, then turns (or lets auto-align turn) to score. The orange roller, striped bumper and glowing pickup patch
 in the 3D model, and the INTAKE/SHOOTER labels on the menu robot, mark the side. [derived]
+
+## Real team robots (playable, `season.teamRobots`)
+
+Past seasons also offer real top robots (three per season, plus three over-the-BUMP robots for 2026), picked in the menu under "Play as a real robot" (QoL only; not
+needed for a new game at kickoff). Each is a normal `RobotConfig` (capabilities the team published; anything not
+published is marked `[EST]` in `src/seasons/<season>/teamRobots.ts`) plus `config.model`, a simplified animated 3D
+model registered with `registerRobotModel` (`src/engine/robot/models.ts`). Models are built from the team's photos /
+CAD renders to match the silhouette and signature features, not internals. They are visual only: capture zones,
+launch points and scoring still come from the config, and the floor intake stays orange and on the back.
+
+| Season | Robot | What the model shows | Sources |
+| --- | --- | --- | --- |
+| 2024 | 254 Vortex | blue "goalpost" climber uprights + black truss crossbar, NASA sponsor panel, turret with tall D-plates and two pairs of flywheels out the sides, amp arm | 254 2024 Technical Binder; team254.com/first/2024 photos; Chief Delphi "2024 VORTEX" |
+| 2024 | 1690 Doppler | 11 in pancake deck with exposed motors, silver ladder arm that swings the shooter box from flat to vertical, thin climb hooks. Intake and shooter share the front (the arm takes the NOTE straight from the intake) | Chief Delphi "Orbit 1690 Presents: Doppler"; reveal video |
+| 2024 | 4522 AXL | raw silver frame + X brace, braced elevator, carriage with 2×2 flywheels that rises for AMP/TRAP, single climber tube | Team SCREAM Open Alliance thread; The Blue Alliance 2024 media |
+| 2025 | 2910 Spectre | lattice-truss telescoping arm on a geared pivot, green LED strips, brass ballast, arm climber carriage | Onshape "Spectre" article; frcteam2910.org 2025 recap; TBA 2025 media |
+| 2025 | 1323 MadTown | blue pivoting four-stage elevator with cable chains, black sponsor gussets, CORAL + ALGAE floor intakes | Chief Delphi "1323 MadTown Robot Reveal?"; TBA 2025 media |
+| 2025 | 254 Undertow | blue two-stage elevator with zig-zag top, smoked CORAL funnel with NASA logo, ground intake linkage, roller-claw climber | 254 2025 Technical Binder; team254.com/first/2025 photo |
+| 2026 | 4414 RIPCURRENT | smoked bumper walls, teal trusses, flat spoked dye rotor, pancake turret on a column, hopper extension that slides out with the latched intake | 4414 2026 Technical Binder (2026.team4414.com) |
+| 2026 | 254 Overload | smoked hopper box with sponsor decals, full-width plate-wall shooter, intake on blue truss rails that retracts while shooting | Chief Delphi "Team 254 Presents: Overload" |
+| 2026 | 1690 Kepler | black X-lattice walls, top arch, turret on an 8 in bearing, gear-driven shooter | Chief Delphi "FRC Orbit 1690 2026 Robot CAD Release" |
+| 2026 | 4946 Moto Moto (BUMP) | half-circle "roomba" ~30 in tall: D-shaped bumper, round clear hopper, dye rotor, turret on a center column, silver goalpost over the flat-side intake | 4946 2026 Engineering Report; Chief Delphi "4946 The Alpha Dogs 2026 Robot: Moto Moto" |
+| 2026 | 3476 Sandspit (BUMP) | tall closed clear hopper, black dotted corner posts, orange rails + A-frame, teal printed lattice, wide multi-lane shooter, retracting intake | Chief Delphi "Team 3476: Code Orange 2026 Sandspit Robot Reveal"; TBA 2026 media |
+| 2026 | 9483 Enigma (BUMP) | too tall for the TRENCH: black hopper box with big team numbers, silver corner extrusions, spindexer bowl, turret | Chief Delphi "Team 9483 Presents: Enigma"; TBA 2026 media |
