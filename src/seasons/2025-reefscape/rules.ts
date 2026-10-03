@@ -638,7 +638,7 @@ export class ReefscapeRules implements SeasonRules {
     const k = robot ? (Math.hypot(robot.pose.x - stations[0].x, robot.pose.y - stations[0].y) <= Math.hypot(robot.pose.x - stations[1].x, robot.pose.y - stations[1].y) ? 0 : 1) : 0;
     if (this.ctx.pool.indices('reserve', `station:${a}`).length <= this.chuteQueue[a].length) { this.ctx.toast('No CORAL left at the CORAL STATION', 'warn', a); return; }
     // Fast presses queue up and are fed one at a time, like a human player waiting for the CHUTE to clear.
-    if (this.chuteQueue[a].length > 0 || this.chuteBlocked(a, k, robot ?? null)) { this.chuteQueue[a].push(k); return; }
+    if (this.chuteQueue[a].length > 0 || this.chuteOccupied(stations[k])) { this.chuteQueue[a].push(k); return; }
     this.dropCoral(a, k, robot ?? null);
   }
 
@@ -647,23 +647,28 @@ export class ReefscapeRules implements SeasonRules {
     if (queue.length === 0) return;
     if (this.ctx.clock.mode === 'disabled') { queue.length = 0; return; }
     const robot = this.ctx.playerRobot?.alliance === a ? this.ctx.playerRobot : this.ctx.robots.find((r) => r.alliance === a) ?? null;
-    if (this.chuteBlocked(a, queue[0], robot)) return;
+    if (this.chuteOccupied(C.stations(a)[queue[0]])) return;
     if (!this.dropCoral(a, queue[0], robot)) queue.length = 0;
     else queue.shift();
   }
 
-  /** True while another CORAL still sits where the next one would be placed at the top of the CHUTE. CORAL roll down the CHUTE lying across it, so they only need a diameter of room. */
-  private chuteBlocked(a: Alliance, k: number, robot: Robot | null): boolean {
+  /** Wait for the whole CHUTE and lip to clear, including either edge of its wide opening. */
+  private chuteOccupied(st: { x: number; y: number; yaw: number }): boolean {
     const { pool, frame } = this.ctx;
-    const spawn = this.chuteSpawn(a, k, robot);
+    const nx = Math.cos(st.yaw), ny = Math.sin(st.yaw);
+    const back = C.CHUTE_LIP * Math.cos(C.CHUTE_LIP_ANGLE) + C.CHUTE_LENGTH * Math.cos(C.CHUTE_ANGLE);
     return pool.indices('field').some((i) => {
       if (i >= C.CORAL_COUNT) return false;
       const q = frame.toField(pool.position(i));
-      return Math.hypot(q.x - spawn.x, q.y - spawn.y, q.z - spawn.z) < C.CORAL_RADIUS * 2 + 0.05;
+      const dx = q.x - st.x, dy = q.y - st.y;
+      const out = dx * nx + dy * ny, along = -dx * ny + dy * nx;
+      // Include the pipe's extent so a rotating piece must fully exit before another follows.
+      const margin = C.CORAL_LENGTH / 2 + 0.03;
+      return out >= -back - margin && out <= margin && Math.abs(along) <= C.STATION_MOUTH_WIDTH / 2 + margin && q.z > C.STATION_MOUTH_HEIGHT - C.CORAL_RADIUS;
     });
   }
 
-  /** A CORAL still rolling in (or just out of) this station's CHUTE — the human player waits for it to clear. */
+  /** Automatic feeding also waits for CORAL around the robot below the opening. */
   private coralInChute(st: { x: number; y: number; yaw: number }): boolean {
     const { pool, frame } = this.ctx;
     return pool.indices('field').some((i) => {

@@ -191,7 +191,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
       teleop(sim);
       const before = sim.pool.indices('reserve', `station:${a}`).length;
       for (let k = 0; k < 20; k++) sim.rules.humanPlayerAction(a, 1); // all within one tick
-      run(sim, 8);
+      run(sim, 16); // allow each pipe to fully clear the chute before the next drop
       expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(before - 20); // every press delivered a CORAL
       const inChute = sim.pool.indices('field').filter((i) => {
         if (i >= 126 || i % 63 <= 2) return false;
@@ -199,6 +199,28 @@ describe('2025 REEFSCAPE manual implementation', () => {
         return Math.hypot(q.x - st.x, q.y - st.y) < 0.9 && q.z > C.STATION_MOUTH_HEIGHT - 0.05; // on the CHUTE floor, not resting on a robot
       });
       expect(inChute).toEqual([]); // all rolled out, none wedged
+    });
+    it(`${a}: rapid manual feeds wait for CORAL farther down the chute, including when the aim moves`, () => {
+      const st = C.stations(a)[1];
+      const sim = make(a, { x: st.x + Math.cos(st.yaw) * 1.5, y: st.y + Math.sin(st.yaw) * 1.5, yaw: st.yaw + Math.PI });
+      sim.rules.stage(); teleop(sim);
+      const before = sim.pool.indices('reserve', `station:${a}`).length;
+      sim.rules.humanPlayerAction(a, 1);
+      const coral = sim.pool.indices('field').find((i) => i < C.CORAL_COUNT && i % 63 > 2)!;
+      // The top is free, but this piece has not cleared the lip yet.
+      const p = C.chutePoint(st, 0, C.CHUTE_LIP + 0.15);
+      sim.pool.placeWorld(coral, sim.frame.toWorld(p.x, p.y, p.z + C.CORAL_RADIUS));
+      sim.robot.body.setTranslation(sim.frame.toWorld(st.x + Math.cos(st.yaw) * 1.5 - Math.sin(st.yaw) * 0.6, st.y + Math.sin(st.yaw) * 1.5 + Math.cos(st.yaw) * 0.6, sim.robot.body.translation().y), true);
+      for (let k = 0; k < 19; k++) sim.rules.humanPlayerAction(a, 1);
+      expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(before - 1);
+      run(sim, 20);
+      expect(sim.pool.indices('reserve', `station:${a}`)).toHaveLength(before - 20);
+      const stuck = sim.pool.indices('field').filter((i) => {
+        if (i >= C.CORAL_COUNT || i % 63 <= 2) return false;
+        const q = sim.frame.toField(sim.pool.position(i));
+        return Math.hypot(q.x - st.x, q.y - st.y) < 1.1 && q.z > C.STATION_MOUTH_HEIGHT - 0.05;
+      });
+      expect(stuck).toEqual([]);
     });
     it(`${a}: a ground-intake robot without a funnel collects CORAL the human player drops onto the carpet`, () => {
       const st = C.stations(a)[0];
