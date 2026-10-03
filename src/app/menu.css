@@ -357,6 +357,49 @@
 .map-legend .sp {
   margin-left: auto;
 }
+.map-legend .sw.zone {
+  border-color: #34d399;
+  background: rgba(52, 211, 153, 0.15);
+  border-style: dashed;
+}
+.map-wrap {
+  touch-action: none;
+  user-select: none;
+}
+.place-me {
+  cursor: grab;
+}
+.place-me:active {
+  cursor: grabbing;
+}
+.place-knob {
+  cursor: crosshair;
+}
+.place-wrap {
+  padding: 12px 20px 0;
+  background: #0c0c10;
+}
+.place-ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+.place-ctl .num {
+  width: 110px;
+}
+.place-ctl .seg {
+  flex: 1 1 220px;
+  flex-wrap: nowrap;
+}
+.place-ctl .opt {
+  min-width: 0;
+  height: 44px;
+  padding: 0 8px;
+}
+.place-ctl .link {
+  margin-left: auto;
+}
 .st-hit {
   fill: transparent;
   cursor: pointer;

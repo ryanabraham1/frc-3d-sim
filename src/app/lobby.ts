@@ -17,7 +17,10 @@ import {
 import { cleanName } from '@engine/net/relayProtocol';
 import type { RobotConfig } from '@engine/robot/config';
 import { getSeason } from '@seasons/index';
-import { cloneConfig } from '@engine/robot/config';
+import { cloneConfig, footprint } from '@engine/robot/config';
+import { fieldToSpot, footprintPoly, resolveStartPose, wrapAngle, type Poly, type StartSpot } from '@engine/startPose';
+import type { Alliance } from '@engine/coords';
+import { fieldDims, placementDragging, placementProblems } from './placement';
 
 export type LobbyStatus = 'idle' | 'connecting' | 'lobby';
 /** Free hosts (Render/Koyeb) sleep when idle; the site pings the relay early so it's awake by the time you click. */
@@ -25,6 +28,8 @@ export type ServerState = 'unknown' | 'waking' | 'online' | 'offline';
 
 /** Give a sleeping free-tier relay this long to boot (Render takes ~1 min). */
 const WAKE_TIMEOUT_MS = 120_000;
+/** Placement phase: once every driver is locked in, wait this long (so a mis-click can be undone) and start. */
+const AUTO_START_MS = 1500;
 
 interface PlayerChoice {
   seasonId?: string;
@@ -60,6 +65,7 @@ export class LobbyController {
   // host-only state
   private readonly choices = new Map<string, PlayerChoice>();
   private lastSent = '';
+  private autoStart: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.client.on('msg', ({ from, data }) => (this.client.isHost ? this.onClientMsg(from, data as ClientMsg) : this.onHostMsg(data as HostMsg)));
@@ -71,6 +77,7 @@ export class LobbyController {
       this.lobby = null;
       this.choices.clear();
       this.lastSent = '';
+      this.clearAutoStart();
       if (was !== 'idle') this.error = reason === 'Left the room' ? '' : reason;
       this.onClosed(reason);
       this.onChange();
@@ -209,24 +216,138 @@ export class LobbyController {
     if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.seasonId === id) return;
     if (getSeason(id).id !== id) return;
     this.lobby.seasonId = id;
+    // A start spot belongs to one season's field.
+    for (const p of this.lobby.players) {
+      p.spot = null;
+      p.ready = false;
+      this.refreshDims(p.peerId);
+    }
     this.broadcastLobby();
+  }
+
+  // ─────────────────────────── placement phase ───────────────────────────
+
+  /** Host: open the placement phase (drivers pick their starting positions); seasons without a start zone start at once. */
+  beginPlacement(): void {
+    const lobby = this.lobby;
+    if (!lobby || !this.isHost || !this.canStart()) return;
+    if (!getSeason(lobby.seasonId).startArea) return this.startMatch();
+    for (const p of lobby.players) {
+      p.ready = false;
+      this.refreshDims(p.peerId);
+    }
+    lobby.placing = true;
+    this.broadcastLobby();
+  }
+
+  /** Host: leave the placement phase without starting. */
+  cancelPlacement(): void {
+    if (!this.lobby || !this.isHost || !this.lobby.placing) return;
+    this.lobby.placing = false;
+    this.clearAutoStart();
+    this.broadcastLobby();
+  }
+
+  /** Drag preview of my own spot: local only (sent on release via `place`). */
+  previewSpot(spot: StartSpot): void {
+    const me = this.me;
+    if (me) me.spot = spot;
+  }
+
+  /** Send my starting spot (blue frame; null = my station's preset) and whether I'm locked in. */
+  place(spot: StartSpot | null, ready: boolean): void {
+    const me = this.me;
+    if (!me || !this.lobby?.placing) return;
+    if (this.isHost) return this.hostPlace(this.client.peerId, spot, ready);
+    me.spot = spot;
+    me.ready = ready;
+    this.client.send({ t: 'place', spot, ready } satisfies ClientMsg);
+    this.onChange();
+  }
+
+  private clearAutoStart(): void {
+    if (this.autoStart) clearTimeout(this.autoStart);
+    this.autoStart = null;
+  }
+
+  private allReady(): boolean {
+    const seated = this.lobby?.players.filter((p) => p.slot) ?? [];
+    return seated.length > 0 && seated.every((p) => p.ready);
+  }
+
+  private hostPlace(peerId: string, spot: StartSpot | null, ready: boolean): void {
+    const lobby = this.lobby;
+    const p = lobby?.players.find((x) => x.peerId === peerId);
+    if (!lobby?.placing || !p?.slot) return;
+    const season = getSeason(lobby.seasonId);
+    const prev = p.spot ?? null;
+    let notice = '';
+    if (spot && ![spot.x, spot.y, spot.yaw].every((v) => typeof v === 'number' && Number.isFinite(v))) spot = prev;
+    p.spot = spot ? { x: spot.x, y: spot.y, yaw: wrapAngle(spot.yaw) } : null;
+    // Never trust a client's pose: an illegal one (outside the zone, on a field element or teammate) is refused.
+    if (p.spot && placementProblems(season, lobby.players).has(peerId)) {
+      notice = placementProblems(season, lobby.players).get(peerId)!;
+      p.spot = prev;
+    }
+    p.ready = ready && !placementProblems(season, lobby.players).has(peerId);
+    // Moving next to a teammate can invalidate theirs.
+    const problems = placementProblems(season, lobby.players);
+    for (const o of lobby.players) if (problems.has(o.peerId)) o.ready = false;
+    if (notice) {
+      if (peerId === this.client.peerId) this.error = notice;
+      else this.client.send({ t: 'notice', message: notice } satisfies HostMsg, peerId);
+    }
+    this.broadcastLobby();
+    this.scheduleAutoStart();
+  }
+
+  private scheduleAutoStart(): void {
+    this.clearAutoStart();
+    if (this.lobby?.placing && this.allReady()) this.autoStart = setTimeout(() => this.lobby?.placing && this.allReady() && this.startMatch(), AUTO_START_MS);
+  }
+
+  private robotFor(peerId: string): RobotConfig | null {
+    const lobby = this.lobby;
+    const c = this.choices.get(peerId);
+    if (!lobby || !c?.robot) return null;
+    return c.seasonId === lobby.seasonId ? c.robot : { ...cloneConfig(getSeason(lobby.seasonId).robotDefaults), teamNumber: c.robot.teamNumber };
+  }
+
+  /** Keep each player's published footprint in step with their robot (for the placement map). */
+  private refreshDims(peerId: string): void {
+    const p = this.lobby?.players.find((x) => x.peerId === peerId);
+    const cfg = this.robotFor(peerId);
+    if (p && cfg) {
+      const fp = footprint(cfg);
+      p.dims = { length: fp.length, width: fp.width };
+    }
   }
 
   /** Host: build the MatchSetup from the lobby and start everyone. */
   startMatch(): void {
     const lobby = this.lobby;
     if (!lobby || !this.isHost || !this.canStart()) return;
+    const season = getSeason(lobby.seasonId);
+    const dims = fieldDims(season);
+    const placed = new Map<Alliance, Poly[]>();
     const robots: RobotSetup[] = [];
     for (const slot of SLOTS) {
       const p = lobby.players.find((x) => x.slot === slot);
       const c = p && this.choices.get(p.peerId);
       if (!p || !c?.robot) continue;
+      const config = this.robotFor(p.peerId)!;
+      const alliance = slotAlliance(slot);
+      const fp = footprint(config);
+      const blockers = placed.get(alliance) ?? [];
+      const start = resolveStartPose(dims, season.startArea, alliance, p.spot, season.startPose(alliance, slotStation(slot)), fp.length, fp.width, blockers);
+      placed.set(alliance, [...blockers, footprintPoly(fieldToSpot(dims, alliance, start), fp.length, fp.width)]);
       robots.push({
         id: robots.length,
         slot,
-        alliance: slotAlliance(slot),
+        alliance,
         station: slotStation(slot),
-        config: c.seasonId === lobby.seasonId ? c.robot : { ...cloneConfig(getSeason(lobby.seasonId).robotDefaults), teamNumber: c.robot.teamNumber },
+        config,
+        start,
         autoRoutine: c.seasonId === lobby.seasonId ? c.autoRoutine : getSeason(lobby.seasonId).autoRoutines[0].id,
         manualAuto: c.manualAuto,
         peerId: p.peerId,
@@ -241,6 +362,9 @@ export class LobbyController {
       peers: lobby.players.map((p) => p.peerId),
     };
     lobby.inMatch = true;
+    lobby.placing = false;
+    this.clearAutoStart();
+    for (const p of lobby.players) p.ready = false;
     this.broadcastLobby();
     this.client.send({ t: 'start', setup } satisfies HostMsg);
     this.onStart(setup, 'host');
@@ -258,7 +382,12 @@ export class LobbyController {
   // ─────────────────────────── host side ───────────────────────────
 
   private onClientMsg(from: string, m: ClientMsg): void {
-    if (m?.t !== 'lobby-set' || !this.lobby) return;
+    if (!this.lobby) return;
+    if (m?.t === 'place') {
+      this.hostPlace(from, m.spot ?? null, !!m.ready);
+      return;
+    }
+    if (m?.t !== 'lobby-set') return;
     const slot = m.slot === undefined ? undefined : m.slot && SLOTS.includes(m.slot) ? m.slot : null;
     this.applyChoice(from, { seasonId: m.seasonId, slot, robot: m.robot ?? null, autoRoutine: String(m.autoRoutine ?? 'none'), manualAuto: !!m.manualAuto });
   }
@@ -279,9 +408,13 @@ export class LobbyController {
       if (peerId === this.client.peerId) this.error = msg;
       else this.client.send({ t: 'notice', message: msg } satisfies HostMsg, peerId);
     } else if (peerId === this.client.peerId && c.slot !== undefined) this.error = '';
+    const moved = p.slot !== slot;
     p.slot = slot;
     if (c.robot) p.team = c.robot.teamNumber;
     this.choices.set(peerId, { ...c, slot });
+    this.refreshDims(peerId);
+    // Changing station mid-placement unlocks you; routine robot syncs don't.
+    if (moved) p.ready = false;
     this.broadcastLobby();
   }
 
@@ -296,6 +429,7 @@ export class LobbyController {
     this.lobby.players = this.lobby.players.filter((p) => p.peerId !== peerId);
     this.choices.delete(peerId);
     this.broadcastLobby();
+    this.scheduleAutoStart();
   }
 
   private broadcastLobby(): void {
@@ -309,10 +443,14 @@ export class LobbyController {
   private onHostMsg(m: HostMsg): void {
     if (!m || typeof m !== 'object') return;
     switch (m.t) {
-      case 'lobby':
+      case 'lobby': {
+        // A host broadcast must not yank the robot out of my hand mid-drag.
+        const dragged = placementDragging() ? this.me?.spot : undefined;
         this.lobby = m.lobby;
+        if (dragged && this.me) this.me.spot = dragged;
         this.onChange();
         break;
+      }
       case 'start':
         if (m.setup.peers.includes(this.client.peerId)) this.onStart(m.setup, 'client');
         break;

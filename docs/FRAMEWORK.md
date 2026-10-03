@@ -70,6 +70,7 @@ and a step-by-step plan for kickoff day.
   robotOptions?, robotSpecBars?, robotFields?,   // archetype menu: segmented mechanism choices, spec bars, numeric fields
   humanPlayerButtons?, humanPlayerHint?,         // up to 4 human-player buttons (H, B, N, M)
   startPose(alliance, station), driverEye(alliance, station),
+  startArea?,                        // legal start zone (blue frame, src/engine/startPose.ts): players drag/rotate their robot anywhere in it, and multiplayer has a placement phase. rect + keepOut polygons (+ `line` if bumpers must touch a starting line). Presets must be legal (tests/start-pose.test.ts checks every season).
   buildField(ctx),                   // FieldBuilder calls
   createRules(ctx): SeasonRules,     // stage / onPeriodChange / before+afterStep / onLaunch / aimTarget / passTarget? / climb / human player / visuals / results
   createAutoPilot(ctx, rules, robot, routine): AutoPilot,

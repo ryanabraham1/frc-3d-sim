@@ -1,6 +1,9 @@
 import type { GameSettings, SeasonDefinition } from '@engine/core/season';
 import { SLOTS, slotAlliance, slotLabel, slotStation, type SlotId } from '@engine/net/protocol';
+import { footprint } from '@engine/robot/config';
+import { footprintPoly } from '@engine/startPose';
 import type { LobbyController } from './lobby';
+import { bindHeadingControls, bindPlacementMap, headingControls, placementMap, placementProblems, playerSpot, rotateSpot, syncHeadingControls, type MineState, type PlacedRobot } from './placement';
 import './multiplayer.css';
 
 /** Multiplayer page for the menu (create/join a room, then the lobby). Kept separate from menu.ts. */
@@ -85,6 +88,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   lobby.syncMine();
   const L = lobby.lobby;
   const me = lobby.me;
+  if (L.placing) return placementPage(lobby, ctx);
   const byslot = new Map<SlotId, (typeof L.players)[number]>();
   for (const p of L.players) if (p.slot) byslot.set(p.slot, p);
   const slotBtn = (slot: SlotId) => {
@@ -152,6 +156,113 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   return { body, footer };
 }
 
+// ───────────────────────────── placement phase ─────────────────────────────
+
+/** Every seated driver's robot on the field map, mine draggable. */
+function placementMapHtml(lobby: LobbyController, ctx: MpPageCtx): string {
+  const L = lobby.lobby!;
+  const problems = placementProblems(ctx.season, L.players);
+  const robots: PlacedRobot[] = [];
+  for (const p of L.players) {
+    const spot = playerSpot(ctx.season, p);
+    if (!spot || !p.slot) continue;
+    const mine = p.peerId === lobby.me?.peerId;
+    const d = p.dims ?? (mine ? footprint(ctx.s.robot) : { length: 0.9, width: 0.9 });
+    robots.push({
+      alliance: slotAlliance(p.slot),
+      spot,
+      length: d.length,
+      width: d.width,
+      label: String(p.team || slotStation(p.slot)),
+      title: `${esc(p.name)} · ${slotLabel(p.slot)}`,
+      mine,
+      ready: p.ready,
+      invalid: problems.has(p.peerId),
+      intakeFront: mine ? ctx.s.robot.intake.groundSide === 'front' : undefined,
+    });
+  }
+  return placementMap(ctx.season, robots, { zones: ['blue', 'red'] });
+}
+
+/** My robot's placement state (null for spectators): footprint, spot and the teammates it must not overlap. */
+function mineState(lobby: LobbyController, ctx: MpPageCtx): MineState | null {
+  const me = lobby.me;
+  const spot = me && playerSpot(ctx.season, me);
+  if (!me?.slot || !spot) return null;
+  const d = me.dims ?? footprint(ctx.s.robot);
+  const blockers = lobby.lobby!.players
+    .filter((o) => o.slot && o !== me && slotAlliance(o.slot) === slotAlliance(me.slot!))
+    .map((o) => footprintPoly(playerSpot(ctx.season, o)!, (o.dims ?? { length: 0.9, width: 0.9 }).length, (o.dims ?? { length: 0.9, width: 0.9 }).width));
+  return { alliance: slotAlliance(me.slot), spot, length: d.length, width: d.width, blockers };
+}
+
+function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; footer: string } {
+  const L = lobby.lobby!;
+  const me = lobby.me;
+  const problems = placementProblems(ctx.season, L.players);
+  const mine = mineState(lobby, ctx);
+  const drivers = L.players.filter((p) => p.slot);
+  const readyCount = drivers.filter((p) => p.ready).length;
+  const allReady = drivers.length > 0 && readyCount === drivers.length;
+  const err = lobby.error ? `<div class="mp-error">${esc(lobby.error)}</div>` : '';
+  const rows = SLOTS.map((slot) => {
+    const p = drivers.find((x) => x.slot === slot);
+    if (!p) return '';
+    const bad = problems.get(p.peerId);
+    const state = bad ? `<span class="pl-state bad">${esc(bad)}</span>` : p.ready ? '<span class="pl-state ok">✓ Locked in</span>' : '<span class="pl-state">Placing…</span>';
+    return `<div class="pl-row ${slotAlliance(slot)} ${p.peerId === me?.peerId ? 'mine' : ''}"><span class="st">${slotStation(slot)}</span><div class="who"><b>${esc(p.name)}${p.peerId === me?.peerId ? ' (you)' : ''}</b><span>Team ${p.team || '—'} · ${slotLabel(slot)}</span></div>${state}</div>`;
+  }).join('');
+  const myProblem = me && problems.get(me.peerId);
+  const lock = mine
+    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to move' : 'Lock in position'}</button>`
+    : '<div class="mp-hint">You\'re spectating — watch the others place their robots.</div>';
+  const body = `
+    ${err}
+    <div class="mp-grid place-grid">
+      <section class="panel map-panel">
+        <div class="panel-head"><span>Starting positions</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
+        <div class="map-wrap">${placementMapHtml(lobby, ctx)}</div>
+        ${mine ? `<div class="place-wrap">${headingControls(mine.spot.yaw, '<button class="link" data-mp="preset">Station preset</button>')}</div>` : ''}
+        <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw zone"></i>Legal start zone</span><span class="sp">${mine ? 'Drag your robot anywhere in the green zone, drag the knob on its nose to rotate (Shift = 15° steps).' : 'Drivers are choosing their starting positions.'}</span></div>
+      </section>
+      <div class="col">
+        <section class="panel">
+          <div class="panel-head"><span>Drivers</span></div>
+          <div class="pl-list">${rows}</div>
+          <div class="mp-pad">${lock}${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
+        </section>
+      </div>
+    </div>`;
+  const footer = lobby.isHost
+    ? `<button class="bbtn" data-mp="cancel-place">Back to lobby</button><span class="spacer"></span><span class="mp-hint">${allReady ? '' : 'The match starts when every driver locks in'}</span><button class="bbtn primary" data-mp="start-now">${allReady ? 'Start now' : 'Start anyway'}</button>`
+    : `<button class="bbtn" data-mp="leave">Leave room</button><span class="spacer"></span><span class="mp-hint">${allReady ? 'Starting…' : 'Waiting for every driver to lock in…'}</span>`;
+  return { body, footer };
+}
+
+function bindPlacement(el: HTMLElement, lobby: LobbyController, ctx: MpPageCtx): void {
+  const wrap = el.querySelector<HTMLElement>('.map-wrap');
+  if (!wrap) return;
+  bindPlacementMap(wrap, ctx.season, {
+    mine: () => mineState(lobby, ctx),
+    set: (spot) => {
+      lobby.previewSpot(spot);
+      wrap.innerHTML = placementMapHtml(lobby, ctx);
+      syncHeadingControls(el, spot.yaw);
+    },
+    // Moving unlocks you: your teammates must be able to rely on a locked-in position.
+    commit: (spot) => lobby.place(spot, false),
+  });
+  bindHeadingControls(el, (yaw) => {
+    const m = mineState(lobby, ctx);
+    if (m) lobby.place(rotateSpot(ctx.season, m, yaw), false);
+  });
+  el.querySelector<HTMLElement>('[data-mp="lock"]')?.addEventListener('click', () => {
+    const me = lobby.me;
+    if (me) lobby.place(me.spot ?? null, !me.ready);
+  });
+  el.querySelector<HTMLElement>('[data-mp="preset"]')?.addEventListener('click', () => lobby.place(null, false));
+}
+
 export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: MpPageCtx): void {
   const q = <T extends HTMLElement>(k: string) => el.querySelector<T>(`[data-mp="${k}"]`);
   const name = () => {
@@ -203,5 +314,10 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   const leave = q('leave');
   if (leave) leave.onclick = () => lobby.leave();
   const start = q('start');
-  if (start) start.onclick = () => lobby.startMatch();
+  if (start) start.onclick = () => lobby.beginPlacement();
+  const startNow = q('start-now');
+  if (startNow) startNow.onclick = () => lobby.startMatch();
+  const cancelPlace = q('cancel-place');
+  if (cancelPlace) cancelPlace.onclick = () => lobby.cancelPlacement();
+  if (lobby.lobby?.placing) bindPlacement(el, lobby, ctx);
 }

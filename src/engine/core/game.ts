@@ -18,8 +18,9 @@ import { Ticker } from '../net/ticker';
 import { collisionGroups, Group, PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { Renderer } from '../render/renderer';
-import { sanitizeConfig } from '../robot/config';
+import { footprint, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
+import { resolveStartPose } from '../startPose';
 import { clamp, formatClock } from '../units';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
@@ -54,7 +55,8 @@ const PRE_MATCH_COUNTDOWN = 3;
 const SNAPSHOT_EVERY_STEPS = 3;
 
 /** Singleplayer: a one-robot MatchSetup from the menu settings. */
-export function localSetup(s: GameSettings): MatchSetup {
+export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetup {
+  const fp = footprint(s.robot);
   return {
     seasonId: s.seasonId,
     seed: s.seed,
@@ -69,6 +71,15 @@ export function localSetup(s: GameSettings): MatchSetup {
         config: s.robot,
         autoRoutine: s.autoRoutine,
         manualAuto: s.manualAuto,
+        start: resolveStartPose(
+          { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry },
+          season.startArea,
+          s.alliance,
+          s.startSpot,
+          season.startPose(s.alliance, s.station),
+          fp.length,
+          fp.width,
+        ),
         peerId: '',
         name: 'You',
       },
@@ -155,7 +166,7 @@ export class Game {
   ) {
     this.net = net ?? null;
     this.role = net?.role ?? 'local';
-    this.setup = net?.setup ?? localSetup(settings);
+    this.setup = net?.setup ?? localSetup(settings, season);
     this.frame = new FieldFrame(season.fieldLength, season.fieldWidth);
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, { shadows: settings.shadows });
     this.physics = new PhysicsWorld(R, 1 / 90);
@@ -170,7 +181,7 @@ export class Game {
     // Every robot on the field is driven by a human (locally or over the network) — no bot AI.
     for (const rs of this.setup.robots) {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
-      const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, season.startPose(rs.alliance, rs.station));
+      const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
       robot.controller = 'player';
       season.configureRobot?.(robot);
