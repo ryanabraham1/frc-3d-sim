@@ -283,6 +283,8 @@ kbd {
 }
 .hud-banner.pin.danger {
   color: #c62828;
+}
+.hud-banner.pin.danger.show {
   animation: pin-flash 0.5s steps(2, jump-none) infinite;
 }
 @keyframes pin-flash {
