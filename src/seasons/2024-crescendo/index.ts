@@ -6,7 +6,7 @@ import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, CrescendoAutoPilot } from './autopilot';
-import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
+import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, crescendoCardBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
 import { crescendoTeamRobots } from './teamRobots';
 import { buildCrescendoField, type CrescendoFieldRefs } from './field';
 import { CrescendoHud } from './hud';
@@ -65,6 +65,7 @@ export const crescendo2024: SeasonDefinition = {
   robotOptions: crescendoRobotOptions,
   teamRobots: crescendoTeamRobots(),
   robotSpecBars: crescendoSpecBars,
+  robotCardBars: crescendoCardBars,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'rate', 'acc', 'cspd'],
   configureRobot(robot) {
     robot.projectile = { radius: C.NOTE_OUTER_RADIUS, airDamping: 0.03, halfHeight: C.NOTE_THICKNESS / 2 };

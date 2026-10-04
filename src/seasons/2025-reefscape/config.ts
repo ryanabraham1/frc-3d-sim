@@ -160,6 +160,17 @@ export function reefscapeSpecBars(config: RobotConfig) {
   ];
 }
 
+/** Headline stats on a robot's picker card. */
+export function reefscapeCardBars(config: RobotConfig) {
+  const c = normalizeReefscapeConfig(config);
+  const lift = c.placement!.liftSpeed / 0.0254;
+  return [
+    { label: 'Lift', value: `${lift.toFixed(0)} in/s`, frac: lift / 98 },
+    { label: 'Cycle', value: `${c.placement!.cycleSeconds.toFixed(2)} s`, frac: 1 - (c.placement!.cycleSeconds - 0.2) / 1.2 },
+    { label: 'Climb', value: ['Park', 'Shallow', 'Deep'][c.climber.maxLevel], frac: c.climber.maxLevel / 2 },
+  ];
+}
+
 export function reefscapeRobotSummary(config: RobotConfig): string {
   const c = normalizeReefscapeConfig(config);
   const intake = !c.intake.primary ? '' : c.intake.ground && c.intake.station ? ' (ground + funnel)' : c.intake.ground ? ' (ground)' : ' (funnel)';

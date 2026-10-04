@@ -217,6 +217,28 @@ not measured team rankings. 2025 profiles vary the actual lift/release/harvest/c
 | 2025 | 1690 WHISPER, 2056 LIGHTNING, 118 Firefly | Vacuum end effector, continuous-belt elevator/gripper, and separate roller channels. Lift speeds 2.2/2.5/1.9 m/s; release delays 0.30/0.40/0.25 s; harvest delays 0.35/0.45/0.30 s. All support full scoring; differences are throughput and mechanism design. |
 | 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 33/24/16 FUEL/s are estimates. Re•Blitz uses 40 capacity and 33 FUEL/s following user guidance (~40 balls, 30–35 FUEL/s). Mixtape holds 33 FUEL following user tuning. Its heads share the engine's one aim and launch point; independent turret streams are not simulated. |
 
+### Robots added from CAD / reveal research (3 per past season, 5 for 2026)
+
+Each was picked from a Chief Delphi reveal or CAD release with photos or renders, modeled in
+`src/seasons/<year>/moreTeamRobots.ts` in the clean flat style of rebuildsim.com (solid colours, clear walls, every
+part on a post or plate). Stats the team published are used as stated; everything else is `[EST]`, scaled from the
+robot's hardware so the comparison stays fair.
+
+| Season | Robot | What the sources showed | Stats used |
+| --- | --- | --- | --- |
+| 2026 | 6329 ROMAN | 20.75 in spindexer drum, roller floor, "upkicker", turret, long-armed four-bar intake that folds on impact | cap 60 [EST], 14 FUEL/s, intake 15/s |
+| 2026 | 1778 HAILSTORM | spindexer with grip-taped "bottle rocket" cone (from 4180), compact turret, slapdown intake | cap 45 [EST], 11/s, intake 11/s |
+| 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 55 [EST], 16/s, intake 13/s |
+| 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 68 (team: "almost 70", 50–60 in play), 15/s [EST], intake 12/s |
+| 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 80 and 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
+| 2025 | 1678 SubLime, 971 Fiddler, 341 Miss Daisy | tall-tower tipping arm / truss elevator with maroon claw / continuous elevator + lantern shoulder | lift, cycle and speed [EST] |
+| 2024 | 1114 Skyfall, 2910 Typhoon, 581 Titan | red gusseted tower / chain-and-sprocket shooter, slow climb / 25.5 × 28.5 in, long hooks | speed, accel, climb time [EST] |
+
+**Intake rate (2026).** `RobotConfig.intake.rate` caps how many FUEL/s the floor intake swallows (`Robot.tickIntake`; unset
+= unlimited). Nobody publishes it, so `INTAKE_RATE` in `src/seasons/2026-rebuilt/teamRobots.ts` scales it from the
+intake's width and how uninterrupted the ball path is (4414 fastest, small slapdown intakes slowest). Together with
+hopper capacity and fire rate it is shown on each robot's picker card.
+
 ### Flexible hopper nets and loaded clearance
 
 254 Overload is configured at 25 FUEL/s, 3476 Sandspit at 20 FUEL/s (requested tuning).

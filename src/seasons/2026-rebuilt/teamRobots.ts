@@ -1,4 +1,5 @@
 import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
+import { moreRebuiltTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
@@ -592,9 +593,19 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
   return normalizeRebuiltConfig(c);
 }
 
+/**
+ * Floor-intake throughput, FUEL/s [EST: nobody publishes it; scaled from each intake's width, roller count and how
+ * wide / uninterrupted its ball path is, as discussed in each robot's reveal thread].
+ */
+const INTAKE_RATE: Record<number, number> = {
+  4414: 18, 254: 16, 9128: 17, 6329: 15, 2910: 14, 1323: 14, 3476: 14, 9483: 13, 4946: 13, 5940: 13,
+  1678: 12, 7769: 12, 971: 11, 1690: 11, 1778: 11,
+};
+
 export function rebuiltTeamRobots(): TeamRobot[] {
-  return [
+  return withIntakeRates([
     ...additionalRebuiltTeamRobots(),
+    ...moreRebuiltTeamRobots(),
     {
       id: 'ripcurrent-4414', team: 4414, name: 'RIPCURRENT',
       description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake to hold 85 FUEL; net bulges above 70 FUEL and loses TRENCH clearance. No climber.',
@@ -671,5 +682,10 @@ export function rebuiltTeamRobots(): TeamRobot[] {
         c.hopperCapacity = 70; // [EST]
       }),
     },
-  ];
+  ]);
+}
+
+function withIntakeRates(robots: TeamRobot[]): TeamRobot[] {
+  for (const r of robots) r.config.intake.rate = INTAKE_RATE[r.team] ?? r.config.intake.rate;
+  return robots;
 }

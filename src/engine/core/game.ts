@@ -653,6 +653,7 @@ export class Game {
       const pool = this.pool;
       const zones: { r: Robot; z: IntakeZone }[] = [];
       for (const r of this.robots) {
+        r.tickIntake(dt);
         const z = r.lastCommand.intake && r.intakeRoom > 0 ? r.intakeZone() : null;
         if (z) zones.push({ r, z });
       }

@@ -150,6 +150,17 @@ export function crescendoSpecBars(config: RobotConfig) {
   ];
 }
 
+/** Headline stats on a robot's picker card. */
+export function crescendoCardBars(config: RobotConfig) {
+  const c = normalizeCrescendoConfig(config);
+  const climb = c.climber.secondsPerLevel ?? 2;
+  return [
+    { label: 'Aim', value: c.launcher.turret ? 'Turret' : c.autoAlign ? 'Auto-align' : 'Driver', frac: c.launcher.turret ? 1 : c.autoAlign ? 0.7 : 0.3 },
+    { label: 'Climb', value: c.climber.maxLevel === 0 ? 'None' : `${climb.toFixed(1)} s`, frac: c.climber.maxLevel === 0 ? 0 : 1 - (climb - 0.8) / 3 },
+    { label: 'Intake', value: c.intake.ground ? 'Ground' : 'SOURCE', frac: c.intake.ground ? 1 : 0.4 },
+  ];
+}
+
 /** DRIVER STATION center (y) for station 1–3 (DS 1 on the AMP side [EST]). */
 export function stationY(station: number): number {
   const [y0, y1] = C.DS_SPANS[Math.min(3, Math.max(1, station)) - 1];

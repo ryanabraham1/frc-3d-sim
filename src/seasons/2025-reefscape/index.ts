@@ -5,7 +5,7 @@ import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { inch, lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, ReefscapeAutoPilot } from './autopilot';
-import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotOptions, reefscapeRobotPresets, reefscapeRobotSummary, reefscapeSpecBars, startPose, TIMELINE } from './config';
+import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotOptions, reefscapeRobotPresets, reefscapeRobotSummary, reefscapeSpecBars, reefscapeCardBars, startPose, TIMELINE } from './config';
 import { reefscapeTeamRobots } from './teamRobots';
 import { buildReefscapeField, type ReefscapeFieldRefs } from './field';
 import { ReefscapeHud } from './hud';
@@ -35,6 +35,7 @@ export const reefscape2025: SeasonDefinition = {
   robotOptions: reefscapeRobotOptions,
   teamRobots: reefscapeTeamRobots(),
   robotSpecBars: reefscapeSpecBars,
+  robotCardBars: reefscapeCardBars,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'],
   humanPlayerButtons: 2,
   humanPlayerHint: {

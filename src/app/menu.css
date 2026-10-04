@@ -808,3 +808,97 @@
 .seg.robot-seg > .opt {
   flex: 1 1 104px;
 }
+
+/* Robot picker cards + live 3D preview */
+.robot-art.live {
+  height: 190px;
+  padding: 0;
+  display: block;
+  position: relative;
+  background: radial-gradient(ellipse at 50% 70%, rgba(139, 108, 246, 0.14), transparent 65%);
+}
+.robot-live {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.team-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+.team-card:hover {
+  border-color: var(--border-strong);
+}
+.team-card.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.team-thumb {
+  display: block;
+  aspect-ratio: 3 / 2;
+  border-radius: 6px;
+  background: radial-gradient(ellipse at 50% 75%, rgba(255, 255, 255, 0.07), transparent 70%);
+  overflow: hidden;
+}
+.team-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.team-thumb img:not([src]) {
+  visibility: hidden;
+}
+.team-name {
+  font-size: 13px;
+}
+.team-name b {
+  font-family: var(--display);
+  font-size: 16px;
+  margin-right: 4px;
+}
+.mini-bars {
+  display: grid;
+  gap: 4px;
+}
+.mini-bar {
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.mini-bar i {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  overflow: hidden;
+}
+.mini-bar u {
+  display: block;
+  height: 100%;
+  background: var(--accent-bright);
+}
+.mini-bar b {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 44px;
+  text-align: right;
+}

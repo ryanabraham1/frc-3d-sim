@@ -115,3 +115,10 @@ contact sheet. Look for these specifically:
 animates, and in 2025 the held piece reaches the L4 target on every side the robot scores from. Add a rules test
 when you add a capability (`tests/reefscape-mechanisms.test.ts`, "front-and-back scoring"). Also run
 `npm run typecheck` and `npm run build`.
+
+## 7. Picker previews and the clean style
+
+The menu's Robot tab shows each real robot as a card (rendered thumbnail + Speed / Hopper / Shoot / Intake bars, from
+`season.robotCardBars`) and a live, draggable 3D view of the selected robot (`src/app/robotPreview.ts`, the same
+model the match draws). When a detail is uncertain, prefer the plain version: solid colours, a clear box, a pocketed
+plate instead of a hand-built truss. A tidy simple model beats a busy one with floating parts.

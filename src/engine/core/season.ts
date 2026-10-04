@@ -291,6 +291,8 @@ export interface SeasonDefinition {
   shotAccuracy?: { get(config: RobotConfig): number; set(config: RobotConfig, percent: number): void };
   /** Spec bars summarizing a config on the menu. */
   robotSpecBars?(config: RobotConfig): { label: string; value: string; frac: number }[];
+  /** The few headline stats shown on each robot's card in the picker (after Speed). Default: the first spec bars. */
+  robotCardBars?(config: RobotConfig): { label: string; value: string; frac: number }[];
   /** Menu hint for the human-player option (auto / manual). */
   humanPlayerHint?: { auto: string; manual: string };
 

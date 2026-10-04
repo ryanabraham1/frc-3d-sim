@@ -106,7 +106,7 @@ export class HeadlessSim {
   step(cmd: RobotCommand = IDLE_COMMAND): void {
     const { robot, pool, rules, physics } = this;
     const dt = physics.dt;
-    robot.enabled = true;
+    robot.enabled = !robot.sidelined;
     if (rules.adjustCommand) cmd = rules.adjustCommand(robot, cmd, dt);
     const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
     cmd = robot.autoAlign(cmd, target);
@@ -130,6 +130,7 @@ export class HeadlessSim {
         this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius, pool.colliderHalfHeight));
       }
     }
+    robot.tickIntake(dt);
     if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0) {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;

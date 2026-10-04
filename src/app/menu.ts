@@ -187,6 +187,31 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   }
   let page: Page = opts.page ?? 'play';
   let playTab: PlayTab = 'match';
+  /** Robot preview images already rendered (seasonId|robot id|alliance → data URL), so re-renders don't flash. */
+  const thumbUrls = new Map<string, string>();
+  let live: import('./robotPreview').LivePreview | null = null;
+  let liveKey = '';
+  /** Fill the picker thumbnails and the live 3D preview of the selected robot (lazy: loads three/Rapier on first use). */
+  const mountPreviews = () => {
+    const host = el.querySelector<HTMLElement>('[data-live]');
+    const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img[data-thumb]'));
+    if (!host && !imgs.length) return;
+    void import('./robotPreview').then((m) => {
+      if (!el.isConnected) return;
+      if (host) {
+        const key = `${season.id}|${s.alliance}|${JSON.stringify(s.robot)}`;
+        if (!live || !liveKey.startsWith(season.id + '|')) { live?.dispose(); live = m.createLivePreview(season, s.robot, s.alliance); liveKey = ''; }
+        if (key !== liveKey) { live.set(s.robot, s.alliance); liveKey = key; }
+        live.attach(host);
+      }
+      for (const img of imgs) {
+        const t = season.teamRobots?.find((x) => x.id === img.dataset.thumb);
+        if (!t || img.getAttribute('src')) continue;
+        const k = `${season.id}|${t.id}|${s.alliance}`;
+        void m.robotThumb(season, t.config, s.alliance).then((url) => { thumbUrls.set(k, url); if (img.isConnected) img.src = url; });
+      }
+    });
+  };
   const lobby = opts.lobby;
 
   const el = document.createElement('div');
@@ -312,7 +337,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const robotCard = `
       <section class="panel robot-card ${s.alliance}">
         <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
-        <div class="robot-art">${robotArt(s.alliance, r.teamNumber, r.intake.groundSide)}</div>
+        <div class="robot-art ${r.model ? 'live' : ''}" ${r.model ? 'data-live' : ''}>${r.model ? '' : robotArt(s.alliance, r.teamNumber, r.intake.groundSide)}</div>
         <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}${s.startSpot ? ' · custom start' : ''}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
       </section>`;
     const fields = season.robotFields ?? ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'];
@@ -321,8 +346,18 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const current = presets.find((p) => same(p.config));
     const teams = season.teamRobots ?? [];
     const team = teams.find((t) => same(t.config));
+    const speedBar = (cfg: RobotConfig) => ({ label: 'Speed', value: `${(cfg.maxSpeed / FT).toFixed(1)} ft/s`, frac: cfg.maxSpeed / FT / 22 });
+    const cardBars = (cfg: RobotConfig) => [speedBar(cfg), ...(season.robotCardBars?.(cfg) ?? season.robotSpecBars?.(cfg)?.slice(0, 3) ?? [])];
+    const miniBar = (b: { label: string; value: string; frac: number }) =>
+      `<div class="mini-bar"><span>${esc(b.label)}</span><i><u style="width:${Math.round(Math.min(1, Math.max(0, b.frac)) * 100)}%"></u></i><b>${esc(b.value)}</b></div>`;
+    const teamCard = (t: (typeof teams)[number]) =>
+      `<button class="team-card ${t === team ? 'on' : ''}" data-team-robot="${t.id}" title="${esc(t.description)}">
+        <span class="team-thumb"><img alt="" data-thumb="${t.id}" ${thumbUrls.get(`${season.id}|${t.id}|${s.alliance}`) ? `src="${thumbUrls.get(`${season.id}|${t.id}|${s.alliance}`)}"` : ''} /></span>
+        <span class="team-name"><b>${t.team}</b> ${esc(t.name)}</span>
+        <span class="mini-bars">${cardBars(t.config).map(miniBar).join('')}</span>
+      </button>`;
     const teamPicker = teams.length
-      ? `<div class="config-presets">${group('Play as a real robot', `<div class="seg">${teams.map((t) => opt(`data-team-robot="${t.id}" title="${esc(t.description)}"`, `${t.team} ${esc(t.name)}`, t === team)).join('')}</div>`, team ? `${team.description} Source: ${team.source}.` : `Top ${season.year} robots, simplified and animated — capabilities from their Chief Delphi reveals and tech binders.`)}</div>`
+      ? `<div class="config-presets"><div class="group"><div class="label">Play as a real robot</div><div class="team-grid">${teams.map(teamCard).join('')}</div><div class="hint">${esc(team ? `${team.description} Source: ${team.source}.` : `Top ${season.year} robots, simplified and animated. Capabilities come from their Chief Delphi reveals and tech binders; stats not published by the team are estimates.`)}</div></div></div>`
       : '';
     const profiles = presets.length
       ? `<div class="config-presets">${group('Robot archetype', `<div class="seg">${presets.map((p) => opt(`data-preset="${p.id}" title="${esc(p.description)}"`, p.label, p === current)).join('')}</div>`, current ? current.description : team ? `Playing as ${team.team} ${team.name} — changing a mechanism below turns it into a custom build.` : 'Custom build — pick an archetype to start from, then change mechanisms below.')}</div>`
@@ -406,6 +441,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   const start = () => {
     save(s);
     document.removeEventListener('keydown', onKey);
+    live?.dispose();
     el.remove();
     onStart(s);
   };
@@ -471,6 +507,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       if (main) main.scrollTop = scrollTop;
     }
     bind();
+    mountPreviews();
     if (draft && page === 'multiplayer') {
       for (const key of ['name', 'code', 'url'] as const) {
         const input = el.querySelector<HTMLInputElement>(`[data-mp="${key}"]`);

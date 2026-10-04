@@ -1,4 +1,5 @@
 import { additionalCrescendoTeamRobots } from './additionalTeamRobots';
+import { moreCrescendoTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { belt, camera, motor } from '@engine/robot/mechanicalDetail';
@@ -322,6 +323,7 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
 export function crescendoTeamRobots(): TeamRobot[] {
   return [
     ...additionalCrescendoTeamRobots(),
+    ...moreCrescendoTeamRobots(),
     {
       id: 'vortex-254', team: 254, name: 'Vortex',
       description: '254 Cheesy Poofs. Full-width under-bumper intake, NOTES fed around a 360° turret into a quad-flywheel hooded shooter (shoots on the move), "amplifier" arm for the AMP and TRAP, 1 s chain climb. 125 lb.',

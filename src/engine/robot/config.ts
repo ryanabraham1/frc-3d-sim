@@ -57,6 +57,11 @@ export interface RobotConfig {
     /** Max piece center height that can be grabbed. */
     maxHeight: number;
     /**
+     * Intake throughput in pieces per second (a real robot's roller/conveyor can only swallow so fast). Unset = no
+     * limit, which is how the generic presets behave.
+     */
+    rate?: number;
+    /**
      * Floor pickup (e.g. an under-bumper roller). Default true. False = the robot can only take pieces a human
      * player feeds it (see `station`) — one of the main archetype trade-offs every season.
      */

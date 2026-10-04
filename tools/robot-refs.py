@@ -105,6 +105,6 @@ if __name__ == '__main__':
     cmd, *args = sys.argv[1:] or ['help']
     if cmd == 'tba': tba(*args)
     elif cmd == 'search': search(' '.join(args))
-    elif cmd == 'topic': topic(*args)
+    elif cmd == 'topic': topic(args[0], int(args[1]) if len(args) > 1 else 6)
     elif cmd == 'binder': binder(*args)
     else: print(__doc__)

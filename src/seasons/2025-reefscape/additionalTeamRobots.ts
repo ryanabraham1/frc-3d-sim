@@ -6,10 +6,10 @@ import { inch } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
 
 /** Rules' end effector, or a stowed pose before the first frame. */
-const place = (s: RobotAnimState): PlaceAnim => s.place ?? { height: 0.45, forward: 0.3, level: 1 };
+export const place = (s: RobotAnimState): PlaceAnim => s.place ?? { height: 0.45, forward: 0.3, level: 1 };
 
 /** The rules park the end effector at 0.45 m while driving (and at the handoff height while taking floor CORAL). */
-const stowed = (p: PlaceAnim): boolean => p.height <= 0.46 && !p.handoff;
+export const stowed = (p: PlaceAnim): boolean => p.height <= 0.46 && !p.handoff;
 
 /**
  * Elevator + arm inverse kinematics: an arm of length `la` on a carriage riding a vertical elevator at x = `ex`
@@ -17,7 +17,7 @@ const stowed = (p: PlaceAnim): boolean => p.height <= 0.46 && !p.handoff;
  * up from the carriage when the piece is within reach (so the carriage stays low), and the carriage height is kept
  * inside its travel. Returns the carriage height and the arm angle in the robot's x-y plane (0 = +x, π = −x).
  */
-function reachWith(p: PlaceAnim, dir: number, ex: number, la: number, yMin: number, yMax: number): { yc: number; phi: number } {
+export function reachWith(p: PlaceAnim, dir: number, ex: number, la: number, yMin: number, yMax: number): { yc: number; phi: number } {
   const dx = Math.max(0, p.forward - dir * ex); // `forward` is measured along the scoring direction
   const up = Math.sqrt(Math.max(0, la * la - Math.min(dx, la) ** 2));
   const yc = THREE.MathUtils.clamp(p.height - up, yMin, yMax);
@@ -26,7 +26,7 @@ function reachWith(p: PlaceAnim, dir: number, ex: number, la: number, yMin: numb
 }
 
 /** Star / spiked intake wheels (the compliant "spiky" rollers 1690 and 2056 used): `n` wheels across `span`. */
-function starWheels(parent: THREE.Object3D, x: number, y: number, o: { n: number; r: number; span: number; m: THREE.Material; spikes?: number }): THREE.Group {
+export function starWheels(parent: THREE.Object3D, x: number, y: number, o: { n: number; r: number; span: number; m: THREE.Material; spikes?: number }): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, y, 0);
   parent.add(g);

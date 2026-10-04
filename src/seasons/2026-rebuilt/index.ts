@@ -5,7 +5,7 @@ import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
-import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltShotAccuracy, rebuiltSpecBars, startPose, TIMELINE } from './config';
+import { driverEye, normalizeRebuiltConfig, rebuiltRobotDefaults, rebuiltRobotOptions, rebuiltRobotPresets, rebuiltShotAccuracy, rebuiltSpecBars, rebuiltCardBars, startPose, TIMELINE } from './config';
 import { rebuiltTeamRobots } from './teamRobots';
 import { buildRebuiltField, RebuiltFieldRefs, side, sideYaw } from './field';
 import { RebuiltHud } from './hud';
@@ -75,6 +75,7 @@ export const rebuilt2026: SeasonDefinition = {
   robotOptions: rebuiltRobotOptions,
   teamRobots: rebuiltTeamRobots(),
   robotSpecBars: rebuiltSpecBars,
+  robotCardBars: rebuiltCardBars,
   shotAccuracy: rebuiltShotAccuracy,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'cap', 'pre', 'rate', 'acc', 'cspd'],
   maxClimbLevel: 3,

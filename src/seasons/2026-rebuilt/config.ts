@@ -74,6 +74,9 @@ export const rebuiltShotAccuracy = {
 /** Match weight of every stock 2026 robot (presets and real team robots), with bumpers and battery (user decision 2026-10-03). */
 export const REBUILT_ROBOT_MASS = lb(150);
 
+/** FUEL/s a stock robot's floor intake can swallow [EST]; real teams override it (INTAKE_RATE in teamRobots.ts). */
+export const DEFAULT_INTAKE_RATE = 12;
+
 /** Default REBUILT robot: fits under the TRENCH (22.25in), turret shooter, 40-FUEL hopper, 150 lb. */
 export function rebuiltRobotDefaults(): RobotConfig {
   const c = cloneConfig(DEFAULT_ROBOT);
@@ -85,7 +88,7 @@ export function rebuiltRobotDefaults(): RobotConfig {
   c.climber.maxLevel = 3;
   // Full-width ground intake plus a hopper opening that catches FUEL from the OUTPOST CHUTE, both on the back
   // (the shooter faces front).
-  c.intake = { ...c.intake, ground: true, groundSide: 'back', station: true, stationSide: 'back' };
+  c.intake = { ...c.intake, ground: true, groundSide: 'back', station: true, stationSide: 'back', rate: DEFAULT_INTAKE_RATE };
   c.autoAlign = true; // used only when the shooter has no turret
   setRebuiltAccuracy(c, REBUILT_DEFAULT_ACCURACY);
   return c;
@@ -188,9 +191,20 @@ export function rebuiltSpecBars(config: RobotConfig) {
     ...(c.hopperExpansion ? [{ label: 'Trench-safe load', value: `≤${c.hopperExpansion.startCount} FUEL · net expands when fuller`, frac: c.hopperExpansion.startCount / c.hopperCapacity }] : []),
     { label: 'FUEL hopper', value: `${c.hopperCapacity}`, frac: c.hopperCapacity / 80 },
     { label: 'Fire rate', value: `${c.launcher.rate} /s`, frac: c.launcher.rate / 35 },
+    { label: 'Intake rate', value: c.intake.ground ? `${c.intake.rate ?? 'unlimited'} /s` : 'OUTPOST only', frac: c.intake.ground ? (c.intake.rate ?? 30) / 30 : 0.1 },
     { label: 'Shooter', value: (c.launcher.exits ?? 1) > 1 ? `Dumper ×${c.launcher.exits}` : 'Single stream', frac: (c.launcher.exits ?? 1) > 1 ? 1 : 0.4 },
     { label: 'Aiming', value: c.launcher.turret ? 'Turret' : c.autoAlign ? 'Auto-align' : 'Driver', frac: c.launcher.turret ? 1 : c.autoAlign ? 0.7 : 0.3 },
     { label: 'Intake', value: intake, frac: (Number(c.intake.ground) * 2 + Number(c.intake.station)) / 3 },
+  ];
+}
+
+/** Headline stats on a robot's picker card: how much it holds, how fast it shoots and how fast it loads. */
+export function rebuiltCardBars(config: RobotConfig) {
+  const c = normalizeRebuiltConfig(config);
+  return [
+    { label: 'Hopper', value: `${c.hopperCapacity}`, frac: c.hopperCapacity / 90 },
+    { label: 'Shoot', value: `${c.launcher.rate}/s`, frac: c.launcher.rate / 35 },
+    { label: 'Intake', value: c.intake.ground ? `${c.intake.rate ?? '∞'}/s` : 'OUTPOST', frac: c.intake.ground ? (c.intake.rate ?? 30) / 20 : 0.1 },
   ];
 }
 

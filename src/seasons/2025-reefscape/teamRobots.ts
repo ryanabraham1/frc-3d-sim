@@ -1,4 +1,5 @@
 import { additionalReefscapeTeamRobots } from './additionalTeamRobots';
+import { moreReefscapeTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, decal, deployableIntake, drivebase, intakeDeployTarget, lattice, ledStrip, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, type ModelKit, type PlaceAnim, type RobotAnimState } from '@engine/robot/models';
@@ -330,6 +331,7 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
 export function reefscapeTeamRobots(): TeamRobot[] {
   return [
     ...additionalReefscapeTeamRobots(),
+    ...moreReefscapeTeamRobots(),
     {
       id: 'spectre-2910', team: 2910, name: 'Spectre',
       description: '2910 Jack in the Bot (2025 World Champions). Pivot + two-stage telescoping arm + wrist with one end effector for CORAL and ALGAE (L1–L4, NET, PROCESSOR), picks CORAL off the floor, brass ballast up front, 1.5 s deep climb.',

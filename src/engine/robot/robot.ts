@@ -97,6 +97,8 @@ export class Robot {
   /** Indices into the game piece pool. */
   readonly held: number[] = [];
   enabled = false;
+  /** Shown a red card (or disabled by the referee): stays disabled for the rest of the match. */
+  sidelined = false;
   /** Field yaw of the turret/launcher. */
   turretYaw = 0;
   fireCooldown = 0;
@@ -143,7 +145,20 @@ export class Robot {
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
       room = Math.min(room, n - this.held.length);
     }
+    if (this.config.intake.rate) room = Math.min(room, Math.floor(this.intakeBudget));
     return Math.max(0, room);
+  }
+  /** Pieces the intake can swallow right now at `config.intake.rate`: refills with time, spent as pieces are taken. */
+  private intakeBudget = 4;
+  private lastHeldCount = 0;
+  /** Advance the intake throughput limiter once per physics step, before reading `intakeRoom`. */
+  tickIntake(dt: number): void {
+    const rate = this.config.intake.rate;
+    const gained = this.held.length - this.lastHeldCount;
+    this.lastHeldCount = this.held.length;
+    if (!rate) return;
+    if (gained > 0) this.intakeBudget -= gained;
+    this.intakeBudget = Math.min(4, this.intakeBudget + rate * dt);
   }
   private hopperFill!: THREE.Mesh;
   private turret!: THREE.Group;

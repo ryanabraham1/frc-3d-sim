@@ -82,6 +82,7 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
       }
       if (enabled && !rules.handlesIntake) {
         const zones = ctx.robots.flatMap((r) => {
+          r.tickIntake(dt);
           const z = r.lastCommand.intake && r.intakeRoom > 0 ? r.intakeZone() : null;
           return z ? [{ r, z }] : [];
         });
