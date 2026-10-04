@@ -32,6 +32,12 @@ export const STALL_RATIO = 7;
 export const ROLLING_RESISTANCE = 0.03;
 /** Motor free speed at the tread / the robot's top speed. [EST: robots reach ≈ 85–90 % of free speed] */
 export const FREE_SPEED_RATIO = 1.12;
+/**
+ * A braking / back-driven / holding wheel gets this multiple of the acceleration-limited motor force: holding a
+ * spot is regenerative braking against the whole battery (and the controller's current limit is set for
+ * acceleration, not stall), so a 125 lb robot is far harder to shove than to launch forward. [EST]
+ */
+export const HOLD_FORCE_RATIO = 1.6;
 
 /** A robot battery and its leads, excluded from the manual's weight limits. [EST: FRC 12 V 18 Ah SLA ≈ 13 lb] */
 export const BATTERY_MASS = lb(13);
@@ -41,7 +47,7 @@ export const BATTERY_MASS = lb(13);
  * force (m · maxAccel) and its tread grip (μ · m · g).
  */
 export function pushingForce(c: RobotConfig): number {
-  return c.mass * Math.min(c.maxAccel, (c.wheelCOF ?? DEFAULT_WHEEL_COF) * 9.81);
+  return c.mass * Math.min(c.maxAccel * HOLD_FORCE_RATIO, (c.wheelCOF ?? DEFAULT_WHEEL_COF) * 9.81);
 }
 
 export interface WheelModel {
@@ -66,7 +72,7 @@ export interface WheelModel {
  */
 export function motorForce(w: WheelModel, v: number): number {
   if (w.disabled) return Math.min(w.motorLimit, (w.stall * Math.max(0, -v)) / w.freeSpeed);
-  if (v <= 0) return w.motorLimit;
+  if (v <= 0) return w.motorLimit * HOLD_FORCE_RATIO;
   return Math.max(0, Math.min(w.motorLimit, w.stall * (1 - v / w.freeSpeed)));
 }
 

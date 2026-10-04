@@ -177,7 +177,7 @@ export function launcherExitOffsets(c: RobotConfig): number[] {
 }
 
 /** Tread friction when a config doesn't set `wheelCOF`. [EST: new blue nitrile on FRC carpet] */
-export const DEFAULT_WHEEL_COF = 1.1;
+export const DEFAULT_WHEEL_COF = 1.2;
 
 /** Generic defaults; seasons override via their own robotDefaults. */
 export const DEFAULT_ROBOT: RobotConfig = {

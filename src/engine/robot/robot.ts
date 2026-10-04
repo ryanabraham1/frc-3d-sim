@@ -90,6 +90,8 @@ export type ClimbPhase = 'none' | 'align' | 'rise' | 'hanging' | 'lower';
 export const ALLIANCE_COLORS: Record<Alliance, number> = { red: 0xd32f2f, blue: 0x1e62d0 };
 
 const G = 9.81;
+/** A firing burst stays "locked on" this long after each shot (longer than the slowest launcher's shot interval). */
+const BURST_HOLD_S = 0.6;
 
 export class Robot {
   readonly body: RAPIER.RigidBody;
@@ -1134,16 +1136,65 @@ export class Robot {
     }
   }
 
+  /** Field surface height under a world x/z (ray from above, field colliders only). */
+  private floorAt(x: number, z: number): number {
+    const R = this.physics.R;
+    const top = 3;
+    const hit = this.physics.world.castRay(new R.Ray({ x, y: top, z }, { x: 0, y: -1, z: 0 }), top + 1, true, undefined, Robot.GROUND_QUERY, undefined, this.body);
+    return hit ? top - hit.timeOfImpact : 0;
+  }
+
+  /** Would the upright chassis at this spot overlap a wall, field element or another robot? */
+  private uprightBlocked(x: number, floor: number, z: number, yaw: number): boolean {
+    const R = this.physics.R;
+    const c = this.config;
+    const y0 = floor + Math.max(c.bumperBottom, 0.05) + 0.01;
+    const hh = Math.max(0.02, (c.height - (y0 - floor)) / 2 - 0.01);
+    const box = new R.Cuboid(this.fp.length / 2 - 0.01, hh, this.fp.width / 2 - 0.01);
+    const rot = { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
+    let blocked = false;
+    this.physics.world.intersectionsWithShape({ x, y: y0 + hh, z }, rot, box, () => {
+      blocked = true;
+      return false;
+    }, undefined, collisionGroups(Group.ROBOT, Group.FIELD | Group.ROBOT), undefined, this.body);
+    return blocked;
+  }
+
+  /**
+   * Where to stand a righted robot: its current spot if the upright chassis fits there, otherwise the nearest spot
+   * on a widening grid that is inside the field, on the carpet (not on top of a structure) and clear of walls, field
+   * elements and other robots. Without this a robot tipped against a field element is set back inside it and jams.
+   */
+  private findUprightSpot(x: number, z: number, yaw: number): { x: number; z: number; floor: number } {
+    const here = this.floorAt(x, z);
+    if (!this.uprightBlocked(x, here, z, yaw)) return { x, z, floor: here };
+    const halfL = this.frame.length / 2;
+    const halfW = this.frame.width / 2;
+    const step = 0.1;
+    const rMax = 3;
+    for (let r = step; r <= rMax; r += step) {
+      const n = Math.max(8, Math.round((2 * Math.PI * r) / step));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const cx = x + Math.cos(a) * r;
+        const cz = z + Math.sin(a) * r;
+        if (Math.abs(cx) > halfL - 0.3 || Math.abs(cz) > halfW - 0.3) continue;
+        const floor = this.floorAt(cx, cz);
+        if (floor > 0.3) continue; // that's the top of a structure, not the carpet
+        if (!this.uprightBlocked(cx, floor, cz, yaw)) return { x: cx, z: cz, floor };
+      }
+    }
+    return { x, z, floor: here };
+  }
+
   /** Put the robot back on its wheels at its current spot and heading, on top of whatever field surface is there. */
   setUpright(): void {
-    const R = this.physics.R;
     const t = this.body.translation();
     const yaw = this.pose.yaw;
-    const top = 3;
-    const hit = this.physics.world.castRay(new R.Ray({ x: t.x, y: top, z: t.z }, { x: 0, y: -1, z: 0 }), top + 1, true, undefined, Robot.GROUND_QUERY, undefined, this.body);
-    const floor = hit ? top - hit.timeOfImpact : 0;
-    this.clearPiecesUnder(t.x, floor, t.z, yaw);
-    this.body.setTranslation({ x: t.x, y: floor + 0.01, z: t.z }, true);
+    const spot = this.findUprightSpot(t.x, t.z, yaw);
+    const floor = spot.floor;
+    this.clearPiecesUnder(spot.x, floor, spot.z, yaw);
+    this.body.setTranslation({ x: spot.x, y: floor + 0.01, z: spot.z }, true);
     this.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
@@ -1223,6 +1274,8 @@ export class Robot {
 
   /** Heading error (rad) to the shot target, updated by `autoAlign()`. */
   alignError = 0;
+  /** Seconds left in which a firing burst continues without re-checking alignment (see launch()). */
+  private burstTime = 0;
 
   /**
    * Chassis auto-align: for a robot WITHOUT a turret that has `autoAlign`, while it shoots/passes the heading is
@@ -1244,7 +1297,12 @@ export class Robot {
     // P-control plus a static-friction feedforward (kS), like a real heading controller: without it, small
     // corrections are absorbed by carpet friction and the heading stalls a few degrees off.
     const e = this.alignError;
-    const omega = clamp(e * 7 + (Math.abs(e) > 0.01 ? Math.sign(e) * 0.8 : 0), -c.maxOmega, c.maxOmega);
+    // Plus a line-of-sight-rate feedforward (how fast the bearing to the target swings as the robot translates), so
+    // steady strafing doesn't leave the heading a few degrees behind.
+    const dx = target.point.x - t.x;
+    const dy = -(target.point.z - t.z);
+    const los = (dx * v.z + dy * v.x) / Math.max(1, dx * dx + dy * dy);
+    const omega = clamp(e * 7 + los + (Math.abs(e) > 0.01 ? Math.sign(e) * 0.8 : 0), -c.maxOmega, c.maxOmega);
     return { ...cmd, omega };
   }
 
@@ -1405,8 +1463,12 @@ export class Robot {
     const c0 = this.config;
     const c = c0.launcher;
     if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none' || this.tippedOver) return null;
-    // Auto-align robots hold fire until the chassis points at the target (launcher.alignTolerance, default ~3°).
-    if (target && !c.turret && this.config.autoAlign && Math.abs(this.alignError) > (c.alignTolerance ?? 0.05)) return null;
+    // Auto-align robots hold fire until the chassis first points at the target (launcher.alignTolerance, default
+    // ~3°). Once a burst is under way they keep firing whatever the heading error: standing still or creeping, the
+    // servo keeps every ball on target, but a hard shove or a sudden sprint leaves the chassis behind and the balls
+    // fly where the launcher actually points, so they miss.
+    if (target && !c.turret && this.config.autoAlign && this.burstTime <= 0 && Math.abs(this.alignError) > (c.alignTolerance ?? 0.05)) return null;
+    this.burstTime = BURST_HOLD_S;
     if (!this.projectileSet && !Robot.warnedProjectile && typeof console !== 'undefined') {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
@@ -1480,6 +1542,7 @@ export class Robot {
 
   tick(dt: number): void {
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.burstTime = Math.max(0, this.burstTime - dt);
     for (const [i, t] of this.launchedRecently) {
       if (t <= dt) this.launchedRecently.delete(i);
       else this.launchedRecently.set(i, t - dt);

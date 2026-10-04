@@ -8,7 +8,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { FieldFrame } from '../src/engine/coords';
 import { GROUPS, PhysicsWorld } from '../src/engine/physics/world';
 import { cloneConfig, DEFAULT_ROBOT, RobotConfig } from '../src/engine/robot/config';
-import { KINETIC_RATIO, limitWheelForce, motorForce, pushingForce, WheelModel } from '../src/engine/robot/drivetrain';
+import { HOLD_FORCE_RATIO, KINETIC_RATIO, limitWheelForce, motorForce, pushingForce, WheelModel } from '../src/engine/robot/drivetrain';
 import { IDLE_COMMAND, Robot, RobotCommand } from '../src/engine/robot/robot';
 import { lb } from '../src/engine/units';
 
@@ -72,7 +72,7 @@ describe('drive wheel limits', () => {
     limitWheelForce(w, 1000, 0, 0, 0, out);
     expect(out.x).toBeCloseTo(120);
     expect(motorForce(w, 4.9)).toBeLessThan(20);
-    expect(motorForce(w, -3)).toBe(120); // braking / back-driven: full limit
+    expect(motorForce(w, -3)).toBe(120 * HOLD_FORCE_RATIO); // braking / holding: boosted limit
   });
   it('a wheel asked for more than the tread holds breaks loose and slides at kinetic friction', () => {
     const strong = { ...w, motorLimit: 400, stall: 2800 };
@@ -88,7 +88,7 @@ describe('drive wheel limits', () => {
     expect(out.z).toBeCloseTo(150 * KINETIC_RATIO);
   });
   it('pushing force is the lesser of motor force and tread grip', () => {
-    expect(pushingForce(cfg())).toBeCloseTo(lb(125) * 9); // motor-limited (9 m/s² < 1.1 g)
+    expect(pushingForce(cfg((c) => (c.maxAccel = 5)))).toBeCloseTo(lb(125) * 5 * HOLD_FORCE_RATIO); // motor-limited
     expect(pushingForce(cfg((c) => ((c.maxAccel = 20), (c.wheelCOF = 1.0))))).toBeCloseTo(lb(125) * 9.81); // traction-limited
   });
   it('a disabled robot brakes in proportion to how fast it is pushed', () => {
@@ -128,9 +128,9 @@ describe('robot-on-robot defense', () => {
     expect(r.moved).toBeGreaterThan(1);
   });
   it('a tank drive is hard to push sideways (tread friction); a swerve with the same weak motors gives way', () => {
-    // Pusher: ≈ 450 N, motor-limited. Defenders: 125 lb with weak drive motors (≈ 280 N).
-    const pusher = cfg((c) => (c.maxAccel = 7.9));
-    const weak = (c: RobotConfig) => (c.maxAccel = 5);
+    // Pusher: strong motors, traction-limited (μ 1.0, ≈ 560 N). Defenders: 125 lb with weak drive motors (≈ 270 N).
+    const pusher = cfg((c) => ((c.maxAccel = 12), (c.wheelCOF = 1.0)));
+    const weak = (c: RobotConfig) => (c.maxAccel = 3);
     const tank = pushMatch(pusher, cfg((c) => (weak(c), (c.drive = 'tank'))), { defenderYaw: Math.PI / 2 });
     const swerve = pushMatch(pusher, cfg(weak), { defenderYaw: Math.PI / 2 });
     expect(Math.abs(tank.moved)).toBeLessThan(0.15);
@@ -152,5 +152,27 @@ describe('low overhead clearance', () => {
       a.run(2.2, [forward()]);
       expect(r.pose.x, `phase ${k}`).toBeGreaterThan(9.5);
     }
+  });
+});
+
+describe('righting a tipped robot', () => {
+  it('stands it up clear of a field element it fell against instead of inside it', () => {
+    const a = new Arena();
+    const R = RAPIER;
+    // a fixed post the upright chassis would overlap if it were stood up where the tipped robot lies
+    a.physics.world.createCollider(R.ColliderDesc.cuboid(0.4, 0.6, 0.4).setTranslation(8, 0.6, -4).setCollisionGroups(GROUPS.field), a.physics.fixedBody());
+    const r = a.add(cfg(), 8, 4, 0);
+    r.body.setTranslation({ x: 8 + 0.4 + r.footprint.width / 2 - 0.05, y: 0.35, z: -4 }, true);
+    r.body.setRotation({ x: Math.sin(Math.PI / 4), y: 0, z: 0, w: Math.cos(Math.PI / 4) }, true); // on its side
+    a.run(0.05, []);
+    r.setUpright();
+    expect(r.tippedOver).toBe(false);
+    a.run(1, []);
+    const p = r.body.translation();
+    const ox = Math.max(0, Math.abs(p.x - 8) - 0.4 - r.footprint.length / 2);
+    const oz = Math.max(0, Math.abs(p.z + 4) - 0.4 - r.footprint.width / 2);
+    expect(Math.max(ox, oz), 'robot overlaps the post').toBeGreaterThan(-0.001);
+    expect(r.uprightness).toBeGreaterThan(0.95);
+    expect(p.y).toBeLessThan(0.1);
   });
 });
