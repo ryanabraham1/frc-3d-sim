@@ -228,9 +228,24 @@ export class ReefscapeRules implements SeasonRules {
     return clamp(this.halfDepth(robot) + 0.05, fMin, fMax);
   }
 
-  /** Holding ALGAE (no CORAL) close enough to the BARGE to raise the elevator for the NET. */
+  private nearProcessor(robot: Robot): boolean {
+    const p = C.processor(robot.alliance);
+    return Math.hypot(p.x - robot.pose.x, p.y - robot.pose.y) <= 1.45;
+  }
+
+  /**
+   * The driver is asking for a NET outtake. ALGAE has its own button (G, away from the PROCESSOR) so it scores while
+   * CORAL is also held; Space still shoots the NET when the robot holds only ALGAE.
+   */
+  private wantsNet(robot: Robot, cmd: RobotCommand): boolean {
+    if (this.held(robot, true) === undefined || !robot.config.options?.net) return false;
+    if (cmd.shoot) return this.held(robot, false) === undefined;
+    return cmd.pass && !(robot.config.processor!.enabled && this.nearProcessor(robot));
+  }
+
+  /** Holding ALGAE close enough to the BARGE to raise the elevator for the NET. */
   private atNet(robot: Robot): ReturnType<ReefscapeRules['netPose']> {
-    if (this.held(robot, true) === undefined || this.held(robot, false) !== undefined) return null;
+    if (this.held(robot, true) === undefined) return null;
     const pose = this.netPose(robot);
     return pose && Math.hypot(pose.x - robot.pose.x, pose.y - robot.pose.y) < 1.6 ? pose : null;
   }
@@ -263,16 +278,18 @@ export class ReefscapeRules implements SeasonRules {
     const coral = this.held(robot, false);
     const reef = C.reefCenter(robot.alliance);
     const near = Math.hypot(robot.pose.x - reef.x, robot.pose.y - reef.y) < C.REEF_APOTHEM + 2.2;
-    // Holding only ALGAE near the BARGE, the same assist lines up the NET outtake.
-    const net = coral === undefined ? this.netPose(robot) : null;
-    const nearNet = !!net && this.held(robot, true) !== undefined && Math.hypot(net.x - robot.pose.x, net.y - robot.pose.y) < 2.5;
-    if (!robot.config.autoAlign || !cmd.shoot || robot.isClimbing || !(coral !== undefined ? near : nearNet)) {
-      if (!cmd.shoot) this.alignNoise.delete(robot.id);
+    // Near the BARGE, the same assist lines up the NET outtake (ALGAE button, or Space holding only ALGAE).
+    const algaeNet = this.wantsNet(robot, cmd);
+    const coralPlace = cmd.shoot && coral !== undefined;
+    const net = algaeNet ? this.netPose(robot) : null;
+    const nearNet = !!net && Math.hypot(net.x - robot.pose.x, net.y - robot.pose.y) < 2.5;
+    if (!robot.config.autoAlign || !(coralPlace || algaeNet) || robot.isClimbing || !(coralPlace ? near : nearNet)) {
+      if (!cmd.shoot && !algaeNet) this.alignNoise.delete(robot.id);
       return cmd;
     }
     if (!this.alignNoise.has(robot.id)) this.alignNoise.set(robot.id, this.ctx.rng.gauss(0, 0.006));
     const level = Math.round(clamp(cmd.scoringLevel ?? m.level, 1, robot.config.placement!.maxLevel));
-    const pose = coral !== undefined ? this.alignPose(robot, level) : net;
+    const pose = coralPlace ? this.alignPose(robot, level) : net;
     if (!pose) return cmd;
     const p = robot.pose;
     const dx = pose.x - p.x, dy = pose.y - p.y, d = Math.hypot(dx, dy);
@@ -294,24 +311,27 @@ export class ReefscapeRules implements SeasonRules {
     }
     const handingOff = m.handoff > 0;
     const target = coral !== undefined && !handingOff ? this.placementTarget(robot, m.level) : null;
-    const net = this.atNet(robot);
-    // The elevator / arm only move into scoring position while the driver holds Space (the same button that starts
-    // auto-align); otherwise they stay stowed low for driving. A tipped-over robot is helpless.
-    const deploy = cmd.shoot && !robot.tippedOver;
+    const algaeNet = this.wantsNet(robot, cmd);
+    const net = algaeNet ? this.atNet(robot) : null;
+    // The elevator / arm only move into scoring position while the driver holds Space (CORAL) or G (ALGAE, the same
+    // buttons that start auto-align); otherwise they stay stowed low for driving. A tipped-over robot is helpless.
+    const placing = cmd.shoot && coral !== undefined;
+    const netDeploy = !!net && !placing;
+    const deploy = (cmd.shoot || netDeploy) && !robot.tippedOver;
     // Holding CORAL: the elevator rides at the selected level and the end effector reaches toward the BRANCH.
-    let desiredHeight = target && deploy ? target.approach.pos.z : handingOff ? HANDOFF_HEIGHT : 0.45;
+    let desiredHeight = target && deploy && placing ? target.approach.pos.z : handingOff ? HANDOFF_HEIGHT : 0.45;
     const [fMin, fMax] = this.forwardRange(robot);
     let desiredForward = handingOff ? fMin : this.halfDepth(robot) - 0.05;
     let need = desiredForward;
     // Side scorers swing out toward the REEF only when there (stowed while driving around).
     const home = C.reefCenter(robot.alliance);
     const atReef = Math.hypot(robot.pose.x - home.x, robot.pose.y - home.y) < C.REEF_APOTHEM + 1.6;
-    m.side = deploy ? (atReef ? target?.side : undefined) ?? net?.side ?? 0 : 0;
-    if (target && deploy) {
+    m.side = deploy ? (placing && atReef ? target?.side : undefined) ?? (netDeploy ? net?.side : undefined) ?? 0 : 0;
+    if (target && deploy && placing) {
       const p = robot.pose, dir = p.yaw + m.side * Math.PI / 2;
       need = (target.approach.pos.x - p.x) * Math.cos(dir) + (target.approach.pos.y - p.y) * Math.sin(dir);
       desiredForward = clamp(need, fMin, fMax);
-    } else if (net && deploy) {
+    } else if (net && netDeploy && deploy) {
       // ALGAE at the BARGE: the elevator goes to full height to outtake over the NET.
       desiredHeight = NET_RELEASE_HEIGHT;
       desiredForward = this.netForward(robot);
@@ -359,11 +379,11 @@ export class ReefscapeRules implements SeasonRules {
       if (Math.abs(m.height - desiredHeight) > 0.02 || Math.abs(m.forward - desiredForward) > 0.02) return true;
       this.ejectCoral(robot, coral, m.level);
     } else if (algae !== undefined && robot.fireCooldown <= 0 && (cmd.pass || cmd.shoot)) {
-      if (cmd.pass && robot.config.processor!.enabled) this.feedProcessor(robot, algae);
-      else if (cmd.shoot && robot.config.options?.net && coral === undefined) {
+      if (cmd.pass && robot.config.processor!.enabled && (this.nearProcessor(robot) || !robot.config.options?.net)) this.feedProcessor(robot, algae);
+      else if (algaeNet) {
         if (!net) this.tell(robot, 'Drive up to the BARGE facing your NET · the elevator rises and outtakes the ALGAE');
         else if ((!robot.config.autoAlign || m.aligned) && Math.abs(m.height - desiredHeight) < 0.03 && Math.abs(m.forward - desiredForward) < 0.03) this.outtakeNet(robot, algae);
-      } else if (coral === undefined) this.tell(robot, cmd.pass ? 'No PROCESSOR mechanism on this robot' : 'No ALGAE NET mechanism on this robot');
+      } else this.tell(robot, cmd.pass ? 'No ALGAE scoring mechanism on this robot' : 'No ALGAE NET mechanism on this robot');
     } else if (cmd.pass && coral !== undefined && robot.fireCooldown <= 0) {
       // Short reverse-intake ejection is the explicit G412 exception (about 3 ft).
       const p = robot.pose;

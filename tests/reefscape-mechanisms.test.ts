@@ -212,6 +212,21 @@ describe('2025 ALGAE NET from a raised elevator', () => {
     });
   }
 
+  it('the ALGAE button (G) scores the NET while the robot still holds CORAL; Space places the CORAL instead', () => {
+    const n = C.netCenter('blue');
+    const sim = make('blue', { x: n.x - 2.2, y: n.y, yaw: 0 }, preset('all-rounder')); teleop(sim); load(sim, 0); load(sim, 126);
+    for (let k = 0; k < 600 && sim.robot.held.includes(126); k++) run(sim, sim.physics.dt, { ...IDLE_COMMAND, pass: true });
+    expect(sim.robot.held.includes(126)).toBe(false);
+    expect(holdingCoral(sim)).toBe(true);
+    run(sim, 2);
+    expect(sim.ctx.score.counter('blue', 'net')).toBe(1);
+    // Space is the CORAL button: the CORAL goes first and the ALGAE stays put until Space is held with ALGAE only.
+    const sim2 = make('blue', { x: n.x - 2.2, y: n.y, yaw: 0 }, preset('all-rounder')); teleop(sim2); load(sim2, 0); load(sim2, 126);
+    for (let k = 0; k < 600 && holdingCoral(sim2); k++) run(sim2, sim2.physics.dt, { ...IDLE_COMMAND, shoot: true });
+    expect(holdingCoral(sim2)).toBe(false);
+    expect(sim2.robot.held.includes(126)).toBe(true);
+  });
+
   it('physical: outtaking from the wrong distance misses the NET', () => {
     for (const [offset, expected] of [[0, 1], [-0.75, 0]] as const) {
       const config = preset('all-rounder'); config.autoAlign = false;
