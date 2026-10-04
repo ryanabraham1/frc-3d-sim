@@ -48,6 +48,8 @@ export const TRENCH_CLEARANCE = inch(22.25);
 export const TRENCH_SAFE_HEIGHT = TRENCH_CLEARANCE - inch(0.5);
 export const TRENCH_OPENING_CENTER_Y = 0.6445; // [TAG] tags 17/28 centered on the opening
 export const TRENCH_ARM_THICKNESS = inch(6); // [EST]
+/** Arm cross-section along the field length: a square tube over the opening (Figure 5-10; the 47in depth is the pedestal). */
+export const TRENCH_ARM_DEPTH = inch(6); // [EST]
 
 // ─── DEPOT [M 5.7] ──────────────────────────────────────────────────────────
 export const DEPOT_WIDTH = inch(42); // along wall (y)

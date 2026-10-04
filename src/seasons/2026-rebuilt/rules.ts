@@ -130,16 +130,17 @@ export class RebuiltRules implements SeasonRules {
   overheadClearance(robot: Robot): number {
     const blocker = robot.config.shotBlocker;
     if (!robot.config.hopperExpansion && !blocker) return Infinity;
-    const margin = robot.config.hopperExpansion ? 0.6 : 0;
+    // Expanding hoppers stop growing ~1.2 m before the arm (they can't shrink back in time once a FUEL is taken).
+    const margin = robot.config.hopperExpansion ? 0.6 + (C.TRENCH_DEPTH - C.TRENCH_ARM_DEPTH) / 2 : 0;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of robot.corners()) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
-    // The arm ends at the BUMP edge (see buildBumpsAndTrenches).
+    // Only the arm is overhead (the pedestal beside the opening is not driven under); see buildBumpsAndTrenches.
     const reach = Math.min(C.TRENCH_WIDTH, C.HUB_CENTER.y - C.HUB_SIZE / 2 - C.BUMP_WIDTH);
     for (const hubX of [C.HUB_CENTER.x, C.FIELD_LENGTH - C.HUB_CENTER.x]) {
-      if (maxX < hubX - C.TRENCH_DEPTH / 2 - margin || minX > hubX + C.TRENCH_DEPTH / 2 + margin) continue;
+      if (maxX < hubX - C.TRENCH_ARM_DEPTH / 2 - margin || minX > hubX + C.TRENCH_ARM_DEPTH / 2 + margin) continue;
       if (minY < reach + margin || maxY > C.FIELD_WIDTH - reach - margin) return C.TRENCH_SAFE_HEIGHT;
     }
     return Infinity;

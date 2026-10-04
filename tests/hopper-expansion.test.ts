@@ -79,7 +79,8 @@ for (const team of [254, 4414, 1678]) it(`${team}: intaking through the trench s
   sim.scatter([-0.9, -0.5, -0.1, 0.3, 0.7, 1.2, 1.5, 1.8].map((dx, k) => ({ x: hubX + dx, y: y + (k % 2 ? 0.1 : -0.1) })));
   let peak = 0, inside = 0;
   sim.run(8, { ...IDLE_COMMAND, vx: 1.5, intake: true }, () => {
-    const under = r.overheadLimit < Infinity && Math.abs(r.pose.x - hubX) < C.TRENCH_DEPTH / 2;
+    // Under = the robot overlaps the arm (a 6in tube over the opening; the 47in TRENCH depth is the pedestal).
+    const under = r.overheadLimit < Infinity && Math.abs(r.pose.x - hubX) < C.TRENCH_ARM_DEPTH / 2 + r.footprint.length / 2;
     if (under) { peak = Math.max(peak, r.clearanceHeight); inside = Math.max(inside, r.held.length); }
     return false;
   });

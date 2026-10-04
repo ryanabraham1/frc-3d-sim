@@ -63,23 +63,29 @@ it('stowed, 254 shoots over 1323; with the shot blocker up, its shots hit the pa
   expect(blocked.past).toBeLessThanOrEqual(blocked.fired * 0.2);
 });
 
-it('a raised shot blocker hits the TRENCH arm and stops the robot; lowered, the robot drives through', () => {
+it('a raised shot blocker catches the TRENCH arm; lowered, the robot drives through cleanly', () => {
   const hubX = C.HUB_CENTER.x, y = C.TRENCH_OPENING_CENTER_Y;
   const drive = (block: boolean) => {
     const c = team(1323);
     const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: hubX - 2.5, y, yaw: 0 } }); sims.push(sim);
     sim.run(0.6, { ...IDLE_COMMAND, block });
     // Front first: the blocker trails over the intake side and catches the arm's near face.
-    sim.run(4, { ...IDLE_COMMAND, block, vx: c.maxSpeed });
-    return sim.robot;
+    let maxTilt = 0;
+    sim.run(4, { ...IDLE_COMMAND, block, vx: c.maxSpeed }, () => {
+      const q = sim.robot.body.rotation();
+      maxTilt = Math.max(maxTilt, Math.acos(Math.min(1, 1 - 2 * (q.x * q.x + q.z * q.z))));
+      return false;
+    });
+    return { robot: sim.robot, maxTilt };
   };
   const up = drive(true);
-  expect(up.blockerDeploy).toBe(1);
-  expect(up.tippedOver).toBe(false);
-  // Stuck partway in, the panel against the arm's near face; it never gets through.
-  expect(up.pose.x).toBeLessThan(hubX);
+  expect(up.robot.blockerDeploy).toBe(1);
+  // The arm is a 6in tube [Figure 5-10], not a ceiling: the sloped panel wedges under it, so the robot either stops
+  // against it or is levered into a hard wheelie. It never passes level.
+  expect(up.robot.pose.x < hubX || up.maxTilt > (30 * Math.PI) / 180).toBe(true);
   const down = drive(false);
-  expect(down.pose.x).toBeGreaterThan(hubX + C.TRENCH_DEPTH / 2 + 0.5);
+  expect(down.maxTilt).toBeLessThan((12 * Math.PI) / 180);
+  expect(down.robot.pose.x).toBeGreaterThan(hubX + C.TRENCH_DEPTH / 2 + 0.5);
 });
 
 it('the shot blocker cannot be raised under the TRENCH arm', () => {

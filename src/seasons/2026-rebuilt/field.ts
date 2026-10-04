@@ -249,9 +249,16 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
     );
   }
 
-  // TRENCHes along both guardrails.
+  // TRENCHes along both guardrails [M 5.6, Figure 5-10]: a sloped-end pedestal between the opening and the BUMP
+  // (the 47in depth), an alliance-colored square-tube arm cantilevered from its top over the 50.34in opening, a steel
+  // leg with a leveling foot at the guardrail end, and the AprilTag bracket on top of the arm.
   const td = C.TRENCH_DEPTH;
-  const frame = { color: C.COLORS.darkSteel, metalness: 0.5, roughness: 0.5 };
+  const ad = C.TRENCH_ARM_DEPTH;
+  const armBot = C.TRENCH_CLEARANCE;
+  const armTop = C.TRENCH_CLEARANCE + C.TRENCH_ARM_THICKNESS;
+  const dark = a === 'red' ? C.COLORS.redDark : C.COLORS.blueDark;
+  const steel = { color: C.COLORS.steel, metalness: 0.7, roughness: 0.35 };
+  const gusset = { color: 0x1c1e22, metalness: 0.4, roughness: 0.5, collide: false as const, castShadow: false };
   for (const g of [0, 1]) {
     // g=0: guardrail nearest to this alliance's y=0-side (blue y=0 / red y=W)
     const y0 = g === 0 ? 0 : C.FIELD_WIDTH;
@@ -261,33 +268,47 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
     const openEnd = yRail + sd * (C.TRENCH_OPENING_CENTER_Y * 2);
     const bumpEdge = hub.y - sd * (hs + C.BUMP_WIDTH);
     // Manual: TRENCH is 65.65in "from the guardrail to the BUMP" but guardrail→bump is only ~62.3in here.
-    // End the arm at the bump edge: an arm overhanging the bump caught robots riding up the ramp. [EST]
+    // End the pedestal at the bump edge: anything overhanging the bump caught robots riding up the ramp. [EST]
     const trenchEnd = yRail + sd * Math.min(C.TRENCH_WIDTH, Math.abs(bumpEdge - yRail));
-    // Arm over the opening
-    const armLo = Math.min(yRail, trenchEnd);
-    const armHi = Math.max(yRail, trenchEnd);
-    b.boxMinMax([hub.x - td / 2, armLo, C.TRENCH_CLEARANCE], [hub.x + td / 2, armHi, C.TRENCH_CLEARANCE + C.TRENCH_ARM_THICKNESS], {
-      ...frame,
-      color: g === 0 ? C.COLORS.darkSteel : 0x454b55,
-    });
-    // Alliance stripe on the arm faces
-    for (const fs of [-1, 1]) {
-      b.boxMinMax([hub.x + fs * (td / 2) - 0.003, armLo, C.TRENCH_CLEARANCE + inch(1)], [hub.x + fs * (td / 2) + 0.003, armHi, C.TRENCH_CLEARANCE + inch(3)], {
-        color: col,
-        collide: false,
-        castShadow: false,
-      });
+    // Pedestal: full depth on the carpet, sides sloping up to a short flat top that carries the arm.
+    const pLo = Math.min(openEnd, trenchEnd);
+    const pHi = Math.max(openEnd, trenchEnd);
+    const pc = (pLo + pHi) / 2;
+    const pw = (pHi - pLo) / 2;
+    const topHalf = ad / 2 + inch(3); // [EST] flat top just wider than the arm
+    if (pw > 0.005) {
+      b.convex([hub.x, pc, 0], [
+        [-td / 2, -pw, 0], [td / 2, -pw, 0], [-td / 2, pw, 0], [td / 2, pw, 0],
+        [-topHalf, -pw, armTop], [topHalf, -pw, armTop], [-topHalf, pw, armTop], [topHalf, pw, armTop],
+      ], { color: col, roughness: 0.6, metalness: 0.1, friction: 0.5 });
+      // Darker sheet-metal side faces (the walls facing the opening and the BUMP).
+      for (const yy of [pLo - 0.002, pHi + 0.002]) {
+        b.convex([hub.x, yy, 0], [
+          [-td / 2 + 0.01, -0.001, 0.01], [td / 2 - 0.01, -0.001, 0.01], [-td / 2 + 0.01, 0.001, 0.01], [td / 2 - 0.01, 0.001, 0.01],
+          [-topHalf + 0.005, -0.001, armTop - 0.01], [topHalf - 0.005, -0.001, armTop - 0.01], [-topHalf + 0.005, 0.001, armTop - 0.01], [topHalf - 0.005, 0.001, armTop - 0.01],
+        ], { color: dark, roughness: 0.6, collide: false, castShadow: false });
+      }
     }
-    // Post between opening and bump
-    const pLo = Math.min(openEnd, bumpEdge);
-    const pHi = Math.max(openEnd, bumpEdge);
-    if (pHi - pLo > 0.01) b.boxMinMax([hub.x - td / 2, pLo, 0], [hub.x + td / 2, pHi, C.TRENCH_CLEARANCE], frame);
-    // AprilTag bracket above the arm, and top rail to full height
+    // Arm: square tube from the guardrail leg to the pedestal top.
+    const armLo = Math.min(yRail, openEnd);
+    const armHi = Math.max(yRail, openEnd);
+    b.boxMinMax([hub.x - ad / 2, armLo, armBot], [hub.x + ad / 2, armHi + (pw > 0.005 ? 0 : 0), armTop], { color: col, roughness: 0.55, metalness: 0.15 });
+    // Black gusset plates bolting the arm to the pedestal, both faces.
+    const gy = openEnd + sd * inch(2);
+    for (const fs of [-1, 1]) {
+      b.boxMinMax([hub.x + fs * (ad / 2) - (fs > 0 ? 0 : inch(0.25)), Math.min(gy - inch(5), gy + inch(5)), armBot - inch(4)],
+        [hub.x + fs * (ad / 2) + (fs > 0 ? inch(0.25) : 0), Math.max(gy - inch(5), gy + inch(5)), armTop + inch(1)], gusset);
+    }
+    // Leg at the guardrail end: steel tube down to a leveling foot.
+    const legY = yRail + sd * inch(1.5);
+    b.box([hub.x, legY, armBot / 2], [inch(1.5), inch(1.5), armBot], steel);
+    b.cylinder([hub.x, legY, 0], [hub.x, legY, inch(0.6)], inch(1.6), { ...steel, color: 0x2a2d33, collide: false });
+    b.box([hub.x, legY + sd * inch(0.5), armTop - inch(1.5)], [ad + inch(0.5), inch(1), inch(3)], { ...gusset, color: C.COLORS.steel });
+    // AprilTag bracket on top of the arm, centered on the opening (tag centers 35in off the floor [M 5.10]).
     const tagY = yRail + sd * C.TRENCH_OPENING_CENTER_Y;
-    b.box([hub.x, tagY, (C.TRENCH_CLEARANCE + C.TRENCH_ARM_THICKNESS + C.TRENCH_HEIGHT) / 2], [inch(2), inch(12), C.TRENCH_HEIGHT - C.TRENCH_CLEARANCE - C.TRENCH_ARM_THICKNESS], {
-      ...frame,
-      collide: false,
-    });
+    const bh = C.TRENCH_HEIGHT - armTop;
+    b.box([hub.x, tagY, armTop + bh / 2], [inch(1.2), inch(10.5), bh], { ...steel, color: 0x9aa1aa, collide: false });
+    b.box([hub.x, tagY, armTop + inch(0.5)], [ad, inch(11), inch(1)], { ...steel, collide: false });
   }
 }
 
