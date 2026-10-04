@@ -94,12 +94,12 @@ export const reefscape2025: SeasonDefinition = {
     const byRole: Record<string, string> = { algae: 'firefly-118', coral: 'lightning-2056', defender: 'mid-elevator' };
     if (role && byRole[role]) return byRole[role];
     // Real 2025 robots (generic archetypes on Easy). Benchmarked (seeds 5-7): Hard averaged 253 points, Normal 178.
-    const lineups: Record<string, string[]> = { easy: ['trough', 'mid-elevator', 'funnel-l4'], normal: ['whisper-1690', 'firefly-118', 'lightning-2056'], hard: ['undertow-254', 'spectre-2910', 'firefly-118'], elite: ['undertow-254', 'spectre-2910', 'firefly-118'] };
+    const lineups: Record<string, string[]> = { easy: ['trough', 'mid-elevator', 'funnel-l4'], normal: ['whisper-1690', 'firefly-118', 'lightning-2056'], hard: ['undertow-254', 'spectre-2910', 'firefly-118'], elite: ['undertow-254', 'spectre-2910', 'firefly-118'], einstein: ['undertow-254', 'spectre-2910', 'firefly-118'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   aiStrategies: REEFSCAPE_AI_STRATEGIES,
   aiRoles: REEFSCAPE_AI_ROLES,
-  botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
+  botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' || difficulty === 'einstein' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
   createBotPilot(ctx, rules, robot) { return createReefscapeBot(ctx, rules as ReefscapeRules, robot); },
   createHud(ctx, rules, slots) { return new ReefscapeHud(ctx, rules as ReefscapeRules, slots); },
   controlsHelp: [

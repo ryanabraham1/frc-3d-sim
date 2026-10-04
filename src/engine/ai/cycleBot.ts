@@ -48,6 +48,8 @@ export class CycleBot implements AutoPilot {
   /** Normal and above: runs the alliance plan (Easy just cycles). */
   readonly smart: boolean;
   readonly elite: boolean;
+  /** Einstein: defends the human driver when they're about to score (see the season bots). */
+  readonly hunter: boolean;
 
   constructor(readonly ctx: SeasonContext, readonly robot: Robot, private readonly strategy: BotStrategy) {
     this.scoring = robot.held.length > 0;
@@ -55,8 +57,9 @@ export class CycleBot implements AutoPilot {
     this.previous = robot.pose;
     this.team = TeamBrain.for(ctx, robot.alliance);
     this.skill = this.team.skill;
-    this.hard = this.skill === 'hard' || this.skill === 'elite';
-    this.elite = this.skill === 'elite';
+    this.hard = this.skill === 'hard' || this.skill === 'elite' || this.skill === 'einstein';
+    this.elite = this.skill === 'elite' || this.skill === 'einstein';
+    this.hunter = !!SKILL[this.skill].hunter;
     this.smart = SKILL[this.skill].smart;
     this.pace = SKILL[this.skill].pace;
   }
@@ -161,6 +164,8 @@ export class CycleBot implements AutoPilot {
   }
 
   private escape: { until: number; x: number; y: number; spin: number } | null = null;
+  /** Speed the last driveTo wanted toward its waypoint before avoidance (0 when not driving to anything). */
+  private intent = 0;
   private escapes = 0;
 
   private recover(cmd: RobotCommand, dt: number): RobotCommand {
@@ -173,7 +178,8 @@ export class CycleBot implements AutoPilot {
     // Stalled against a wall, a robot, a pile of pieces or beached on a field edge: try a different way out each time
     // (back off, either side, diagonally) with a twist of the chassis, which un-beaches a robot hung up on an edge.
     const moving = dist(r.pose, this.previous) > 0.003;
-    if (!moving && this.distanceToGoal > 0.1 && Math.hypot(cmd.vx, cmd.vy) > 0.2) this.stalled += dt;
+    // Count what the bot WANTS to do, not only what it commands: forces that cancel out are a stall too.
+    if (!moving && this.distanceToGoal > 0.1 && Math.max(Math.hypot(cmd.vx, cmd.vy), this.intent) > 0.2) this.stalled += dt;
     else this.stalled = Math.max(0, this.stalled - dt * 2);
     if (moving && dist(r.pose, this.previous) > 0.01) this.escapes = Math.max(0, this.escapes - dt * 0.2);
     this.previous = r.pose;
@@ -230,6 +236,17 @@ export class CycleBot implements AutoPilot {
       const urgency = clamp((clearance + 0.65 - d) / 0.65, 0, 1);
       vx -= dy / d * yieldSpeed * urgency;
       vy += dx / d * yieldSpeed * urgency;
+    }
+    // Local minimum: the pull toward the waypoint and the push away from a robot in the way cancel out, and the bot
+    // would sit still forever. Slide around the obstacle instead (the side nearer the goal).
+    const want = Math.hypot(v.vx, v.vy);
+    this.intent = want;
+    if (want > 0.5 && Math.hypot(vx, vy) < want * 0.3 && Math.hypot(repulsion.vx, repulsion.vy) > 0.2) {
+      const rn = Math.hypot(repulsion.vx, repulsion.vy);
+      let tx = -repulsion.vy / rn, ty = repulsion.vx / rn;
+      if (tx * (goal.x - p.x) + ty * (goal.y - p.y) < 0) { tx = -tx; ty = -ty; }
+      vx += tx * want * 0.8;
+      vy += ty * want * 0.8;
     }
     const speed = Math.hypot(vx, vy), limit = r.config.maxSpeed * this.pace;
     if (speed > limit) { vx *= limit / speed; vy *= limit / speed; }

@@ -20,11 +20,13 @@ export function aiOrders(s: GameSettings, a: Alliance): ResolvedOrders {
 }
 
 /** How well an AI skill level drives: share of top speed, re-planning interval, and whether it runs the full plan. */
-export const SKILL: Record<AiSkill, { pace: number; retarget: number; smart: boolean; aggressive: boolean }> = {
+export const SKILL: Record<AiSkill, { pace: number; retarget: number; smart: boolean; aggressive: boolean; hunter?: boolean }> = {
   easy: { pace: 0.6, retarget: 0.6, smart: false, aggressive: false },
   normal: { pace: 0.85, retarget: 0.35, smart: true, aggressive: false },
   hard: { pace: 1, retarget: 0.2, smart: true, aggressive: true },
   elite: { pace: 1, retarget: 0.12, smart: true, aggressive: true },
+  /** Championship level: Elite plus a robot that hunts the human driver whenever that driver is about to score. */
+  einstein: { pace: 1, retarget: 0.1, smart: true, aggressive: true, hunter: true },
 };
 
 export interface RadioMessage {

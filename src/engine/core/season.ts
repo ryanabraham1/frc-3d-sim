@@ -53,7 +53,7 @@ export interface GameSettings {
   aiRadio?: 'all' | 'team' | 'off';
 }
 
-export type AiSkill = 'easy' | 'normal' | 'hard' | 'elite';
+export type AiSkill = 'easy' | 'normal' | 'hard' | 'elite' | 'einstein';
 
 /** What a player tells an AI alliance. Unset fields fall back to the season's own plan ('auto'). */
 export interface AiTeamOrders {
@@ -302,7 +302,11 @@ export interface SeasonDefinition {
   buildField(ctx: SeasonContext): void;
   createRules(ctx: SeasonContext): SeasonRules;
   createAutoPilot(ctx: SeasonContext, rules: SeasonRules, robot: Robot, routine: string): AutoPilot;
-  botAutoRoutine?(station: number, config?: RobotConfig): string;
+  /**
+   * AUTO routine for an AI robot. `team` lists the alliance's AI robots (the player's is excluded), so routines can be
+   * split by capability (e.g. only robots with a climber take the AUTO climb).
+   */
+  botAutoRoutine?(station: number, config?: RobotConfig, team?: { station: number; config: RobotConfig }[]): string;
   botRobotConfig?(difficulty: AiSkill, role?: string): RobotConfig;
   /**
    * The robot an AI plays at this difficulty and driver station: a `teamRobots` id (a real team's robot, with its

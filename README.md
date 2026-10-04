@@ -47,7 +47,10 @@ Choose **3 vs 3** to play with two AI teammates against three AI opponents in an
 for an empty field.
 
 - **AI difficulty** (opponents) and **Teammate skill**: *Easy* just cycles; *Normal* runs the full alliance plan;
-  *Hard* adds competitive builds, full speed and tight aim; *Elite* re-plans fastest with the most accurate shots.
+  *Hard* fields competitive real-team robots at full speed; *Elite* re-plans fastest; *Einstein* also sends the
+  nearest opponent to defend you whenever you're loaded and about to score. AI robots get exactly the same robot
+  stats a player would (no speed or accuracy edge): difficulty is how they play.
+- **Opponent robots**: pick the robot each opposing driver station plays (AI tab), or leave it on Auto.
 - **Alliance strategy** for your teammates: *Adaptive* (recommended) or one fixed plan per season — e.g. 2026
   *Press* / *Shift control* / *Stockpile* / *Lockdown*, 2024 *Amplify cycles* / *Feed & shoot* / *Speaker cycles* /
   *Amplify + defense*, 2025 *Reef race* / *All coral* / *Coral + algae* / *Reef race + press*.

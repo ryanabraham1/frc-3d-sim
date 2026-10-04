@@ -223,13 +223,14 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     s.startSpot = checkStartSpot(area, fit, fp.length, fp.width).ok ? fit : null;
   };
 
-  const SKILLS = ['easy', 'normal', 'hard', 'elite'] as const;
+  const SKILLS = ['easy', 'normal', 'hard', 'elite', 'einstein'] as const;
   const skillLabel = (d: string) => d[0].toUpperCase() + d.slice(1);
   const skillHint: Record<string, string> = {
     easy: 'Slower driving, looser aim, simple cycles without the alliance plan.',
     normal: 'Runs the alliance plan and strategy switching at a moderate pace.',
-    hard: 'Competitive builds at full speed with tight aim, the full alliance plan and endgame climbs.',
-    elite: 'Hard plus the fastest re-planning and the most accurate shots: plays the strongest plan the benchmarks found.',
+    hard: 'Competitive real-team robots driven at full speed with the full alliance plan and endgame climbs.',
+    elite: 'Hard plus the fastest re-planning: plays the strongest plan the benchmarks found.',
+    einstein: 'Championship level: Elite play, and the nearest opponent hunts you down whenever you are loaded and about to score.',
   };
   /** Opponent difficulty, then your teammates: skill, alliance strategy, and a role per driver station (yours included). */
   const aiGroups = () => {

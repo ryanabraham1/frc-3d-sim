@@ -26,7 +26,7 @@ import { checkStartSpot, fieldToSpot, footprintPoly, polysOverlap, resolveStartP
 import { clamp, formatClock } from '../units';
 import { aiOrders, radioFor } from '../ai/team';
 import { aiRobotChoices } from '../ai/robots';
-import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
+import type { AiSkill, AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
 type GameState = NetGameState;
 
@@ -55,6 +55,12 @@ export interface GameCallbacks {
 }
 
 const PRE_MATCH_COUNTDOWN = 3;
+/**
+ * AI robots drive the same robots players get: no skill-based speed or accuracy edge. Skill is how they play
+ * (pace, planning, defense on the driver), not better hardware. Kept as tables so tests and benchmarks share them.
+ */
+export const AI_SPEED: Record<AiSkill, number> = { easy: 1, normal: 1, hard: 1, elite: 1, einstein: 1 };
+export const AI_AIM: Record<AiSkill, number> = { easy: 1, normal: 1, hard: 1, elite: 1, einstein: 1 };
 /** Minimum ms between rendered frames (~60 fps; the 2 ms slack keeps a 60 Hz display drawing every refresh). */
 const MIN_FRAME_MS = 1000 / 60 - 2;
 /** Host streams a snapshot every N physics steps (90 Hz / 3 = 30 Hz). */
@@ -102,10 +108,9 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
         const wanted = orders.archetypes[station];
         const archetype = choices.find((p) => p.id === wanted) ?? choices.find((p) => p.id === season.botArchetype?.(difficulty, station, orders.roles[station], alliance === s.alliance));
         const config = cloneConfig(archetype?.config ?? season.botRobotConfig?.(difficulty, orders.roles[station]) ?? season.robotDefaults);
-        // Skill is mostly driving (pace, re-planning); the build gets only a modest speed / accuracy edge.
-        config.maxSpeed *= { easy: 0.88, normal: 1, hard: 1.05, elite: 1.08 }[difficulty];
-        config.launcher.spread *= { easy: 1.5, normal: 1, hard: 0.8, elite: 0.65 }[difficulty];
-        config.launcher.speedError *= { easy: 1.5, normal: 1, hard: 0.8, elite: 0.65 }[difficulty];
+        config.maxSpeed *= AI_SPEED[difficulty];
+        config.launcher.spread *= AI_AIM[difficulty];
+        config.launcher.speedError *= AI_AIM[difficulty];
         // Real robots keep their team number unless it's already on the field.
         const real = archetype?.team;
         config.teamNumber = real && !setup.robots.some((o) => o.config.teamNumber === real) ? real : 9000 + setup.robots.length;
@@ -130,6 +135,14 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
           autoRoutine: season.botAutoRoutine?.(station, config) ?? season.autoRoutines[0]?.id ?? 'none', manualAuto: false,
           start, peerId: '', name: `AI ${alliance === 'blue' ? 'Blue' : 'Red'} ${station}`,
         });
+      }
+    }
+    // AUTO routines are planned per alliance once every robot is known: who climbs depends on who CAN climb.
+    if (season.botAutoRoutine) {
+      for (const rs of setup.robots) {
+        if (rs.id === 0) continue;
+        const bots = setup.robots.filter((o) => o.alliance === rs.alliance && o.id !== 0).map((o) => ({ station: o.station, config: o.config }));
+        rs.autoRoutine = season.botAutoRoutine(rs.station, rs.config, bots);
       }
     }
   }

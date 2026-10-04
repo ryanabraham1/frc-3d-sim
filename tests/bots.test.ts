@@ -46,8 +46,9 @@ describe.each(SEASONS)('$name AI', (season) => {
     const easy = localSetup({ ...settings, aiDifficulty: 'easy', aiOpponent: { archetypes: same } }, season);
     const hard = localSetup({ ...settings, aiDifficulty: 'hard', aiOpponent: { archetypes: same } }, season);
     const enemy = easy.robots.findIndex((r) => r.alliance !== settings.alliance);
-    expect(hard.robots[enemy].config.maxSpeed).toBeGreaterThan(easy.robots[enemy].config.maxSpeed);
-    expect(hard.robots[enemy].config.launcher.spread).toBeLessThan(easy.robots[enemy].config.launcher.spread);
+    // Difficulty is how the AI plays, never better hardware: the same robot has the same stats at every skill.
+    expect(hard.robots[enemy].config.maxSpeed).toBe(easy.robots[enemy].config.maxSpeed);
+    expect(hard.robots[enemy].config.launcher.spread).toBe(easy.robots[enemy].config.launcher.spread);
     expect(hard.robots[1].config).toEqual(easy.robots[1].config);
     expect(settings.robot).toEqual(easy.robots[0].config);
     // Without orders the opponents play real team robots (their own models) from the season's lineup.
@@ -79,19 +80,24 @@ describe.each(SEASONS)('$name AI', (season) => {
 describe.each(SEASONS)('$name Hard challenge', (season) => {
   it('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
     const totals: number[] = [];
+    // Two seeds: one match is noisy (a single unlucky collision can swing it), the ordering over two is not.
     for (const difficulty of ['normal', 'hard'] as const) {
-      const settings = { ...defaultSettings(season), seed: 5, aiDifficulty: difficulty };
-      const res = runMatch(season, R, settings);
-      const red = settings.alliance === 'blue' ? 'red' : 'blue';
-      totals.push(res.score[red]);
-      console.log(season.id, difficulty, res.score[red], JSON.stringify(res.categories[red]));
-      if (difficulty === 'hard') {
-        const cat = res.categories[red];
-        expect((cat.onstage ?? 0) + (cat.barge ?? 0) + (cat.towerTeleop ?? 0)).toBeGreaterThan(0);
+      let total = 0;
+      for (const seed of [5, 6]) {
+        const settings = { ...defaultSettings(season), seed, aiDifficulty: difficulty };
+        const res = runMatch(season, R, settings);
+        const red = settings.alliance === 'blue' ? 'red' : 'blue';
+        total += res.score[red];
+        console.log(season.id, difficulty, seed, res.score[red], JSON.stringify(res.categories[red]));
+        if (difficulty === 'hard') {
+          const cat = res.categories[red];
+          expect((cat.onstage ?? 0) + (cat.barge ?? 0) + (cat.towerTeleop ?? 0)).toBeGreaterThan(0);
+        }
       }
+      totals.push(total);
     }
     expect(totals[1]).toBeGreaterThan(totals[0]);
-  }, 300_000);
+  }, 600_000);
 });
 
 // A whole all-AI match (the player's station driven by a bot too) through the engine's step order.
@@ -257,7 +263,9 @@ it('teammates follow the player’s orders and every season offers strategies an
     const preset = season.robotPresets!.at(-1)!;
     const settings = { ...defaultSettings(season), aiAlly: { skill: 'elite' as const, archetypes: { 1: preset.id, 3: preset.id } } };
     const elite = localSetup(settings, season), normal = localSetup({ ...settings, aiAlly: { archetypes: { 1: preset.id, 3: preset.id } } }, season);
-    expect(elite.robots[1].config.maxSpeed).toBeGreaterThan(normal.robots[1].config.maxSpeed);
+    // AI robots get the same hardware players do: skill changes how they play, not the robot.
+    expect(elite.robots[1].config.maxSpeed).toBe(normal.robots[1].config.maxSpeed);
+    expect(elite.robots[1].config.launcher.spread).toBe(normal.robots[1].config.launcher.spread);
     expect(normal.robots[1].config.hopperCapacity).toBe(preset.config.hopperCapacity);
     const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', station: 2, pose: season.startPose('blue', 2),
       extraRobots: [{ config: season.robotDefaults, alliance: 'blue', station: 1, pose: season.startPose('blue', 1), id: 1 }] });

@@ -258,6 +258,20 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       }
     }
 
+    // Einstein: while our HUB is off, the robot nearest the human driver hounds them whenever they're loaded and
+    // their HUB is (about to be) live; it breaks off in time to be back for our own shift.
+    if (bot.hunter && !active && untilActive > toSpot + 2 && remaining > 25) {
+      const human = ctx.robots.find((o) => o.alliance === enemy && (o.controller === 'player' || o.id === 0));
+      if (human && human.held.length > 0 && !human.isClimbing && (rules.hubActive(enemy) || rules.secondsUntilActive(enemy) < 4)) {
+        const hunter = team.members.filter((m) => !m.isClimbing && !m.tippedOver).sort((a, b) => dist(a.pose, human.pose) - dist(b.pose, human.pose))[0];
+        if (hunter === r) {
+          team.say(r, `Hunting ${team.label(human).replace('You', 'the driver')}`, `hunt:${r.id}`, 20);
+          const d = defendCommand(dt, human);
+          if (d) { d.intake = r.capacityLeft > 0; return d; }
+        }
+      }
+    }
+
     if(bot.hard && !active && role !== 'defender' && untilActive > toSpot+3 && remaining>30) {
       if(r.held.length>=12 && fromWall(r.pose.x)>C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH) raidReturning=true;
       if(!r.held.length) raidReturning=false;

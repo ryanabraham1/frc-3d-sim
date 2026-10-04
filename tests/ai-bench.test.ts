@@ -12,6 +12,7 @@ import type { GameSettings } from '../src/engine/core/season';
 import { cloneConfig } from '../src/engine/robot/config';
 import { loadRapier, type RapierModule } from '../src/engine/physics/world';
 import { runMatch } from '../src/engine/testing/match';
+import { AI_SPEED } from '../src/engine/core/game';
 import { SEASONS } from '../src/seasons';
 
 let R: RapierModule;
@@ -29,7 +30,7 @@ describe.skipIf(!env.AI_BENCH)('AI benchmark', () => {
         const blueArch = arch(env.AI_BLUE_ARCH), redArch = arch(env.AI_RED_ARCH);
         const playerArch = blueArch[1] ?? season.botArchetype?.(skill, 1, env.AI_PLAYER_ROLE, true);
         const robot = cloneConfig(season.robotPresets?.find((p) => p.id === playerArch)?.config ?? season.botRobotConfig?.(skill) ?? season.robotDefaults);
-        robot.maxSpeed *= { easy: 0.88, normal: 1, hard: 1.05, elite: 1.08 }[skill];
+        robot.maxSpeed *= AI_SPEED[skill];
         const settings: GameSettings = { ...base, seed, alliance: 'blue', station: 1, aiDifficulty: skill, robot,
           autoRoutine: season.botAutoRoutine?.(1, robot) ?? base.autoRoutine,
           aiAlly: { skill, strategy: env.AI_BLUE ?? 'auto', roles: env.AI_PLAYER_ROLE ? { 1: env.AI_PLAYER_ROLE } : {}, archetypes: blueArch },

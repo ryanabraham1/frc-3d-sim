@@ -108,7 +108,7 @@ export const crescendo2024: SeasonDefinition = {
     const byRole: Record<string, string> = { amp: 'amp-trap', feeder: 'axl-4522', shooter: 'madtown-2024-1323', defender: 'pivot' };
     if (role && byRole[role]) return byRole[role];
     // Benchmarked (seeds 5-7): Hard 4414/1323/4414 averaged 182 points, Normal 2056/4522/2056 151.
-    const lineups: Record<string, string[]> = { easy: ['pivot', 'lowkey-2056', 'pivot'], normal: ['lowkey-2056', 'axl-4522', 'lowkey-2056'], hard: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'], elite: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'] };
+    const lineups: Record<string, string[]> = { easy: ['pivot', 'lowkey-2056', 'pivot'], normal: ['lowkey-2056', 'axl-4522', 'lowkey-2056'], hard: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'], elite: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'], einstein: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   aiCanPlay: (c) => !c.launcher.turret && c.intake.ground !== false,

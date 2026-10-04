@@ -1,3 +1,4 @@
+import type { RobotConfig } from '@engine/robot/config';
 import { createRebuiltBot, REBUILT_AI_ROLES, REBUILT_AI_STRATEGIES } from './bots';
 import type { MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
@@ -98,17 +99,21 @@ export const rebuilt2026: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new RebuiltAutoPilot(ctx, rules as RebuiltRules, robot, routine);
   },
-  botAutoRoutine(station, config) {
-    // A robot without a ground intake can't collect in AUTO: score the preload and climb.
-    if (config?.intake.ground === false) return 'shoot-climb';
-    return ['depot-climb', 'shoot-climb', 'shoot-collect'][station - 1];
+  botAutoRoutine(station, config, team) {
+    const canClimb = (c?: RobotConfig) => (c?.climber.maxLevel ?? 0) > 0;
+    // The AUTO TOWER pays LEVEL 1 for at most two robots [M 6.4]: the first two climbers (by station) take it, and
+    // everyone else spends AUTO on FUEL. A robot without a climber never runs a climb routine.
+    const climbers = (team ?? [{ station, config: config! }]).filter((m) => canClimb(m.config)).sort((a, b) => a.station - b.station).slice(0, 2).map((m) => m.station);
+    if (config?.intake.ground === false) return canClimb(config) && climbers.includes(station) ? 'shoot-climb' : 'shoot-only';
+    if (canClimb(config) && climbers.includes(station)) return station === 1 ? 'depot-climb' : 'shoot-climb';
+    return station === 1 ? 'shoot-depot' : 'shoot-collect';
   },
   botArchetype(difficulty, station, role) {
     const byRole: Record<string, string> = { scorer: 'ripcurrent-4414', feeder: 'limestone-1678', defender: 'kepler-1690' };
     if (role && byRole[role]) return byRole[role];
     // Real 2026 robots; station 3 (the Hard defender) gets 1690's spiked-tread pusher.
     // Benchmarked (seeds 5-7): Hard averaged 1040 points, Normal 515.
-    const lineups: Record<string, string[]> = { easy: ['outpost', 'fixed', 'turret'], normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], elite: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'] };
+    const lineups: Record<string, string[]> = { easy: ['outpost', 'fixed', 'turret'], normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], elite: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   botRobotConfig(difficulty) {
