@@ -80,10 +80,10 @@ describe.each(SEASONS)('$name AI', (season) => {
 describe.each(SEASONS)('$name Hard challenge', (season) => {
   it('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
     const totals: number[] = [];
-    // Two seeds: one match is noisy (a single unlucky collision can swing it), the ordering over two is not.
+    // Three seeds: one match is noisy (a single unlucky collision or a TRAP swings it by 5-10), the ordering over three is not.
     for (const difficulty of ['normal', 'hard'] as const) {
       let total = 0;
-      for (const seed of [5, 6]) {
+      for (const seed of [5, 6, 7]) {
         const settings = { ...defaultSettings(season), seed, aiDifficulty: difficulty };
         const res = runMatch(season, R, settings);
         const red = settings.alliance === 'blue' ? 'red' : 'blue';

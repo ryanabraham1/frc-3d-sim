@@ -236,6 +236,14 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
     const cmd = bot.driveTo(there && !fixedShooter && hold ? r.pose : spot, yaw);
     // Turret robots shoot on the move; everyone fires as soon as they're in range (traffic may block the spot).
     cmd.shoot = there && !hold && !rules.inWing(r, opp);
+    // A chassis-aimed shooter keeps firing wherever it points once a burst starts, so its driver holds the aim button
+    // (the chassis squares up) and pulls the trigger only while lined up; mid-burst, let off if shoved or swung round.
+    if (!r.config.launcher.turret && r.config.autoAlign) {
+      cmd.aim = there && !hold;
+      const off = Math.abs(r.alignError);
+      const settled = r.speed <= 0.5 && Math.abs(r.body.angvel().y) <= 1.2;
+      if (cmd.shoot) cmd.shoot = r.inBurst ? off <= 0.1 && settled : off <= 0.05;
+    }
     return cmd;
   };
 

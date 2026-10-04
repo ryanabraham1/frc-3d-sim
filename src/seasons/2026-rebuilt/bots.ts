@@ -203,8 +203,11 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const there = dist(r.pose, spot) < 0.3;
     const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
     cmd.intake = r.capacityLeft > 0;
-    // Fire once planted (auto-align squares the chassis; it holds fire until aligned).
-    cmd.shoot = inZone() && live && r.held.length > 0 && (there || (insideZone() && r.speed < 0.4));
+    // Fire once planted (auto-align squares the chassis and holds the first shot until aligned). Once a burst is going
+    // the robot keeps firing wherever it points, so a driver lets off the trigger while the robot is being shoved or
+    // swung around (it would only spray FUEL) and fires again when it settles.
+    const settled = r.speed < 0.4 && Math.abs(r.body.angvel().y) < 1.2 && !(r.inBurst && Math.abs(Math.atan2(Math.sin(face - r.pose.yaw), Math.cos(face - r.pose.yaw))) > 0.1);
+    cmd.shoot = inZone() && live && r.held.length > 0 && settled && (there || insideZone());
     return cmd;
   };
 

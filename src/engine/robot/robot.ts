@@ -30,6 +30,8 @@ export interface RobotCommand {
   scoringLevel?: number;
   /** Hold the shot blocker out (robots with config.shotBlocker). */
   block?: boolean;
+  /** Square the chassis onto the shot target (auto-align robots) without firing, like a driver holding the aim button. */
+  aim?: boolean;
 }
 
 export const IDLE_COMMAND: RobotCommand = { vx: 0, vy: 0, omega: 0, intake: false, shoot: false, pass: false, climb: null, descend: false };
@@ -662,6 +664,11 @@ export class Robot {
     return this.model?.intakeAnchor;
   }
 
+  /** Model-specific floor-to-gripper path, in the robot frame. */
+  get modelHandoffPath(): THREE.Vector3[] | undefined {
+    return this.model?.flow?.handoff?.();
+  }
+
   /** True when this robot's team model draws `part` itself (seasons hide their own version of it, e.g. the mast). */
   modelReplaces(part: ModelPart): boolean {
     return !!this.model?.replaces.includes(part);
@@ -1283,6 +1290,10 @@ export class Robot {
   alignError = 0;
   /** Seconds left in which a firing burst continues without re-checking alignment (see launch()). */
   private burstTime = 0;
+  /** True while a firing burst is under way, i.e. the next shot won't wait for the chassis to re-align. */
+  get inBurst(): boolean {
+    return this.burstTime > 0;
+  }
 
   /**
    * Chassis auto-align: for a robot WITHOUT a turret that has `autoAlign`, while it shoots/passes the heading is
@@ -1293,7 +1304,7 @@ export class Robot {
     const c = this.config;
     this.alignError = 0;
     if (!target || c.launcher.turret || !c.autoAlign || !c.launcher.enabled || this.held.length === 0) return cmd;
-    if (!cmd.shoot && !cmd.pass) return cmd;
+    if (!cmd.shoot && !cmd.pass && !cmd.aim) return cmd;
     const t = this.body.translation();
     const v = this.body.linvel();
     const dist = Math.hypot(target.point.x - t.x, target.point.z - t.z);
@@ -1365,7 +1376,15 @@ export class Robot {
     const c = this.config;
     // A dumper (several exits) shoots from the front edge of the frame; a single launcher sits near the center.
     // Flat pieces (rings) only need their half-thickness of vertical clearance.
-    return { forward: c.frameLength * ((c.launcher.exits ?? 1) > 1 ? 0.4 : 0.18), side, up: Math.max(c.launcher.height, c.height) + (this._projectile.halfHeight ?? this._projectile.radius) + 0.03 };
+    const up = Math.max(c.launcher.height, c.height) + (this._projectile.halfHeight ?? this._projectile.radius) + 0.03;
+    if (c.launcher.turret && c.launcher.mounts?.length) {
+      const mounts = c.launcher.mounts;
+      const mount = mounts.reduce((best, m) => Math.abs(m.side - side) < Math.abs(best.side - side) ? m : best);
+      const yaw = this.turretYaw - this.pose.yaw;
+      const throat = c.launcher.muzzleForward ?? 0;
+      return { forward: mount.forward + Math.cos(yaw) * throat, side: mount.side + Math.sin(yaw) * throat, up };
+    }
+    return { forward: c.frameLength * ((c.launcher.exits ?? 1) > 1 ? 0.4 : 0.18), side, up };
   }
 
   /**
@@ -1532,6 +1551,7 @@ export class Robot {
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
+  private flowFeedIndex = 0;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;
@@ -1707,6 +1727,8 @@ export class Robot {
     this.climbSlot = null;
     this.turretYaw = pose.yaw;
     this.fireCooldown = 0;
+    this.exitIndex = 0;
+    this.flowFeedIndex = 0;
     this.held.length = 0;
     this.flow?.clear(0);
     this.blockerDeploy = 0;
@@ -1720,6 +1742,7 @@ export class Robot {
    */
   enablePieceFlow(make: () => THREE.Object3D, roll: boolean): void {
     this.flow?.dispose();
+    this.flowFeedIndex = 0;
     const c = this.config;
     const model = this.model;
     const pieceR = this._projectile.halfHeight ?? this._projectile.radius;
@@ -1755,7 +1778,9 @@ export class Robot {
         return pts;
       },
       feed: c.launcher.enabled && c.hopperCapacity > 1 ? () => {
-        const custom = model?.flow?.feed?.();
+        // Host follows the actual exit; replicas/gallery alternate their visual feed stream.
+        const shot = this.exitIndex > 0 ? this.exitIndex - 1 : this.flowFeedIndex++;
+        const custom = model?.flow?.feed?.(shot);
         if (custom) return custom;
         const ex = this.launcherExit(0);
         const top = ex.up - pieceR - 0.04;
