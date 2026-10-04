@@ -269,39 +269,32 @@ export function seededRandom(seed: number): () => number {
 export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean }): { set(f: number): void } {
   type Slot = { x: number; y: number; z: number; s: number; key: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
-  // Pour `n` balls of radius r into the bin the way they really settle: each lands at a spread-out spot over the
-  // whole floor and rests on whatever is already below it (floor, or the two or three balls it nests between). The
-  // result is an irregular, gap-free heap that fills the full footprint, not a stiff lattice. `inside` (robot-frame
-  // x/z) trims it to a non-rectangular hopper.
+  // Pour `n` balls of radius r into the bin the way they really settle: foam FUEL rolls off whatever it lands on and
+  // comes to rest in the lowest pocket nearby, so the heap fills the whole floor before it builds up, with every ball
+  // nested against its neighbors (no gaps) and an uneven, lumpy top. `inside` (robot-frame x/z) trims the footprint
+  // for a non-rectangular hopper.
   const pour = (r: number, n: number): Slot[] => {
     const halfX = Math.max(0, o.length / 2 - r), halfZ = Math.max(0, o.width / 2 - r);
-    const cell = r * 2;
-    const cx = Math.max(1, Math.floor(o.length / cell)), cz = Math.max(1, Math.floor(o.width / cell));
-    const spots: [number, number][] = [];
-    for (let i = 0; i < cx; i++) for (let k = 0; k < cz; k++) {
-      const px = (i - (cx - 1) / 2) * (cx > 1 ? (2 * halfX) / (cx - 1) : 0);
-      const pz = (k - (cz - 1) / 2) * (cz > 1 ? (2 * halfZ) / (cz - 1) : 0);
-      if (!o.inside || o.inside(o.x + px, pz)) spots.push([px, pz]);
-    }
-    if (!spots.length) spots.push([0, 0]);
+    const reach2 = (r * 1.92) ** 2; // foam FUEL squashes a little where it touches
     const out: Slot[] = [];
-    let order: number[] = [];
-    const reach2 = (r * 1.96) ** 2;
-    for (let i = 0; i < n; i++) {
-      if (!order.length) {
-        order = spots.map((_, j) => j);
-        for (let j = order.length - 1; j > 0; j--) { const m = Math.floor(rand() * (j + 1)); [order[j], order[m]] = [order[m], order[j]]; }
-      }
-      const [sx, sz] = spots[order.pop()!];
-      let px = THREE.MathUtils.clamp(sx + (rand() - 0.5) * r * 1.1, -halfX, halfX);
-      let pz = THREE.MathUtils.clamp(sz + (rand() - 0.5) * r * 1.1, -halfZ, halfZ);
-      if (o.inside && !o.inside(o.x + px, pz)) { px = sx; pz = sz; }
+    const restHeight = (px: number, pz: number): number => {
       let py = r;
       for (const q of out) {
         const dx = q.x - (o.x + px), dz = q.z - pz, d2 = dx * dx + dz * dz;
         if (d2 < reach2) py = Math.max(py, q.y - o.y0 + Math.sqrt(reach2 - d2));
       }
-      out.push({ x: o.x + px, y: o.y0 + py, z: pz, s: 0.97 + rand() * 0.05, key: py + rand() * r * 0.4 });
+      return py;
+    };
+    for (let i = 0; i < n; i++) {
+      let bx = 0, bz = 0, by = Infinity;
+      for (let k = 0; k < 48; k++) {
+        const px = (rand() * 2 - 1) * halfX, pz = (rand() * 2 - 1) * halfZ;
+        if (o.inside && !o.inside(o.x + px, pz)) continue;
+        const py = restHeight(px, pz);
+        if (py < by) { by = py; bx = px; bz = pz; }
+      }
+      if (by === Infinity) { bx = 0; bz = 0; by = restHeight(0, 0); }
+      out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4 });
     }
     return out;
   };
