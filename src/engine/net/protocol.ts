@@ -1,3 +1,4 @@
+import type { AutoPlan } from '../ai/autoPlan';
 import type { Alliance, FieldPose } from '../coords';
 import type { MatchResults, ToastKind } from '../core/season';
 import type { ClockState } from '../match/clock';
@@ -34,6 +35,8 @@ export interface LobbyPlayer {
   spot?: StartSpot | null;
   /** Locked in during the placement phase. */
   ready?: boolean;
+  /** Only included for teammates during planning. */
+  autoPlan?: AutoPlan;
 }
 
 export interface LobbyState {
@@ -56,6 +59,7 @@ export interface RobotSetup {
   station: number;
   config: RobotConfig;
   autoRoutine: string;
+  autoPlan?: AutoPlan;
   manualAuto: boolean;
   /** Starting pose (field frame) — the driver's custom spot, or absent for the station preset. */
   start?: FieldPose;
@@ -112,7 +116,7 @@ export function unpackCommand(p: unknown): RobotCommand | null {
 
 export type ClientMsg =
   /** `slot` omitted = keep the current station; null = spectate. */
-  | { t: 'lobby-set'; seasonId?: string; slot?: SlotId | null; robot: RobotConfig; autoRoutine: string; manualAuto: boolean }
+  | { t: 'lobby-set'; seasonId?: string; slot?: SlotId | null; robot: RobotConfig; autoRoutine: string; autoPlan?: AutoPlan; manualAuto: boolean }
   /** Placement phase: where this driver wants to start (blue frame; null = preset) and whether they're locked in. */
   | { t: 'place'; spot: StartSpot | null; ready: boolean }
   /** Client finished building its Game and can take snapshots. */

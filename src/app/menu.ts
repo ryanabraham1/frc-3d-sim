@@ -1,3 +1,4 @@
+import { autoPlanner, bindAutoPlanner, loadAutoPlan, autoPlannerDragging } from './autoPlanner';
 import type { CameraMode } from '@engine/camera/cameras';
 import type { GameSettings, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
@@ -174,6 +175,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   const stored = load();
   let season = getSeason(stored?.seasonId ?? SEASONS[0].id);
   let s: GameSettings = { ...defaultSettings(season), ...(stored ?? {}) };
+  s.autoPlan = s.autoPlan ?? loadAutoPlan(season);
   if (stored?.robot) {
     const d = season.robotDefaults;
     s.robot = {
@@ -318,7 +320,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
           ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, '', 'wide')}
           ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
           ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
-          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${season.autoRoutines.map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
+          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${[{ id: 'custom', label: 'My planned auto' }, ...season.autoRoutines].map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
         </div>
       </section>`;
     const map = `
@@ -328,7 +330,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${season.startArea ? `<div class="place-wrap">${headingControls(curSpot().yaw)}</div>` : ''}
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Station presets</span>${season.startArea ? '<span class="lg"><i class="sw zone"></i>Legal start zone</span>' : ''}<span class="sp">${season.startArea ? 'Drag your robot in the green zone, drag the knob on its nose to rotate (Shift = 15° steps), or click a ring for a station preset.' : 'Click a circle to move to that driver station.'}</span></div>
       </section>`;
-    const matchTab = `<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}</div></div>`;
+    const matchTab = `<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}</div></div>${autoPlanner(season, s)}`;
     const aiTab = `
       <section class="panel">
         <div class="panel-head"><span>AI opponents &amp; teammates</span><span class="dim">${esc(season.name)}</span></div>
@@ -451,6 +453,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       season = getSeason(lobby.lobby.seasonId);
       const teamNumber = s.robot.teamNumber;
       s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
+      s.autoPlan = loadAutoPlan(season);
+      if (s.autoPlan) { s.autoRoutine = 'custom'; s.manualAuto = false; }
       s.robot.teamNumber = teamNumber;
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
@@ -557,14 +561,17 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       season = getSeason(seasonSel.value);
       const teamNumber = s.robot.teamNumber;
       s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
+      s.autoPlan = loadAutoPlan(season);
+      if (s.autoPlan) { s.autoRoutine = 'custom'; s.manualAuto = false; }
       s.robot.teamNumber = teamNumber;
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
     };
     all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
     all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
+    if (page === 'play') bindAutoPlanner(el, season, s, () => { save(s); render(); });
     const routineSel = el.querySelector<HTMLSelectElement>('[data-routine-sel]');
-    if (routineSel) routineSel.onchange = () => ((s.autoRoutine = routineSel.value), render());
+    if (routineSel) routineSel.onchange = () => ((s.autoRoutine = routineSel.value), (s.manualAuto = false), render());
     all('[data-preset]').forEach((b) => (b.onclick = () => {
       const preset = season.robotPresets?.find((p) => p.id === b.dataset.preset);
       if (!preset) return;
@@ -652,7 +659,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   if (lobby)
     lobby.onChange = () => {
       // Don't rebuild the page under a robot being dragged on the placement map.
-      if (el.isConnected && !placementDragging()) render();
+      if (el.isConnected && !placementDragging() && !autoPlannerDragging()) render();
     };
 
   render();

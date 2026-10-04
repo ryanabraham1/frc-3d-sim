@@ -42,6 +42,7 @@ export interface ReefscapeNetState {
 interface CageGrip { robot: Robot; alliance: Alliance; slot: number; from: { x: number; y: number; z: number }; t: number }
 
 export class ReefscapeRules implements SeasonRules {
+  readonly plannedTargets = new Map<number, { face: number; branch: number }>();
   readonly handlesIntake = true;
   readonly placements: CoralPlacement[] = [];
   readonly mechanisms = new Map<number, MechanismState>();
@@ -170,16 +171,17 @@ export class ReefscapeRules implements SeasonRules {
    * The BRANCH the end effector is heading for: the approached face of our REEF, and of its two BRANCHES the one
    * nearest the end effector (preferring open, unblocked ones).
    */
-  placementTarget(robot: Robot, level: number): { face: number; branch: number; side: number; approach: ReturnType<typeof C.coralApproach> } | null {
+  placementTarget(robot: Robot, level: number, selected?: { face: number; branch: number }): { face: number; branch: number; side: number; approach: ReturnType<typeof C.coralApproach> } | null {
     if (!robot.config.placement!.enabled || level > robot.config.placement!.maxLevel) return null;
+    selected ??= this.plannedTargets.get(robot.id);
     const a = robot.alliance;
-    const face = C.nearestFace(a, robot.pose);
+    const face = selected?.face ?? C.nearestFace(a, robot.pose);
     const m = this.mechanisms.get(robot.id);
     // A side scorer reaches out of whichever side faces the REEF face.
     const side = this.sideToward(robot, C.coralApproach(a, face, 0, level).faceYaw + Math.PI);
     const p = robot.pose, f = m?.forward ?? this.halfDepth(robot), dir = p.yaw + side * Math.PI / 2;
     const ee = { x: p.x + Math.cos(dir) * f, y: p.y + Math.sin(dir) * f };
-    const options = [0, 1].map((branch) => ({ branch, approach: C.coralApproach(a, face, branch, level) }))
+    const options = (selected ? [selected.branch] : [0, 1]).map((branch) => ({ branch, approach: C.coralApproach(a, face, branch, level) }))
       // L1: the less-filled half of the trough; BRANCHES: an open, unblocked one.
       .map((o) => ({ ...o, d: Math.hypot(o.approach.pos.x - ee.x, o.approach.pos.y - ee.y), bad: level === 1 ? this.troughCount(a, face, o.branch) : Number(this.occupied(a, level, face, o.branch) || this.blocked(a, level, face)) }))
       .sort((x, y) => x.bad - y.bad || (Math.abs(x.d - y.d) < 0.01 ? 0 : x.d - y.d)); // centered: stable pick, not chassis jitter
@@ -255,8 +257,8 @@ export class ReefscapeRules implements SeasonRules {
    * the target BRANCH — bumpers ~3 cm off the REEF base, facing it — like the vision/pose alignment most 2025
    * robots used. A small per-attempt lateral error models vision noise.
    */
-  alignPose(robot: Robot, level: number): { x: number; y: number; yaw: number; reachable: boolean } | null {
-    const t = this.placementTarget(robot, level);
+  alignPose(robot: Robot, level: number, selected?: { face: number; branch: number }): { x: number; y: number; yaw: number; reachable: boolean } | null {
+    const t = this.placementTarget(robot, level, selected);
     if (!t) return null;
     const a = robot.alliance, c = C.reefCenter(a), yawOut = t.approach.faceYaw;
     const n = { x: Math.cos(yawOut), y: Math.sin(yawOut) }, tan = { x: -n.y, y: n.x };
@@ -651,7 +653,7 @@ export class ReefscapeRules implements SeasonRules {
   }
 
   onPeriodChange(change: PeriodChange): void {
-    if (change.from?.id === 'auto') this.assessLeave();
+    if (change.from?.id === 'auto') { this.assessLeave(); this.plannedTargets.clear(); }
     if (change.from?.id === 'auto-pause') this.snapshotAuto();
     if (!change.to) this.assessBarge();
   }

@@ -1,3 +1,4 @@
+import { autoPlanner, bindAutoPlanner } from './autoPlanner';
 import type { GameSettings, SeasonDefinition } from '@engine/core/season';
 import { SLOTS, slotAlliance, slotLabel, slotStation, type SlotId } from '@engine/net/protocol';
 import { footprint } from '@engine/robot/config';
@@ -130,7 +131,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
             <div class="mp-team">${r.teamNumber}</div>
             <div>
               <div>${ctx.season.robotSummary ? esc(ctx.season.robotSummary(r)) : `${(r.maxSpeed / 0.3048).toFixed(1)} ft/s · ${r.hopperCapacity} ${esc(ctx.season.gamePiece.name)} · ${r.launcher.rate}/s · ${ctx.season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel ? `climbs L${r.climber.maxLevel}` : 'no climber')}`}</div>
-              <div class="dim">AUTO: ${ctx.s.manualAuto ? 'you drive' : esc(routine?.label ?? ctx.s.autoRoutine)}</div>
+              <div class="dim">AUTO: ${ctx.s.autoRoutine === 'custom' ? 'Your planned auto' : esc(routine?.label ?? ctx.s.autoRoutine)}</div>
             </div>
           </div>
         </section>
@@ -151,7 +152,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   const footer =
     `<button class="bbtn" data-mp="leave">${lobby.isHost ? 'Close room' : 'Leave room'}</button><span class="spacer"></span>` +
     (lobby.isHost
-      ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>Start match</button>`
+      ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>Plan autos &amp; positions</button>`
       : `<span class="mp-hint">${L.inMatch ? 'Match in progress — you’ll join the next one' : 'Waiting for the host to start…'}</span>`);
   return { body, footer };
 }
@@ -214,13 +215,14 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
   }).join('');
   const myProblem = me && problems.get(me.peerId);
   const lock = mine
-    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to move' : 'Lock in position'}</button>`
+    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to edit' : 'Lock in position & auto'}</button>`
     : '<div class="mp-hint">You\'re spectating — watch the others place their robots.</div>';
+  const planner = me?.slot ? autoPlanner(ctx.season, ctx.s, { startSpot: me.spot, alliance: slotAlliance(me.slot), station: slotStation(me.slot), disabled: !!me.ready, teammates: L.players.filter(p => p.peerId !== me.peerId && p.slot && slotAlliance(p.slot) === slotAlliance(me.slot!) && p.autoPlan).map(p => ({ name: p.name, station: slotStation(p.slot!), plan: p.autoPlan! })) }) : '';
   const body = `
     ${err}
     <div class="mp-grid place-grid">
       <section class="panel map-panel">
-        <div class="panel-head"><span>Starting positions</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
+        <div class="panel-head"><span>Positions &amp; private alliance autos</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
         <div class="map-wrap">${placementMapHtml(lobby, ctx)}</div>
         ${mine ? `<div class="place-wrap">${headingControls(mine.spot.yaw, '<button class="link" data-mp="preset">Station preset</button>')}</div>` : ''}
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw zone"></i>Legal start zone</span><span class="sp">${mine ? 'Drag your robot anywhere in the green zone, drag the knob on its nose to rotate (Shift = 15° steps).' : 'Drivers are choosing their starting positions.'}</span></div>
@@ -229,12 +231,12 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
         <section class="panel">
           <div class="panel-head"><span>Drivers</span></div>
           <div class="pl-list">${rows}</div>
-          <div class="mp-pad">${lock}${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
+          <div class="mp-pad">${lock}<div class="mp-hint">Plan with your alliance below. Opponents cannot see your routes. AUTO runs without driver control.</div>${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
         </section>
       </div>
-    </div>`;
+    </div>${planner}`;
   const footer = lobby.isHost
-    ? `<button class="bbtn" data-mp="cancel-place">Back to lobby</button><span class="spacer"></span><span class="mp-hint">${allReady ? '' : 'The match starts when every driver locks in'}</span><button class="bbtn primary" data-mp="start-now">${allReady ? 'Start now' : 'Start anyway'}</button>`
+    ? `<button class="bbtn" data-mp="cancel-place">Back to lobby</button><span class="spacer"></span><span class="mp-hint">${allReady ? '' : 'The match starts when every driver locks in'}</span><button class="bbtn primary" data-mp="start-now" ${allReady ? '' : 'disabled'}>Start match</button>`
     : `<button class="bbtn" data-mp="leave">Leave room</button><span class="spacer"></span><span class="mp-hint">${allReady ? 'Starting…' : 'Waiting for every driver to lock in…'}</span>`;
   return { body, footer };
 }
@@ -319,5 +321,9 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   if (startNow) startNow.onclick = () => lobby.startMatch();
   const cancelPlace = q('cancel-place');
   if (cancelPlace) cancelPlace.onclick = () => lobby.cancelPlacement();
-  if (lobby.lobby?.placing) bindPlacement(el, lobby, ctx);
+  if (lobby.lobby?.placing) {
+    bindPlacement(el, lobby, ctx);
+    const me = lobby.me;
+    if (me?.slot) bindAutoPlanner(el, ctx.season, ctx.s, ctx.rerender, { alliance: slotAlliance(me.slot), disabled: !!me.ready, changed: () => lobby.syncMine(true) });
+  }
 }

@@ -72,7 +72,7 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise
         menu('multiplayer');
       },
       onRestart: () => {},
-      onPlayAgain: () => lobby.startMatch(),
+      onPlayAgain: () => { lobby.backToLobby(); lobby.beginPlacement(); },
       onBackToLobby: () => lobby.backToLobby(),
     },
     { role, client: lobby.client, setup },

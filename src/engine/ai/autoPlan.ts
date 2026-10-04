@@ -1,0 +1,111 @@
+import type { Alliance } from '../coords';
+import type { AutoPilot, SeasonContext, SeasonDefinition, SeasonRules } from '../core/season';
+import { IDLE_COMMAND, type Robot, type RobotCommand } from '../robot/robot';
+import { mirrorPose } from '../startPose';
+import { arrive, routeThroughBands, turnToward } from './steering';
+import { aroundCircles } from './cycleBot';
+import * as Notes from '../../seasons/2024-crescendo/constants';
+import * as Reef from '../../seasons/2025-reefscape/constants';
+import { BANDS } from '../../seasons/2026-rebuilt/autopilot';
+import type { ReefscapeRules } from '../../seasons/2025-reefscape/rules';
+
+/** All waypoints are stored in the blue alliance frame, so saved plans work on either alliance. */
+export interface AutoStep {
+  action: 'drive' | 'intake' | 'shoot' | 'reef' | 'station' | 'note' | 'wait';
+  x: number;
+  y: number;
+  duration: number;
+  target?: number;
+  level?: number;
+}
+export interface AutoPlan { seasonId: string; steps: AutoStep[] }
+
+export function cleanAutoPlan(value: unknown, season: Pick<SeasonDefinition, 'id' | 'year' | 'fieldLength' | 'fieldWidth'>): AutoPlan | undefined {
+  const p = value as AutoPlan | null;
+  if (!p || p.seasonId !== season.id || !Array.isArray(p.steps) || p.steps.length > 80) return undefined;
+  const allowed = ['drive', 'intake', 'shoot', 'wait', ...(season.year === 2025 ? ['reef', 'station'] : season.year === 2024 ? ['note'] : [])];
+  const steps: AutoStep[] = [];
+  for (const s of p.steps) {
+    if (!s || !allowed.includes(s.action) || ![s.x, s.y, s.duration].every(Number.isFinite) || s.x < 0 || s.x > season.fieldLength || s.y < 0 || s.y > season.fieldWidth || s.duration < 0.1 || s.duration > 10) return undefined;
+    if (s.action === 'reef' && (!Number.isInteger(s.target) || s.target! < 0 || s.target! > 11 || !Number.isInteger(s.level) || s.level! < 1 || s.level! > 4)) return undefined;
+    if (s.action === 'station' && ![0, 1].includes(s.target!)) return undefined;
+    if (s.action === 'note' && (!Number.isInteger(s.target) || s.target! < 0 || s.target! > 7)) return undefined;
+    steps.push({ action: s.action, x: s.x, y: s.y, duration: s.duration, ...(s.target !== undefined ? { target: s.target } : {}), ...(s.level !== undefined ? { level: s.level } : {}) });
+  }
+  return { seasonId: season.id, steps };
+}
+
+export function planPoint(season: SeasonDefinition, alliance: Alliance, p: { x: number; y: number; yaw?: number }) {
+  return mirrorPose({ length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry }, alliance, { ...p, yaw: p.yaw ?? 0 });
+}
+
+/** Runs real drive/intake/mechanism commands; scoring remains entirely in the season physics. */
+export class PlannedAutoPilot implements AutoPilot {
+  private index = 0;
+  private atTarget = 0;
+  private elapsed = 0;
+  private travelBudget = 0;
+  constructor(private ctx: SeasonContext, private rules: SeasonRules, private robot: Robot, private season: SeasonDefinition, private plan: AutoPlan) {}
+  update(dt: number): RobotCommand {
+    const r = this.robot, s = this.plan.steps[this.index];
+    const cmd = { ...IDLE_COMMAND };
+    if (!s || r.isClimbing) return cmd;
+    this.elapsed += dt;
+    let goal = planPoint(this.season, r.alliance, s);
+    let yaw = r.pose.yaw;
+    let tolerance = 0.14;
+    if (s.action === 'reef') {
+      const rules = this.rules as ReefscapeRules;
+      const face = Math.floor(s.target! / 2), branch = s.target! % 2;
+      const level = s.level!;
+      rules.plannedTargets.set(r.id, { face, branch });
+      if (level > (r.config.placement?.maxLevel ?? 0) || rules.occupied(r.alliance, level, face, branch) || rules.blocked(r.alliance, level, face)) return this.advance();
+      const pose = rules.alignPose(r, level, { face, branch });
+      if (!pose?.reachable) return this.advance();
+      goal = pose; yaw = pose.yaw; tolerance = 0.025;
+      cmd.scoringLevel = level;
+    } else if (s.action === 'station') {
+      const st = Reef.stations(r.alliance)[s.target!];
+      const dock = r.footprint.length / 2 + 0.02;
+      goal = { x: st.x + Math.cos(st.yaw) * dock, y: st.y + Math.sin(st.yaw) * dock, yaw: st.yaw };
+      yaw = st.yaw + (r.config.intake.stationSide !== 'back' ? Math.PI : 0);
+      cmd.intake = true;
+    } else if (s.action === 'note') {
+      const i = s.target! < 3 ? s.target! + (r.alliance === 'red' ? 3 : 0) : s.target! + 3;
+      if (r.held.length || this.ctx.pool.state[i] !== 'field') return this.advance();
+      const p = this.ctx.frame.toField(this.ctx.pool.position(i));
+      const angle = Math.atan2(p.y - r.pose.y, p.x - r.pose.x);
+      yaw = angle + r.intakeYawOffset;
+      goal = { x: p.x - Math.cos(angle) * (r.footprint.length / 2 - 0.05), y: p.y - Math.sin(angle) * (r.footprint.length / 2 - 0.05), yaw };
+      cmd.intake = true;
+    }
+    if (s.action === 'shoot') {
+      const target = this.rules.aimTarget(r);
+      if (target) { const p = this.ctx.frame.toField(target.point); yaw = Math.atan2(p.y - r.pose.y, p.x - r.pose.x); }
+    } else if (s.action === 'intake') {
+      cmd.intake = true;
+      yaw = Math.atan2(goal.y - r.pose.y, goal.x - r.pose.x) + r.intakeYawOffset;
+    }
+    if (!this.travelBudget) this.travelBudget = Math.hypot(goal.x - r.pose.x, goal.y - r.pose.y) / Math.max(0.5, r.config.maxSpeed * 0.3) + s.duration + 5;
+    let waypoint: { x: number; y: number } = goal;
+    if (this.season.year === 2024) waypoint = aroundCircles(r.pose, goal, (['blue', 'red'] as const).map(a => ({ ...Notes.stageCenter(a), r: Math.min(1.7 + r.footprint.width / 2, Math.hypot(goal.x - Notes.stageCenter(a).x, goal.y - Notes.stageCenter(a).y) - .03) })));
+    if (this.season.year === 2026) waypoint = routeThroughBands(r.pose, goal, BANDS, r.footprint.width / 2, r.config.height);
+    if (this.season.year === 2025) waypoint = aroundCircles(r.pose, goal, (['blue', 'red'] as const).map(a => ({ ...Reef.reefCenter(a), r: Math.min(Reef.REEF_APOTHEM / Math.cos(Math.PI / 6) + Math.max(r.footprint.length, r.footprint.width) / 2 + 0.08, Math.hypot(goal.x - Reef.reefCenter(a).x, goal.y - Reef.reefCenter(a).y) - 0.03) })));
+    const drive = arrive(r.pose, waypoint, Math.min(3.2, r.config.maxSpeed * 0.8), 0.65);
+    cmd.vx = drive.vx; cmd.vy = drive.vy;
+    if (s.action === 'drive' && drive.dist > 0.2) yaw = Math.atan2(drive.vy, drive.vx);
+    cmd.omega = turnToward(r.pose.yaw, yaw, r.config.maxOmega, 6);
+    const reached = Math.hypot(goal.x - r.pose.x, goal.y - r.pose.y) < tolerance;
+    if (reached) {
+      cmd.vx = cmd.vy = 0;
+      this.atTarget += dt;
+      const aligned = Math.abs(Math.atan2(Math.sin(yaw - r.pose.yaw), Math.cos(yaw - r.pose.yaw))) < 0.04;
+      if (s.action === 'shoot' || s.action === 'reef') cmd.shoot = aligned;
+      if (s.action === 'drive' || ((s.action === 'shoot' || s.action === 'reef') && r.held.length === 0) || (s.action === 'station' && r.held.length > 0) || this.atTarget >= s.duration) this.advance();
+    }
+    // A missing piece or blocked route must not hang every remaining action.
+    if (this.elapsed > this.travelBudget) this.advance();
+    return cmd;
+  }
+  private advance(): RobotCommand { if (this.season.year === 2025) (this.rules as ReefscapeRules).plannedTargets.delete(this.robot.id); this.index++; this.atTarget = this.elapsed = this.travelBudget = 0; return { ...IDLE_COMMAND }; }
+}
