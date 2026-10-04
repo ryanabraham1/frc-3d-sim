@@ -4,6 +4,7 @@ import { Alliance, FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
 import { GamePiecePool } from '../gamepiece/pool';
 import { Hud } from '../hud/hud';
+import { cueFor, Sfx } from '../audio/sfx';
 import { DEFAULT_CONTROLS_HELP, DriverInput, InputManager } from '../input/input';
 import { MatchClock, PeriodChange } from '../match/clock';
 import { buildPlayerResults } from '../match/playerResults';
@@ -660,6 +661,8 @@ export class Game {
 
   private onPeriodChange(ch: PeriodChange): void {
     this.rules.onPeriodChange(ch);
+    const cue = cueFor(ch.from, ch.to);
+    if (cue) this.sfx.play(cue);
     if (ch.to) this.hud.showBanner(ch.to.label, 2);
   }
 
@@ -749,6 +752,12 @@ export class Game {
       const was = this.lastClockKey;
       this.lastClockKey = key;
       if (was && this.clock.started && !this.clock.finished) this.hud.showBanner(this.clock.current.label, 2);
+      if (this.clock.started) {
+        const now = this.clock.finished ? null : this.clock.current;
+        const cue = was ? cueFor(this.lastPeriod, now) : null;
+        if (cue) this.sfx.play(cue);
+        this.lastPeriod = now;
+      }
     }
   }
 
@@ -769,6 +778,9 @@ export class Game {
   // ─────────────────────────── HUD / modals ───────────────────────────
 
   private radioSeq = 0;
+  private readonly sfx = new Sfx();
+  /** Multiplayer client: period seen at the last clock snapshot (for sound cues). */
+  private lastPeriod: { id: string; mode: string } | null = null;
 
   private updateHud(dt: number): void {
     this.hud.update(dt);
@@ -817,12 +829,21 @@ export class Game {
     if (this.state !== 'running' && this.state !== 'countdown' && this.state !== 'waiting') return;
     this.pausedFrom = this.state;
     this.state = 'paused';
+    this.showPauseMenu();
+  }
+
+  private soundButton(reopen: () => void) {
+    return { label: `Sound: ${this.sfx.muted ? 'off' : 'on'}`, onClick: () => { this.sfx.muted = !this.sfx.muted; reopen(); } };
+  }
+
+  private showPauseMenu(): void {
     if (this.role === 'host') {
       this.hud.showModal('Paused', `<p>Match is paused for everyone.</p>`, [
         { label: 'Resume', primary: true, onClick: () => this.resume() },
         { label: 'Restart match', onClick: () => this.callbacks.onPlayAgain?.() },
         { label: 'Back to lobby', onClick: () => this.callbacks.onBackToLobby?.() },
         { label: 'Close room', onClick: () => this.callbacks.onExit() },
+        this.soundButton(() => this.showPauseMenu()),
       ]);
       return;
     }
@@ -830,6 +851,7 @@ export class Game {
       { label: 'Resume', primary: true, onClick: () => this.resume() },
       { label: 'Restart match', onClick: () => this.callbacks.onRestart(this.settings) },
       { label: 'Main menu', onClick: () => this.callbacks.onExit() },
+      this.soundButton(() => this.showPauseMenu()),
     ]);
   }
 
@@ -889,6 +911,7 @@ export class Game {
     this.camera.dispose();
     this.fader.clear();
     this.hud.dispose();
+    this.sfx.dispose();
     this.renderer.dispose();
     this.physics.free();
   }
