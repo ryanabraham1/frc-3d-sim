@@ -160,13 +160,17 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
   // Pivot: dark side towers with a big visible gear.
   const px = -L * 0.2;
   const py = bt + 0.27;
-  sidePlates(k.visual, [[px - 0.16, bt], [px + 0.16, bt], [px + 0.06, py + 0.06], [px - 0.06, py + 0.06]], 0.13, black, [[px, bt + 0.1, 0.035]]);
+  sidePlates(k.visual,[[px-.2,bt],[px+.22,bt],[px+.12,py+.08],[px-.08,py+.08]],.15,k.mats.alu,
+    [[px-.08,bt+.07,.027],[px+.04,bt+.11,.035],[px+.02,py,.025]]);
   for (const sz of [-1, 1]) {
     const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.015, 32), gray);
     gear.rotation.x = Math.PI / 2;
     gear.position.set(px, py, sz * 0.145);
     k.visual.add(gear);
   }
+  // Spectrum row 154 / 2025 Robot Top Level Assembly: wide nested truss stages on pocketed cheek plates.
+  // https://2910.onshape.com/documents/f33ab032b00dc4b711aa86a6/w/951c0955d38b370eab02b587/e/415a66cb7efdf4aba6199086
+  // Telescoping arm, same-end collection/scoring, silver structure, black wheels and blue hubs; rates [EST].
   // Telescoping lattice-truss arm (three stages) with green LEDs.
   const arm = pivot(k.visual, px, py);
   const seg = 0.6;
@@ -174,13 +178,13 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
     for (const sy of [-1, 1]) lattice(parent, [0, (sy * h) / 2, -w / 2], [seg, 0, 0], [0, 0, w], { cells: 5, w: 0.012, m: gray, zig: true });
     for (const sz of [-1, 1]) lattice(parent, [0, -h / 2, (sz * w) / 2], [seg, 0, 0], [0, h, 0], { cells: 5, w: 0.01, m: gray, zig: true, border: false });
   };
-  truss(arm, 0.08, 0.11);
+  truss(arm, 0.09, 0.22);
   ledStrip(arm, [0.02, 0.05, 0], [seg - 0.02, 0.05, 0], GREEN);
   const mid = new THREE.Group();
   const inner = new THREE.Group();
   arm.add(mid, inner);
-  truss(mid, 0.06, 0.085);
-  truss(inner, 0.045, 0.065);
+  truss(mid, 0.07, 0.17);
+  truss(inner, 0.05, 0.13);
   ledStrip(inner, [0.02, 0.026, 0], [seg - 0.02, 0.026, 0], GREEN);
   box(arm, seg, 0.014, 0.11, black, seg / 2, -0.048, 0);
   box(mid, seg, 0.012, 0.075, mat(0x69717a, { metal: 0.5 }), seg / 2, -0.034, 0);

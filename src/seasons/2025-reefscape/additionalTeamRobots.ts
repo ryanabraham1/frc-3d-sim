@@ -54,7 +54,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop;
   const blackTube = tubeMat(0x26282c), black = mat(0x141518, { metal: 0.35, rough: 0.5 });
   const gray = tubeMat(0x8b9096), carbon = mat(0x1b1c1f, { metal: 0.2, rough: 0.35 });
-  const blue = mat(0x2f62d4, { rough: 0.45 }), green = mat(0x55d24a, { rough: 0.6 }), silver = mat(0xc5cbd2, { metal: 0.7 });
+  const blue = mat(0x2f62d4, { rough: 0.45 }), silver = mat(0xc5cbd2, { metal: 0.7 });
   const db = drivebase(k, { tube: blackTube, motorRing: 0x2f62d4 });
   const side = k.groundSide; // intake end
   // Elevator rails sit one behind the other along x; the arm turns on the +z face, the A-frame braces the −z face.
@@ -64,6 +64,9 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   box(k.visual, 0.16, 0.05, 0.08, black, 0, bt + 0.01, 0); // differential gearbox at the base
   for (const sz of [-1, 1]) motor(k.visual, sz * 0.05, bt + 0.07, -0.06, 0x2f62d4);
   for (const sx of [-1, 1]) belt(k.visual, [sx * (rx - 0.012), bt + 0.04], [sx * (rx - 0.012), top - 0.03], 0.022, 0.016);
+  // Spectrum row 127, authenticated Orbit post-season release: pocketed silver elevator web.
+  // Keep the photo-based carbon arm; the published assembly has an unresolved arm reference.
+  lattice(k.visual, [-rx, bt + 0.03, -0.021], [0, top - bt - 0.05, 0], [2 * rx, 0, 0], { cells: 12, w: 0.009, m: silver, zig: true });
   // A-frame: black tubes from the four bumper corners up to the elevator cap (−z face), sponsor plates in the A.
   for (const sx of [-1, 1]) {
     bar(k.visual, [sx * (L / 2 - 0.04), bt, -(W / 2 - 0.05)], [sx * rx, top - 0.04, -0.03], 0.028, blackTube);
@@ -102,9 +105,9 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   box(k.visual, 0.12, 0.07, 0.08, silver, -side * 0.2, bt + 0.035, -0.17);
   battery(k.visual, side * 0.2, bt - 0.02, -0.18, Math.PI / 2);
   for (let i = 0; i < 3; i++) controller(k.visual, -side * (0.08 + i * 0.07), bt, 0.22, 0x46ca79);
-  // Floor intake on the intake end: black side plates, a green spiky star bank and a gray front roller.
+  // Floor intake on the intake end: black side plates, a blue spiky star bank and a gray front roller.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, rollerMaterial: mat(0x8d9299, { metal: 0.3 }) });
-  const stars = [starWheels(intake.tip, side * 0.02, 0.0, { n: 6, r: 0.05, span: c.intake.width * 0.8, m: green }), starWheels(intake.tip, -side * 0.06, 0.03, { n: 6, r: 0.045, span: c.intake.width * 0.8, m: black })];
+  const stars = [starWheels(intake.tip, side * 0.02, 0.0, { n: 10, r: 0.05, span: c.intake.width * 0.9, m: blue }), starWheels(intake.tip, -side * 0.06, 0.03, { n: 6, r: 0.045, span: c.intake.width * 0.8, m: black })];
   // Conveyor from the intake hinge to the elevator base, under the arm.
   box(k.visual, L / 2 - 0.08, 0.012, 0.12, black, side * (L / 4), bt + 0.02, 0.09);
   for (const sz of [-1, 1]) box(k.visual, L / 2 - 0.08, 0.05, 0.005, mat(0xd9e2ea, { opacity: 0.35 }), side * (L / 4), bt + 0.05, 0.09 + sz * 0.065);

@@ -462,6 +462,14 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
   });
   // Dye rotor filling the round hopper, its tower rising to the 11 in turret ring at the top.
   const dye = dyeRotor(k.visual, { x: centerX, y0: bt + 0.02, R: R * 0.86, wallH: 0.1, towerX: centerX, towerR: 0.11, towerTop: H - 0.07, plate: gray, accent: black, motors: 2, motorSide: side > 0 ? 1 : -1 });
+  // Spectrum row 57 / MOTO MOTO, Houston finalist build: the tall tapered feed funnel is a defining silhouette.
+  // https://cad.onshape.com/documents/705d953d40f0cc3373a8313b/w/deefd59a3b22618d064531b8/e/eec4de188759a18321ec20c9
+  // Turret, D-frame and same flat-side intake; clear curved hopper, black funnel, silver portal. Rates [EST].
+  const funnelH = Math.max(.12,H-bt-.19);
+  const funnel = new THREE.Mesh(new THREE.CylinderGeometry(.16,.075,funnelH,28,1,true),black);
+  funnel.position.set(centerX,bt+.1+funnelH/2,0);k.visual.add(funnel);
+  const seam = new THREE.Mesh(new THREE.TorusGeometry(.12,.008,6,28),gray);
+  seam.rotation.x=Math.PI/2;seam.position.set(centerX,bt+.1+funnelH*.55,0);k.visual.add(seam);
   const t = k.turret;
   t.position.set(centerX, H - 0.06, 0);
   const sh = turretShooter(t, { width: Math.max(0.19, 0.15 + 0.04), wheel: mat(0x2f6fd6, { metal: 0.3 }), plate: black, accent: mat(0xc62828, { metal: 0.2 }), height: 0.15, topY: 0.06 });
@@ -471,7 +479,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
   bar(k.visual, [gx, H - 0.01, -(R - 0.03)], [gx, H - 0.01, R - 0.03], 0.025, silverTube);
   for (const sz of [-1, 1]) bar(k.visual, [gx, H - 0.01, sz * (R - 0.03)], [centerX, H - 0.05, sz * 0.15], 0.02, silverTube);
   // Intake on the flat side: silver frame, green compliant wheels.
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 3, frame: silverTube, width: W * 0.9 });
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 3, frame: silverTube, width: W * 0.9, rollerMaterial: mat(0x388d3c) });
   const slide = slidingHopper(k);
   const deploy = { v: 0 };
   let rotorRate = 0;

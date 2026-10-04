@@ -173,7 +173,13 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
   k.visual.add(sprocket);
   const pv = pivot(k.visual, px, py);
   const armLen = L * 0.62;
-  for (const sz of [-1, 1]) bar(pv, [0, 0, sz * 0.14], [armLen, 0, sz * 0.14], 0.022, silverTube);
+  // Spectrum sheet row 226 / Orbit's closed assembly: broad pocketed aluminium cheeks, not a ladder.
+  // https://cad.onshape.com/documents/065fb1a7f111b2de05ba208b/w/67f48a3bae8c68dc38e22239/e/e16d7c04df2851292695e2e5
+  // Front/right/top CAD views: low black tray, silver arm sides, same-end intake/shooter; rates remain [EST].
+  sidePlates(pv, [[-.04,-.025],[armLen+.04,-.025],[armLen+.04,.055],[armLen-.02,.1],
+    [armLen*.58,.11],[.06,.035],[-.04,.13]], .155, silver,
+    [[.07,.012,.018],[armLen*.35,.015,.02],[armLen*.6,.04,.024],[armLen*.82,.055,.019]], .006);
+  for (const sz of [-1, 1]) bar(pv, [0, 0, sz * 0.14], [armLen, 0, sz * 0.14], 0.014, silverTube);
   for (let i = 1; i <= 5; i++) bar(pv, [armLen * (i / 6), 0, -0.14], [armLen * (i / 6), 0, 0.14], 0.012, silverTube);
   const head = pivot(pv, armLen, 0);
   sidePlates(head, [[-0.06, -0.05], [0.12, -0.05], [0.15, 0.0], [0.12, 0.06], [-0.06, 0.06]], 0.155, black, [[0.0, 0.0, 0.018], [0.07, 0.0, 0.015]]);
@@ -184,7 +190,7 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
     wheelShaft(head, 0.0, 0.0, { n: 3, r: 0.02, w: 0.02, span: 0.22, colors: [0x2a5bd7] }),
   ];
   box(head, 0.19, 0.008, 0.3, black, 0.035, -0.052, 0);
-  box(pv, armLen, 0.006, 0.26, mat(0x7f8995, { metal: 0.3 }), armLen / 2, -0.012, 0);
+  box(pv, armLen, 0.006, 0.29, black, armLen / 2, 0.025, 0);
   const held = pivot(head, 0.04, 0.0);
   // Two thin black J-hooks on telescoping posts.
   const hooks = new THREE.Group();
@@ -227,7 +233,11 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
   const H = c.height;
   const bt = c.bumperTop;
   const silver = mat(0xc9ced5, { metal: 0.7, rough: 0.3 });
-  const silverTube = tubeMat(0xc9ced5);
+  // Spectrum row 284, loaded "Assembly W/ COTS": dark rails, gold brackets, grey flywheels.
+  // https://cad.onshape.com/documents/3a6f59e30e8736fe05eb92eb/w/11cee5e33d9c3a61ab96e510/e/cdcc31f665d795dce68347d5
+  // Elevator + pitching carriage; rear floor intake/front scoring; capability values remain [EST].
+  const silverTube = tubeMat(0x34383e);
+  const gold = mat(0xc6a337, { metal: .6, rough: .4 });
   const dark = mat(0x2a2c30, { metal: 0.4 });
   const base = drivebase(k, { motorRing: 0xc9ced5 });
   const intake = underBumperIntake(k, { n: 2 });
@@ -244,13 +254,18 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
   wire(k.visual, [[-L * 0.3, deckY + 0.02, -W * 0.3], [-L * 0.1, deckY + 0.06, -W * 0.1], [0.05, deckY + 0.02, 0.05]], 0xd4b106);
   // Elevator: perforated 2×1 uprights with a diagonal brace to each front corner and a black belt.
   const ex = -0.03;
-  const ez = 0.14;
+  const ez = W * .29;
   for (const sz of [-1, 1]) {
     bar(k.visual, [ex, bt, sz * ez], [ex, H - 0.02, sz * ez], 0.032, silverTube);
     bar(k.visual, [L / 2 - 0.05, bt + 0.02, sz * (W / 2 - 0.05)], [ex + 0.02, H * 0.72, sz * ez], 0.02, silverTube);
     plate(k.visual, [[ex - 0.12, bt + 0.01], [ex + 0.03, bt + 0.01], [ex + 0.01, bt + 0.16]], 0.005, silver, sz * (ez + 0.02), [[ex - 0.03, bt + 0.05, 0.015]]);
   }
   bar(k.visual, [ex, H - 0.02, -ez], [ex, H - 0.02, ez], 0.03, silverTube);
+  for (const sign of [-1,1]) {
+    box(k.visual,.04,.11,.016,gold,ex,bt+.07,sign*(ez+.025));
+    box(k.visual,.04,.09,.016,gold,ex,H-.09,sign*(ez+.025));
+    plate(k.visual,[[ex-.18,bt],[ex+.04,bt],[ex+.015,bt+.18]],.006,gold,sign*(ez+.018));
+  }
   bar(k.visual, [ex + 0.005, bt + 0.05, 0], [ex + 0.005, H - 0.05, 0], 0.012, mat(0x111111, { rough: 0.8 }));
   const stage = new THREE.Group();
   k.visual.add(stage);
@@ -259,14 +274,14 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
   box(stage, 0.08, 0.1, 0.24, dark, ex + 0.035, H - 0.12, 0);
   // Shooter carriage: pocketed silver side plates, two shafts of big gray/white flywheels.
   const carriage = pivot(k.visual, ex + 0.1, H - 0.12);
-  sidePlates(carriage, [[-0.08, -0.09], [0.15, -0.09], [0.21, 0.0], [0.17, 0.11], [-0.08, 0.11]], 0.125, silver, [[-0.03, 0.0, 0.025], [0.05, 0.04, 0.02], [0.05, -0.05, 0.018], [0.13, -0.03, 0.016]]);
-  for (const [x, y] of [[-0.06, -0.07], [-0.06, 0.09]] as const) box(carriage, 0.02, 0.02, 0.25, silver, x, y, 0);
+  sidePlates(carriage, [[-0.08, -0.09], [0.15, -0.09], [0.21, 0.0], [0.17, 0.11], [-0.08, 0.11]], ez - .015, dark, [[-0.03, 0.0, 0.025], [0.05, 0.04, 0.02], [0.05, -0.05, 0.018], [0.13, -0.03, 0.016]]);
+  for (const [x, y] of [[-0.06, -0.07], [-0.06, 0.09]] as const) box(carriage, 0.02, 0.02, (ez - .015) * 2, dark, x, y, 0);
   const wheels = [
-    wheelShaft(carriage, 0.15, 0.06, { n: 2, r: 0.052, w: 0.045, span: 0.12, colors: [0x8d9299, 0xe8e8e8] }),
-    wheelShaft(carriage, 0.1, -0.05, { n: 2, r: 0.052, w: 0.045, span: 0.12, colors: [0xe8e8e8, 0x8d9299] }),
+    wheelShaft(carriage, 0.15, 0.06, { n: 2, r: 0.052, w: 0.06, span: W * .38, colors: [0x8d9299, 0xe8e8e8] }),
+    wheelShaft(carriage, 0.1, -0.05, { n: 2, r: 0.052, w: 0.06, span: W * .38, colors: [0xe8e8e8, 0x8d9299] }),
   ];
-  box(carriage, 0.23, 0.01, 0.25, dark, 0.025, -0.087, 0);
-  box(carriage, 0.06, 0.12, 0.2, silver, -0.07, 0, 0);
+  box(carriage, 0.23, 0.01, (ez - .015) * 2, dark, 0.025, -0.087, 0);
+  box(carriage, 0.06, 0.12, (ez - .015) * 2, dark, -0.07, 0, 0);
   const held = pivot(carriage, 0.0, 0.0);
   // AXL has two tall outer climber tubes with bronze hooks, framing the silver elevator.
   const cx = L / 2 - 0.07;

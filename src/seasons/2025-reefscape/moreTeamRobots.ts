@@ -267,6 +267,9 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   const stage = new THREE.Group(); k.visual.add(stage);
   for (const sz of [-1, 1]) bar(stage, [ex + 0.035, bt + 0.06, sz * (ez - 0.025)], [ex + 0.035, top - 0.04, sz * (ez - 0.025)], 0.025, alu);
   bar(stage, [ex + 0.035, top - 0.04, -ez], [ex + 0.035, top - 0.04, ez], 0.025, alu);
+  const stage2 = new THREE.Group(); k.visual.add(stage2);
+  for (const sz of [-1, 1]) bar(stage2, [ex + 0.06, bt + 0.1, sz * (ez - 0.045)], [ex + 0.06, top - 0.07, sz * (ez - 0.045)], 0.021, alu);
+  bar(stage2, [ex + 0.06, top - 0.07, -ez + 0.045], [ex + 0.06, top - 0.07, ez - 0.045], 0.021, alu);
   const carriage = pivot(k.visual, ex, bt + 0.12);
   box(carriage, 0.08, 0.12, 2 * ez, black, 0, 0, 0);
   const arm = pivot(carriage, 0.04, 0), la = 0.65;
@@ -289,7 +292,8 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
       const p = place(s), yMin = bt + 0.12;
       const goal = p.handoff ? { yc: yMin, phi: Math.PI } : stowed(p) ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, 1, ex + 0.04, la, yMin, top + 0.9);
       yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 10, s.dt);
-      carriage.position.y = yc; stage.position.y = Math.max(0, yc - top + 0.1);
+      const ext = Math.max(0, yc - top + 0.1);
+      carriage.position.y = yc; stage.position.y = ext / 2; stage2.position.y = ext;
       arm.rotation.z = phi; wrist.rotation.z = -phi;
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt); intake.update(s, deploy);
       spin(stars, s.enabled && s.intaking ? -side * 25 : 0, s.dt);

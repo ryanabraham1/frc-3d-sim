@@ -1,0 +1,60 @@
+# Robot CAD comparison — 2024–2026
+
+Compared the 35 team robots present at the start of the request with the [Spectrum CAD Collection](https://docs.google.com/spreadsheets/d/1acT6PpdR5l3zVhPqrehgamPsnUbk6yg-2JC5FcwIbb4/edit?gid=0), then added the three requested robots: 1114 Simbot Tim (2026), 581 Zuma (2025), and 581 Rubble (2026). 581 Titan (2024) was already registered.
+
+This audit covers those 38 profiles: 25 have matching spreadsheet references, 13 have no matching entry in the supplied 2024–2026 rows. Fifteen existing models were refined, three were added, and seven matched models were retained after comparison. Robots without sheet entries retain their existing models.
+
+Geometry is recreated with game-scale meshes rather than importing entire CAD assemblies. Hidden fasteners, tiny pockets, and internal electronics are omitted. Existing robot tuning is preserved; new robot capacities, rates, accuracy, timing and most dimensions are simulator estimates. Rubble's chamfered 28.5 × 27 inch CAD frame uses a slightly smaller rectangular collision approximation. Reference views are qualitative comparisons, not dimensional metrology.
+
+## Reference decisions
+
+| Year | Team / model | Sheet source | Result |
+| --- | --- | --- | --- |
+| 2024 | 118 Twister | [row 200](https://grabcad.com/library/robonauts-118-2024-robot-twister-1) | Retained: GrabCAD published views agree with the gold turret/deck layout. |
+| 2024 | 581 Titan | [row 209](https://cad.onshape.com/documents/e0b1ba5e437ff36752e3516b/w/09c92da8e227d0ad729ed92d/e/6a79f6313b90f11e04930444) | Retained Titan: broad silver tower and red upper rollers agree with the assembly. |
+| 2024 | 1114 Skyfall | [row 219 / version 1](https://cad.onshape.com/documents/1cb0a66cf3c21ff58489da72/v/9515c25620be6bddf709a581/e/4df6306a8e0ea16da0f90563?renderMode=0&uiState=674b9d0dd10cb02c94eb6986), [row 219 / version 2](https://cad.onshape.com/documents/e29d35b669bb6a8cac1e92e8/v/4af41b0ba26263d387049e38/e/ed9bd1dd1db19a55b178226c?renderMode=0&uiState=674b9d38d10cb02c94eb6a66) | Improved using Skyfall 2.0: broad shooter span and red triangular tower framing. |
+| 2024 | 1690 Doppler | [row 226](https://cad.onshape.com/documents/065fb1a7f111b2de05ba208b/w/67f48a3bae8c68dc38e22239/e/e16d7c04df2851292695e2e5), [row 227](https://drive.google.com/drive/folders/1C_xHdk4QR7U1bARSKUKYtQAMGgItq_bM?usp=sharing) | Improved: broad pocketed silver pivot-arm cheeks and black tray. |
+| 2024 | 2910 Typhoon | [row 250](https://2910.onshape.com/documents/b05af223ad0d2a358074cc0a/v/0769959730f43a1859a1f370/e/9d8b5a55e5c746878f41c2bc?configuration=default&renderMode=0&uiState=665d856d39a4630af3899e94&aa=true) | Improved: broader hood/wheel banks, blue outer tires and connected climber goalpost. |
+| 2024 | 4522 AXL | [row 284](https://cad.onshape.com/documents/3a6f59e30e8736fe05eb92eb/w/11cee5e33d9c3a61ab96e510/e/c509d82efd947003995f7e00) | Improved: dark drilled uprights, gold brackets and broader carriage. Linked element was obsolete; viewer selected Assembly W/ COTS. |
+| 2025 | 118 Firefly | [row 98](https://grabcad.com/library/robonauts-118-2025-robot-firefly-1) | Retained: GrabCAD published views agree with silver lift and split roller channels. |
+| 2025 | 341 Miss Daisy | [row 105](https://cad.onshape.com/documents/2d1e3ac103dba342712c2c99/w/060f69714e723dd87d33ba97/e/bbd3959b191284cc99eb4f56?renderMode=0&uiState=680f7463bfa4de65489d095d) | Improved: yellow carriage guide brackets. Current white end-effector variant retained. |
+| 2025 | 581 Zuma | [row 110](https://cad.onshape.com/documents/608b0dda0f1838442e89d736/w/5ea2acc09519fc306dd88bdc/e/77f704f88876565f2b34a5eb) | Added Zuma: continuous elevator, long truss arm, wrist gripper, floor intake and deep climber. |
+| 2025 | 971 Fiddler | [row 119](https://frc971.onshape.com/documents/7fe785bbcbd521f1316ad2c6/v/5a4a017acd66b28d2f8c7684/e/194d67360c254300114d8b67) | Improved: paired silver rails, blue diagonal tower braces and open moving stage. Published version includes a separate floor intake; retained current photo-based claw-intake variant and capabilities. |
+| 2025 | 1678 SubLime | [row 126](https://1678.onshape.com/documents/0d5fb3dc444f66866c3df100/w/3aa4dce6ea2c22f3ef57d096/e/0f84fb27f2a02ead9cf842de?aa=true) | Improved: dark fixed rails and broad pocketed front climber cheeks. |
+| 2025 | 1690 WHISPER | [row 127](https://cad.onshape.com/documents/76609fe05a6594c5f9c4062a/w/437a97728f1629348e9dd7cf/e/465d3a35c190dab8355f1e5c) | Improved after sign-in: silver pocketed elevator web and dense blue star intake bank. Carbon vacuum arm retained from photos; one published linked component remains unresolved. |
+| 2025 | 1778 SubZero | [row 135](https://cad.onshape.com/documents/07beed2a16f5d7898cc42c9c/w/a74e4d796ba952dabae8ff7e/e/42c6b0e68334934d197bf369?renderMode=0&uiState=681d78400ee2693e5d5605f0) | Retained: published CAD agrees with the side-swing arm architecture. |
+| 2025 | 2910 Spectre | [row 154](https://2910.onshape.com/documents/f33ab032b00dc4b711aa86a6/w/951c0955d38b370eab02b587/e/415a66cb7efdf4aba6199086?configuration=default&renderMode=0&uiState=68091e6c81c18033fbb4fd25) | Improved: broad nested truss elevator and silver pocketed base pivot towers. |
+| 2026 | 581 Rubble | [row 10](https://cad.onshape.com/documents/766d37b113335d7a60cc2375/w/8b35fc383279c1954cec5b72/e/bd3188f47c23702bef9f1fc8?renderMode=0&uiState=6a284c39e39535e5b60eb5fd) | Added Rubble Champs dumper: translating rack intake, roller floor, broad drum/roller hood and smoked net-covered hopper. Earlier turret Rubble was not substituted. |
+| 2026 | 971 Mixtape | [row 15](https://frc971.onshape.com/documents/cabaa0c1c77517916df80783/w/48cb057db38a03cc202ff44e/e/96844befd4591dac162d657b?aa=true&renderMode=0&leftPanel=false&uiState=6a2271e697844f92df3f51d3) | Rebuilt dedicated Mixtape model: silver truss cage, clear hopper and two individually modeled turret/feed heads. Both share the simulated aim. |
+| 2026 | 1114 Simbot Tim | [row 17](https://cad.onshape.com/documents/7959d159451177786d52dd9a/w/535bc31b66b0cc442967f1d0/e/a263c1a625ed8cf2484ae82f) | Added Simbot Tim: tall clear hopper, orange fabric cover, wide drum, active wall and passive side rollers. Missing CAD references supplemented by team release photo/Q&A; competition climber omitted. |
+| 2026 | 1678 Limestone | [row 24](https://1678.onshape.com/documents/acdaaf42764a293a9452326d/w/f887ef4c6a254c09c73344c3/e/a9684fa7665096e977b19c44?aa=true) | Improved: black/gray framing and shallow front lattice beam; existing expansion animation retained. |
+| 2026 | 1690 Kepler | [row 25](https://orbit1690.onshape.com/documents/d09a47dbfc1b125f63a78ac7/w/d71d2275472653904f9b717a/e/03166dd8363262636c9f6b66) | Retained: CAD agrees with black lattice hopper, arched top and single turret. |
+| 2026 | 1778 HAILSTORM | [row 32](https://cad.onshape.com/documents/c527fb2ecdd377cbb954f474/w/b89f138221c8d9223c28e242/e/c4daa58f8630b2239d8ee484?configuration=default&renderMode=0&uiState=6a2b73a5890a21943cedc436) | Retained: turret, spindexer and clear hopper architecture agrees with CAD. |
+| 2026 | 2910 Re•Blitz | [row 44 / version 1](https://2910.onshape.com/documents/dfb391aac173a4555d00a5b5/w/3dc64f602735252892b0e47b/e/6c654da4eb6b1710fb0900bd?configuration=List_gTJHVM5EzW0JZB%3DMax_Hood_Angle&renderMode=0&uiState=6a23004ccae613be8b3519ec), [row 44 / version 2](https://2910.onshape.com/documents/28894ad47d9c63a665e2a36b/w/078272beb4618ea6cffc78e0/e/aea9a72f86f273a5a9484208?configuration=default&renderMode=0&uiState=6a22ffe07389e39f66605a90), [row 44 / version 3](https://drive.google.com/file/d/1r-6zR4afbr_BpeZfWwcM5XL1N74FjScI/view?usp=sharing), [row 44 / version 4](https://drive.google.com/file/d/1jPf-aOGhz0dntoAgahFBgRhJiJv9rGpj/view?usp=sharing) | Rebuilt dedicated ReBlitz model: hard clear roof, sloped side panels, wide drum/inertia wheel and rising roller floor. Original Blitz was not substituted. |
+| 2026 | 4946 Moto Moto | [row 57](https://cad.onshape.com/documents/705d953d40f0cc3373a8313b/w/deefd59a3b22618d064531b8/e/eec4de188759a18321ec20c9?renderMode=0&uiState=6a19b90aa367c097df489f94) | Improved: tall black tapered funnel over the dye rotor and green intake rollers. |
+| 2026 | 5940 Croquembouche | [row 63](https://5940.onshape.com/documents/c1db3ae94868cdefb149708a/w/c4051db982a97f42844c8869/e/1db7dac609aa028a6a9054dc?renderMode=0&uiState=6a44258c6fbe61c74a6a7740) | Retained: Croquembouche link loads two turret assemblies, but several full-robot references fail. CAD confirms twin turrets; frame remains photo-based. Row 62 is Lemon Puff and was excluded. |
+| 2026 | 6329 ROMAN | [row 70 / version 1](https://cad.onshape.com/documents/014716f840fdbd882c1d691f/w/6f344cfa15ef9b0a4376698f/e/cd9bc0812c3416a4d99a3e17), [row 70 / version 2](https://cad.onshape.com/documents/3b751a2d7ebe31cad43f1ec9/w/018d7ee027fd82ca76baee33/e/a05e47ce92279ac81a17313e) | Improved after sign-in using Roman I: pocketed side trusses, purple turret ring, net clearance around the turret and intake number/roller bank. Roman II has a fixed drum and is a different rebuild; current spindexer/turret architecture retained. |
+| 2026 | 7769 CHUNK | [row 82](https://ostcse.onshape.com/documents/692fc43a78732f76f6a7fc01/w/68c7f5631809df4361fcb808/e/ae1887b4c2531db24673e5e9?renderMode=0&uiState=6a0b15866b77a2ef44500831) | Improved: open hopper rim, broad blue hood/twin roller banks and green intake rollers. |
+
+## No matching spreadsheet entry
+
+- **2024:** 1323 MadTown 2024, 4414 TIDEPOD, 2056 LOW-KEY, 254 Vortex.
+- **2025:** 2056 LIGHTNING, 1323 MadTown 2025, 254 Undertow.
+- **2026:** 9128 Triple Threat, 4414 RIPCURRENT, 1323 MadTown, 254 Overload, 9483 Enigma, 3476 Sandspit.
+
+## Evidence and reproduction
+
+Onshape document previews and front/right/top shaded views were saved under git-ignored `refs/cad-audit/`. WHISPER and both ROMAN versions were inspected in the signed-in viewer. GrabCAD pages were inspected for Twister and Firefly. Missing references in Croquembouche and Simbot Tim prevent a complete assembly comparison; these are explicitly recorded above.
+
+The local scripts `tools/cad-reference-audit.py` and `tools/cad-reference-views.py` fetch public, read-only metadata and renders. The audit expects the spreadsheet cell-read snapshot at `refs/cad-sheet-2024-2026.json` (array of `{row, v: [team, year, description, format, URL, teamName]}`); it does not store or reuse authentication credentials. Public API access errors do not prove the signed-in viewer is inaccessible. A fresh run requires recreating that snapshot from the supplied spreadsheet.
+
+Supplemental primary sources: [Simbot Tim reveal](https://www.chiefdelphi.com/t/team-1114-simbot-tim/516924), [Simbot Tim CAD release and team Q&A](https://www.chiefdelphi.com/t/team-1114-simbotics-2026-simbot-tim-cad-release/522887), [Zuma reveal](https://www.chiefdelphi.com/t/team-581-blazing-bulldogs-2025-robot-reveal/493323), and [Rubble CAD/code release](https://www.chiefdelphi.com/t/581-blazing-bulldogs-2026-cad-and-code-release/521762).
+
+Inspect through `npm run dev`, then `/tools/robot-gallery.html`; switch season, pose and side, and click a card to orbit the model.
+
+## Validation
+
+- Production build passed.
+- Focused team-robot, Reefscape mechanism and hood-aim suites: 66 tests passed (the latest shared roster also includes concurrently added 604), including new model registration, finite animated transforms, L4 held-piece reach and physical shot trials.
+- Browser gallery inspected the new models and changed assemblies in stowed, extended, hopper/flow and opposite-side views; no console errors at the checked views.
+- Broader suite before the three roster additions: 461 passed, 5 failed, 3 skipped. Failures were Overload planted-shot ratio, Crescendo TRAP AI, Reefscape station wait, Crescendo Hard-versus-Normal AI, and Crescendo moving/turning shot ratio. This was a shared working tree with concurrent engine/AI changes; this model pass does not claim the full suite is green.

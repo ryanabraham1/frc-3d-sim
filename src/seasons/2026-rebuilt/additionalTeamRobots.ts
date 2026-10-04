@@ -1,35 +1,32 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, jitter, mat, overBumperIntake, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
+import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, type ModelKit, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { hoodFor } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
-for (const [id, color, style] of [
-  ['reblitz-2910', 0xbcc4cd, 'drum'],
-  ['limestone-1678', 0xf2c52b, 'expanding'],
-  ['mixtape-971', 0xcc3232, 'dual'],
-] as const) registerRobotModel(id, k => {
+// Spectrum row 24, 1678-26c-0000 CAD Release: expanding rectangular hopper and full-width drum.
+// https://1678.onshape.com/documents/acdaaf42764a293a9452326d/w/f887ef4c6a254c09c73344c3/e/a9684fa7665096e977b19c44
+// Chassis aim, rear slapdown intake/front drum; black/silver frame. Capacity/rate remain simulator estimates.
+registerRobotModel('limestone-1678', (k: ModelKit) => {
+  const color = 0x34383b;
   const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop;
   const black = mat(0x16191d), accent = tubeMat(color), smoke = mat(0x64707b, { opacity: 0.35 });
   const db = drivebase(k, { motorRing: color });
   hopperWalls(k.visual, { x: -L * 0.08, y0: bt, length: L * 0.8, width: W * 0.94, height: H - bt - 0.06, m: smoke });
-  const fill = fillBlock(k.visual, { x: -L * 0.08, y0: bt + 0.02, length: L * 0.78, width: W * 0.92, height: (style === 'expanding' ? c.hopperExpansion!.fullHeight : H) - bt - 0.07, color: 0xf2c200, capacity: c.hopperCapacity });
+  const fill = fillBlock(k.visual, { x: -L * 0.08, y0: bt + 0.02, length: L * 0.78, width: W * 0.92, height: c.hopperExpansion!.fullHeight - bt - 0.07, color: 0xf2c200, capacity: c.hopperCapacity });
   const roof = new THREE.Group(); k.visual.add(roof);
-  if (style === 'drum') box(roof, L * 0.75, 0.006, W * 0.93, smoke, -L * 0.1, H - 0.035, 0);
-  // Mixtape has an open clear hopper, not a mesh lid.
   let net: THREE.LineSegments | undefined;
-  const innerRails: THREE.Group[] = [];
-  if (style === 'expanding') {
+  {
     roof.name = 'telescoping-hopper-roof';
     for (const x of [-L * 0.45,L * 0.18]) for (const sign of [-1,1]) {
       const z = sign * W * 0.46;
       // Nested 1×2 and .75×1.5 tubes, with black slider collars.
       box(k.visual,0.025,H-bt-0.07,0.05,accent,x,(H+bt-0.07)/2,z);
       box(k.visual,0.035,0.025,0.057,black,x,H-0.09,z);
-      const rail = new THREE.Group(); roof.add(rail); innerRails.push(rail);
+      const rail = new THREE.Group(); roof.add(rail);
       box(rail,0.019,0.25,0.038,mat(0xc2c8ce,{metal:0.8}),x,H-0.13,z);
       motor(k.visual,x,bt+0.065,z,0xecc62d);
     }
@@ -44,11 +41,10 @@ for (const [id, color, style] of [
   for (const z of [-1,1]) bar(k.visual, [-L * 0.46,bt,z * W * 0.46], [-L * 0.46,H - 0.035,z * W * 0.46], 0.024, accent);
   const wheels: THREE.Group[] = [], hoods: THREE.Group[] = [];
   const t = k.turret; t.position.set(L * 0.32,H - 0.1,0);
-  const headCount = style === 'dual' ? 2 : 1;
-  for (let i = 0; i < headCount; i++) {
-    const head = pivot(t, 0, 0); head.position.z = headCount === 2 ? (i ? 1 : -1) * W * 0.24 : 0;
-    const width = headCount === 2 ? W * 0.32 : W * 0.88;
-    sidePlates(head, [[-0.12,-0.07],[0.08,-0.07],[0.13,0.05],[0.02,0.15],[-0.12,0.12]], width / 2, style === 'dual' ? mat(0xc8cdd2,{metal:0.8}) : black, [[-0.07,0.03,0.025],[0.02,0.09,0.023]]);
+  {
+    const head = pivot(t, 0, 0);
+    const width = W * 0.88;
+    sidePlates(head, [[-0.12,-0.07],[0.08,-0.07],[0.13,0.05],[0.02,0.15],[-0.12,0.12]], width / 2, black, [[-0.07,0.03,0.025],[0.02,0.09,0.023]]);
     for (const sign of [-1,1]) {
       motor(head,-0.075,-0.015,sign*(width/2+.046));
       belt(head,[-.075,-.015],[.01,.015],sign*(width/2+.018));
@@ -56,24 +52,12 @@ for (const [id, color, style] of [
     }
     // Exposed hood adjustment screw and clevis.
     bar(head,[-.1,.075,width/2+.01],[.02,.13,width/2+.01],.009,mat(0xbac1c8,{metal:.8}));
-    wheels.push(roller(head, 0.055, width, style === 'drum' ? mat(0x929aa5, { metal: 0.8 }) : black, 0.01,0.015));
+    wheels.push(roller(head, 0.055, width, black, 0.01,0.015));
     const hood = pivot(head,0.01,0.015); hoodShell(hood,0.065,width,black); hoods.push(hood);
-    if (headCount === 2) {
-      const bearing = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.5,width * 0.5,0.02,24),accent); head.add(bearing);
-    }
   }
-  if (style === 'drum') {
-    const fly = roller(t,0.076,0.025,mat(0xb7a146, { metal: 0.8 }),-0.05,0.02,W * 0.47); wheels.push(fly);
-    for (let i = 0; i < 7; i++) {
-      const x = -L*.4+i*L*.095, y = bt+.035+i*.012;
-      wheels.push(roller(k.visual,.016,W*.86,black,x,y));
-      if (i < 6) belt(k.visual,[x,y],[x+L*.095,y+.012],W*.44,.012);
-    }
-    sidePlates(k.visual,[[-L*.43,bt+.03],[L*.25,bt+.03],[L*.26,H-.07],[-L*.4,H-.12]],W*.45,smoke);
-    motor(k.visual,-L*.28,bt+.09,W*.42);
-    camera(k.visual,L*.37,bt+.12,-W*.35);
-  }
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, width: W * 0.9, frame: accent, stow: Math.PI * .95, rollerMaterial: style === 'drum' ? mat(0x37963c) : black });
+  // The front roof beam is the shallow triangular pocketed panel visible in the CAD.
+  lattice(k.visual,[L*.2,H-.12,-W*.46],[0,0,W*.92],[0,.09,0],{cells:5,w:.013,m:accent,zig:true});
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, width: W * 0.9, frame: accent, stow: Math.PI * .95, rollerMaterial: black });
   const slide = slidingHopper(k);
   let deploy = 0, hood = 0, roofLift = 0;
   camera(k.visual,L*.4,bt+.08,W*.35);
@@ -83,17 +67,17 @@ for (const [id, color, style] of [
     flow: {
       intake: overBumperIntake(k, intake.tip, r),
       stow: pile.stow,
-      // Along the floor (2910: up the rising roller conveyor) to the front, then up into the turret's shooter wheel.
+      // Along Limestone's floor to the front drum.
       feed: () => {
         const z = jitter(W * 0.5);
-        const head = wheels[Math.floor(Math.random() * headCount)];
-        return [new THREE.Vector3(-L * 0.35, bt + 0.04 + r, z), new THREE.Vector3(L * 0.22, bt + (style === 'drum' ? 0.12 : 0.05) + r, z * 0.4), flowAt(k, head, -0.09, -0.02, 0), flowAt(k, head, 0.02, 0.04, 0)];
+        const head = wheels[0];
+        return [new THREE.Vector3(-L * 0.35, bt + 0.04 + r, z), new THREE.Vector3(L * 0.22, bt + 0.05 + r, z * 0.4), flowAt(k, head, -0.09, -0.02, 0), flowAt(k, head, 0.02, 0.04, 0)];
       },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv); }
-      if (style === 'expanding') {
+      {
         // Automatic simulator contract sequence: count controls the same raised envelope as collision/routing.
         const e = c.hopperExpansion!;
         const load = Math.max(0,Math.min(1,(s.fill*c.hopperCapacity-e.startCount)/(c.hopperCapacity-e.startCount)));
@@ -128,6 +112,94 @@ for (const [id, color, style] of [
       hood = approach(hood, s.aiming || s.firing > 0 ? hoodFor(s.hood) : -0.35, 5, s.dt); for (const h of hoods) h.rotation.z = hood;
       for (const w of wheels) spin(w, s.enabled ? 40 + 60 * s.firing : 0, s.dt);
     } };
+});
+
+// Spectrum row 44, use ReBlitz (dfb391...), not the separate original Blitz assembly.
+// https://2910.onshape.com/documents/dfb391aac173a4555d00a5b5/w/3dc64f602735252892b0e47b/e/6c654da4eb6b1710fb0900bd
+// Chassis aim, hard roof, broad drum, rising conveyor; silver/black and green rollers; no climber.
+registerRobotModel('reblitz-2910', (k: ModelKit) => {
+  const c=k.config,L=c.frameLength,W=c.frameWidth,H=c.height,bt=c.bumperTop;
+  const silver=tubeMat(0xbcc4cd),black=mat(0x181b20),clear=mat(0xbac5cd,{opacity:.25}),green=mat(0x37963c);
+  const db=drivebase(k,{motorRing:0x37963c});
+  hopperWalls(k.visual,{x:-L*.08,y0:bt,length:L*.82,width:W*.94,height:H-bt-.06,m:clear});
+  const fill=fillBlock(k.visual,{x:-L*.08,y0:bt+.02,length:L*.78,width:W*.88,height:H-bt-.08,color:0xf2c200,capacity:c.hopperCapacity});
+  box(k.visual,L*.75,.006,W*.93,clear,-L*.1,H-.035,0);
+  // Full-height cheek plates follow the sloping intake roof and support the drum bearings.
+  sidePlates(k.visual,[[-L*.44,bt+.02],[L*.4,bt+.02],[L*.4,H-.04],[-L*.16,H-.04],[-L*.44,H-.16]],W*.46,clear);
+  for(const sign of [-1,1]) {
+    bar(k.visual,[-L*.44,bt,sign*W*.46],[L*.4,H-.04,sign*W*.46],.018,silver);
+    bar(k.visual,[L*.4,bt,sign*W*.46],[L*.4,H-.04,sign*W*.46],.025,silver);
+  }
+  const drum=pivot(k.visual,L*.31,H-.11);
+  sidePlates(drum,[[-.14,-.09],[.11,-.09],[.14,.04],[.04,.12],[-.14,.12]],W*.44,black,[[0,0,.04]]);
+  const fly=roller(drum,.055,W*.87,silver,.01,.015);
+  const overspeed=roller(drum,.076,.025,mat(0xb7a146,{metal:.8}),-.05,.02,W*.47);
+  const hood=pivot(drum,.01,.015);hoodShell(hood,.065,W*.87,black);
+  for(const sign of [-1,1]) {motor(drum,-.075,-.015,sign*W*.47);belt(drum,[-.075,-.015],[.01,.015],sign*W*.455);}
+  const conveyor: THREE.Group[]=[];
+  for(let i=0;i<7;i++) {
+    const x=-L*.4+i*L*.095,y=bt+.035+i*.012;
+    conveyor.push(roller(k.visual,.019,W*.86,green,x,y));
+    if(i<6) belt(k.visual,[x,y],[x+L*.095,y+.012],W*.44,.012);
+  }
+  const intake=deployableIntake(k,{reach:c.intake.reach,rollers:2,width:W*.9,frame:silver,stow:Math.PI*.95,rollerMaterial:green});
+  const slide = slidingHopper(k);
+  const r=inch(5.91)/2,pile=hopperStow({x:-L*.08,y0:bt+.02,length:L*.72,width:W*.86,height:H-bt-.08,r});
+  let deploy=0,angle=0;
+  return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
+    flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
+      feed:()=>[new THREE.Vector3(-L*.35,bt+.04+r,0),new THREE.Vector3(L*.22,bt+.12+r,0),flowAt(k,fly,-.09,-.02,0),flowAt(k,fly,.02,.04,0)]},
+    update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
+      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv); }
+      angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
+      for(const wheel of [fly,overspeed,...conveyor])spin(wheel,s.enabled?40+60*s.firing:0,s.dt);
+    }};
+});
+
+// Spectrum row 15, 2026 971 Robot Mixtape Public Release: two black turret pods, clear rear hopper,
+// full-width silver truss deck and angled side supports. One simulation aim is shared by both heads.
+// https://frc971.onshape.com/documents/cabaa0c1c77517916df80783/w/48cb057db38a03cc202ff44e/e/96844befd4591dac162d657b
+registerRobotModel('mixtape-971', (k: ModelKit) => {
+  const c=k.config,L=c.frameLength,W=c.frameWidth,H=c.height,bt=c.bumperTop;
+  const silver=tubeMat(0xbcc4cd),black=mat(0x15181c),clear=mat(0xdde5ec,{opacity:.25});
+  const db=drivebase(k,{motorRing:0xbcc4cd});
+  // Retaining walls behind the heads stay open at the shooter end.
+  hopperWalls(k.visual,{x:-L*.18,y0:bt,length:L*.55,width:W*.92,height:H-bt-.035,m:clear});
+  const fill=fillBlock(k.visual,{x:-L*.18,y0:bt+.02,length:L*.5,width:W*.86,height:H-bt-.06,color:0xf2c200,capacity:c.hopperCapacity});
+  for(const sign of [-1,1]) {
+    const z=sign*W*.46;
+    lattice(k.visual,[-L*.44,bt,z],[L*.88,0,0],[0,H-bt-.08,0],{cells:4,w:.014,m:silver,zig:true});
+    bar(k.visual,[-L*.44,bt,z],[-L*.44,H-.035,z],.02,silver);
+  }
+  lattice(k.visual,[L*.34,bt,-W*.46],[0,0,W*.92],[0,.12,0],{cells:5,w:.014,m:silver,zig:true});
+  const wheels:THREE.Group[]=[],heads:THREE.Group[]=[],hoods:THREE.Group[]=[];
+  for(const sign of [-1,1]) {
+    const x=L*.23,z=sign*W*.24;
+    // Each turret ring sits on a frame-connected deck; yaw happens about this ring.
+    box(k.visual,.27,.009,W*.42,silver,x,H-.13,z);
+    for(const sx of [-1,1])bar(k.visual,[x+sx*.11,bt,z],[x+sx*.11,H-.13,z],.018,silver);
+    const head=pivot(k.visual,x,H-.11,z);heads.push(head);
+    const ring=new THREE.Mesh(new THREE.CylinderGeometry(.11,.11,.025,28),black);head.add(ring);
+    sidePlates(head,[[-.14,-.005],[.13,-.005],[.15,.08],[.05,.18],[-.13,.12]],.1,black,[[-.04,.065,.026]]);
+    const fly=roller(head,.055,.19,black,.03,.08);wheels.push(fly);
+    motor(head,-.08,.04,sign*.145);belt(head,[-.08,.04],[.03,.08],sign*.12);
+    const hood=pivot(head,.03,.08);hoodShell(hood,.067,.19,black);hoods.push(hood);
+    box(head,.16,.006,.19,black,-.045,.015,0);
+  }
+  const intake=deployableIntake(k,{reach:c.intake.reach,rollers:2,width:W*.9,frame:silver,stow:Math.PI*.95,rollerMaterial:black});
+  const slide = slidingHopper(k);
+  const r=inch(5.91)/2,pile=hopperStow({x:-L*.18,y0:bt+.02,length:L*.5,width:W*.86,height:H-bt-.06,r});
+  let deploy=0,angle=0;
+  return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
+    flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
+      feed:()=>{const i=Math.random()<.5?0:1,z=heads[i].position.z;return [new THREE.Vector3(-L*.2,bt+.04+r,z),new THREE.Vector3(L*.1,bt+.05+r,z),flowAt(k,wheels[i],-.08,-.02,0),flowAt(k,wheels[i],.02,.04,0)];}},
+    update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
+      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv); }
+      angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);
+      for(const head of heads)head.rotation.y=k.turret.rotation.y;
+      for(const hood of hoods)hood.rotation.z=angle;
+      for(const wheel of wheels)spin(wheel,s.enabled?40+60*s.firing:0,s.dt);
+    }};
 });
 
 export function additionalRebuiltTeamRobots(): TeamRobot[] {
