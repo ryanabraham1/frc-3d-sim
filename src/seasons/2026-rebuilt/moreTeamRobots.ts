@@ -485,6 +485,7 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
   }
   const intakeRolls = [roller(intake, 0.038, W * 0.84, black, side * 0.12, -0.1), roller(intake, 0.025, W * 0.84, black, side * 0.05, -0.025)];
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.87, height: sh.h * 0.9, r: FUEL_R });
+  const hop = slidingHopper(k);
   let deploy = 0;
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'], lightAt: [tx, sy + 0.06, W * 0.4],
@@ -494,6 +495,7 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       deploy = approach(deploy, s.enabled && s.intaking ? 1 : 0, 7, s.dt);
       intake.position.x = side * (L * 0.4 + deploy * c.intake.reach);
+      hop.set(deploy);
       const speed = s.enabled && (s.intaking || s.firing > 0) ? 30 : 0;
       for (const r of [...feeding, ...intakeRolls]) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);
