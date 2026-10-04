@@ -1,4 +1,4 @@
-import { createCrescendoBot } from './bots';
+import { createCrescendoBot, CRESCENDO_AI_ROLES, CRESCENDO_AI_STRATEGIES } from './bots';
 import type { SeasonContext, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import type { StartArea } from '@engine/startPose';
@@ -6,7 +6,7 @@ import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, CrescendoAutoPilot } from './autopilot';
-import { build, CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
+import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
 import { crescendoTeamRobots } from './teamRobots';
 import { buildCrescendoField, type CrescendoFieldRefs } from './field';
 import { CrescendoHud } from './hud';
@@ -97,9 +97,20 @@ export const crescendo2024: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new CrescendoAutoPilot(ctx, rules as CrescendoRules, robot, routine);
   },
-  // AI robots are ground-intake, chassis-aimed pivot shooters (the dominant 2024 build). Turrets and SOURCE intakes
-  // stay available to the player through the Robot panel.
-  botRobotConfig() { return build({ ground: true, source: false, shooter: 'pivot', aim: 'align', amp: true, climb: 1 }); },
+  botAutoRoutine(station, config) {
+    if (config?.intake.ground === false) return config.launcher.enabled ? 'shoot-leave' : 'leave';
+    if (config && !config.launcher.enabled) return 'amp-2';
+    return station === 2 ? 'wing-4' : 'center-2';
+  },
+  botArchetype(difficulty, station, role) {
+    const byRole: Record<string, string> = { amp: 'amp-trap', feeder: 'source-pivot', shooter: 'turret', defender: 'pivot' };
+    if (role && byRole[role]) return byRole[role];
+    const lineups: Record<string, string[]> = { easy: ['kitbot', 'source-pivot', 'pivot'], normal: ['pivot', 'pivot', 'pivot'], hard: ['pivot', 'pivot', 'pivot'], elite: ['pivot', 'pivot', 'pivot'] };
+    return lineups[difficulty][(station - 1) % 3];
+  },
+  aiStrategies: CRESCENDO_AI_STRATEGIES,
+  aiRoles: CRESCENDO_AI_ROLES,
+  botRobotConfig() { return crescendoRobotPresets().find((p) => p.id === 'pivot')!.config; },
   createBotPilot(ctx, rules, robot) { return createCrescendoBot(ctx, rules as CrescendoRules, robot); },
   createHud(ctx, rules, slots) {
     return new CrescendoHud(ctx, rules as CrescendoRules, slots);

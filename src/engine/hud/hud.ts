@@ -18,6 +18,7 @@ export class Hud {
   private timer: HTMLElement;
   private period: HTMLElement;
   private toasts: HTMLElement;
+  private radioLog: HTMLElement;
   private banner: HTMLElement;
   private modal: HTMLElement;
   private help: HTMLElement;
@@ -41,6 +42,7 @@ export class Hud {
       </div>
       <div class="hud-banner" data-r="banner"></div>
       <div class="hud-toasts" data-r="toasts"></div>
+      <div class="hud-radio" data-r="radio"></div>
       <div class="hud-player" data-r="player"></div>
       <div class="hud-info" data-r="info"></div>
       <div class="hud-help hidden" data-r="help"></div>
@@ -54,6 +56,7 @@ export class Hud {
     this.timer = q('timer');
     this.period = q('period');
     this.toasts = q('toasts');
+    this.radioLog = q('radio');
     this.banner = q('banner');
     this.modal = q('modal');
     this.help = q('help');
@@ -110,6 +113,17 @@ export class Hud {
     while (this.toasts.children.length > 6) this.toasts.lastElementChild?.remove();
     setTimeout(() => el.classList.add('fade'), 3200);
     setTimeout(() => el.remove(), 3800);
+  }
+
+  /** An AI radio callout ("Blue 2: AMPLIFY in 3"), newest at the bottom; fades after a few seconds. */
+  radio(from: string, text: string, alliance: Alliance): void {
+    const el = document.createElement('div');
+    el.className = `hud-radio-msg ${alliance}`;
+    el.innerHTML = `<b>${esc(from)}</b> ${esc(text)}`;
+    this.radioLog.append(el);
+    while (this.radioLog.children.length > 5) this.radioLog.firstElementChild?.remove();
+    setTimeout(() => el.classList.add('fade'), 5000);
+    setTimeout(() => el.remove(), 5600);
   }
 
   toggleHelp(force?: boolean): void {

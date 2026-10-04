@@ -165,11 +165,17 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 
 ### Single-player AI
 
-`GameSettings.aiOpponents` fills the five other stations by default; false keeps solo practice.
-`aiDifficulty` accepts `easy`, `normal`, or `hard` and affects opponents only. Seasons may supply `botRobotConfig` and `botAutoRoutine` for competitive builds and varied AUTO assignments.
-Seasons implement the optional
-`createBotPilot(ctx, rules, robot)` hook for TELEOP. AUTO still uses `createAutoPilot`; multiplayer retains human
-drivers. `engine/ai/cycleBot.ts` supplies repeated physical collection/scoring, target selection, teammate
-yielding, nearby-robot avoidance, clockwise teammate passing and stalled-approach recovery. `BotStrategy.tactics` lets
-seasons apply coordinated behavior before the generic collector, while `endgame` handles climbs. Each season supplies scoring and supply
-poses, eligible pieces and structure routing. Bots use normal mechanisms and receive no free pieces or points.
+`GameSettings.aiOpponents` fills the five other stations by default; false keeps solo practice. `aiDifficulty`
+(`easy`/`normal`/`hard`/`elite`) sets the opponents; `aiAlly` (`skill`, `strategy`, `roles` per station) sets your
+teammates, and `aiOpponent` does the same for the other alliance (benchmarks). Seasons supply `botRobotConfig`,
+`botAutoRoutine`, `createBotPilot(ctx, rules, robot)` for TELEOP, and `aiStrategies` / `aiRoles` for the menu.
+
+- `engine/ai/cycleBot.ts` — the executor: driving with robot avoidance (wide berth around opponents a season marks
+  `cautious`, e.g. in protected zones), stuck escapes, pin avoidance, rescues, `defend()`, and the generic collector.
+- `engine/ai/team.ts` — `TeamBrain`, one per alliance: role planner (`usePlanner`), strategy adapter (`useAdapter`,
+  re-evaluated every 2 s when the strategy is 'auto'), blackboard (`memo`), `Scout` (opponent defenders, scoring
+  rates, margin, top scorer), movement health + rescues, and the radio (`radioFor`, shown by the HUD).
+- `engine/testing/match.ts` — `runMatch`: a full six-robot match headless, used by `tests/bots.test.ts` and the
+  strategy benchmark `tests/ai-bench.test.ts` (see docs/AI-STRATEGY.md).
+
+Bots use normal mechanisms and receive no free pieces or points.

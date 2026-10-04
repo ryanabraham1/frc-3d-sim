@@ -65,6 +65,13 @@ export class MatchClock {
     return Math.max(0, this.totalDuration - this.elapsed);
   }
 
+  /** Seconds until robots are disabled for good (the end of the last enabled period, before final scoring). */
+  get driveRemaining(): number {
+    let end = 0, last = 0;
+    for (const p of this.periods) { end += p.duration; if (p.mode !== 'disabled') last = end; }
+    return Math.max(0, last - this.elapsed);
+  }
+
   /** Countdown shown on the field timer. */
   get displayTime(): number {
     const cur = this.current;

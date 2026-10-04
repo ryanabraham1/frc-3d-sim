@@ -18,7 +18,7 @@ const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
 type Page = 'play' | 'controls' | 'rules' | 'multiplayer';
-type PlayTab = 'match' | 'robot';
+type PlayTab = 'match' | 'ai' | 'robot';
 
 function load(): Partial<GameSettings> | null {
   try {
@@ -221,12 +221,50 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     s.startSpot = checkStartSpot(area, fit, fp.length, fp.width).ok ? fit : null;
   };
 
+  const SKILLS = ['easy', 'normal', 'hard', 'elite'] as const;
+  const skillLabel = (d: string) => d[0].toUpperCase() + d.slice(1);
+  const skillHint: Record<string, string> = {
+    easy: 'Slower driving, looser aim, simple cycles without the alliance plan.',
+    normal: 'Runs the alliance plan and strategy switching at a moderate pace.',
+    hard: 'Competitive builds at full speed with tight aim, the full alliance plan and endgame climbs.',
+    elite: 'Hard plus the fastest re-planning and the most accurate shots: plays the strongest plan the benchmarks found.',
+  };
+  /** Opponent difficulty, then your teammates: skill, alliance strategy, and a role per driver station (yours included). */
+  const aiGroups = () => {
+    const strategies = season.aiStrategies ?? [];
+    const roles = season.aiRoles ?? [];
+    const ally = (s.aiAlly ??= {});
+    if (ally.strategy && !strategies.some((x) => x.id === ally.strategy)) ally.strategy = 'auto';
+    for (const [k, v] of Object.entries(ally.roles ?? {})) if (v !== 'auto' && !roles.some((x) => x.id === v)) delete ally.roles![Number(k)];
+    for (const [k, v] of Object.entries(ally.archetypes ?? {})) if (v !== 'auto' && !(season.robotPresets ?? []).some((p) => p.id === v)) delete ally.archetypes![Number(k)];
+    const strat = strategies.find((x) => x.id === (ally.strategy ?? 'auto'));
+    const roleRow = (station: number) => {
+      const cur = ally.roles?.[station] ?? 'auto';
+      const who = station === s.station ? `You · station ${station}` : `Teammate · station ${station}`;
+      const desc = roles.find((x) => x.id === cur)?.description;
+      const roleSeg = `<div class="seg">${opt(`data-ally-role="${station}" data-choice="auto"`, 'Auto', cur === 'auto')}${roles.map((x) => opt(`data-ally-role="${station}" data-choice="${x.id}" title="${esc(x.description)}"`, x.label, cur === x.id)).join('')}</div>`;
+      if (station === s.station) return group(who, roleSeg, cur === 'auto' ? 'Tell your teammates what you will do so they cover the rest.' : `Teammates plan around you: ${desc}`);
+      // Teammates also get a robot: one of the season's archetypes, or the lineup the difficulty would pick.
+      const presets = season.robotPresets ?? [];
+      const arch = ally.archetypes?.[station] ?? 'auto';
+      const archDesc = presets.find((p) => p.id === arch)?.description;
+      const archSeg = presets.length ? `<div class="seg">${opt(`data-ally-arch="${station}" data-choice="auto"`, 'Auto robot', arch === 'auto')}${presets.map((p) => opt(`data-ally-arch="${station}" data-choice="${p.id}" title="${esc(p.description)}"`, p.label, arch === p.id)).join('')}</div>` : '';
+      return group(who, roleSeg + archSeg, [desc ?? 'The alliance assigns this robot a role from the plan.', archDesc ? `Robot: ${archDesc}` : ''].filter(Boolean).join(' '));
+    };
+    return `
+      ${group('AI difficulty', `<div class="seg">${SKILLS.map((d) => opt(`data-difficulty="${d}"`, skillLabel(d), (s.aiDifficulty ?? 'normal') === d)).join('')}</div>`, `Opponents: ${skillHint[s.aiDifficulty ?? 'normal']}`)}
+      ${group('Teammate skill', `<div class="seg">${SKILLS.map((d) => opt(`data-ally-skill="${d}"`, skillLabel(d), (ally.skill ?? 'normal') === d)).join('')}</div>`, `Your two AI teammates: ${skillHint[ally.skill ?? 'normal']}`)}
+      ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate (AMPLIFY calls, rescues, plan switches).')}
+      ${strategies.length ? group('Alliance strategy', `<div class="seg">${strategies.map((x) => opt(`data-ally-strategy="${x.id}" title="${esc(x.description)}"`, x.label, (ally.strategy ?? 'auto') === x.id)).join('')}</div>`, strat?.description ?? '', 'wide') : ''}
+      ${roles.length ? [1, 2, 3].map(roleRow).join('') : ''}`;
+  };
+
   const playPage = () => {
     const F = numFields(season);
     const r = s.robot;
     const routine = season.autoRoutines.find((x) => x.id === s.autoRoutine);
     const acc = F.acc.get(r);
-    const hasDifficulty = s.aiOpponents !== false;
+    const hasAi = s.aiOpponents !== false;
     const hpHint = season.humanPlayerHint
       ? s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual
       : season.maxScoringLevel
@@ -239,9 +277,9 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
           ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
           ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
           ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, '', 'wide')}
-          ${hasDifficulty ? group('AI difficulty', `<div class="seg">${(['easy', 'normal', 'hard'] as const).map((d) => opt(`data-difficulty="${d}"`, d[0].toUpperCase() + d.slice(1), (s.aiDifficulty ?? 'normal') === d)).join('')}</div>`, (s.aiDifficulty === 'hard' ? 'Competitive builds, continuous scoring cycles, coordinated support, and endgame climbs. Teammates use Normal.' : 'Opponent speed, aim accuracy, and collection pace. Teammates use Normal.')) : ''}
-          ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, hasDifficulty ? '' : 'wide')}
+          ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
           ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
+          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${season.autoRoutines.map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
         </div>
       </section>`;
     const map = `
@@ -251,10 +289,12 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${season.startArea ? `<div class="place-wrap">${headingControls(curSpot().yaw)}</div>` : ''}
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Station presets</span>${season.startArea ? '<span class="lg"><i class="sw zone"></i>Legal start zone</span>' : ''}<span class="sp">${season.startArea ? 'Drag your robot in the green zone, drag the knob on its nose to rotate (Shift = 15° steps), or click a ring for a station preset.' : 'Click a circle to move to that driver station.'}</span></div>
       </section>`;
-    const autoPanel = `<section class="panel"><div class="settings-grid">
-          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${season.autoRoutines.map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
-        </div></section>`;
-    const matchTab = `<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}${autoPanel}</div></div>`;
+    const matchTab = `<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}</div></div>`;
+    const aiTab = `
+      <section class="panel">
+        <div class="panel-head"><span>AI opponents &amp; teammates</span><span class="dim">${esc(season.name)}</span></div>
+        <div class="settings-grid ai-grid">${aiGroups()}</div>
+      </section>`;
     const robotCard = `
       <section class="panel robot-card ${s.alliance}">
         <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
@@ -301,7 +341,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         </div>
       </section>`;
     const robotTab = `<div class="robot-grid"><div class="col">${robotCard}${summary}</div><div class="col">${spec}</div></div>`;
-    return playTab === 'robot' ? robotTab : matchTab;
+    return playTab === 'robot' ? robotTab : playTab === 'ai' && hasAi ? aiTab : matchTab;
   };
 
   const controlsPage = () => `
@@ -337,7 +377,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     if (lobby?.lobby && lobby.lobby.seasonId !== s.seasonId) {
       season = getSeason(lobby.lobby.seasonId);
       const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty };
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
       s.robot.teamNumber = teamNumber;
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
@@ -363,10 +403,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         : null;
     const t = titles[page];
     // innerHTML below rebuilds the scroll container; keep the user's place when changing a setting on the same page.
+    if (playTab === 'ai' && s.aiOpponents === false) playTab = 'match';
     const pageKey = page === 'play' ? `play:${playTab}` : page;
     const prevPage = el.dataset.page;
     const scrollTop = el.querySelector<HTMLElement>('.main')?.scrollTop ?? 0;
-    const playTabs = `<div class="subtabs" role="tablist">${([['match', 'Match'], ['robot', 'Robot']] as const).map(([id, label]) => `<button class="subtab ${playTab === id ? 'on' : ''}" role="tab" aria-selected="${playTab === id}" data-ptab="${id}">${label}</button>`).join('')}</div>`;
+    const playTabs = `<div class="subtabs" role="tablist">${([['match', 'Match'], ...(s.aiOpponents !== false ? [['ai', 'AI']] : []), ['robot', 'Robot']] as [PlayTab, string][]).map(([id, label]) => `<button class="subtab ${playTab === id ? 'on' : ''}" role="tab" aria-selected="${playTab === id}" data-ptab="${id}">${label}</button>`).join('')}</div>`;
     const tab = (p: Page, label: string) => `<button class="bbtn ${page === p ? 'on' : ''}" data-page="${p}">${label}</button>`;
     el.innerHTML = `
       <header class="topbar">
@@ -420,7 +461,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);
       const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty };
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
       s.robot.teamNumber = teamNumber;
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
@@ -448,6 +489,19 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       render();
     }));
     all('[data-difficulty]').forEach((b) => (b.onclick = () => ((s.aiDifficulty = b.dataset.difficulty as GameSettings['aiDifficulty']), render())));
+    all('[data-ally-skill]').forEach((b) => (b.onclick = () => (((s.aiAlly ??= {}).skill = b.dataset.allySkill as GameSettings['aiDifficulty']), render())));
+    all('[data-ally-strategy]').forEach((b) => (b.onclick = () => (((s.aiAlly ??= {}).strategy = b.dataset.allyStrategy), render())));
+    all('[data-ally-role]').forEach((b) => (b.onclick = () => {
+      const ally = (s.aiAlly ??= {});
+      (ally.roles ??= {})[Number(b.dataset.allyRole)] = b.dataset.choice!;
+      render();
+    }));
+    all('[data-ally-arch]').forEach((b) => (b.onclick = () => {
+      const ally = (s.aiAlly ??= {});
+      (ally.archetypes ??= {})[Number(b.dataset.allyArch)] = b.dataset.choice!;
+      render();
+    }));
+    all('[data-radio]').forEach((b) => (b.onclick = () => ((s.aiRadio = b.dataset.radio as GameSettings['aiRadio']), render())));
     all('[data-ai]').forEach((b) => (b.onclick = () => ((s.aiOpponents = b.dataset.ai === '1'), render())));
     all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
     all('[data-toggle]').forEach(

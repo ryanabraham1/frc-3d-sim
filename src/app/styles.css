@@ -323,6 +323,39 @@ kbd {
 .hud-toast.fade {
   opacity: 0;
 }
+.hud-radio {
+  position: absolute;
+  left: 12px;
+  bottom: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(330px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.hud-radio-msg {
+  padding: 5px 9px;
+  border-radius: 8px;
+  border-left: 4px solid var(--faint);
+  background: rgba(15, 18, 24, 0.72);
+  color: #f2f4f8;
+  font-size: 12px;
+  line-height: 1.35;
+  transition: opacity 0.5s;
+}
+.hud-radio-msg.blue {
+  border-left-color: var(--blue);
+}
+.hud-radio-msg.red {
+  border-left-color: var(--red);
+}
+.hud-radio-msg b {
+  font-weight: 700;
+  margin-right: 4px;
+}
+.hud-radio-msg.fade {
+  opacity: 0;
+}
 .hud-player {
   position: absolute;
   left: 12px;

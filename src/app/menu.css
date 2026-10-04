@@ -308,6 +308,9 @@
   gap: 14px 18px;
   padding: 16px 18px 18px;
 }
+.ai-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
 .pick {
   width: 100%;
   height: 40px;

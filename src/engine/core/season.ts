@@ -43,7 +43,35 @@ export interface GameSettings {
   shadows: boolean;
   /** Fill the remaining single-player stations with AI (default true). */
   aiOpponents?: boolean;
-  aiDifficulty?: 'easy' | 'normal' | 'hard';
+  /** Opponent AI skill. */
+  aiDifficulty?: AiSkill;
+  /** Your AI teammates: skill, alliance strategy and per-station roles (see SeasonDefinition.aiStrategies / aiRoles). */
+  aiAlly?: AiTeamOrders;
+  /** Opponent alliance orders (benchmarks/tests; the menu leaves them on the season's own plan). */
+  aiOpponent?: AiTeamOrders;
+  /** Which AI radio callouts the HUD shows (default 'all'). */
+  aiRadio?: 'all' | 'team' | 'off';
+}
+
+export type AiSkill = 'easy' | 'normal' | 'hard' | 'elite';
+
+/** What a player tells an AI alliance. Unset fields fall back to the season's own plan ('auto'). */
+export interface AiTeamOrders {
+  skill?: AiSkill;
+  /** SeasonDefinition.aiStrategies id, or 'auto'. */
+  strategy?: string;
+  /** Role per driver station (1-3), SeasonDefinition.aiRoles id or 'auto'. On your alliance, your own station's entry
+   * tells the bots what YOU will do so they plan around it. */
+  roles?: Record<number, string>;
+  /** Robot archetype (SeasonDefinition.robotPresets id, or 'auto') per driver station for the AI robots. */
+  archetypes?: Record<number, string>;
+}
+
+/** A selectable AI strategy or role. */
+export interface AiChoice {
+  id: string;
+  label: string;
+  description: string;
 }
 
 export type ToastKind = 'info' | 'good' | 'foul' | 'warn';
@@ -263,8 +291,17 @@ export interface SeasonDefinition {
   buildField(ctx: SeasonContext): void;
   createRules(ctx: SeasonContext): SeasonRules;
   createAutoPilot(ctx: SeasonContext, rules: SeasonRules, robot: Robot, routine: string): AutoPilot;
-  botAutoRoutine?(station: number): string;
-  botRobotConfig?(difficulty: NonNullable<GameSettings['aiDifficulty']>): RobotConfig;
+  botAutoRoutine?(station: number, config?: RobotConfig): string;
+  botRobotConfig?(difficulty: AiSkill, role?: string): RobotConfig;
+  /**
+   * The archetype (a `robotPresets` id) an AI robot plays at this difficulty and driver station — varied lineups of
+   * real builds. `role` is the role the player ordered for that station, if any, so a fitting build can be chosen.
+   */
+  botArchetype?(difficulty: AiSkill, station: number, role: string | undefined, playerAlliance: boolean): string;
+  /** Alliance strategies the AI can run (first = the season's default plan). */
+  aiStrategies?: AiChoice[];
+  /** Roles an AI robot (or, on your alliance, you) can take; 'auto' is always offered as well. */
+  aiRoles?: AiChoice[];
   createBotPilot?(ctx: SeasonContext, rules: SeasonRules, robot: Robot): AutoPilot;
   createHud(ctx: SeasonContext, rules: SeasonRules, slots: HudSlots): SeasonHud;
   controlsHelp?: [string, string][];

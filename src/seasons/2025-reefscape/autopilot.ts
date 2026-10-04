@@ -7,6 +7,7 @@ import type { ReefscapeRules } from './rules';
 
 export const AUTO_ROUTINES: AutoRoutine[] = [
   { id: 'reef-l4', label: 'Leave + L4 coral', description: 'Leave the starting line, line up on the nearest BRANCH of the nearest reef face and place the preload on L4.' },
+  { id: 'reef-cycle', label: 'L4 preload + station cycles', description: 'Place the preload on L4, then keep cycling: CORAL STATION → highest open BRANCH until AUTO ends (the robot\'s TELEOP brain drives the cycles).' },
   { id: 'reef-l1', label: 'Leave + L1 coral', description: 'Leave the starting line and place the preload into the reef trough.' },
   { id: 'leave', label: 'Leave only', description: 'Move clear of the starting line for 3 points.' },
   { id: 'none', label: 'Do nothing', description: 'Remain on the starting line during AUTO.' },
@@ -17,7 +18,7 @@ export const AUTO_ROUTINES: AutoRoutine[] = [
  * routines do), then release the CORAL — whether or not the robot has teleop auto-align.
  */
 export class ReefscapeAutoPilot implements AutoPilot {
-  private done = false;
+  done = false;
   constructor(private readonly rules: ReefscapeRules, private readonly robot: Robot, private readonly routine: string) {}
   update(_dt: number): RobotCommand {
     const r = this.robot;

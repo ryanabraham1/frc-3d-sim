@@ -2,7 +2,7 @@ import type { Alliance, FieldPose } from '@engine/coords';
 import type { MatchPeriod } from '@engine/match/clock';
 import type { RobotOption } from '@engine/core/season';
 import { cloneConfig, DEFAULT_ROBOT, sanitizeConfig, type RobotConfig } from '@engine/robot/config';
-import { deg, inch } from '@engine/units';
+import { deg, inch, lb } from '@engine/units';
 import * as C from './constants';
 
 /**
@@ -87,6 +87,8 @@ export const FIXED_MAX_SPEED = 8.5;
 
 type Build = {
   ground: boolean; source: boolean; shooter: 'none' | 'fixed' | 'pivot'; aim: 'turret' | 'align' | 'driver'; amp: boolean; climb: 0 | 1 | 2;
+  /** Balance trade-offs: drive speed (m/s) and weight (lb). */
+  speed?: number; weight?: number;
 };
 export function build(b: Build): RobotConfig {
   const c = crescendoRobotDefaults();
@@ -97,6 +99,8 @@ export function build(b: Build): RobotConfig {
   c.launcher.turret = b.aim === 'turret';
   c.autoAlign = b.aim === 'align';
   c.climber.maxLevel = b.climb;
+  if (b.speed) c.maxSpeed = b.speed;
+  if (b.weight) { c.mass = lb(b.weight); c.maxAccel *= Math.min(1, 125 / b.weight); }
   return normalizeCrescendoConfig(c);
 }
 
@@ -104,10 +108,10 @@ export function build(b: Build): RobotConfig {
 export function crescendoRobotPresets() {
   return [
     { id: 'pivot', label: 'Under-bumper pivot shooter', description: 'Full-width ground intake, pivoting shooter that scores from anywhere in the WING, AMPs with the shooter, chassis auto-aim, chain climb. The dominant 2024 design.', config: build({ ground: true, source: true, shooter: 'pivot', aim: 'align', amp: true, climb: 1 }) },
-    { id: 'turret', label: 'Turret shooter', description: 'Ground intake + turreted pivot shooter: shoots while driving in any direction. Rare (heavy and complex) but strong.', config: build({ ground: true, source: true, shooter: 'pivot', aim: 'turret', amp: true, climb: 1 }) },
-    { id: 'source-pivot', label: 'SOURCE-fed shooter', description: 'Pivot shooter that only takes NOTES from the SOURCE CHUTE (no ground intake): relies on SOURCE human players.', config: build({ ground: false, source: true, shooter: 'pivot', aim: 'align', amp: true, climb: 1 }) },
-    { id: 'kitbot', label: 'KitBot (SUBWOOFER shooter)', description: 'Fixed-angle shooter fed at the SOURCE: scores from against the SUBWOOFER and in the AMP, no ground intake, no climber, driver-aimed.', config: build({ ground: false, source: true, shooter: 'fixed', aim: 'driver', amp: true, climb: 0 }) },
-    { id: 'amp-trap', label: 'AMP + TRAP specialist', description: 'Ground intake and an AMP/TRAP arm, no SPEAKER shooter: feeds AMPLIFICATION and scores the TRAP from the chain.', config: build({ ground: true, source: true, shooter: 'none', aim: 'driver', amp: true, climb: 2 }) },
+    { id: 'turret', label: 'Turret shooter', description: 'Ground intake + turreted pivot shooter: shoots while driving in any direction. Rare: heavy and complex, so it drives slower, but strong.', config: build({ ground: true, source: true, shooter: 'pivot', aim: 'turret', amp: true, climb: 1, speed: 4.0, weight: 140 }) },
+    { id: 'source-pivot', label: 'SOURCE-fed shooter', description: 'Pivot shooter that only takes NOTES from the SOURCE CHUTE (no ground intake): relies on SOURCE human players.', config: build({ ground: false, source: true, shooter: 'pivot', aim: 'align', amp: true, climb: 1, speed: 4.9, weight: 112 }) },
+    { id: 'kitbot', label: 'KitBot (SUBWOOFER shooter)', description: 'Fixed-angle shooter fed at the SOURCE: scores from against the SUBWOOFER and in the AMP, no ground intake, no climber, driver-aimed.', config: build({ ground: false, source: true, shooter: 'fixed', aim: 'driver', amp: true, climb: 0, speed: 4.8, weight: 105 }) },
+    { id: 'amp-trap', label: 'AMP + TRAP specialist', description: 'Ground intake and an AMP/TRAP arm, no SPEAKER shooter: feeds AMPLIFICATION and scores the TRAP from the chain.', config: build({ ground: true, source: true, shooter: 'none', aim: 'driver', amp: true, climb: 2, speed: 4.8, weight: 115 }) },
   ];
 }
 

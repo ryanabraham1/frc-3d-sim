@@ -3,6 +3,8 @@ import type { AutoPilot, SeasonContext } from '../core/season';
 import { IDLE_COMMAND, type Robot, type RobotCommand } from '../robot/robot';
 import { clamp, wrapAngle } from '../units';
 import { arrive, avoid, dist, turnToward, type Circle } from './steering';
+import { SKILL, TeamBrain } from './team';
+import type { AiSkill } from '../core/season';
 
 export interface BotStrategy {
   score(): RobotCommand;
@@ -17,6 +19,12 @@ export interface BotStrategy {
   wantsScore?(): boolean | undefined;
   endgame?(): RobotCommand | null;
   tactics?(dt: number): RobotCommand | null;
+  /** Touching this opponent now would draw a foul (it or we are in a protected zone): keep well clear. */
+  cautious?(opponent: Robot): boolean;
+  /** The bot keeps getting stuck where it is going: forget the current goal. */
+  onStuck?(): void;
+  /** True = let go of a climb made earlier (an AUTO climb) and get back to work. */
+  release?(): boolean;
 }
 
 /** Repeated physical collect/score cycles. No pieces or points are created by the AI. */
@@ -31,22 +39,41 @@ export class CycleBot implements AutoPilot {
   private stalled = 0;
   private distanceToGoal = 0;
   private previous: FieldPoint;
-  private readonly pace: number;
+  pace: number;
+  /** Shared alliance brain: roles, plan blackboard, rescues and radio. */
+  readonly team: TeamBrain;
+  readonly skill: AiSkill;
+  /** Hard or Elite: competitive builds and the most aggressive plan. */
   readonly hard: boolean;
+  /** Normal and above: runs the alliance plan (Easy just cycles). */
+  readonly smart: boolean;
+  readonly elite: boolean;
 
   constructor(readonly ctx: SeasonContext, readonly robot: Robot, private readonly strategy: BotStrategy) {
     this.scoring = robot.held.length > 0;
     if (!CycleBot.claims.has(ctx)) CycleBot.claims.set(ctx, new Map());
     this.previous = robot.pose;
-    const difficulty = robot.alliance === ctx.settings.alliance ? 'normal' : ctx.settings.aiDifficulty ?? 'normal';
-    this.hard = difficulty === 'hard';
-    this.pace = difficulty === 'easy' ? 0.55 : difficulty === 'hard' ? 0.95 : 0.75;
+    this.team = TeamBrain.for(ctx, robot.alliance);
+    this.skill = this.team.skill;
+    this.hard = this.skill === 'hard' || this.skill === 'elite';
+    this.elite = this.skill === 'elite';
+    this.smart = SKILL[this.skill].smart;
+    this.pace = SKILL[this.skill].pace;
+  }
+
+  /** This robot's current alliance role (season role id). */
+  get role(): string {
+    return this.team.role(this.robot);
   }
 
   update(dt: number): RobotCommand {
     const r = this.robot;
-    if (r.isClimbing || r.tippedOver) return { ...IDLE_COMMAND };
-    const endgame = this.hard ? this.strategy.endgame?.() : null;
+    this.team.tick();
+    if (r.isClimbing) return { ...IDLE_COMMAND, descend: !!this.strategy.release?.() };
+    if (r.tippedOver) return { ...IDLE_COMMAND };
+    const rescue = this.rescue();
+    if (rescue) return this.antiPin(rescue, dt);
+    const endgame = this.smart ? this.strategy.endgame?.() : null;
     if (endgame) return this.recover(endgame, dt);
     const tactic = this.strategy.tactics?.(dt);
     if (tactic) return this.recover(tactic, dt);
@@ -84,34 +111,112 @@ export class CycleBot implements AutoPilot {
     return this.recover(cmd, dt);
   }
 
-  private recover(cmd: RobotCommand, dt: number): RobotCommand {
-    const r = this.robot;
-    // Recover from pushing a wall or another robot, during scoring as well as collection.
-    if (dist(r.pose, this.previous) < 0.003 && this.distanceToGoal > 0.1) this.stalled += dt;
-    else this.stalled = Math.max(0, this.stalled - dt * 2);
-    this.previous = r.pose;
-    if (this.stalled > 1.5) {
-      const yaw = r.pose.yaw + (r.id % 2 ? 1 : -1) * Math.PI / 2;
-      cmd.vx = Math.cos(yaw) * this.pace;
-      cmd.vy = Math.sin(yaw) * this.pace;
-      if (this.stalled > 2.3) {
-        if (this.target >= 0) this.blockedTargets.set(this.target, this.ctx.clock.elapsed + 8);
-        this.releaseTarget();
-        this.stalled = 0;
-        this.retarget = 0;
-      }
+  /** Push a stuck teammate free (or shove the robot pinning it) when the alliance brain sends this robot. */
+  private rescue(): RobotCommand | null {
+    const job = this.team.rescueFor(this.robot);
+    if (!job) return null;
+    const r = this.robot, p = r.pose, t = job.push.pose;
+    const size = (o: Robot) => Math.max(o.footprint.length, o.footprint.width) / 2;
+    const reach = size(r) + size(job.push);
+    const behind = { x: t.x - job.dir.x * (reach + 0.3), y: t.y - job.dir.y * (reach + 0.3) };
+    const along = (p.x - t.x) * job.dir.x + (p.y - t.y) * job.dir.y;
+    const lateral = Math.abs(-(p.x - t.x) * job.dir.y + (p.y - t.y) * job.dir.x);
+    const yaw = Math.atan2(job.dir.y, job.dir.x);
+    if (along > -reach + 0.1 || lateral > 0.35) {
+      const cmd = this.driveTo(behind, yaw);
+      this.distanceToGoal = 0; // routing around robots near the target isn't a stall
+      return cmd;
+    }
+    this.team.pushing(r);
+    const speed = Math.min(2, r.config.maxSpeed * 0.5);
+    return { ...IDLE_COMMAND, vx: job.dir.x * speed, vy: job.dir.y * speed,
+      omega: turnToward(p.yaw, yaw, r.config.maxOmega * this.pace) };
+  }
+
+  private oppContact = 0;
+  private backoff: { until: number; x: number; y: number } | null = null;
+
+  /**
+   * Pin avoidance: an opponent held against something for a 5-count is a foul in every season. A bot that has been
+   * pressed against an opponent without moving for 1.5 s backs straight off for a moment, then re-plans.
+   */
+  private antiPin(cmd: RobotCommand, dt: number): RobotCommand {
+    const r = this.robot, now = this.ctx.clock.elapsed;
+    if (this.backoff && now < this.backoff.until) {
+      return { ...cmd, vx: this.backoff.x * r.config.maxSpeed * 0.5, vy: this.backoff.y * r.config.maxSpeed * 0.5, shoot: cmd.shoot, intake: cmd.intake, climb: null };
+    }
+    const size = (o: Robot) => Math.hypot(o.footprint.length, o.footprint.width) / 2;
+    const opp = this.ctx.robots.find((o) => o.alliance !== r.alliance && dist(o.pose, r.pose) < size(o) + size(r) - 0.05);
+    if (opp && r.speed < 0.35 && opp.speed < 0.35 && Math.hypot(cmd.vx, cmd.vy) > 0.3) this.oppContact += dt;
+    else this.oppContact = Math.max(0, this.oppContact - dt * 2);
+    if (opp && this.oppContact > 1.5) {
+      const dx = r.pose.x - opp.pose.x, dy = r.pose.y - opp.pose.y, d = Math.hypot(dx, dy) || 1;
+      this.backoff = { until: now + 1.2, x: dx / d, y: dy / d };
+      this.oppContact = 0;
+      if (this.target >= 0) this.blockedTargets.set(this.target, now + 8);
+      this.releaseTarget();
+      this.retarget = 0;
     }
     return cmd;
   }
 
-  /** `slowRadius` is where the robot starts braking for the goal (smaller = arrives faster, e.g. to ram or collect). */
+  private escape: { until: number; x: number; y: number; spin: number } | null = null;
+  private escapes = 0;
+
+  private recover(cmd: RobotCommand, dt: number): RobotCommand {
+    cmd = this.antiPin(cmd, dt);
+    const r = this.robot, now = this.ctx.clock.elapsed;
+    if (this.escape && now < this.escape.until) {
+      this.previous = r.pose;
+      return { ...cmd, vx: this.escape.x, vy: this.escape.y, omega: this.escape.spin };
+    }
+    // Stalled against a wall, a robot, a pile of pieces or beached on a field edge: try a different way out each time
+    // (back off, either side, diagonally) with a twist of the chassis, which un-beaches a robot hung up on an edge.
+    const moving = dist(r.pose, this.previous) > 0.003;
+    if (!moving && this.distanceToGoal > 0.1 && Math.hypot(cmd.vx, cmd.vy) > 0.2) this.stalled += dt;
+    else this.stalled = Math.max(0, this.stalled - dt * 2);
+    if (moving && dist(r.pose, this.previous) > 0.01) this.escapes = Math.max(0, this.escapes - dt * 0.2);
+    this.previous = r.pose;
+    if (this.stalled > 1.1) {
+      const want = Math.hypot(cmd.vx, cmd.vy) > 0.1 ? Math.atan2(cmd.vy, cmd.vx) : r.pose.yaw;
+      const turn = [Math.PI, Math.PI / 2, -Math.PI / 2, Math.PI * 0.75, -Math.PI * 0.75][Math.floor(this.escapes) % 5];
+      const speed = r.config.maxSpeed * 0.7;
+      this.escape = { until: now + 0.8, x: Math.cos(want + turn) * speed, y: Math.sin(want + turn) * speed, spin: (this.escapes % 2 ? 1 : -1) * r.config.maxOmega * 0.4 };
+      this.escapes++;
+      this.stalled = 0;
+      if (this.escapes >= 2) {
+        if (this.target >= 0) this.blockedTargets.set(this.target, now + 8);
+        this.releaseTarget();
+        this.retarget = 0;
+        this.strategy.onStuck?.();
+      }
+      return { ...cmd, vx: this.escape.x, vy: this.escape.y, omega: this.escape.spin };
+    }
+    return cmd;
+  }
+
+  /**
+   * Defense: get between `target` and where it scores (`goal`), then lean on it. Pin avoidance (antiPin) breaks contact
+   * before any 5-count, so the bot repeatedly re-engages instead of holding a robot still.
+   */
+  defend(target: Robot, goal: FieldPoint): RobotCommand {
+    const r = this.robot, p = target.pose, v = target.fieldVelocity;
+    const far = dist(r.pose, p) > 2;
+    const k = far ? 0.35 : 0;
+    const aim = { x: p.x + (goal.x - p.x) * k + v.vx * 0.3, y: p.y + (goal.y - p.y) * k + v.vy * 0.3 };
+    if (!far) this.team.pushing(r);
+    return this.driveTo(aim, Math.atan2(p.y - r.pose.y, p.x - r.pose.x), target);
+  }
+
   driveTo(goal: FieldPoint, yaw?: number, engage?: Robot, slowRadius = 0.85): RobotCommand {
     const r = this.robot, p = r.pose;
     const waypoint = this.strategy.route?.(goal) ?? goal;
     this.distanceToGoal = dist(p, goal);
     const v = arrive(p, waypoint, r.config.maxSpeed * this.pace, waypoint === goal ? slowRadius : 0.85);
     const near = dist(p, goal) < 0.35 && waypoint === goal;
-    const obstacles = this.ctx.robots.filter((o) => o !== r && o !== engage).map((o) => ({ ...o.pose, r: (Math.hypot(o.footprint.width, o.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + 0.08 }));
+    // Opponents it would be a foul to touch right now (protected zones) get a much wider berth.
+    const obstacles = this.ctx.robots.filter((o) => o !== r && o !== engage).map((o) => ({ ...o.pose,
+      r: (Math.hypot(o.footprint.width, o.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + (o.alliance !== r.alliance && this.strategy.cautious?.(o) ? 0.75 : 0.08) }));
     const repulsion = avoid(p, obstacles, 0.45, r.config.maxSpeed * 0.55);
     let vx = v.vx + repulsion.vx, vy = v.vy + repulsion.vy;
     // Circulate clockwise around an approaching teammate. Radial repulsion alone leaves two robots
@@ -154,7 +259,7 @@ export class CycleBot implements AutoPilot {
       return p.z < 0.3 && this.strategy.accepts(i, p) ? p : null;
     };
     if (this.retarget > 0) { const p = eligible(this.target); if (p) { CycleBot.claims.get(this.ctx)!.set(this.target, { robot: this.robot.id, until: this.ctx.clock.elapsed + 1 }); return p; } }
-    this.retarget = this.hard ? 0.2 : 0.5;
+    this.retarget = SKILL[this.skill].retarget;
     this.releaseTarget();
     const candidates: { i: number; p: FieldPoint }[] = [];
     for (let i = 0; i < pool.count; i++) {
