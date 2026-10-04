@@ -153,7 +153,7 @@ export class Robot {
   private readonly parts = new Map<ModelPart, THREE.Object3D[]>();
   /** Real-team visual model (config.model), animated from `anim` every frame. */
   private model: RobotModel | null = null;
-  private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, hood: 0, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
+  private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, aiming: false, hood: 0, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
   private lastFrame = -1;
   private lastHeld = 0;
   /** Animated game-piece flow through the robot (visual only; see enablePieceFlow). */
@@ -669,6 +669,7 @@ export class Robot {
     const act = this.netAct ?? this.actBits();
     a.intaking = (act & 1) !== 0 && this.blockerDeploy === 0;
     a.passing = (act & 2) !== 0;
+    a.aiming = (act & 8) !== 0 && this.enabled;
     if (this.netAct !== null && this.config.shotBlocker) {
       // Replicas aren't driven: swing the blocker toward the host's state at the real deploy speed.
       this.blockerDeploy = clamp(this.blockerDeploy + ((act & 4) ? 1 : -1) * a.dt / this.config.shotBlocker.seconds, 0, 1);
@@ -1157,7 +1158,21 @@ export class Robot {
     const err = wrapAngle(desired - this.turretYaw);
     const maxStep = 12 * dt;
     this.turretYaw = wrapAngle(this.turretYaw + clamp(err, -maxStep, maxStep));
+    // While the driver holds shoot / pass, re-solve the shot from here a few times a second so the hood visibly
+    // tracks the range before the piece leaves (the launch itself still solves exactly at release).
+    const c = this.config;
+    if (target && (this.lastCommand.shoot || this.lastCommand.pass) && c.launcher.enabled && c.aimAssist !== 'off' && this.climbPhase === 'none') {
+      this.aimSolveIn -= dt;
+      if (this.aimSolveIn <= 0) {
+        this.aimSolveIn = 0.15;
+        const ex = this.launcherExit(0);
+        const sol = this.solveShot(this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp), target);
+        if (sol) this.lastShotAngle = sol.angle;
+      }
+    } else this.aimSolveIn = 0;
   }
+  private aimSolveIn = 0;
+  private readonly aimTmp = new THREE.Vector3();
 
   /**
    * Game-piece flight model the shot solver mirrors. Set from the season's GamePieceSpec when the robot
@@ -1474,9 +1489,10 @@ export class Robot {
     };
   }
 
-  /** Mechanism bits replicated to clients: 1 intake, 2 pass, 4 shot blocker out. */
+  /** Mechanism bits replicated to clients: 1 intake, 2 pass, 4 shot blocker out, 8 aiming (shoot or pass held). */
   private actBits(): number {
-    return (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0) | (this.lastCommand.block && this.blockerDeploy > 0 ? 4 : 0);
+    return (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0) | (this.lastCommand.block && this.blockerDeploy > 0 ? 4 : 0)
+      | (this.lastCommand.shoot || this.lastCommand.pass ? 8 : 0);
   }
 
   /** Replica update from a (possibly interpolated) snapshot. The body is only posed, never simulated. */

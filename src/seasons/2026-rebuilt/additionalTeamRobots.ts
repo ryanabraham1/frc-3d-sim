@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, jitter, mat, overBumperIntake, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
+import { hoodFor } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
@@ -121,7 +122,8 @@ for (const [id, color, style] of [
         }
         p.needsUpdate=true; net!.geometry.computeBoundingSphere();
       }
-      hood = approach(hood,(s.hood - 1) * 0.7,10,s.dt); for (const h of hoods) h.rotation.z = hood;
+      // Hood folds flat when idle and swings to the solved angle while aiming (see turretShooter).
+      hood = approach(hood, s.aiming || s.firing > 0 ? hoodFor(s.hood) : -0.35, 5, s.dt); for (const h of hoods) h.rotation.z = hood;
       for (const w of wheels) spin(w, s.enabled ? 40 + 60 * s.firing : 0, s.dt);
     } };
 });

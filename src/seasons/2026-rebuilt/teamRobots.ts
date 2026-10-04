@@ -1,8 +1,8 @@
 import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
-import { belt, fasteners, motor } from '@engine/robot/mechanicalDetail';
+import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
+import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
@@ -29,27 +29,6 @@ function latchDeploy(state: { v: number }, s: RobotAnimState): number {
 
 function flywheelSpeed(s: RobotAnimState): number {
   return s.enabled ? 45 + 45 * s.firing : 0;
-}
-
-/** Hood sector + shooter wheel on a turret / chassis mount; returns the parts to animate. */
-function shooterHead(parent: THREE.Object3D, o: { width: number; wheelR: number; wheel: THREE.Material; plate: THREE.Material; hood: THREE.Material; x?: number; y?: number }): { hood: THREE.Group; wheels: THREE.Group[] } {
-  const head = pivot(parent, o.x ?? 0, o.y ?? 0);
-  sidePlates(head, [[-0.12, -0.03], [0.09, -0.03], [0.12, 0.04], [0.05, 0.12], [-0.08, 0.12], [-0.13, 0.05]], (o.width + 0.02) / 2, o.plate, [[-0.05, 0.05, 0.025]]);
-  box(head, 0.03, 0.025, o.width + 0.03, o.plate, -0.1, -0.02, 0); // standoff between the plates
-  // Broad feed ramp and a second roller make a complete shooter channel at gameplay scale.
-  box(head, 0.2, 0.012, o.width, o.plate, -0.025, -0.028, 0);
-  box(head, 0.025, 0.025, o.width + 0.03, o.plate, -0.08, 0.1, 0);
-  const wheels = [roller(head, o.wheelR, o.width, o.wheel, 0.02, 0.03), roller(head, o.wheelR * 0.6, o.width, o.wheel, -0.09, 0.015)];
-  for(const sign of [-1,1]) {
-    const z = sign*(o.width/2+.023);
-    motor(head,-.075,-.025,z+sign*.03);
-    belt(head,[-.075,-.025],[.02,.03],z);
-    fasteners(head,[[-.1,.025],[-.065,.105],[.065,-.015],[.075,.045]],z-sign*.01);
-    bar(head,[-.1,.09,z],[.015,.12,z],.008,mat(0xb9c2ca,{metal:.8}));
-  }
-  const hoodPivot = pivot(head, -0.02, 0.03);
-  hoodShell(hoodPivot, o.wheelR + 0.01, o.width, o.hood);
-  return { hood: hoodPivot, wheels };
 }
 
 // ── 4414 HighTide RIPCURRENT (binder CAD renders, 2026.team4414.com): dark smoked bumper-height hopper walls, teal
@@ -79,12 +58,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const t = k.turret;
   t.position.set(L * 0.05, H - 0.07, 0);
   // Pancake turret: wide black disc with a teal ring, shooter on top.
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 32), black);
-  t.add(disc);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.008, 6, 32), teal);
-  ring.rotation.x = Math.PI / 2;
-  t.add(ring);
-  const sh = shooterHead(t, { width: 0.16, wheelR: inch(1.5), wheel: mat(0xb87333, { metal: 0.8, rough: 0.3 }), plate: black, hood: teal, y: 0.04 });
+  const sh = turretShooter(t, { width: Math.max(0.19, 0.16 + 0.04), wheel: mat(0xb87333, { metal: 0.8, rough: 0.3 }), plate: black, accent: teal, height: 0.15, topY: 0.06 });
   // Smoked hopper extension that slides out over the deployed intake.
   const tray = new THREE.Group();
   k.visual.add(tray);
@@ -93,12 +67,11 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black });
   const deploy = { v: 0 };
   let rotorRate = 0;
-  let hoodAng = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.4, H - 0.01, W * 0.4],
-    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.wheels[0]) },
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.flywheel) },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
@@ -110,9 +83,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 9 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
       for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
-      for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
-      sh.hood.rotation.z = hoodAng;
+      sh.update(s);
     },
   };
 });
@@ -152,10 +123,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const dye = dyeRotor(k.visual, { x: 0, y0: bt + 0.02, R: rr, wallH: 0.09, towerX: tx, towerR: 0.085, towerTop: H - 0.08, plate: black, accent: blue, motors: 2, motorSide: 1 });
   const t = k.turret;
   t.position.set(tx, H - 0.07, 0);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.01, 6, 32), blue);
-  ring.rotation.x = Math.PI / 2;
-  t.add(ring);
-  const sh = shooterHead(t, { width: 0.15, wheelR: inch(2), wheel: mat(0x2b2d31, { rough: 0.7 }), plate: black, hood: blue, y: 0.04 });
+  const sh = turretShooter(t, { width: Math.max(0.19, 0.15 + 0.04), wheel: mat(0x2b2d31, { rough: 0.7 }), plate: black, accent: blue, height: 0.15, topY: 0.06 });
   // Shot blocker: a slatted panel on a hinge along the top edge of the intake side (local +x of the hinge = outward).
   const b = c.shotBlocker!;
   const len = Math.hypot(b.reach, b.rise);
@@ -170,12 +138,11 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blackTube });
   const deploy = { v: 0 };
   let rotorRate = 0;
-  let hoodAng = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [side * L * 0.4, H - 0.01, W * 0.4],
-    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.wheels[0]) },
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.flywheel) },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
@@ -184,9 +151,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
       for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
-      for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
-      sh.hood.rotation.z = hoodAng;
+      sh.update(s);
       // Same pose as the collider in Robot.poseBlocker: folded inward (π) → out at atan2(rise, reach).
       const phi = Math.PI - s.blocker * (Math.PI - out);
       hinge.rotation.z = Math.atan2(Math.sin(phi), side * Math.cos(phi));
@@ -283,7 +248,8 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       const fs = flywheelSpeed(s);
       for (const r of wheels) spin(r, -fs, s.dt);
       spin(flywheel, fs, s.dt, 'y');
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.6, 9, s.dt);
+      // Dumper hood: lies flat until the driver shoots, then lifts to the solved angle (range-dependent).
+      hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = hoodAng;
       hooks.set(s.climb);
     },
@@ -323,20 +289,17 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const tx = L * 0.17;
   const t = k.turret;
   t.position.set(tx, top + 0.01, 0);
-  box(k.visual, 0.3, 0.008, W * 0.94, gray, tx, top - 0.004, 0);
-  const bearing = new THREE.Mesh(new THREE.TorusGeometry(inch(4), 0.012, 8, 28), k.mats.alu);
-  bearing.rotation.x = Math.PI / 2;
-  t.add(bearing);
-  const sh = shooterHead(t, { width: 0.14, wheelR: inch(2), wheel: gray, plate: black, hood: gray, y: 0.03 });
+  // Deck under the turret plate, bolted to the lattice walls.
+  box(k.visual, 0.3, 0.008, W * 0.94, gray, tx, top + 0.01 - 0.19 - 0.065, 0);
+  const sh = turretShooter(t, { width: Math.max(0.19, 0.14 + 0.04), wheel: gray, plate: black, accent: gray, height: 0.15, topY: 0.06 });
   // Exposed spur gear driving the flywheel (Kepler's shooter is gear-driven, no belts).
   const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.012, 18), k.mats.alu);
   gear.rotation.x = Math.PI / 2;
-  gear.position.set(-0.05, 0.08, 0.09);
-  sh.hood.parent!.add(gear);
+  gear.position.set(-0.05, 0.09, 0.13);
+  sh.flywheel.parent!.add(gear);
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black });
   const hooks = climberHooks(k.visual, { x: -L * 0.36, y0: bt, length: top - bt, spread: W * 0.55, m: k.mats.alu, hook: black });
   const deploy = { v: 0 };
-  let hoodAng = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.02, length: L * 0.88, width: W * 0.88, height: top - bt, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -347,7 +310,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
       // Floor belts carry FUEL forward under the arch, then the tower lifts it into the turret.
       feed: () => {
         const z = jitter(W * 0.5);
-        return [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, z), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, z * 0.3), new THREE.Vector3(tx, top - 0.06, 0), flowAt(k, sh.wheels[0], -0.06, 0, 0), flowAt(k, sh.wheels[0], 0.03, 0.03, 0)];
+        return [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, z), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, z * 0.3), new THREE.Vector3(tx, top - 0.06, 0), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)];
       },
     },
     update(s) {
@@ -355,11 +318,8 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
       pile.setFill(s.fill);
       intake.update(s, latchDeploy(deploy, s));
       fill.set(s.fill);
-      const fly = flywheelSpeed(s);
-      for (const w of sh.wheels) spin(w, -fly, s.dt);
-      spin(gear, fly * 0.6, s.dt, 'y');
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
-      sh.hood.rotation.z = hoodAng;
+      sh.update(s);
+      spin(gear, flywheelSpeed(s) * 0.6, s.dt, 'y');
       hooks.set(s.climb);
     },
   };
@@ -406,24 +366,22 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
   // Turret on top, toward the front.
   const t = k.turret;
   t.position.set(L * 0.18, H - 0.06, 0);
-  box(k.visual, 0.24, 0.035, W * 0.95, silver, L * 0.18, H - 0.085, 0);
-  const feedColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, hopH - 0.04, 16), black);
-  feedColumn.position.set(L * 0.18, bt + (hopH - 0.04) / 2, 0);
+  box(k.visual, 0.24, 0.035, W * 0.95, silver, L * 0.18, H - 0.06 - 0.19 - 0.083, 0);
+  const colH = H - 0.06 - 0.19 - 0.1 - bt; // up to the support beam under the turret plate
+  const feedColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, colH, 16), black);
+  feedColumn.position.set(L * 0.18, bt + colH / 2, 0);
   k.visual.add(feedColumn);
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.02, 30), black);
-  t.add(disc);
-  const sh = shooterHead(t, { width: 0.16, wheelR: inch(2), wheel: mat(0x8a9099, { metal: 0.6 }), plate: black, hood: silver, y: 0.03 });
+  const sh = turretShooter(t, { width: Math.max(0.19, 0.16 + 0.04), wheel: mat(0x8a9099, { metal: 0.6 }), plate: black, accent: silver, height: 0.15, topY: 0.06 });
   // Intake on silver arms with a silver roller.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: silver });
   const hooks = climberHooks(k.visual, { x: -L * 0.38, y0: bt, length: H - bt - 0.05, spread: W * 0.6, m: silverTube, hook: black });
   const deploy = { v: 0 };
   let rate = 0;
-  let hoodAng = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.05, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.45, H - 0.02, W * 0.4],
-    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: columnFeed(k, L * 0.18, sh.wheels[0], Math.min(L, W) * 0.36, FUEL_R) },
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: columnFeed(k, L * 0.18, sh.flywheel, Math.min(L, W) * 0.36, FUEL_R) },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
@@ -431,9 +389,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
       fill.set(s.fill);
       rate = approach(rate, !s.enabled ? 0 : s.firing > 0 ? 8 : 1.5, 5, s.dt);
       spin(spindex, rate, s.dt, 'y');
-      for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
-      sh.hood.rotation.z = hoodAng;
+      sh.update(s);
       hooks.set(s.climb);
     },
   };
@@ -501,10 +457,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
   const dye = dyeRotor(k.visual, { x: centerX, y0: bt + 0.02, R: R * 0.86, wallH: 0.1, towerX: centerX, towerR: 0.11, towerTop: H - 0.07, plate: gray, accent: black, motors: 2, motorSide: side > 0 ? 1 : -1 });
   const t = k.turret;
   t.position.set(centerX, H - 0.06, 0);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(inch(5.5), 0.018, 10, 36), black);
-  ring.rotation.x = Math.PI / 2;
-  t.add(ring);
-  const sh = shooterHead(t, { width: 0.15, wheelR: inch(2), wheel: mat(0x2f6fd6, { metal: 0.3 }), plate: black, hood: mat(0xc62828, { metal: 0.2 }), y: 0.02 });
+  const sh = turretShooter(t, { width: Math.max(0.19, 0.15 + 0.04), wheel: mat(0x2f6fd6, { metal: 0.3 }), plate: black, accent: mat(0xc62828, { metal: 0.2 }), height: 0.15, topY: 0.06 });
   // Silver perforated goalpost over the intake on the flat side.
   const gx = flatX - side * 0.03;
   for (const sz of [-1, 1]) bar(k.visual, [gx, bt, sz * (R - 0.03)], [gx, H - 0.01, sz * (R - 0.03)], 0.025, silverTube);
@@ -514,7 +467,6 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 3, frame: silverTube, width: W * 0.9 });
   const deploy = { v: 0 };
   let rotorRate = 0;
-  let hoodAng = 0;
   let load = 0;
   return {
     replaces: ['bumpers', 'chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -526,7 +478,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
         const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * (R - 0.08);
         return new THREE.Vector3(centerX + Math.cos(a) * d, bt + 0.03 + FUEL_R + hopH * Math.min(0.92, load) * 0.9, Math.sin(a) * d);
       },
-      feed: dyeFeed(k, dye, sh.wheels[0]),
+      feed: dyeFeed(k, dye, sh.flywheel),
     },
     update(s) {
       db.update(s);
@@ -536,9 +488,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 10 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
       for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
-      for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
-      sh.hood.rotation.z = hoodAng;
+      sh.update(s);
     },
   };
 });
@@ -627,7 +577,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
       spin(wheels[0], -fs, s.dt);
       spin(wheels[1], s.firing > 0 || s.intaking ? -25 : 0, s.dt);
       for (const f of wheels.slice(2)) spin(f, fs, s.dt, 'y');
-      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.6, 9, s.dt);
+      hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = -side * hoodAng;
       hooks.set(s.climb);
     },
