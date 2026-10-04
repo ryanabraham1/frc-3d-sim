@@ -49,3 +49,12 @@ for (const team of [254,4414,1678]) it(`${team}: expanded net physically blocks 
   sim.run(3, { ...IDLE_COMMAND, vx: 2 });
   expect(r.pose.x).toBeGreaterThan(C.HUB_CENTER.x + C.TRENCH_DEPTH / 2 + 0.5);
 });
+
+it('net and telescoping expansion do not inflate the requested total capacities', () => {
+  for(const [team,capacity] of [[254,50],[1678,60]]) {
+    const c=season.teamRobots!.find(t=>t.team===team)!.config;
+    expect(c.hopperCapacity).toBe(capacity);
+    expect(season.normalizeRobotConfig!(cloneConfig(c)).hopperCapacity).toBe(capacity);
+    expect(c.hopperExpansion!.startCount).toBeLessThan(capacity);
+  }
+});

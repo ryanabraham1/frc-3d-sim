@@ -548,10 +548,10 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, 80-FUEL net hopper (50 trench-safe), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter. 115 lb.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, 50-FUEL total net hopper, 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter. 115 lb.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
-      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: false, rate: 25, climb: 1 }, (c) => {
-        c.hopperExpansion = { startCount: 50, fullHeight: inch(28) }; // [EST] net bulges when over trench-safe load
+      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 50, tall: false, rate: 25, climb: 1 }, (c) => {
+        c.hopperExpansion = { startCount: 40, fullHeight: inch(28) }; // [EST] net bulges when over trench-safe load
         c.launcher.exits = 3; // [EST] wide multi-wheel shooter
         c.mass = lb(115);
       }),

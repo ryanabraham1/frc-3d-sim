@@ -118,9 +118,9 @@ export function additionalRebuiltTeamRobots(): TeamRobot[] {
       source: 'https://www.chiefdelphi.com/t/2910-robot-reveal-2026-blitz/516325?page=5 — Champs rebuild team Q&A; frcteam2910.org 2026 recap',
       config: config(2910,'reblitz-2910',false,55,28,5.3,90) },
     { id: 'limestone-1678', team: 1678, name: 'Limestone',
-      description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. Simulator estimates: 100 FUEL, 24 FUEL/s, 4.7 m/s drive; loaded hopper loses trench clearance above 65 FUEL.',
+      description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. 60 FUEL with the hopper raised. Simulator estimates: 24 FUEL/s, 4.7 m/s drive; telescoping expansion starts above 40 FUEL.',
       source: 'https://www.chiefdelphi.com/t/1678-2026-robot-limestone/515709 — reveal and team hopper/CAD discussion',
-      config: config(1678,'limestone-1678',false,100,24,4.7,88) },
+      config: config(1678,'limestone-1678',false,60,24,4.7,88) },
     { id: 'mixtape-971', team: 971, name: 'Mixtape',
       description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. Simulator estimates: 45 FUEL, 16 FUEL/s combined, 5.0 m/s drive. Both heads share one simulated aim and launch point.',
       source: 'https://www.chiefdelphi.com/t/frc-971-spartan-robotics-2026-robot-reveal-mixtape/515582; https://github.com/frc971/971-second-robot-2026',
@@ -132,7 +132,7 @@ export function additionalRebuiltTeamRobots(): TeamRobot[] {
 function config(team: number, model: string, turret: boolean, capacity: number, rate: number, speed: number, accuracy: number) {
   const c = build({ intake: 'both', aim: turret ? 'turret' : 'align', dumper: !turret, hopper: capacity, tall: false, rate, climb: 0 });
   c.teamNumber = team; c.model = model; c.maxSpeed = speed; c.maxAccel = team === 2910 ? 11 : team === 1678 ? 9 : 10;
-  if (team === 1678) { c.frameLength = c.frameWidth = inch(27); c.hopperExpansion = { startCount: 65, fullHeight: inch(29), mechanism: 'telescoping' }; }
+  if (team === 1678) { c.frameLength = c.frameWidth = inch(27); c.hopperExpansion = { startCount: 40, fullHeight: inch(29), mechanism: 'telescoping' }; }
   setRebuiltAccuracy(c,accuracy);
   return normalizeRebuiltConfig(c);
 }

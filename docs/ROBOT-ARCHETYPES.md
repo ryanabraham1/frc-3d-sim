@@ -203,8 +203,9 @@ not measured team rankings. 2025 profiles vary the actual lift/release/harvest/c
 ### Flexible hopper nets and loaded clearance
 
 254 Overload is configured at 25 FUEL/s, 3476 Sandspit at 20 FUEL/s (requested tuning).
-Overload now has 80 total capacity with a 50-FUEL trench-safe load; RIPCURRENT keeps 85 total with
-70 trench-safe. These thresholds follow user guidance; total capacity for Overload and full-load roof heights
+Overload has 50 total capacity including net stretch, and Limestone has 60 with its hopper raised,
+following user guidance. Expansion starts at 40 for both as simulator tuning; RIPCURRENT keeps 85 total
+with expansion above 70. Full-load roof heights
 (28 in for 254, 27 in for 4414, 29 in for Limestone) are estimates. Above the threshold, `hopperExpansion`
 interpolates the loaded envelope, bows a crossed-strand net upward over visible FUEL, and adds a massless
 upper collider. Emptying lowers both the roof and collider. Robot routing uses `clearanceHeight`, so an
@@ -217,9 +218,9 @@ Use the gallery's “Full hopper (100%)” pose to inspect the bulge and “Stow
 Limestone’s `hopperExpansion.mechanism = 'telescoping'` uses a rigid raised rectangular rim,
 exposed nested lift tubes and slider collars. A crossed net bridges the roof to the intake lip;
 it is separate from the elastic domes on 254/4414. The simulator automatically raises and
-contracts this mechanism from held count (65–100 FUEL), so its visual roof, collision height
+contracts this mechanism from held count (40–60 FUEL), so its visual roof, collision height
 and routing agree. Real Citrus uses hybrid driver/automatic controls; this implementation
-approximates the contract sequence rather than adding another driver button. The 65-FUEL
+approximates the contract sequence rather than adding another driver button. The 40-FUEL
 threshold is simulator tuning, not a published Citrus measurement. Source:
 https://www.chiefdelphi.com/t/1678-citrus-circuits-2026-cad-and-robot-code-release/521535?page=2
 
