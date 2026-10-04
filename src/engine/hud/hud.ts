@@ -7,6 +7,8 @@ export interface ModalButton {
   onClick: () => void;
 }
 
+const INTRO_KEY = 'frc-sim:seen-controls';
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 /** Generic in-game DOM overlay. Seasons render into the provided slots. */
@@ -24,6 +26,9 @@ export class Hud {
   private help: HTMLElement;
   private info: HTMLElement;
   private fps: HTMLElement;
+  private hint: HTMLElement;
+  /** Frame-rate readout: dev builds, or `?fps` in the URL. */
+  private readonly showFps = import.meta.env.DEV || /[?&]fps\b/.test(globalThis.location?.search ?? '');
   private bannerTimer = 0;
   private cache = new Map<HTMLElement, string>();
 
@@ -47,6 +52,7 @@ export class Hud {
       <div class="hud-info" data-r="info"></div>
       <div class="hud-help hidden" data-r="help"></div>
       <div class="hud-fps" data-r="fps"></div>
+      <div class="hud-hint hidden" data-r="hint"></div>
       <div class="hud-modal hidden" data-r="modal"></div>
     `;
     container.appendChild(this.root);
@@ -62,6 +68,8 @@ export class Hud {
     this.help = q('help');
     this.info = q('info');
     this.fps = q('fps');
+    this.hint = q('hint');
+    if (!this.showFps) this.fps.classList.add('hidden');
     this.slots = { red: q('rslot'), blue: q('bslot'), center: q('cslot'), player: q('player') };
     this.help.innerHTML =
       `<div class="hud-help-title">Controls</div>` +
@@ -96,7 +104,34 @@ export class Hud {
   }
 
   setFps(fps: number): void {
-    this.setText(this.fps, `${Math.round(fps)} fps`);
+    if (this.showFps) this.setText(this.fps, `${Math.round(fps)} fps`);
+  }
+
+  /**
+   * Match-start onboarding: the full controls panel the first time a player ever starts a match, afterwards a small
+   * hint that fades out.
+   */
+  showIntro(seconds: number): () => void {
+    let first = false;
+    try {
+      first = !localStorage.getItem(INTRO_KEY);
+      localStorage.setItem(INTRO_KEY, '1');
+    } catch {
+      // Storage blocked: treat as a returning player.
+    }
+    if (first) {
+      this.toggleHelp(true);
+      const t = setTimeout(() => this.toggleHelp(false), seconds * 1000 * 1.5);
+      return () => clearTimeout(t);
+    }
+    this.hint.innerHTML = `<kbd>?</kbd> controls &nbsp;·&nbsp; <kbd>V</kbd> camera &nbsp;·&nbsp; <kbd>P</kbd> pause`;
+    this.hint.classList.remove('hidden', 'fade');
+    const fade = setTimeout(() => this.hint.classList.add('fade'), seconds * 1000);
+    const hide = setTimeout(() => this.hint.classList.add('hidden'), seconds * 1000 + 700);
+    return () => {
+      clearTimeout(fade);
+      clearTimeout(hide);
+    };
   }
 
   showBanner(text: string, seconds = 2, cls = ''): void {

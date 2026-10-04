@@ -22,6 +22,7 @@ export const reefscape2025: SeasonDefinition = {
   fieldLength: C.FIELD_LENGTH, fieldWidth: C.FIELD_WIDTH, carpetColor: C.COLORS.carpet,
   maxRobotHeight: inch(42), maxRobotPerimeter: inch(120), maxRobotWeight: lb(135) + BATTERY_MASS /* R408: robot + bumpers, plus the battery */, foulValues: { minor: 2, major: 6 },
   timeline: TIMELINE,
+  pieceFlow: false,
   gamePiece: { name: 'CORAL + ALGAE', shape: 'tube', hollow: true, colliderInnerRadius: C.CORAL_COLLIDER_INNER, radius: C.CORAL_RADIUS, innerRadius: C.CORAL_INNER_RADIUS, length: C.CORAL_LENGTH,
     mass: 0.65, restitution: 0.15, friction: 0.35, color: C.COLORS.coral, count: C.CORAL_COUNT + C.ALGAE_COUNT,
     groundDamping: 1.3, angularDamping: 1.1, airDamping: 0.02,

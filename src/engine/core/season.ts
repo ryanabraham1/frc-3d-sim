@@ -253,6 +253,11 @@ export interface SeasonDefinition {
 
   timeline: MatchPeriod[];
   gamePiece: GamePieceSpec;
+  /**
+   * Animate captured pieces travelling through each robot (intake → stow → shooter; see robot/pieceFlow.ts). Off for
+   * seasons that draw their own transfer (REEFSCAPE's CORAL handoff).
+   */
+  pieceFlow?: boolean;
   robotDefaults: RobotConfig;
   maxClimbLevel: number;
   maxScoringLevel?: number;

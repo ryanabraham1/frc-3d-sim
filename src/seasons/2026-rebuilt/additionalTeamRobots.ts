@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, mat, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
+import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, jitter, mat, overBumperIntake, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { inch } from '@engine/units';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
@@ -74,9 +74,21 @@ for (const [id, color, style] of [
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, width: W * 0.9, frame: accent, stow: Math.PI * .95, rollerMaterial: style === 'drum' ? mat(0x37963c) : black });
   let deploy = 0, hood = 0, roofLift = 0;
   camera(k.visual,L*.4,bt+.08,W*.35);
+  const r = inch(5.91) / 2;
+  const pile = hopperStow({ x: -L * 0.08, y0: bt + 0.02, length: L * 0.72, width: W * 0.86, height: H - bt - 0.07, r });
   return { replaces: ['chassis','launcher','hopper','intakeRollers','climber','funnel'],
+    flow: {
+      intake: overBumperIntake(k, intake.tip, r),
+      stow: pile.stow,
+      // Along the floor (2910: up the rising roller conveyor) to the front, then up into the turret's shooter wheel.
+      feed: () => {
+        const z = jitter(W * 0.5);
+        const head = wheels[Math.floor(Math.random() * headCount)];
+        return [new THREE.Vector3(-L * 0.35, bt + 0.04 + r, z), new THREE.Vector3(L * 0.22, bt + (style === 'drum' ? 0.12 : 0.05) + r, z * 0.4), flowAt(k, head, -0.09, -0.02, 0), flowAt(k, head, 0.02, 0.04, 0)];
+      },
+    },
     update(s) {
-      db.update(s); fill.set(s.fill);
+      db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); intake.update(s,deploy);
       if (style === 'expanding') {
         // Automatic simulator contract sequence: count controls the same raised envelope as collision/routing.

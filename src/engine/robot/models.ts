@@ -75,6 +75,16 @@ export interface RobotModel {
   intakeAnchor?: THREE.Object3D;
   /** Status light position (robot frame), on top of the model's structure. */
   lightAt?: [number, number, number];
+  /**
+   * Game-piece flow through this robot (see pieceFlow.ts), as points in the robot frame. `intake` runs from just
+   * inside the intake mouth to the stow point (omit the stow point: `stow` or the held anchor / hopper is appended);
+   * `feed` runs from the stow point up into the shooter. Anything omitted uses the generic path.
+   */
+  flow?: {
+    intake?(): THREE.Vector3[];
+    stow?(): THREE.Vector3;
+    feed?(): THREE.Vector3[];
+  };
 }
 
 export type RobotModelBuilder = (kit: ModelKit) => RobotModel;
@@ -815,4 +825,201 @@ export function battery(parent: THREE.Object3D, x: number, y: number, z: number,
   wire(g, [[-0.05, 0.17, 0], [-0.06, 0.21, 0.01], [-0.1, 0.23, 0.02]], 0x111111, 0.006);
   parent.add(g);
   return g;
+}
+
+// ───────────────────────── piece flow (RobotModel.flow) ─────────────────────────
+
+/** Random offset in ±w/2 (spreads pieces across a hopper or a multi-lane shooter). */
+export function jitter(w: number): number {
+  return (Math.random() - 0.5) * w;
+}
+
+/** Robot-frame point on a (possibly moving) model part, read when a piece starts its trip. */
+export function flowAt(k: ModelKit, o: THREE.Object3D, x = 0, y = 0, z = 0): THREE.Vector3 {
+  return pointIn(k.visual, o, x, y, z);
+}
+
+/**
+ * Where an incoming piece lands in a box hopper: on top of the current pile, anywhere across the bin. Call
+ * `setFill(s.fill)` from the model's update so the landing height follows the load.
+ */
+export function hopperStow(o: { x: number; y0: number; length: number; width: number; height: number; r: number }): { stow(): THREE.Vector3; setFill(f: number): void } {
+  let fill = 0;
+  return {
+    setFill(f) { fill = f; },
+    stow: () => new THREE.Vector3(o.x + jitter(o.length * 0.7), o.y0 + o.r + o.height * Math.min(0.92, fill) * 0.92, jitter(o.width * 0.7)),
+  };
+}
+
+/**
+ * Over-the-bumper intake path: picked up under the deployed roller (`tip`), carried up the arms, over the frame rail
+ * and dropped into the hopper (the robot appends the stow point). `r` = piece radius.
+ */
+export function overBumperIntake(k: ModelKit, tip: THREE.Object3D, r: number): () => THREE.Vector3[] {
+  const c = k.config;
+  const side = k.groundSide;
+  return () => {
+    const z = jitter(c.intake.width * 0.6);
+    return [flowAt(k, tip, 0, 0, z), new THREE.Vector3(side * (c.frameLength / 2 + 0.02), c.bumperTop + 0.08 + r, z * 0.8), new THREE.Vector3(side * c.frameLength * 0.32, c.bumperTop + 0.06 + r, z * 0.6)];
+  };
+}
+
+/**
+ * Feed up a center column into a turret: swept across the rotor floor (radius `rotorR`) to the column at `colX`,
+ * lifted to the top, then into the shooter `wheel`. `r` = piece radius.
+ */
+export function columnFeed(k: ModelKit, colX: number, wheel: THREE.Object3D, rotorR: number, r: number): () => THREE.Vector3[] {
+  const c = k.config;
+  return () => {
+    const a = Math.random() * Math.PI * 2;
+    const y0 = c.bumperTop + 0.04 + r;
+    return [new THREE.Vector3(colX + Math.cos(a) * rotorR, y0, Math.sin(a) * rotorR), new THREE.Vector3(colX + Math.cos(a + 1.2) * 0.1, y0, Math.sin(a + 1.2) * 0.1),
+      new THREE.Vector3(colX, c.height - 0.14, 0), flowAt(k, wheel, -0.06, 0, 0), flowAt(k, wheel, 0.03, 0.03, 0)];
+  };
+}
+
+/**
+ * Dye rotor (2026 REBUILT indexer, as on 4414 / 1323 / 4946): a spinning pocketed floor plate inside a stationary
+ * circular fence with a bolted top flange and standoffs; a curved guide wall lined with small vertical feed rollers
+ * spirals the FUEL inward into an open, ring-framed tower that lifts it to the turret; Kraken motors drive the plate
+ * from outside the fence. Positioned in `parent` with the plate center at (x, y0, z = 0) and the tower at `towerX`.
+ * `floor` spins about y (positive = the direction FUEL travels along the spiral); `feed(r)` is the path a ball of
+ * radius r takes from the rim, along the spiral wall and up the tower.
+ */
+export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1 }): { floor: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
+  const { x, y0, R, wallH } = o;
+  const pocketM = o.pocket ?? mat(0x34373d, { metal: 0.3, rough: 0.55 });
+  const accent = o.accent ?? mat(0x24272c, { metal: 0.4, rough: 0.45 });
+  const g = new THREE.Group();
+  g.position.set(x, y0, 0);
+  parent.add(g);
+  // Spinning floor: a plate with two rings of lightening pockets, radial ribs and a hub.
+  const floor = new THREE.Group();
+  g.add(floor);
+  floor.add(new THREE.Mesh(new THREE.CylinderGeometry(R, R, 0.008, 56), o.plate));
+  const flat = (geo: THREE.BufferGeometry, y: number, m: THREE.Material) => {
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = y;
+    floor.add(mesh);
+    return mesh;
+  };
+  const N = 14;
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * Math.PI * 2 + 0.03;
+    const da = (Math.PI * 2) / N - 0.06;
+    flat(new THREE.RingGeometry(R * 0.62, R * 0.94, 3, 1, a0, da), 0.0045, pocketM);
+    flat(new THREE.RingGeometry(R * 0.3, R * 0.56, 2, 1, a0 + Math.PI / N, da), 0.0045, pocketM);
+  }
+  const bolts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.004, 0.004, 0.006, 6), mat(0xb9c0c8, { metal: 0.8 }), 2 * N);
+  const m4 = new THREE.Matrix4();
+  for (let i = 0; i < 2 * N; i++) {
+    const a = (i / (2 * N)) * Math.PI * 2;
+    m4.makeTranslation(Math.cos(a) * R * 0.97, 0.006, Math.sin(a) * R * 0.97);
+    bolts.setMatrixAt(i, m4);
+  }
+  floor.add(bolts);
+  floor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 20), accent));
+  // Stationary fence with a top flange and standoffs.
+  const fence = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.012, R + 0.012, wallH, 56, 1, true), mat(0x1b1d21, { rough: 0.5 }));
+  (fence.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+  fence.position.y = wallH / 2;
+  g.add(fence);
+  const flange = new THREE.Mesh(new THREE.RingGeometry(R + 0.006, R + 0.035, 56), accent);
+  flange.rotation.x = -Math.PI / 2;
+  flange.position.y = wallH;
+  (flange.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+  g.add(flange);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, wallH + 0.02, 6), mat(0x2a2d32, { metal: 0.6 }));
+    post.position.set(Math.cos(a) * (R + 0.024), wallH / 2, Math.sin(a) * (R + 0.024));
+    g.add(post);
+  }
+  // Spiral guide wall from the rim in to the tower, with a row of vertical feed rollers on its inner face.
+  const tx = o.towerX - x;
+  // The spiral winds in from the plate center (u = 0) to the tower center (u = 1).
+  const pt = (a: number, rad: number, y: number, u = 0) => new THREE.Vector3(tx * u + Math.cos(a) * rad, y, -Math.sin(a) * rad);
+  const a0 = Math.PI * 0.15;
+  const sweep = Math.PI * 1.15;
+  const rStart = R - 0.005;
+  const rEnd = o.towerR + 0.02;
+  const spiralR = (u: number) => rStart + (rEnd - rStart) * u;
+  const wallM = mat(0x22252a, { rough: 0.45 });
+  const SEG = 18;
+  for (let i = 0; i < SEG; i++) {
+    const p0 = pt(a0 + sweep * (i / SEG), spiralR(i / SEG), wallH / 2, i / SEG);
+    const p1 = pt(a0 + sweep * ((i + 1) / SEG), spiralR((i + 1) / SEG), wallH / 2, (i + 1) / SEG);
+    const seg = box(g, p0.distanceTo(p1) + 0.004, wallH * 0.95, 0.006, wallM, (p0.x + p1.x) / 2, wallH / 2, (p0.z + p1.z) / 2);
+    seg.rotation.y = Math.atan2(-(p1.z - p0.z), p1.x - p0.x);
+  }
+  const rollers: THREE.Object3D[] = [];
+  const rollerM = mat(0x111214, { rough: 0.8 });
+  for (let i = 0; i < 7; i++) {
+    const u = 0.55 + i * 0.065;
+    const p = pt(a0 + sweep * u, spiralR(u) - 0.016, wallH * 0.48, u);
+    const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, wallH * 0.8, 10), rollerM);
+    rl.position.copy(p);
+    g.add(rl);
+    rollers.push(rl);
+  }
+  // Open tower: ring plates joined by standoffs, a partial sheet wall (open toward the spiral) and lift rollers.
+  const tower = new THREE.Group();
+  tower.position.set(tx, 0, 0);
+  g.add(tower);
+  const th = o.towerTop - y0;
+  for (const y of [0.01, th * 0.5, th - 0.01]) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(o.towerR, o.towerR + 0.022, 32), accent);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = y;
+    (ring.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+    tower.add(ring);
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, th, 6), mat(0x2a2d32, { metal: 0.6 }));
+    p.position.set(Math.cos(a) * (o.towerR + 0.011), th / 2, Math.sin(a) * (o.towerR + 0.011));
+    tower.add(p);
+  }
+  const entry = a0 + sweep; // the spiral ends here: leave the sheet open on that side
+  const sheet = new THREE.Mesh(new THREE.CylinderGeometry(o.towerR, o.towerR, th * 0.62, 32, 1, true, entry + Math.PI / 2 + 0.9, Math.PI * 1.3), wallM);
+  (sheet.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+  sheet.position.y = th * 0.62 / 2 + th * 0.2;
+  tower.add(sheet);
+  for (const y of [th * 0.35, th * 0.7]) {
+    const lift = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, o.towerR * 1.6, 10), rollerM);
+    lift.rotation.x = Math.PI / 2;
+    lift.position.set(-o.towerR * 0.55, y, 0);
+    tower.add(lift);
+    rollers.push(lift);
+  }
+  // Krakens driving the plate from outside the fence.
+  const ms = o.motorSide ?? -1;
+  for (let i = 0; i < (o.motors ?? 2); i++) {
+    const a = Math.PI + ms * (0.35 + i * 0.32);
+    const mx = Math.cos(a) * (R + 0.06);
+    const mz = Math.sin(a) * (R + 0.06);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.075, 16), mat(0x16171a, { rough: 0.6 }));
+    body.position.set(mx, -0.005, mz);
+    g.add(body);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0315, 0.0315, 0.01, 16), new THREE.MeshStandardMaterial({ color: 0x39d353, emissive: 0x1a7a2a, emissiveIntensity: 0.4 }));
+    band.position.set(mx, 0.028, mz);
+    g.add(band);
+  }
+  return {
+    floor,
+    rollers,
+    feed(r) {
+      const pts: THREE.Vector3[] = [];
+      // Picked up anywhere on the outer pocket ring, carried round to the start of the spiral, then along its inner face.
+      const start = Math.random() * Math.PI * 1.4 - Math.PI * 0.9 + a0;
+      pts.push(pt(start, rStart - r - 0.02, r + 0.006), pt((start + a0) / 2, rStart - r - 0.02, r + 0.006));
+      for (let i = 0; i <= 6; i++) {
+        const u = i / 6;
+        pts.push(pt(a0 + sweep * u, Math.max(o.towerR * 0.4, spiralR(u) - r - 0.01), r + 0.006, u));
+      }
+      pts.push(pt(entry, 0, r + 0.01, 1), pt(entry, 0, th - r - 0.02, 1));
+      return pts.map((p) => p.add(g.position));
+    },
+  };
 }

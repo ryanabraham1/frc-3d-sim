@@ -1,7 +1,7 @@
 import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
 import { belt, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { inch } from '@engine/units';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
@@ -12,6 +12,14 @@ import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
  */
 
 const FUEL = 0xf2c200;
+/** Dye-rotor feed: round the plate, along the spiral, up the tower and into the turret's shooter wheel. */
+function dyeFeed(k: ModelKit, dye: { feed(r: number): THREE.Vector3[] }, wheel: THREE.Object3D): () => THREE.Vector3[] {
+  return () => [...dye.feed(FUEL_R), flowAt(k, wheel, -0.06, 0, 0), flowAt(k, wheel, 0.03, 0.03, 0)];
+}
+
+/** FUEL radius (5.91 in ball) for piece-flow paths. */
+const FUEL_R = inch(5.91) / 2;
+
 
 /** Intakes that latch down at the start of the match (and stay down) — 4414 and 1690 both deploy once. */
 function latchDeploy(state: { v: number }, s: RobotAnimState): number {
@@ -56,7 +64,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const teal = mat(0x17a3b3, { metal: 0.5, rough: 0.4 });
   const tealTube = tubeMat(0x17a3b3);
   const black = mat(0x16171a, { metal: 0.35, rough: 0.5 });
-  const smoke = mat(0x2b2e33, { opacity: 0.72, metal: 0.15, rough: 0.3 });
+  const smoke = mat(0x2b2e33, { opacity: 0.5, metal: 0.15, rough: 0.3 });
   const side = k.groundSide;
   const db = drivebase(k, { motorRing: 0x17a3b3 });
   const hopH = H - bt - 0.05;
@@ -65,28 +73,11 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.06, sz * W * 0.485], [L * 0.96, 0, 0], [0, 0.05, 0], { cells: 8, w: 0.012, m: teal, zig: true });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.485, bt, sz * W * 0.485], [sx * L * 0.485, H - 0.01, sz * W * 0.485], 0.02, tealTube);
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
-  // Dye rotor: a big flat spoked disc on the floor that sweeps FUEL into the turret.
-  const rotor = new THREE.Group();
-  rotor.position.set(L * 0.05, bt + 0.02, 0);
+  // Dye rotor: pocketed spinning plate in a fenced tub, spiral guide wall into the open tower under the turret.
   const rr = Math.min(L, W) * 0.44;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.012, 6, 40), black);
-  rim.rotation.x = Math.PI / 2;
-  rotor.add(rim);
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 20), black);
-  rotor.add(hub);
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    // "Dolphin fin" ramps: curved spokes that rise toward the rim.
-    const fin = box(rotor, rr - 0.06, 0.03, 0.01, i % 2 ? teal : black, Math.cos(a) * (rr / 2 + 0.03), 0.02, -Math.sin(a) * (rr / 2 + 0.03));
-    fin.rotation.set(0, a + 0.25, 0.08);
-  }
-  k.visual.add(rotor);
-  // Center column up to the turret.
+  const dye = dyeRotor(k.visual, { x: L * 0.05, y0: bt + 0.02, R: rr, wallH: 0.1, towerX: L * 0.05, towerR: 0.09, towerTop: H - 0.08, plate: black, accent: teal, motors: 2 });
   const t = k.turret;
   t.position.set(L * 0.05, H - 0.07, 0);
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, H - 0.07 - bt - 0.04, 16), black);
-  column.position.set(L * 0.05, (H - 0.07 + bt + 0.04) / 2, 0);
-  k.visual.add(column);
   // Pancake turret: wide black disc with a teal ring, shooter on top.
   const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 32), black);
   t.add(disc);
@@ -103,18 +94,22 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const deploy = { v: 0 };
   let rotorRate = 0;
   let hoodAng = 0;
+  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.4, H - 0.01, W * 0.4],
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.wheels[0]) },
     update(s) {
       db.update(s);
+      pile.setFill(s.fill);
       const d = latchDeploy(deploy, s);
       intake.update(s, d);
       tray.position.x = side * d * 0.2;
       fill.set(s.fill);
       // Slowly counter-rotates to agitate; spins hard to feed while firing.
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 9 : -1.2, 6, s.dt);
-      spin(rotor, rotorRate, s.dt, 'y');
+      spin(dye.floor, rotorRate, s.dt, 'y');
+      for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
       for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
       hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
       sh.hood.rotation.z = hoodAng;
@@ -134,7 +129,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const blue = mat(0x2d6fe0, { metal: 0.5, rough: 0.4 });
   const black = mat(0x131417, { metal: 0.3, rough: 0.55 });
   const blackTube = darkTubeMat(0x17181b);
-  const smoke = mat(0x1d1f23, { opacity: 0.82, metal: 0.1, rough: 0.3 });
+  const smoke = mat(0x1d1f23, { opacity: 0.62, metal: 0.1, rough: 0.3 });
   const side = k.groundSide;
   const db = drivebase(k, { motorRing: 0x2d6fe0 });
   const hopH = H - bt - 0.04;
@@ -153,20 +148,10 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   // Dye rotor on the floor feeding the turret column; the turret sits forward of center so the folded blocker clears it.
   const tx = -side * L * 0.2;
-  const rotor = new THREE.Group();
-  rotor.position.set(0, bt + 0.02, 0);
-  const rr = Math.min(L, W) * 0.38;
-  rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, 0.015, 36), black));
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    box(rotor, rr * 0.8, 0.035, 0.012, i % 2 ? blue : black, Math.cos(a) * rr * 0.5, 0.025, -Math.sin(a) * rr * 0.5).rotation.y = a;
-  }
-  k.visual.add(rotor);
+  const rr = Math.min(L, W) * 0.42;
+  const dye = dyeRotor(k.visual, { x: 0, y0: bt + 0.02, R: rr, wallH: 0.09, towerX: tx, towerR: 0.085, towerTop: H - 0.08, plate: black, accent: blue, motors: 2, motorSide: 1 });
   const t = k.turret;
   t.position.set(tx, H - 0.07, 0);
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, H - 0.07 - bt - 0.04, 16), black);
-  column.position.set(tx, (H - 0.07 + bt + 0.04) / 2, 0);
-  k.visual.add(column);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.01, 6, 32), blue);
   ring.rotation.x = Math.PI / 2;
   t.add(ring);
@@ -186,15 +171,19 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const deploy = { v: 0 };
   let rotorRate = 0;
   let hoodAng = 0;
+  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [side * L * 0.4, H - 0.01, W * 0.4],
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.wheels[0]) },
     update(s) {
       db.update(s);
+      pile.setFill(s.fill);
       intake.update(s, latchDeploy(deploy, s));
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
-      spin(rotor, rotorRate, s.dt, 'y');
+      spin(dye.floor, rotorRate, s.dt, 'y');
+      for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
       for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
       hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
       sh.hood.rotation.z = hoodAng;
@@ -217,7 +206,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   const black = mat(0x141518, { metal: 0.35, rough: 0.5 });
   const blue = mat(0x1f5fd0, { metal: 0.6, rough: 0.35 });
   const blueTube = tubeMat(0x1f5fd0);
-  const smoke = mat(0x1e2024, { opacity: 0.8, metal: 0.1, rough: 0.25 });
+  const smoke = mat(0x1e2024, { opacity: 0.6, metal: 0.1, rough: 0.25 });
   const side = k.groundSide;
   const db = drivebase(k, { motorRing: 0x1f5fd0 });
   // Closed smoked hopper box behind the shooter with a light lid.
@@ -265,11 +254,26 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   let out = 0;
   let beltSpin = 0;
   let hoodAng = 0;
+  const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [hx, H - 0.02, 0],
+    flow: {
+      // Under the low roller, over the upper one and straight into the back of the hopper.
+      intake: () => {
+        const z = jitter(W * 0.6);
+        return [flowAt(k, rollers[0], -side * 0.02, 0.03, z), flowAt(k, rollers[1], -side * 0.03, 0.04, z), new THREE.Vector3(side * (L / 2 - 0.12), bt + 0.05 + FUEL_R, z * 0.8)];
+      },
+      stow: pile.stow,
+      // Full-width shooter: each ball rolls forward along the floor in its lane, up the pocketed plates into the rollers.
+      feed: () => {
+        const z = jitter(W * 0.8);
+        return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx - 0.04, H - 0.16, z), new THREE.Vector3(sx + 0.03, H - 0.06, z)];
+      },
+    },
     update(s) {
       db.update(s);
+      pile.setFill(s.fill);
       // Out to collect; pulled back in while shooting so it squeezes FUEL toward the shooter.
       out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.3 : 1, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
@@ -333,11 +337,22 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const hooks = climberHooks(k.visual, { x: -L * 0.36, y0: bt, length: top - bt, spread: W * 0.55, m: k.mats.alu, hook: black });
   const deploy = { v: 0 };
   let hoodAng = 0;
+  const pile = hopperStow({ x: 0, y0: bt + 0.02, length: L * 0.88, width: W * 0.88, height: top - bt, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.4, top, W * 0.3],
+    flow: {
+      intake: overBumperIntake(k, intake.tip, FUEL_R),
+      stow: pile.stow,
+      // Floor belts carry FUEL forward under the arch, then the tower lifts it into the turret.
+      feed: () => {
+        const z = jitter(W * 0.5);
+        return [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, z), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, z * 0.3), new THREE.Vector3(tx, top - 0.06, 0), flowAt(k, sh.wheels[0], -0.06, 0, 0), flowAt(k, sh.wheels[0], 0.03, 0.03, 0)];
+      },
+    },
     update(s) {
       db.update(s);
+      pile.setFill(s.fill);
       intake.update(s, latchDeploy(deploy, s));
       fill.set(s.fill);
       const fly = flywheelSpeed(s);
@@ -360,7 +375,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
   const H = c.height;
   const bt = c.bumperTop;
   const black = mat(0x141518, { rough: 0.45 });
-  const smoke = mat(0x1a1b1f, { opacity: 0.9, rough: 0.3 });
+  const smoke = mat(0x1a1b1f, { opacity: 0.72, rough: 0.3 });
   const silverTube = tubeMat(0xc9ced5);
   const silver = mat(0xc9ced5, { metal: 0.7, rough: 0.3 });
   const db = drivebase(k, { motorRing: 0x2f6fd6 });
@@ -404,11 +419,14 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
   const deploy = { v: 0 };
   let rate = 0;
   let hoodAng = 0;
+  const pile = hopperStow({ x: 0, y0: bt + 0.05, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.45, H - 0.02, W * 0.4],
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: columnFeed(k, L * 0.18, sh.wheels[0], Math.min(L, W) * 0.36, FUEL_R) },
     update(s) {
       db.update(s);
+      pile.setFill(s.fill);
       intake.update(s, latchDeploy(deploy, s));
       fill.set(s.fill);
       rate = approach(rate, !s.enabled ? 0 : s.firing > 0 ? 8 : 1.5, 5, s.dt);
@@ -479,25 +497,8 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
     color: FUEL, capacity: c.hopperCapacity,
     inside: (x, z) => (side * (x - centerX) > 0 || Math.hypot(x - centerX, z) < R - 0.01) && side * (flatX - x) > 0.01,
   });
-  // Dye rotor: a wide gray slotted disc on the floor.
-  const rotor = new THREE.Group();
-  rotor.position.set(centerX - side * R * 0.12, bt + 0.02, 0);
-  rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(R * 0.78, R * 0.78, 0.02, 40), gray));
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    box(rotor, R * 0.6, 0.05, 0.015, black, Math.cos(a) * R * 0.55, 0.035, -Math.sin(a) * R * 0.55).rotation.y = a;
-  }
-  k.visual.add(rotor);
-  // Center column to the 11 in turret ring at the top.
-  const colH = H - bt - 0.1;
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.13, colH, 24), black);
-  column.position.set(centerX, bt + colH / 2 + 0.02, 0);
-  k.visual.add(column);
-  for (const y of [0.3, 0.6, 0.85]) {
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.132, 0.132, 0.015, 24), gray);
-    band.position.set(centerX, bt + colH * y, 0);
-    k.visual.add(band);
-  }
+  // Dye rotor filling the round hopper, its tower rising to the 11 in turret ring at the top.
+  const dye = dyeRotor(k.visual, { x: centerX, y0: bt + 0.02, R: R * 0.86, wallH: 0.1, towerX: centerX, towerR: 0.11, towerTop: H - 0.07, plate: gray, accent: black, motors: 2, motorSide: side > 0 ? 1 : -1 });
   const t = k.turret;
   t.position.set(centerX, H - 0.06, 0);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(inch(5.5), 0.018, 10, 36), black);
@@ -514,15 +515,27 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
   const deploy = { v: 0 };
   let rotorRate = 0;
   let hoodAng = 0;
+  let load = 0;
   return {
     replaces: ['bumpers', 'chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [gx, H + 0.01, 0],
+    flow: {
+      // Under the goalpost, in over the flat edge and onto the pile in the round hopper.
+      intake: overBumperIntake(k, intake.tip, FUEL_R),
+      stow: () => {
+        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * (R - 0.08);
+        return new THREE.Vector3(centerX + Math.cos(a) * d, bt + 0.03 + FUEL_R + hopH * Math.min(0.92, load) * 0.9, Math.sin(a) * d);
+      },
+      feed: dyeFeed(k, dye, sh.wheels[0]),
+    },
     update(s) {
       db.update(s);
+      load = s.fill;
       intake.update(s, latchDeploy(deploy, s));
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 10 : -1.2, 6, s.dt);
-      spin(rotor, rotorRate, s.dt, 'y');
+      spin(dye.floor, rotorRate, s.dt, 'y');
+      for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
       for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
       hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
       sh.hood.rotation.z = hoodAng;
@@ -591,11 +604,22 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
   const hooks = climberHooks(k.visual, { x: 0, y0: bt, length: H - bt - 0.05, spread: W * 0.55, m: blackTube, hook: orange });
   let out = 0;
   let hoodAng = 0;
+  const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [hx, H - 0.03, 0],
+    flow: {
+      intake: overBumperIntake(k, intake.tip, FUEL_R),
+      stow: pile.stow,
+      // 20 FUEL/s wide shooter: lanes across the width, up the plates, under the top feeder roller into the flywheels.
+      feed: () => {
+        const z = jitter(W * 0.75);
+        return [new THREE.Vector3(hx, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx + side * 0.12, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx + side * 0.06, H - 0.2, z), new THREE.Vector3(sx, H - 0.1, z)];
+      },
+    },
     update(s) {
       db.update(s);
+      pile.setFill(s.fill);
       out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 5, s.dt);
       intake.update(s, out);
       fill.set(s.fill);

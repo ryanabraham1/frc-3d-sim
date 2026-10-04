@@ -205,6 +205,7 @@ export class CrescendoRules implements SeasonRules {
       // Ground intake: NOTES on the carpet. SOURCE intake: NOTES falling out of the CHUTE in front of the robot.
       const ground = p.y <= 0.2 && robot.intakeContains(p, C.NOTE_OUTER_RADIUS * 0.6);
       if (ground || robot.stationContains(p, C.NOTE_OUTER_RADIUS * 0.6)) {
+        robot.noteCapture(p);
         pool.hold(i, robot.id);
         robot.held.push(i);
       }
@@ -757,7 +758,7 @@ export class CrescendoRules implements SeasonRules {
     }
     for (const r of this.ctx.robots) {
       const m = this.heldVisuals.get(r.id)!;
-      m.visible = r.held.some((i) => i < 0 || (!C.isHighNote(i) && pool.state[i] === 'held'));
+      m.visible = r.held.length > r.piecesInTransit && r.held.some((i) => i < 0 || (!C.isHighNote(i) && pool.state[i] === 'held'));
     }
   }
 

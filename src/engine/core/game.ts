@@ -1,4 +1,4 @@
-import { Vector3 } from 'three';
+import { Mesh, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
@@ -237,11 +237,21 @@ export class Game {
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
       robot.controller = this.role === 'local' && rs.id !== 0 ? 'bot' : 'player';
       season.configureRobot?.(robot);
+      if (season.pieceFlow !== false) {
+        const piece = this.pool.mesh;
+        const round = season.gamePiece.shape !== 'ring' && season.gamePiece.shape !== 'tube';
+        robot.enablePieceFlow(() => {
+          const m = new Mesh(piece.geometry, piece.material);
+          m.castShadow = true;
+          return m;
+        }, round);
+      }
       this.robots.push(robot);
       this.robotSetups.set(rs.id, rs);
     }
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     this.player = mine ? this.robots.find((r) => r.id === mine.id)! : null;
+    this.player?.showIntakeGuide(true);
     this.scoringLevel = Math.min(this.scoringLevel, this.player?.config.placement?.maxLevel ?? this.scoringLevel);
     this.climbLevel = Math.min(season.maxClimbLevel, this.player?.config.climber.maxLevel ?? season.maxClimbLevel);
 
@@ -351,8 +361,7 @@ export class Game {
     this.seasonHud = season.createHud(this.ctx, this.rules, this.hud.slots);
     if (this.state === 'waiting') this.hud.showBanner('WAITING FOR PLAYERS…', 60);
     else this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
-    this.hud.toggleHelp(true);
-    setTimeout(() => !this.disposed && this.hud.toggleHelp(false), 6000);
+    this.offs.push(this.hud.showIntro(6));
 
     if (this.role === 'client') net!.client.send({ t: 'ready' });
   }
@@ -633,6 +642,7 @@ export class Game {
           const { r, z } = zones[k];
           if (r.justLaunched(i)) continue;
           if (intakeZoneContains(z, p, pool.radius, 0.4)) {
+            r.noteCapture(p);
             pool.hold(i, r.id);
             r.held.push(i);
             if (r.intakeRoom <= 0) zones.splice(k, 1);

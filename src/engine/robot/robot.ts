@@ -9,7 +9,8 @@ import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, footprint, groundSid
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
-import { robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
+import { pointIn, robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
+import { PieceFlow } from './pieceFlow';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
 export interface RobotCommand {
@@ -155,6 +156,10 @@ export class Robot {
   private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, hood: 0, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
   private lastFrame = -1;
   private lastHeld = 0;
+  /** Animated game-piece flow through the robot (visual only; see enablePieceFlow). */
+  private flow: PieceFlow | null = null;
+  /** Carpet capture-zone marker meshes (see showIntakeGuide). */
+  private readonly intakeGuide: THREE.Object3D[] = [];
   /** Replicated mechanism bits (1 intake, 2 pass, 4 shot blocker out) on multiplayer clients; null = read lastCommand. */
   private netAct: number | null = null;
   /** Placement-season end effector pose for team models (set by the season each frame). */
@@ -427,15 +432,12 @@ export class Robot {
       this.visual.add(n);
       this.addPart('bumpers', n);
     }
-    // Back number, unless the floor intake's INTAKE label is on that face (they'd overlap).
-    const groundOnBack = c.intake.enabled && (c.intake.ground !== false || !!c.options?.algaeGround) && groundSideSign(c) < 0;
-    if (!groundOnBack) {
-      const back = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W * 0.8, 0.5), bh * 0.9), numMat);
-      back.position.set(-L / 2 - 0.002, by, 0);
-      back.rotation.y = -Math.PI / 2;
-      this.visual.add(back);
-      this.addPart('bumpers', back);
-    }
+    // Back number.
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W * 0.8, 0.5), bh * 0.9), numMat);
+    back.position.set(-L / 2 - 0.002, by, 0);
+    back.rotation.y = -Math.PI / 2;
+    this.visual.add(back);
+    this.addPart('bumpers', back);
 
     // Belly pan + frame rails.
     const pan = new THREE.Mesh(new THREE.BoxGeometry(c.frameLength, 0.02, c.frameWidth), dark);
@@ -567,14 +569,6 @@ export class Robot {
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, this.fp.width * 0.98), orange);
     stripe.position.set(side * (edge + 0.002), c.bumperTop + 0.002, 0);
     g.add(stripe);
-    // INTAKE label on the bumper face.
-    const label = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.min(this.fp.width * 0.8, 0.5), (c.bumperTop - c.bumperBottom) * 0.8),
-      new THREE.MeshBasicMaterial({ map: makeTextTexture('INTAKE', { color: '#ff9a3c', width: 256, height: 96 }), transparent: true }),
-    );
-    label.position.set(side * (edge + 0.004), (c.bumperTop + c.bumperBottom) / 2, 0);
-    label.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
-    g.add(label);
     // Capture zone on the carpet (the same strip `groundMouthContains` tests).
     const zone = new THREE.Mesh(
       new THREE.PlaneGeometry(c.intake.reach, c.intake.width),
@@ -583,7 +577,9 @@ export class Robot {
     zone.rotation.x = -Math.PI / 2;
     zone.position.set(side * (edge + c.intake.reach / 2), 0.006, 0);
     zone.userData.noShadow = true;
+    zone.visible = false;
     g.add(zone);
+    this.intakeGuide.push(zone);
     // Inward chevrons on the zone: pieces get pulled toward the robot.
     const chevShape = new THREE.Shape();
     chevShape.moveTo(0.06, 0);
@@ -599,7 +595,9 @@ export class Robot {
       chev.rotation.set(-Math.PI / 2, 0, side > 0 ? Math.PI : 0); // lies flat, tip toward the robot
       chev.position.set(side * (edge + c.intake.reach * (0.72 - k * 0.38)), 0.012, 0);
       chev.userData.noShadow = true;
+      chev.visible = false;
       g.add(chev);
+      this.intakeGuide.push(chev);
     }
     this.visual.add(g);
   }
@@ -682,7 +680,7 @@ export class Robot {
     this.lastHeld = this.held.length;
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.lastShotAngle || this.config.launcher.angle;
-    a.fill = clamp(this.held.length / Math.max(1, this.config.hopperCapacity), 0, 1);
+    a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
     const target = this.climbPhase === 'align' ? 1 : this.climbPhase === 'none' ? 0 : 0.25;
     a.climb = a.dt > 0 ? target + (a.climb - target) * Math.exp(-6 * a.dt) : target;
     a.place = this.placeAnim;
@@ -1523,8 +1521,75 @@ export class Robot {
     this.turretYaw = pose.yaw;
     this.fireCooldown = 0;
     this.held.length = 0;
+    this.flow?.clear(0);
     this.blockerDeploy = 0;
     this.poseBlocker();
+  }
+
+  /**
+   * Draw pieces travelling through the robot: from where each was captured, along the model's intake path into the
+   * stow point, and (multi-piece robots) from the stow up into the shooter while firing. Visual only.
+   * `make` builds one piece mesh (lying as it rests on the carpet); `roll` spins it (balls).
+   */
+  enablePieceFlow(make: () => THREE.Object3D, roll: boolean): void {
+    this.flow?.dispose();
+    const c = this.config;
+    const model = this.model;
+    const pieceR = this._projectile.halfHeight ?? this._projectile.radius;
+    const L = this.fp.length;
+    const hopperH = Math.max(0.08, c.height - c.bumperTop - 0.08);
+    const hasGround = c.intake.enabled && c.intake.ground !== false;
+    const side = hasGround ? groundSideSign(c) : stationSideSign(c);
+    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const stow = (): THREE.Vector3 => {
+      const s = model?.flow?.stow?.();
+      if (s) return s;
+      if (model?.heldAnchor) return pointIn(this.visual, model.heldAnchor, 0, 0, 0);
+      // Hopper: pieces land on the pile (its height follows the fill), spread across the bin.
+      const fill = clamp(this.held.length / Math.max(1, c.hopperCapacity), 0, 1);
+      return v(-c.frameLength * 0.1 + (Math.random() - 0.5) * c.frameLength * 0.4, c.bumperTop + pieceR + hopperH * fill * 0.85,
+        (Math.random() - 0.5) * c.frameWidth * 0.5);
+    };
+    this.flow = new PieceFlow(this.visual, make, {
+      intake: () => {
+        const end = stow();
+        const custom = model?.flow?.intake?.();
+        if (custom) return [...custom, end];
+        const pts: THREE.Vector3[] = [];
+        if (hasGround) {
+          // Over (or under) the bumper on the intake rollers, then up into the robot.
+          pts.push(model?.intakeAnchor ? pointIn(this.visual, model.intakeAnchor, 0, 0, 0) : v(side * (L / 2 - c.bumperThickness * 0.5), c.bumperTop + pieceR * 0.6, 0));
+          pts.push(v(side * L * 0.22, Math.max(end.y, c.bumperTop + pieceR) + pieceR * 1.2, end.z * 0.5));
+        } else {
+          // Station funnel: drop in over the top.
+          pts.push(v(side * (L / 2 - 0.05), Math.max(end.y + 0.1, c.height * 0.85), 0));
+        }
+        pts.push(end);
+        return pts;
+      },
+      feed: c.launcher.enabled && c.hopperCapacity > 1 ? () => {
+        const custom = model?.flow?.feed?.();
+        if (custom) return custom;
+        const ex = this.launcherExit(0);
+        const top = ex.up - pieceR - 0.04;
+        return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, 0), v(ex.forward - 0.1, (c.bumperTop + top) / 2, 0), v(ex.forward, top, -ex.side)];
+      } : undefined,
+    }, roll);
+  }
+
+  /** Show the intake capture zone on the carpet under this robot (the driver's own robot; off for everyone else). */
+  showIntakeGuide(on: boolean): void {
+    for (const o of this.intakeGuide) o.visible = on;
+  }
+
+  /** A piece was just captured at this world position (animates it into the robot when piece flow is on). */
+  noteCapture(world: { x: number; y: number; z: number }): void {
+    this.flow?.noteCapture(world);
+  }
+
+  /** Held pieces still animating into the robot (not yet drawn in the hopper / held position). */
+  get piecesInTransit(): number {
+    return this.flow?.inTransit ?? 0;
   }
 
   /** Hide the generic hopper fill (seasons that draw their own held game piece). */
@@ -1549,8 +1614,9 @@ export class Robot {
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);
     this.visual.quaternion.set(r.x, r.y, r.z, r.w);
+    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null);
     const cap = Math.max(1, this.config.hopperCapacity);
-    const frac = clamp(this.held.length / cap, 0, 1);
+    const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
     const hopperH = Math.max(0.08, this.config.height - this.config.bumperTop - 0.08);
     this.hopperFill.scale.y = Math.max(0.001, frac);
     this.hopperFill.position.y = this.config.bumperTop + (hopperH * frac) / 2;
