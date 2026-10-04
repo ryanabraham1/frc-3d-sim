@@ -218,6 +218,44 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     s.startSpot = checkStartSpot(area, fit, fp.length, fp.width).ok ? fit : null;
   };
 
+  const SKILLS = ['easy', 'normal', 'hard', 'elite'] as const;
+  const skillLabel = (d: string) => d[0].toUpperCase() + d.slice(1);
+  const skillHint: Record<string, string> = {
+    easy: 'Slower driving, looser aim, simple cycles without the alliance plan.',
+    normal: 'Runs the alliance plan and strategy switching at a moderate pace.',
+    hard: 'Competitive builds at full speed with tight aim, the full alliance plan and endgame climbs.',
+    elite: 'Hard plus the fastest re-planning and the most accurate shots: plays the strongest plan the benchmarks found.',
+  };
+  /** Opponent difficulty, then your teammates: skill, alliance strategy, and a role per driver station (yours included). */
+  const aiGroups = () => {
+    const strategies = season.aiStrategies ?? [];
+    const roles = season.aiRoles ?? [];
+    const ally = (s.aiAlly ??= {});
+    if (ally.strategy && !strategies.some((x) => x.id === ally.strategy)) ally.strategy = 'auto';
+    for (const [k, v] of Object.entries(ally.roles ?? {})) if (v !== 'auto' && !roles.some((x) => x.id === v)) delete ally.roles![Number(k)];
+    for (const [k, v] of Object.entries(ally.archetypes ?? {})) if (v !== 'auto' && !(season.robotPresets ?? []).some((p) => p.id === v)) delete ally.archetypes![Number(k)];
+    const strat = strategies.find((x) => x.id === (ally.strategy ?? 'auto'));
+    const roleRow = (station: number) => {
+      const cur = ally.roles?.[station] ?? 'auto';
+      const who = station === s.station ? `You · station ${station}` : `Teammate · station ${station}`;
+      const desc = roles.find((x) => x.id === cur)?.description;
+      const roleSeg = `<div class="seg">${opt(`data-ally-role="${station}" data-choice="auto"`, 'Auto', cur === 'auto')}${roles.map((x) => opt(`data-ally-role="${station}" data-choice="${x.id}" title="${esc(x.description)}"`, x.label, cur === x.id)).join('')}</div>`;
+      if (station === s.station) return group(who, roleSeg, cur === 'auto' ? 'Tell your teammates what you will do so they cover the rest.' : `Teammates plan around you: ${desc}`);
+      // Teammates also get a robot: one of the season's archetypes, or the lineup the difficulty would pick.
+      const presets = season.robotPresets ?? [];
+      const arch = ally.archetypes?.[station] ?? 'auto';
+      const archDesc = presets.find((p) => p.id === arch)?.description;
+      const archSeg = presets.length ? `<div class="seg">${opt(`data-ally-arch="${station}" data-choice="auto"`, 'Auto robot', arch === 'auto')}${presets.map((p) => opt(`data-ally-arch="${station}" data-choice="${p.id}" title="${esc(p.description)}"`, p.label, arch === p.id)).join('')}</div>` : '';
+      return group(who, roleSeg + archSeg, [desc ?? 'The alliance assigns this robot a role from the plan.', archDesc ? `Robot: ${archDesc}` : ''].filter(Boolean).join(' '));
+    };
+    return `
+      ${group('AI difficulty', `<div class="seg">${SKILLS.map((d) => opt(`data-difficulty="${d}"`, skillLabel(d), (s.aiDifficulty ?? 'normal') === d)).join('')}</div>`, `Opponents: ${skillHint[s.aiDifficulty ?? 'normal']}`)}
+      ${group('Teammate skill', `<div class="seg">${SKILLS.map((d) => opt(`data-ally-skill="${d}"`, skillLabel(d), (ally.skill ?? 'normal') === d)).join('')}</div>`, `Your two AI teammates: ${skillHint[ally.skill ?? 'normal']}`)}
+      ${strategies.length ? group('Alliance strategy', `<div class="seg">${strategies.map((x) => opt(`data-ally-strategy="${x.id}" title="${esc(x.description)}"`, x.label, (ally.strategy ?? 'auto') === x.id)).join('')}</div>`, strat?.description ?? '') : ''}
+      ${roles.length ? [1, 2, 3].map(roleRow).join('') : ''}
+      ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate (AMPLIFY calls, rescues, plan switches).')}`;
+  };
+
   const playPage = () => {
     const F = numFields(season);
     const r = s.robot;
@@ -232,7 +270,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       </section>
       ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
       ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
-      ${s.aiOpponents !== false ? group('AI difficulty', `<div class="seg">${(['easy', 'normal', 'hard'] as const).map((d) => opt(`data-difficulty="${d}"`, d[0].toUpperCase() + d.slice(1), (s.aiDifficulty ?? 'normal') === d)).join('')}</div>`, (s.aiDifficulty === 'hard' ? 'Competitive builds, continuous scoring cycles, coordinated support, and endgame climbs. Teammates use Normal.' : 'Opponent speed, aim accuracy, and collection pace. Teammates use Normal.')) : ''}
+      ${s.aiOpponents !== false ? aiGroups() : ''}
       ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`)}
       ${group('Autonomous', `<div class="seg">${season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, x.id === s.autoRoutine)).join('')}</div>`, routine?.description ?? '')}
       ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, season.humanPlayerHint ? (s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual) : season.maxScoringLevel ? (s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.') : (s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.'))}
@@ -315,7 +353,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     if (lobby?.lobby && lobby.lobby.seasonId !== s.seasonId) {
       season = getSeason(lobby.lobby.seasonId);
       const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty };
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
       s.robot.teamNumber = teamNumber;
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
@@ -395,7 +433,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);
       const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty };
+      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
       s.robot.teamNumber = teamNumber;
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
@@ -422,6 +460,19 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       render();
     }));
     all('[data-difficulty]').forEach((b) => (b.onclick = () => ((s.aiDifficulty = b.dataset.difficulty as GameSettings['aiDifficulty']), render())));
+    all('[data-ally-skill]').forEach((b) => (b.onclick = () => (((s.aiAlly ??= {}).skill = b.dataset.allySkill as GameSettings['aiDifficulty']), render())));
+    all('[data-ally-strategy]').forEach((b) => (b.onclick = () => (((s.aiAlly ??= {}).strategy = b.dataset.allyStrategy), render())));
+    all('[data-ally-role]').forEach((b) => (b.onclick = () => {
+      const ally = (s.aiAlly ??= {});
+      (ally.roles ??= {})[Number(b.dataset.allyRole)] = b.dataset.choice!;
+      render();
+    }));
+    all('[data-ally-arch]').forEach((b) => (b.onclick = () => {
+      const ally = (s.aiAlly ??= {});
+      (ally.archetypes ??= {})[Number(b.dataset.allyArch)] = b.dataset.choice!;
+      render();
+    }));
+    all('[data-radio]').forEach((b) => (b.onclick = () => ((s.aiRadio = b.dataset.radio as GameSettings['aiRadio']), render())));
     all('[data-ai]').forEach((b) => (b.onclick = () => ((s.aiOpponents = b.dataset.ai === '1'), render())));
     all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
     all('[data-toggle]').forEach(

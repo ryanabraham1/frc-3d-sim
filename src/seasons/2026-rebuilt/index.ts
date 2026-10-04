@@ -97,11 +97,19 @@ export const rebuilt2026: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new RebuiltAutoPilot(ctx, rules as RebuiltRules, robot, routine);
   },
-  botAutoRoutine(station) { return ['depot-climb', 'shoot-climb', 'shoot-collect'][station - 1]; },
+  botAutoRoutine(station, config) {
+    // A robot without a ground intake can't collect in AUTO: score the preload and climb.
+    if (config?.intake.ground === false) return 'shoot-climb';
+    return ['depot-climb', 'shoot-climb', 'shoot-collect'][station - 1];
+  },
+  botArchetype(difficulty, station, role) {
+    const byRole: Record<string, string> = { scorer: 'turret', feeder: 'fixed', defender: 'big-hopper' };
+    if (role && byRole[role]) return byRole[role];
+    const lineups: Record<string, string[]> = { easy: ['outpost', 'fixed', 'turret'], normal: ['fixed', 'turret', 'big-hopper'], hard: ['fixed', 'turret', 'big-hopper'], elite: ['fixed', 'turret', 'big-hopper'] };
+    return lineups[difficulty][(station - 1) % 3];
+  },
   botRobotConfig(difficulty) {
-    const config = rebuiltRobotDefaults();
-    if (difficulty === 'hard' || difficulty === 'elite') { config.hopperCapacity = 80; config.launcher.rate = 16; }
-    return config;
+    return rebuiltRobotPresets().find((p) => p.id === (difficulty === 'easy' ? 'outpost' : difficulty === 'normal' ? 'fixed' : 'turret'))!.config;
   },
   createBotPilot(ctx, rules, robot) { return createRebuiltBot(ctx, rules as RebuiltRules, robot); },
   aiStrategies: REBUILT_AI_STRATEGIES,

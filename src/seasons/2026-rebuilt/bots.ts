@@ -7,11 +7,13 @@ import { IDLE_COMMAND, type Robot, type RobotCommand } from '@engine/robot/robot
 import { clamp } from '@engine/units';
 import { BANDS } from './autopilot';
 import * as C from './constants';
-import { side } from './field';
+import { side, towerSlots } from './field';
 import type { RebuiltRules } from './rules';
 
 export const REBUILT_AI_STRATEGIES: AiChoice[] = [
-  { id: 'auto', label: 'Shift control', description: 'Everyone scores: fill hoppers while your HUB is inactive, stage at the zone line, dump the moment it lights up, then climb as high as possible. Benchmarked as the strongest plan.' },
+  { id: 'auto', label: 'Adaptive', description: 'Reads the match every few seconds and switches between the plans below: shift control by default, pressing the opponents when that pays (see docs/AI-STRATEGY.md for the benchmarks behind each switch).' },
+  { id: 'shift', label: 'Shift control', description: 'Everyone scores: fill hoppers while your HUB is inactive, stage at the zone line, dump the moment it lights up, then climb as high as possible.' },
+  { id: 'press', label: 'Press', description: 'Shift control, but a robot that is already full while your HUB is inactive goes and contests the opponents’ best shooter until it is time to come back.' },
   { id: 'stockpile', label: 'Stockpile', description: 'A dedicated feeder stays in the NEUTRAL ZONE lobbing FUEL into your zone all match; scorers shoot from the pile.' },
   { id: 'defense', label: 'Lockdown', description: 'A dedicated defender contests the opponents’ best shooter whenever their HUB is active.' },
 ];
@@ -46,6 +48,18 @@ function planRoles(team: TeamBrain): Map<number, string> {
   return roles;
 }
 
+/**
+ * Adaptive plan for 'auto'. Benchmarks (docs/AI-STRATEGY.md): Press beats Shift control by ~200 points a match and
+ * every other plan, whoever the opponents are; it already aims its pressure at whoever is hurting us most (the
+ * opponents' top scorer — usually the human driver). Late in the match Press switches itself off (robots stay home
+ * to dump and climb), so the adapter only has to pick the alliance's posture.
+ */
+function adaptRebuilt(team: TeamBrain): { id: string; reason: string } | null {
+  const top = team.scout.topScorer();
+  const target = top ? team.label(top).replace('You', 'the driver') : 'their best shooter';
+  return { id: 'press', reason: `full robots hound ${target} while our HUB is off` };
+}
+
 interface RebuiltPlan {
   /** Last hub state announced on the radio. */
   announced: string;
@@ -54,6 +68,7 @@ interface RebuiltPlan {
 export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Robot): CycleBot {
   const team = TeamBrain.for(ctx, r.alliance);
   team.usePlanner(planRoles);
+  team.useAdapter('shift', adaptRebuilt, REBUILT_AI_STRATEGIES);
   const plan = team.memo<RebuiltPlan>('rebuilt', () => ({ announced: '' }));
   const enemy = r.alliance === 'blue' ? 'red' : 'blue';
   const fromWall = (x: number) => (r.alliance === 'blue' ? x : C.FIELD_LENGTH - x);
@@ -69,7 +84,23 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   };
   const towerCenter = side(r.alliance, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
   const tower = { ...towerCenter, r: Math.hypot(C.TOWER_DEPTH, C.TOWER_WIDTH) / 2 + half * 0.7 };
-  const travelTime = (goal: FieldPoint) => dist(r.pose, goal) / Math.max(1, speed()) + (routeThroughBands(r.pose, goal, BANDS, half, r.config.height) !== goal ? 1.2 : 0.3);
+  // Crossing a hub row costs time; a robot too tall for the TRENCH has to go over a BUMP, which costs more.
+  const rowCost = r.config.height > C.TRENCH_CLEARANCE ? 2.5 : 1.2;
+  const travelTime = (goal: FieldPoint) => dist(r.pose, goal) / Math.max(1, speed()) + (routeThroughBands(r.pose, goal, BANDS, half, r.config.height) !== goal ? rowCost : 0.3);
+  /** Our TOWER climb spot: each teammate claims a different one so nobody races a teammate for it. */
+  const mySlot = (): { idx: number; pose: { x: number; y: number; yaw: number }; dist: number } | null => {
+    const claims = team.memo('towerClaims', () => new Map<number, number>());
+    const slots = towerSlots(r.alliance, r.footprint.length, r.footprint.width);
+    const takenByOther = (i: number) => team.members.some((o) => o !== r && (o.climbSlot === i || claims.get(o.id) === i));
+    let idx = claims.get(r.id);
+    if (idx === undefined || takenByOther(idx)) {
+      const free = slots.map((p, i) => ({ i, d: dist(r.pose, p) })).filter(({ i }) => !takenByOther(i)).sort((a, b) => a.d - b.d);
+      if (!free.length) return null;
+      idx = free[0].i;
+    }
+    return { idx, pose: slots[idx], dist: dist(r.pose, slots[idx]) };
+  };
+  const claimSlot = (idx: number) => team.memo('towerClaims', () => new Map<number, number>()).set(r.id, idx);
   const inZone = () => rules.inAllianceZone(r);
   const insideZone = () => fromWall(r.pose.x) < C.ALLIANCE_ZONE_DEPTH - half - 0.05;
 
@@ -88,6 +119,20 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     }
     return s.pts;
   };
+  // TRENCH lanes (both hub rows): FUEL that collects under them packs a robot in, so a lane with a pile in it is
+  // treated as closed and robots go over a BUMP instead.
+  const trenchLanes = BANDS.flatMap((band) => band.gaps.filter((g) => g.maxRobotHeight !== undefined).map((gap) => ({ band, gap })));
+  const inTrench = (p: FieldPoint) => trenchLanes.some(({ band, gap }) => inLane(p, band, gap));
+  const inLane = (p: FieldPoint, band: (typeof BANDS)[number], gap: (typeof BANDS)[number]['gaps'][number]) =>
+    p.x > band.xMin - 0.2 && p.x < band.xMax + 0.2 && p.y > gap.yMin && p.y < gap.yMax;
+  const openBands = () => {
+    const m = team.memo('bands', () => ({ t: -1, bands: BANDS }));
+    if (m.t === ctx.clock.elapsed) return m.bands;
+    m.t = ctx.clock.elapsed;
+    const fuelNow = scanFuel();
+    m.bands = BANDS.map((band) => ({ ...band, gaps: band.gaps.filter((gap) => gap.maxRobotHeight === undefined || fuelNow.filter(({ p }) => inLane(p, band, gap)).length < 8) }));
+    return m.bands;
+  };
   // FUEL tucked against either TOWER can't be reached by an intake.
   const nearTower = (p: FieldPoint) => (['blue', 'red'] as const).some((a) => {
     const t = side(a, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
@@ -105,6 +150,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       if (!filter(p) || fromWall(p.x) > C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 || isBlocked(p) || nearTower(p)) continue;
       // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
       const inRow = Math.abs(fromWall(p.x) - C.HUB_CENTER.x) < C.HUB_SIZE / 2 + 0.3;
+      if (inTrench(p)) continue; // FUEL under a TRENCH jams robots that go in after it
       let c = dist(r.pose, p) + (inRow ? 1.5 : 0);
       for (const m of mates) if (dist(m.pose, p) + 0.4 < dist(r.pose, p)) c += 2.5;
       if (c < cost) { cost = c; best = p; }
@@ -144,9 +190,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   };
 
   let defending = 0, retreatUntil = 0;
-  const defendCommand = (dt: number): RobotCommand | null => {
+  const defendCommand = (dt: number, prefer?: Robot | null): RobotCommand | null => {
     const targets = ctx.robots.filter((o) => o.alliance === enemy && !o.isClimbing && !o.tippedOver && o.held.length > 0);
-    targets.sort((a, b) => Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || b.held.length * b.config.launcher.rate - a.held.length * a.config.launcher.rate || dist(r.pose, a.pose) - dist(r.pose, b.pose));
+    targets.sort((a, b) => Number(b === prefer) - Number(a === prefer) || Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || b.held.length * b.config.launcher.rate - a.held.length * a.config.launcher.rate || dist(r.pose, a.pose) - dist(r.pose, b.pose));
     const target = targets[0];
     if (!target) return null;
     team.say(r, `Defending ${team.label(target).replace('You', 'the driver')}`, `defend:${r.id}:${target.id}`, 15);
@@ -167,7 +213,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   };
 
   const climbTime = () => {
-    const slot = rules.freeSlot(r);
+    const slot = mySlot();
     return slot ? travelTime(slot.pose) + r.config.climber.secondsPerLevel * r.config.climber.maxLevel + 1.5 : Infinity;
   };
 
@@ -192,9 +238,11 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const remaining = ctx.clock.driveRemaining;
 
     // END GAME climb: empty the hopper on the way, start early enough to reach the top rung.
-    if (r.config.climber.maxLevel > 0 && remaining < climbTime() + 2) {
-      const slot = rules.freeSlot(r);
+    // Leave time to empty the hopper on the way (shots fired from the zone still count in END GAME).
+    if (r.config.climber.maxLevel > 0 && remaining < climbTime() + 4 + r.held.length / r.config.launcher.rate) {
+      const slot = mySlot();
       if (slot) {
+        claimSlot(slot.idx);
         team.say(r, `Climbing to LEVEL ${r.config.climber.maxLevel}`, `climb:${r.id}`, 30);
         // Line up in front of the slot first so the approach doesn't wedge against the TOWER's side.
         const pre = { x: slot.pose.x - Math.cos(slot.pose.yaw) * 0.8, y: slot.pose.y - Math.sin(slot.pose.yaw) * 0.8 };
@@ -230,7 +278,12 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       const p = nearestFuel((q) => travelTime(q) + travelTime(spot) < untilActive + 0.5);
       if (p) return collect(p);
     }
-    // Full: wait at the line (benchmarks: conveyor-feeding or defending while full scores less than being ready).
+    // Full with time to spare and their HUB live: on 'press', go make their shift harder, back in time for ours.
+    if (r.capacityLeft === 0 && team.strategy === 'press' && bot.smart && rules.hubActive(enemy) && untilActive > toSpot + 4 && remaining > 30) {
+      const d = defendCommand(dt, team.scout.topScorer());
+      if (d) return d;
+    }
+    // Otherwise wait at the line, ready (benchmarks: conveyor-feeding while full scores less than being ready).
     if (r.capacityLeft === 0) team.say(r, `Full (${r.held.length}) — staged at the line`, `full:${r.id}`, 25);
     const cmd = bot.driveTo(spot);
     cmd.intake = r.capacityLeft > 0;
@@ -246,7 +299,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     onStuck: () => { if (chase) blocked.push({ p: chase.p, until: ctx.clock.elapsed + 8 }); chase = null; },
     release: () => r.climbPhase === 'hanging' && ctx.clock.driveRemaining > 40,
     route: (goal) => {
-      const via = routeThroughBands(r.pose, goal, BANDS, half, r.config.height, bot.hard);
+      const via = routeThroughBands(r.pose, goal, openBands(), half, r.config.height, bot.hard);
       return via === goal ? aroundCircles(r.pose, goal, [tower]) : via;
     },
     score: () => shootingCommand(rules.hubActive(r.alliance)),

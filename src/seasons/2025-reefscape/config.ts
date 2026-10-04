@@ -2,7 +2,7 @@ import type { Alliance } from '@engine/coords';
 import type { MatchPeriod } from '@engine/match/clock';
 import type { RobotOption } from '@engine/core/season';
 import { cloneConfig, DEFAULT_ROBOT, sanitizeConfig, type RobotConfig } from '@engine/robot/config';
-import { inch } from '@engine/units';
+import { inch, lb } from '@engine/units';
 import * as C from './constants';
 
 export const TIMELINE: MatchPeriod[] = [
@@ -80,7 +80,9 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   return c;
 }
 
-type Build = { coral: 'none' | 'l1' | 'l3' | 'l4'; intake: 'funnel' | 'ground' | 'both' | 'none'; algae: 'none' | 'reef' | 'reefGround'; algaeScore: 'none' | 'processor' | 'net' | 'both'; climb: 0 | 1 | 2; align: boolean };
+type Build = { coral: 'none' | 'l1' | 'l3' | 'l4'; intake: 'funnel' | 'ground' | 'both' | 'none'; algae: 'none' | 'reef' | 'reefGround'; algaeScore: 'none' | 'processor' | 'net' | 'both'; climb: 0 | 1 | 2; align: boolean;
+  /** Balance trade-offs: drive speed (m/s), weight (lb), seconds to place a CORAL. */
+  speed?: number; weight?: number; cycle?: number };
 export function build(b: Build): RobotConfig {
   const c = reefscapeRobotDefaults();
   c.placement!.enabled = b.coral !== 'none';
@@ -95,17 +97,20 @@ export function build(b: Build): RobotConfig {
   c.climber.maxLevel = b.climb;
   c.autoAlign = b.align;
   if (b.coral === 'l1') { c.height = inch(24); c.placement!.reach = inch(10); }
+  if (b.speed) c.maxSpeed = b.speed;
+  if (b.weight) { c.mass = lb(b.weight); c.maxAccel *= Math.min(1, 125 / b.weight); }
+  if (b.cycle) c.placement!.cycleSeconds = b.cycle;
   return normalizeReefscapeConfig(c);
 }
 
 /** Archetypes seen across 2025 events (docs/ROBOT-ARCHETYPES.md). */
 export function reefscapeRobotPresets() {
   return [
-    { id: 'funnel-l4', label: 'Funnel-fed L4 cycler', description: 'Elevator + CORAL end effector fed by a CORAL STATION funnel (no ground intake), reef auto-align, knocks ALGAE off with the elevator, deep climb. The most common competitive design.', config: build({ coral: 'l4', intake: 'funnel', algae: 'none', algaeScore: 'none', climb: 2, align: true }) },
-    { id: 'all-rounder', label: 'Ground-intake all-rounder', description: 'CORAL ground intake + funnel, L1–L4, reef and floor ALGAE into NET and PROCESSOR, auto-align, deep climb. The elite do-everything build.', config: build({ coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
-    { id: 'mid-elevator', label: 'L2–L3 elevator', description: 'Single-stage elevator: funnel-fed CORAL on L1–L3, reef ALGAE to the PROCESSOR, shallow climb. A common mid-tier build.', config: build({ coral: 'l3', intake: 'funnel', algae: 'reef', algaeScore: 'processor', climb: 1, align: true }) },
-    { id: 'trough', label: 'L1 trough bot', description: 'Low, simple robot: CORAL ground intake scoring only the L1 trough, floor ALGAE to the PROCESSOR, shallow climb, no auto-align (kit-bot style).', config: build({ coral: 'l1', intake: 'ground', algae: 'reefGround', algaeScore: 'processor', climb: 1, align: false }) },
-    { id: 'algae', label: 'ALGAE specialist', description: 'No CORAL scoring: removes reef ALGAE and collects it from the floor, shoots the NET and feeds the PROCESSOR, deep climb.', config: build({ coral: 'none', intake: 'none', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
+    { id: 'funnel-l4', label: 'Funnel-fed L4 cycler', description: 'Elevator + CORAL end effector fed by a CORAL STATION funnel (no ground intake), reef auto-align, knocks ALGAE off with the elevator, deep climb. The most common competitive design.', config: build({ coral: 'l4', intake: 'funnel', algae: 'none', algaeScore: 'none', climb: 2, align: true, speed: 4.6, weight: 122 }) },
+    { id: 'all-rounder', label: 'Ground-intake all-rounder', description: 'CORAL ground intake + funnel, L1–L4, reef and floor ALGAE into NET and PROCESSOR, auto-align, deep climb. The elite do-everything build: all those mechanisms make it the heaviest and slowest to drive and place.', config: build({ coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true, speed: 4.1, weight: 135, cycle: 0.75 }) },
+    { id: 'mid-elevator', label: 'L2–L3 elevator', description: 'Single-stage elevator: funnel-fed CORAL on L1–L3, reef ALGAE to the PROCESSOR, shallow climb. A common mid-tier build: the short elevator is light, quick and places fast.', config: build({ coral: 'l3', intake: 'funnel', algae: 'reef', algaeScore: 'processor', climb: 1, align: true, speed: 4.8, weight: 115, cycle: 0.5 }) },
+    { id: 'trough', label: 'L1 trough bot', description: 'Low, simple robot: CORAL ground intake scoring only the L1 trough, floor ALGAE to the PROCESSOR, shallow climb, no auto-align (kit-bot style).', config: build({ coral: 'l1', intake: 'ground', algae: 'reefGround', algaeScore: 'processor', climb: 1, align: false, speed: 4.9, weight: 110 }) },
+    { id: 'algae', label: 'ALGAE specialist', description: 'No CORAL scoring: removes reef ALGAE and collects it from the floor, shoots the NET and feeds the PROCESSOR, deep climb.', config: build({ coral: 'none', intake: 'none', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true, speed: 4.7, weight: 118 }) },
   ];
 }
 

@@ -97,7 +97,17 @@ export const crescendo2024: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new CrescendoAutoPilot(ctx, rules as CrescendoRules, robot, routine);
   },
-  botAutoRoutine(station) { return station === 2 ? 'wing-4' : 'center-2'; },
+  botAutoRoutine(station, config) {
+    if (config?.intake.ground === false) return config.launcher.enabled ? 'shoot-leave' : 'leave';
+    if (config && !config.launcher.enabled) return 'amp-2';
+    return station === 2 ? 'wing-4' : 'center-2';
+  },
+  botArchetype(difficulty, station, role) {
+    const byRole: Record<string, string> = { amp: 'amp-trap', feeder: 'source-pivot', shooter: 'turret', defender: 'pivot' };
+    if (role && byRole[role]) return byRole[role];
+    const lineups: Record<string, string[]> = { easy: ['kitbot', 'source-pivot', 'pivot'], normal: ['pivot', 'pivot', 'turret'], hard: ['pivot', 'turret', 'turret'], elite: ['turret', 'turret', 'turret'] };
+    return lineups[difficulty][(station - 1) % 3];
+  },
   aiStrategies: CRESCENDO_AI_STRATEGIES,
   aiRoles: CRESCENDO_AI_ROLES,
   botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' ? crescendoRobotPresets().find((p) => p.id === 'turret')!.config : this.robotDefaults; },

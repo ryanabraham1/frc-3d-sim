@@ -92,12 +92,15 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
         if (alliance === s.alliance && station === s.station) continue;
         const orders = aiOrders(s, alliance);
         const difficulty = orders.skill;
-        const config = cloneConfig(season.botRobotConfig?.(difficulty, orders.roles[station]) ?? season.robotDefaults);
-        if (difficulty !== 'normal') {
-          config.maxSpeed *= { easy: 0.8, normal: 1, hard: 1.2, elite: 1.25 }[difficulty];
-          if (difficulty === 'hard' || difficulty === 'elite') config.launcher.speedError *= difficulty === 'elite' ? 0.15 : 0.25;
-          config.launcher.spread *= { easy: 2, normal: 1, hard: 0.2, elite: 0.12 }[difficulty];
-        }
+        // A real archetype from the season's presets: the player's pick for that station, else the season's lineup.
+        const presets = season.robotPresets ?? [];
+        const wanted = orders.archetypes[station];
+        const archetype = presets.find((p) => p.id === wanted) ?? presets.find((p) => p.id === season.botArchetype?.(difficulty, station, orders.roles[station], alliance === s.alliance));
+        const config = cloneConfig(archetype?.config ?? season.botRobotConfig?.(difficulty, orders.roles[station]) ?? season.robotDefaults);
+        // Skill is mostly driving (pace, re-planning); the build gets only a modest speed / accuracy edge.
+        config.maxSpeed *= { easy: 0.88, normal: 1, hard: 1.05, elite: 1.08 }[difficulty];
+        config.launcher.spread *= { easy: 1.5, normal: 1, hard: 0.8, elite: 0.65 }[difficulty];
+        config.launcher.speedError *= { easy: 1.5, normal: 1, hard: 0.8, elite: 0.65 }[difficulty];
         config.teamNumber = 9000 + setup.robots.length;
         const dims = { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry };
         const botFootprint = footprint(config);
@@ -117,7 +120,7 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
         }
         setup.robots.push({
           id: setup.robots.length, slot: slotId(alliance, station), alliance, station, config,
-          autoRoutine: season.botAutoRoutine?.(station) ?? season.autoRoutines[0]?.id ?? 'none', manualAuto: false,
+          autoRoutine: season.botAutoRoutine?.(station, config) ?? season.autoRoutines[0]?.id ?? 'none', manualAuto: false,
           start, peerId: '', name: `AI ${alliance === 'blue' ? 'Blue' : 'Red'} ${station}`,
         });
       }

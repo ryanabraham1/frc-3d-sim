@@ -170,6 +170,19 @@ export class CycleBot implements AutoPilot {
     return cmd;
   }
 
+  /**
+   * Defense: get between `target` and where it scores (`goal`), then lean on it. Pin avoidance (antiPin) breaks contact
+   * before any 5-count, so the bot repeatedly re-engages instead of holding a robot still.
+   */
+  defend(target: Robot, goal: FieldPoint): RobotCommand {
+    const r = this.robot, p = target.pose, v = target.fieldVelocity;
+    const far = dist(r.pose, p) > 2;
+    const k = far ? 0.35 : 0;
+    const aim = { x: p.x + (goal.x - p.x) * k + v.vx * 0.3, y: p.y + (goal.y - p.y) * k + v.vy * 0.3 };
+    if (!far) this.team.pushing(r);
+    return this.driveTo(aim, Math.atan2(p.y - r.pose.y, p.x - r.pose.x), target);
+  }
+
   driveTo(goal: FieldPoint, yaw?: number, engage?: Robot): RobotCommand {
     const r = this.robot, p = r.pose;
     const waypoint = this.strategy.route?.(goal) ?? goal;

@@ -88,7 +88,13 @@ export const reefscape2025: SeasonDefinition = {
       },
     };
   },
-  botAutoRoutine() { return 'reef-cycle'; },
+  botAutoRoutine(_station, config) { return config && !config.placement?.enabled ? 'leave' : 'reef-cycle'; },
+  botArchetype(difficulty, station, role) {
+    const byRole: Record<string, string> = { algae: 'algae', coral: 'funnel-l4', defender: 'mid-elevator' };
+    if (role && byRole[role]) return byRole[role];
+    const lineups: Record<string, string[]> = { easy: ['trough', 'mid-elevator', 'funnel-l4'], normal: ['funnel-l4', 'mid-elevator', 'all-rounder'], hard: ['funnel-l4', 'all-rounder', 'funnel-l4'], elite: ['funnel-l4', 'all-rounder', 'funnel-l4'] };
+    return lineups[difficulty][(station - 1) % 3];
+  },
   aiStrategies: REEFSCAPE_AI_STRATEGIES,
   aiRoles: REEFSCAPE_AI_ROLES,
   botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },

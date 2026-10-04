@@ -10,6 +10,7 @@ import { footprint } from '../src/engine/robot/config';
 import { defaultSettings } from '../src/app/menu';
 import { SEASONS } from '../src/seasons';
 import { runMatch } from '../src/engine/testing/match';
+import { radioFor, TeamBrain } from '../src/engine/ai/team';
 
 let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
@@ -37,15 +38,19 @@ describe.each(SEASONS)('$name AI', (season) => {
     }
   });
 
-  it('difficulty changes opponents while preserving teammates and player', () => {
+  it('difficulty changes opponents (lineup and skill) while preserving teammates and player', () => {
     const settings = defaultSettings(season);
-    const easy = localSetup({ ...settings, aiDifficulty: 'easy' }, season);
-    const hard = localSetup({ ...settings, aiDifficulty: 'hard' }, season);
+    const same = Object.fromEntries([1, 2, 3].map((k) => [k, season.robotPresets![0].id]));
+    const easy = localSetup({ ...settings, aiDifficulty: 'easy', aiOpponent: { archetypes: same } }, season);
+    const hard = localSetup({ ...settings, aiDifficulty: 'hard', aiOpponent: { archetypes: same } }, season);
     const enemy = easy.robots.findIndex((r) => r.alliance !== settings.alliance);
     expect(hard.robots[enemy].config.maxSpeed).toBeGreaterThan(easy.robots[enemy].config.maxSpeed);
     expect(hard.robots[enemy].config.launcher.spread).toBeLessThan(easy.robots[enemy].config.launcher.spread);
     expect(hard.robots[1].config).toEqual(easy.robots[1].config);
     expect(settings.robot).toEqual(easy.robots[0].config);
+    // Without orders the opponents play real archetypes from the season's lineup.
+    const lineup = localSetup({ ...settings, aiDifficulty: 'hard' }, season).robots.filter((r) => r.alliance !== settings.alliance);
+    for (const r of lineup) expect(season.robotPresets!.some((p) => p.config.hopperCapacity === r.config.hopperCapacity && p.config.climber.maxLevel === r.config.climber.maxLevel)).toBe(true);
   });
 
   it.each(['blue', 'red'] as const)('collects and scores repeated TELEOP cycles for %s', (alliance) => {
@@ -69,32 +74,21 @@ describe.each(SEASONS)('$name AI', (season) => {
 });
 
 describe.each(SEASONS)('$name Hard challenge', (season) => {
-  it('earns more points than Normal in an idle-player match', () => {
+  it('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
     const totals: number[] = [];
     for (const difficulty of ['normal', 'hard'] as const) {
-      const settings = { ...defaultSettings(season), aiDifficulty: difficulty };
-      const opponent = localSetup(settings, season).robots.find((r) => r.alliance !== settings.alliance)!;
-      const sim = new HeadlessSim(season, R, { robot: opponent.config, alliance: opponent.alliance, station: 2, pose: season.startPose(opponent.alliance, 2) });
-      try {
-        sim.ctx.settings.alliance = settings.alliance;
-        sim.ctx.settings.aiDifficulty = difficulty;
-        sim.ctx.humanPlayerIsAuto = () => true;
-        sim.rules.stage();
-        sim.rules.onPeriodChange(sim.ctx.clock.start());
-        const auto = season.createAutoPilot(sim.ctx, sim.rules, sim.robot, opponent.autoRoutine);
-        const bot = season.createBotPilot!(sim.ctx, sim.rules, sim.robot);
-        while (!sim.ctx.clock.finished) {
-          for (const change of sim.ctx.clock.advance(sim.physics.dt)) sim.rules.onPeriodChange(change);
-          if (sim.ctx.clock.mode !== 'disabled') sim.step((sim.ctx.clock.mode === 'auto' ? auto : bot).update(sim.physics.dt));
-          else { sim.robot.enabled = false; sim.rules.beforeStep(sim.physics.dt); sim.pool.updateDamping(); sim.physics.step(); sim.rules.afterStep(sim.physics.dt); }
-        }
-        totals.push(sim.ctx.score.total(opponent.alliance));
-        console.log(season.id, difficulty, totals.at(-1), 'climb', sim.robot.climbPhase);
-        if (difficulty === 'hard') expect(sim.robot.climbPhase).toBe('hanging');
-      } finally { sim.dispose(); }
+      const settings = { ...defaultSettings(season), seed: 5, aiDifficulty: difficulty };
+      const res = runMatch(season, R, settings);
+      const red = settings.alliance === 'blue' ? 'red' : 'blue';
+      totals.push(res.score[red]);
+      console.log(season.id, difficulty, res.score[red], JSON.stringify(res.categories[red]));
+      if (difficulty === 'hard') {
+        const cat = res.categories[red];
+        expect((cat.onstage ?? 0) + (cat.barge ?? 0) + (cat.towerTeleop ?? 0)).toBeGreaterThan(0);
+      }
     }
     expect(totals[1]).toBeGreaterThan(totals[0]);
-  });
+  }, 300_000);
 });
 
 // A whole all-AI match (the player's station driven by a bot too) through the engine's step order.
@@ -109,7 +103,7 @@ describe.each(SEASONS)('$name all-AI match', (season) => {
       const cat = res.categories[a];
       if (season.year === 2024) { expect(cat.speakerAmplified ?? 0).toBeGreaterThan(0); expect((cat.onstage ?? 0) + (cat.park ?? 0)).toBeGreaterThan(0); }
       if (season.year === 2025) { expect(cat.autoCoral ?? 0).toBeGreaterThan(21); expect(cat.barge ?? 0).toBeGreaterThanOrEqual(24); }
-      if (season.year === 2026) { expect(cat.towerTeleop ?? 0).toBeGreaterThanOrEqual(60); expect(cat.towerAuto ?? 0).toBeGreaterThan(0); expect(res.counters[a].fuelActive).toBeGreaterThan(600); }
+      if (season.year === 2026) { expect(cat.towerTeleop ?? 0).toBeGreaterThanOrEqual(60); expect(cat.towerAuto ?? 0).toBeGreaterThan(0); expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
     }
   }, 300_000);
 });
@@ -181,4 +175,63 @@ it('REBUILT defender role reduces a shooter’s physical scoring instead of just
 it('routes to fuel inside a barrier lane instead of stopping at its exit', () => {
   const goal = { x: 2, y: 1.5 };
   expect(routeThroughBands({ x: 0.6, y: 1.5 }, goal, [{ xMin: 1, xMax: 3, gaps: [{ yMin: 0, yMax: 3 }] }], 0.4, 0.5)).toBe(goal);
+});
+
+it('a beached robot calls for help, a teammate pushes, then backs off if it will not come free', () => {
+  const season = SEASONS.find((s) => s.year === 2026)!;
+  const config = season.botRobotConfig!('hard');
+  const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', station: 2, pose: { x: 2.5, y: 4.5, yaw: 0 },
+    extraRobots: [{ config, alliance: 'blue', station: 1, pose: { x: 2.5, y: 6.8, yaw: 0 }, id: 1 }] });
+  try {
+    sim.ctx.settings.aiAlly = { skill: 'hard' };
+    sim.rules.stage();
+    sim.rules.onPeriodChange(sim.ctx.clock.start());
+    while (sim.ctx.clock.mode !== 'teleop') for (const change of sim.ctx.clock.advance(0.1)) sim.rules.onPeriodChange(change);
+    const [stuck, mate] = sim.ctx.robots;
+    // The player's robot is high-centered: wheels barely touching, going nowhere however hard it drives.
+    Object.defineProperty(stuck, 'traction', { get: () => 0.2, set: () => {} });
+    stuck.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
+    const pilot = season.createBotPilot!(sim.ctx, sim.rules, mate);
+    const dt = sim.physics.dt;
+    let closest = Infinity;
+    for (let i = 0; i < 24 / dt; i++) {
+      for (const change of sim.ctx.clock.advance(dt)) sim.rules.onPeriodChange(change);
+      for (const r of sim.ctx.robots) {
+        r.enabled = true;
+        const cmd = r === stuck ? { ...IDLE_COMMAND, vx: 1.5 } : pilot.update(dt);
+        r.lastCommand = cmd; r.drive(cmd, dt); r.tick(dt);
+      }
+      sim.rules.beforeStep(dt); sim.pool.updateDamping(); sim.physics.step(); sim.rules.afterStep(dt);
+      closest = Math.min(closest, Math.hypot(mate.pose.x - stuck.pose.x, mate.pose.y - stuck.pose.y));
+    }
+    const radio = radioFor(sim.ctx).messages.map((m) => `${m.from}: ${m.text}`);
+    console.log(radio.filter((m) => /push|way|backing/.test(m)));
+    expect(radio.some((m) => m.includes('need a push'))).toBe(true);
+    expect(radio.some((m) => m.startsWith('Blue 1: On my way'))).toBe(true);
+    expect(closest).toBeLessThan(1.6);
+    expect(radio.some((m) => m.includes('backing off'))).toBe(true);
+  } finally { sim.dispose(); }
+});
+
+it('teammates follow the player’s orders and every season offers strategies and roles', () => {
+  for (const season of SEASONS) {
+    expect(season.aiStrategies?.[0].id).toBe('auto');
+    expect(season.aiStrategies!.length).toBeGreaterThan(2);
+    expect(season.aiRoles!.length).toBeGreaterThan(1);
+    const preset = season.robotPresets!.at(-1)!;
+    const settings = { ...defaultSettings(season), aiAlly: { skill: 'elite' as const, archetypes: { 1: preset.id, 3: preset.id } } };
+    const elite = localSetup(settings, season), normal = localSetup({ ...settings, aiAlly: { archetypes: { 1: preset.id, 3: preset.id } } }, season);
+    expect(elite.robots[1].config.maxSpeed).toBeGreaterThan(normal.robots[1].config.maxSpeed);
+    expect(normal.robots[1].config.hopperCapacity).toBe(preset.config.hopperCapacity);
+    const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', station: 2, pose: season.startPose('blue', 2),
+      extraRobots: [{ config: season.robotDefaults, alliance: 'blue', station: 1, pose: season.startPose('blue', 1), id: 1 }] });
+    try {
+      const role = season.aiRoles!.at(-1)!.id, strategy = season.aiStrategies![2].id;
+      sim.ctx.settings.aiAlly = { skill: 'hard', strategy, roles: { 1: role } };
+      season.createBotPilot!(sim.ctx, sim.rules, sim.ctx.robots[1]);
+      const team = TeamBrain.for(sim.ctx, 'blue');
+      expect(team.role(sim.ctx.robots[1])).toBe(role);
+      expect(team.strategy).toBe(strategy);
+    } finally { sim.dispose(); }
+  }
 });

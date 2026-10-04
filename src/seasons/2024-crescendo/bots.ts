@@ -10,15 +10,18 @@ import type { CrescendoRules } from './rules';
 import * as C from './constants';
 
 export const CRESCENDO_AI_STRATEGIES: AiChoice[] = [
-  { id: 'auto', label: 'Amplify cycles', description: 'The AMP robot banks 2 NOTES while the shooters load up and hold; on the call the human player AMPLIFIES and everyone fires into the SPEAKER for 5 points a NOTE. A feeder at the SOURCE keeps NOTES flowing downfield.' },
-  { id: 'speaker', label: 'Speaker cycles', description: 'Everyone cycles SOURCE → SPEAKER; the AMP is only used when a robot is already next to it.' },
+  { id: 'auto', label: 'Adaptive', description: 'Reads the match every few seconds and switches between the plans below (see docs/AI-STRATEGY.md for the benchmarks behind each switch).' },
+  { id: 'amplify', label: 'Amplify cycles', description: 'The AMP robot banks 2 NOTES while the shooters load up and hold; on the call the human player AMPLIFIES and everyone fires into the SPEAKER for 5 points a NOTE. A feeder at the SOURCE keeps NOTES flowing downfield.' },
   { id: 'feed', label: 'Feed & shoot', description: 'One robot camps the SOURCE and lobs every NOTE downfield; everyone else shoots the SPEAKER. No AMP cycles.' },
+  { id: 'speaker', label: 'Speaker cycles', description: 'Everyone cycles SOURCE → SPEAKER; the AMP is only used when a robot is already next to it.' },
+  { id: 'defend', label: 'Amplify + defense', description: 'Amplify cycles with one robot shadowing the opponents’ best shooter in the NEUTRAL ZONE instead of shooting (clear of their protected zones).' },
 ];
 
 export const CRESCENDO_AI_ROLES: AiChoice[] = [
   { id: 'shooter', label: 'Shooter', description: 'Takes the closest NOTE and shoots the SPEAKER; holds fire for AMPLIFICATION when called.' },
   { id: 'amp', label: 'Amp', description: 'Banks 2 NOTES in the AMP, calls AMPLIFY, then shoots during the window.' },
   { id: 'feeder', label: 'Feeder', description: 'Waits at the SOURCE and passes each NOTE downfield to the shooters.' },
+  { id: 'defender', label: 'Defender', description: 'Shadows the opponents’ best shooter between their SOURCE and SPEAKER, staying out of their protected zones.' },
 ];
 
 const canShoot = (r: Robot) => r.config.launcher.enabled && r.config.options?.shooter !== 'none';
@@ -44,13 +47,26 @@ function planRoles(team: TeamBrain): Map<number, string> {
   // A robot without a shooter can only AMP (or feed by pushing NOTES, which the bots don't do).
   for (const r of [...free]) if (!canShoot(r)) { roles.set(r.id, canAmp(r) ? 'amp' : 'feeder'); free.splice(free.indexOf(r), 1); }
   const sourceOnly = (r: Robot) => r.config.intake.ground === false;
-  if (strategy === 'auto' && !taken('amp') && free.length >= 2) pick('amp', canAmp, (a, b) => b.station - a.station);
+  const amping = strategy === 'amplify' || strategy === 'defend';
+  if (strategy === 'defend' && !taken('defender') && free.length >= 3) pick('defender', () => true, (a, b) => a.config.launcher.rate - b.config.launcher.rate || b.station - a.station);
+  if (amping && !taken('amp') && free.length >= 2) pick('amp', canAmp, (a, b) => b.station - a.station);
   // Feeding needs a robot that catches from the SOURCE; a source-only robot is the natural feeder. Benchmarks: one
   // feeder beats three robots queueing at the SOURCE (and crossing the field through traffic) every cycle.
-  if (strategy !== 'speaker' && !taken('feeder') && free.length >= 1 && team.members.length >= 2) pick('feeder', (r) => r.config.intake.station !== false, (a, b) => Number(sourceOnly(b)) - Number(sourceOnly(a)) || a.station - b.station);
-  if (strategy === 'auto' && !taken('amp') && free.length >= 2) pick('amp', canAmp, (a, b) => b.station - a.station);
+  if (strategy !== 'speaker' && strategy !== 'defend' && !taken('feeder') && free.length >= 1 && team.members.length >= 2) pick('feeder', (r) => r.config.intake.station !== false, (a, b) => Number(sourceOnly(b)) - Number(sourceOnly(a)) || a.station - b.station);
+  if (amping && !taken('amp') && free.length >= 2) pick('amp', canAmp, (a, b) => b.station - a.station);
   for (const r of free) roles.set(r.id, 'shooter');
   return roles;
+}
+
+/**
+ * Adaptive plan for 'auto'. Benchmarks (docs/AI-STRATEGY.md): Amplify cycles beat Feed & shoot, Speaker cycles and
+ * Amplify + defense — also when the opponents defend us — so it is the plan whenever there's time to bank 2 AMP
+ * NOTES and fire the window. Too late for that (or nothing banked with under ~28 s to go) every robot just shoots.
+ */
+function adaptCrescendo(team: TeamBrain, rules: CrescendoRules): { id: string; reason: string } | null {
+  const left = team.ctx.clock.driveRemaining;
+  if (team.ctx.clock.mode === 'teleop' && left < 28 && rules.bank[team.alliance] === 0 && !rules.amplified(team.alliance)) return { id: 'feed', reason: 'no time to AMPLIFY again — everyone on the SPEAKER' };
+  return { id: 'amplify', reason: 'bank 2, AMPLIFY, volley' };
 }
 
 interface CrescendoPlan {
@@ -64,6 +80,7 @@ interface CrescendoPlan {
 export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r: Robot): CycleBot {
   const team = TeamBrain.for(ctx, r.alliance);
   team.usePlanner(planRoles);
+  team.useAdapter('amplify', (t) => adaptCrescendo(t, rules), CRESCENDO_AI_STRATEGIES);
   const plan = team.memo<CrescendoPlan>('crescendo', () => ({ readySince: -1, announcedAmp: -1, chains: new Map(), claims: new Map() }));
   const opp = opponent(r.alliance);
   const half = Math.max(r.footprint.length, r.footprint.width) / 2;
@@ -72,7 +89,8 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
   const protectedZones = [C.sourceZone(opp), C.ampZone(opp)];
   const fixedShooter = r.config.options?.shooter === 'fixed';
   // Shooting range: a fixed hood scores from against the SUBWOOFER only.
-  const range = fixedShooter ? 1.45 : bot0Range(r);
+  // SPEAKER range (m from the opening): on-axis shots go in to ~5.8 m; keep a margin for traffic and spread.
+  const range = fixedShooter ? 1.45 : 5.0;
   const now = () => ctx.clock.elapsed;
   const held = () => rules.heldNote(r) !== undefined;
   const amplified = () => rules.amplified(r.alliance);
@@ -249,11 +267,35 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
     return cmd;
   };
 
+  /** Contact here would be a foul: the opponent (or we) in its protected zones, at its PODIUM, or END GAME STAGE. */
+  const protectedOpp = (o: Robot) => protectedZones.some((z) => convexOverlap(o.corners(), z) || convexOverlap(r.corners(), z)) ||
+    dist(o.pose, C.podium(opp)) < 1.3 || (ctx.clock.driveRemaining < 22 && rules.inStageZone(o, opp));
+  /** Shadow the opponents' most dangerous shooter on its way to its SPEAKER. */
+  const defend = (): RobotCommand | null => {
+    const top = team.scout.topScorer();
+    const targets = team.opponents.filter((o) => canShoot(o) && !o.isClimbing && !o.tippedOver);
+    targets.sort((a, b) => Number(rules.heldNote(b) !== undefined) - Number(rules.heldNote(a) !== undefined) || Number(b === top) - Number(a === top) || dist(r.pose, a.pose) - dist(r.pose, b.pose));
+    const t = targets[0];
+    if (!t) return null;
+    team.say(r, `Defending ${team.label(t).replace('You', 'the driver')}`, `def:${r.id}:${t.id}`, 15);
+    const goal = C.speakerAim(opp);
+    if (protectedOpp(t)) {
+      const d = dist(t.pose, goal) || 1;
+      return bot.driveTo({ x: t.pose.x + (goal.x - t.pose.x) / d * 1.8, y: t.pose.y + (goal.y - t.pose.y) / d * 1.8 });
+    }
+    return bot.defend(t, goal);
+  };
+
   const think = (): RobotCommand => {
     if (r.isClimbing) return { ...IDLE_COMMAND, shoot: held() && r.config.climber.maxLevel >= 2 };
     const { bank, soon } = bot.smart ? ampPlan() : { bank: rules.bank[r.alliance], soon: false };
     const role = bot.role;
     const amped = amplified();
+
+    if (role === 'defender' && ctx.clock.mode === 'teleop' && bot.smart) {
+      const d = defend();
+      if (d) return d;
+    }
 
     if (role === 'feeder' && ctx.clock.mode === 'teleop') {
       if (!held()) return goToSource();
@@ -302,9 +344,4 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
     score: () => shooting(false),
   });
   return bot;
-}
-
-/** Reliable SPEAKER range by shooter type (m from the wall). */
-function bot0Range(r: Robot): number {
-  return r.config.launcher.turret ? 5.3 : 5.0;
 }

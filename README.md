@@ -44,19 +44,23 @@ The gallery uses the same models and animation path as the game; it is a develop
 ## Single-player AI
 
 Choose **3 vs 3** to play with two AI teammates against three AI opponents in any season, or **Solo practice**
-for an empty field. **Easy / Normal / Hard** changes opponent driving speed, shooting accuracy and collection
-pace; teammates stay on Normal. Hard uses competitive builds, shoots while moving in shooting seasons,
-seeks open high-value reef branches, coordinates AMP amplification, and attempts endgame climbs. Bots
-reserve separate pieces and reef faces, sidestep stalled approaches, and skip temporarily unreachable pieces.
-REBUILT Hard assigns scorer, feeder and defender roles: continuous collection and shooting during active
-shifts, physical feeding from the neutral zone, and a defender contesting scoring while the opponent hub is active. During its own active shift it scores;
-when both hubs are active it compares scoring opportunity with the shooting rate it could deny. The defender releases contact and separates to avoid sustained pins, then returns to contest the route.
-Bots take the center of crossing lanes and can reach fuel inside a trench or bump band.
-Teammates follow a consistent passing direction to break head-on deadlocks. AUTO routines spread across
-preload scoring, depot collection and neutral collection rather than sending everyone down the same path.
-Bots run scripted AUTO routines, then collect and score through the same
-physical mechanisms as the player in TELEOP. They route around major field structures and nearby robots.
-Custom player starts move overlapping bots to another legal starting spot. AI settings are saved with the menu.
+for an empty field.
+
+- **AI difficulty** (opponents) and **Teammate skill**: *Easy* just cycles; *Normal* runs the full alliance plan;
+  *Hard* adds competitive builds, full speed and tight aim; *Elite* re-plans fastest with the most accurate shots.
+- **Alliance strategy** for your teammates: *Adaptive* (recommended) or one fixed plan per season — e.g. 2026
+  *Press* / *Shift control* / *Stockpile* / *Lockdown*, 2024 *Amplify cycles* / *Feed & shoot* / *Speaker cycles* /
+  *Amplify + defense*, 2025 *Reef race* / *All coral* / *Coral + algae* / *Reef race + press*.
+- **Roles per driver station**, including your own: set yours (e.g. *Amp* in 2024) and the bots plan around you.
+- **AI radio** shows the callouts the bots coordinate with ("AMP 2/2 — load up", "AMPLIFY!", "I'm beached — need a
+  push!", "New plan: PRESS — …").
+
+Each alliance shares one brain (`src/engine/ai/team.ts`): it assigns roles, scouts the opponents (who is defending,
+scoring rates, the score margin) and, on *Adaptive*, switches strategy as the match unfolds. A robot that is beached,
+pinned or stuck — yours included — gets the nearest AI teammate pushing it free; after a few seconds without success
+the helper backs off and returns later. Bots avoid protected-zone contact and pins, try alternative escapes when stuck,
+and score only through the same physical mechanisms as you. Which plan is best, and when the adaptive plan switches,
+comes from head-to-head headless benchmarks: see [docs/AI-STRATEGY.md](docs/AI-STRATEGY.md).
 
 ## Robot archetypes
 

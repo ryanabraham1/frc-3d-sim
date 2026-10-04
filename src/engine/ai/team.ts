@@ -9,13 +9,14 @@ export interface ResolvedOrders {
   strategy: string;
   /** Role per driver station; 'auto' (or missing) lets the alliance plan it. */
   roles: Record<number, string>;
+  archetypes: Record<number, string>;
 }
 
 /** Your alliance follows `aiAlly` (teammates default to Normal); the other follows `aiOpponent` and the difficulty. */
 export function aiOrders(s: GameSettings, a: Alliance): ResolvedOrders {
   const mine = a === s.alliance;
   const o = (mine ? s.aiAlly : s.aiOpponent) ?? {};
-  return { skill: o.skill ?? (mine ? 'normal' : s.aiDifficulty ?? 'normal'), strategy: o.strategy || 'auto', roles: { ...(o.roles ?? {}) } };
+  return { skill: o.skill ?? (mine ? 'normal' : s.aiDifficulty ?? 'normal'), strategy: o.strategy || 'auto', roles: { ...(o.roles ?? {}) }, archetypes: { ...(o.archetypes ?? {}) } };
 }
 
 /** How well an AI skill level drives: share of top speed, re-planning interval, and whether it runs the full plan. */
@@ -77,6 +78,65 @@ export interface Health {
 /** Decides a role (season role id) for each alliance robot, keyed by robot id. Called about once a second. */
 export type RolePlanner = (team: TeamBrain) => Map<number, string>;
 
+/** Picks the alliance strategy from the match situation; null keeps the current one. */
+export type StrategyAdapter = (team: TeamBrain) => { id: string; reason: string } | null;
+
+/**
+ * What an alliance has seen of its opponents: who spends time defending us, and how fast each side is scoring.
+ * Exponential averages over roughly the last 20 s, so the plan follows how the other alliance is playing now.
+ */
+export class Scout {
+  /** Share of recent time each opponent robot spent shadowing one of ours on our half (0..1). */
+  readonly defending = new Map<number, number>();
+  constructor(private readonly team: TeamBrain) {}
+
+  update(dt: number): void {
+    if (dt <= 0) return;
+    const { ctx } = this.team;
+    const k = Math.min(1, dt / 20);
+    const ourWallX = ourWall(ctx, this.team.alliance);
+    for (const o of this.team.opponents) {
+      const onOurHalf = Math.abs(o.pose.x - ourWallX) < ctx.frame.length / 2;
+      const shadowing = onOurHalf && this.team.members.some((m) => Math.hypot(m.pose.x - o.pose.x, m.pose.y - o.pose.y) < 1.7);
+      this.defending.set(o.id, (this.defending.get(o.id) ?? 0) * (1 - k) + (shadowing ? k : 0));
+    }
+  }
+
+  /** The opponent robot most busy defending us, if it spends over `share` of its time doing it. */
+  defender(share = 0.35): Robot | null {
+    let best: Robot | null = null, top = share;
+    for (const o of this.team.opponents) { const d = this.defending.get(o.id) ?? 0; if (d > top) { top = d; best = o; } }
+    return best;
+  }
+
+  /** Points per minute an alliance scored over the last `window` seconds (foul points excluded). */
+  rate(alliance: Alliance, window = 30): number {
+    const { score, clock } = this.team.ctx;
+    const t0 = clock.elapsed - window;
+    let pts = 0;
+    for (let i = score.events.length - 1; i >= 0 && score.events[i].t >= t0; i--) if (score.events[i].alliance === alliance) pts += score.events[i].points;
+    return pts * 60 / Math.max(10, Math.min(window, clock.elapsed));
+  }
+
+  /** Our score minus theirs. */
+  margin(): number {
+    const s = this.team.ctx.score, a = this.team.alliance;
+    return s.total(a) - s.total(a === 'blue' ? 'red' : 'blue');
+  }
+
+  /** The opponent credited with the most points so far (often the human driver). */
+  topScorer(): Robot | null {
+    const s = this.team.ctx.score;
+    const pts = (r: Robot) => Object.values(s.robots[r.id]?.points ?? {}).reduce((a, b) => a + b, 0);
+    return [...this.team.opponents].sort((a, b) => pts(b) - pts(a))[0] ?? null;
+  }
+}
+
+/** Field x of an alliance's own wall (WPILib frame: blue at x = 0 in every season). */
+function ourWall(ctx: SeasonContext, alliance: Alliance): number {
+  return alliance === 'blue' ? 0 : ctx.frame.length;
+}
+
 const brains = new WeakMap<SeasonContext, Map<Alliance, TeamBrain>>();
 
 /**
@@ -92,6 +152,12 @@ export class TeamBrain {
   private readonly roles = new Map<number, string>();
   private readonly data = new Map<string, unknown>();
   private planner: RolePlanner | null = null;
+  private adapter: StrategyAdapter | null = null;
+  private current = 'auto';
+  private adaptAt = 0;
+  private labels = new Map<string, string>();
+  /** Scouting the opponents: rolling estimates the adapters read. */
+  readonly scout = new Scout(this);
   private lastTick = -1;
   private readonly pushingUntil = new Map<number, number>();
   private replanAt = 0;
@@ -110,13 +176,29 @@ export class TeamBrain {
   }
 
   get skill(): AiSkill { return this.orders.skill; }
-  get strategy(): string { return this.orders.strategy; }
+  /**
+   * The plan the alliance is running now: the player's pick, or — on 'auto' — whatever the season's adapter last
+   * chose from how the match is going (score, clock, what the opponents are doing).
+   */
+  get strategy(): string {
+    if (this.orders.strategy !== 'auto') return this.orders.strategy;
+    this.tick();
+    return this.current;
+  }
   get members(): Robot[] { return this.ctx.robots.filter((r) => r.alliance === this.alliance); }
   get opponents(): Robot[] { return this.ctx.robots.filter((r) => r.alliance !== this.alliance); }
   get now(): number { return this.ctx.clock.elapsed; }
 
   usePlanner(planner: RolePlanner): void {
     if (!this.planner) { this.planner = planner; this.replanAt = 0; }
+  }
+
+  /** Install the season's strategy chooser (used when the orders say 'auto'), starting on `initial`. */
+  useAdapter(initial: string, adapter: StrategyAdapter, labels: { id: string; label: string }[] = []): void {
+    if (this.adapter) return;
+    this.adapter = adapter;
+    this.current = initial;
+    for (const l of labels) this.labels.set(l.id, l.label);
   }
 
   /** Season blackboard entry, created on first use. */
@@ -141,7 +223,7 @@ export class TeamBrain {
   }
 
   say(r: Robot | null, text: string, key?: string, every = 6): void {
-    this.radio.say(this.now, this.alliance, r ? this.label(r) : 'Drive coach', text, key ? `${this.alliance}:${key}` : undefined, every);
+    this.radio.say(this.now, this.alliance, r ? this.label(r) : `${this.alliance === 'blue' ? 'Blue' : 'Red'} coach`, text, key ? `${this.alliance}:${key}` : undefined, every);
   }
 
   /** This robot is pushing on purpose (defense, a rescue): don't treat its stall as being stuck. */
@@ -156,6 +238,16 @@ export class TeamBrain {
     const dt = this.lastTick < 0 ? 0 : Math.max(0, t - this.lastTick);
     this.lastTick = t;
     this.trackHealth(dt);
+    this.scout.update(dt);
+    if (this.adapter && this.orders.strategy === 'auto' && t >= this.adaptAt && SKILL[this.skill].smart) {
+      this.adaptAt = t + 2;
+      const pick = this.adapter(this);
+      if (pick && pick.id !== this.current) {
+        this.current = pick.id;
+        this.replanAt = 0;
+        this.say(null, `New plan: ${(this.labels.get(pick.id) ?? pick.id).toUpperCase()} — ${pick.reason}`, `plan:${pick.id}`, 10);
+      }
+    }
     if (this.planner && t >= this.replanAt) {
       this.replanAt = t + 1;
       const next = this.planner(this);

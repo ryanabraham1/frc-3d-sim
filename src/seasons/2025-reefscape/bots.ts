@@ -9,14 +9,17 @@ import * as C from './constants';
 import type { ReefscapeRules } from './rules';
 
 export const REEFSCAPE_AI_STRATEGIES: AiChoice[] = [
-  { id: 'auto', label: 'Reef race', description: 'CORAL cyclers split the two CORAL STATIONS and claim different REEF faces, filling L4 first, then L3/L2 (clearing blocking ALGAE) and finally the L1 trough; an ALGAE robot clears your REEF and shoots the NET when one is available. Everyone deep-climbs.' },
+  { id: 'auto', label: 'Adaptive', description: 'Reads the match every few seconds and switches between the plans below (see docs/AI-STRATEGY.md for the benchmarks behind each switch).' },
+  { id: 'reef', label: 'Reef race', description: 'CORAL cyclers split the two CORAL STATIONS and claim different REEF faces, filling L4 first, then L3/L2 (clearing blocking ALGAE) and finally the L1 trough; an ALGAE robot clears your REEF and shoots the NET when one is available. Everyone deep-climbs.' },
   { id: 'coral', label: 'All coral', description: 'Every robot cycles CORAL; ALGAE is only knocked off when it blocks an open level.' },
   { id: 'algae', label: 'Coral + algae', description: 'One robot works ALGAE full time — clearing your REEF, collecting floor ALGAE and scoring the NET (or the PROCESSOR) — while the others cycle CORAL.' },
+  { id: 'press', label: 'Reef race + press', description: 'Reef race until your L2–L4 BRANCHES are full; then one robot defends the opponents’ best CORAL cycler between their STATION and REEF (outside their protected REEF ZONE) instead of filling the 2-point trough.' },
 ];
 
 export const REEFSCAPE_AI_ROLES: AiChoice[] = [
   { id: 'coral', label: 'Coral cycler', description: 'CORAL STATION → highest open BRANCH on an unclaimed REEF face.' },
   { id: 'algae', label: 'Algae', description: 'Clears ALGAE off your REEF (opening L2/L3) and scores it in the NET or PROCESSOR.' },
+  { id: 'defender', label: 'Defender', description: 'Slows the opponents’ CORAL cyclers between their STATION and REEF, outside their REEF ZONE (one defender at a time, G421).' },
 ];
 
 const coralCapable = (r: Robot) => !!r.config.placement?.enabled && r.config.intake.primary !== false && r.config.intake.enabled;
@@ -42,6 +45,20 @@ function planRoles(team: TeamBrain): Map<number, string> {
   return roles;
 }
 
+/** Our L2-L4 BRANCHES are all taken: only the 2-point trough is left for CORAL. */
+export function reefSaturated(rules: ReefscapeRules, a: 'blue' | 'red'): boolean {
+  return [2, 3, 4].every((level) => [0, 1, 2, 3, 4, 5].every((f) => [0, 1].every((b) => rules.occupied(a, level, f, b))));
+}
+
+/**
+ * Adaptive plan for 'auto' (docs/AI-STRATEGY.md): Reef race. Pressing the opponents once our high BRANCHES are full
+ * benchmarked worse (−25 a match), and the coral-only / dedicated-ALGAE variants were within noise; Reef race already
+ * brings an ALGAE robot in when the alliance has three bots. The radio still calls out each level filling up.
+ */
+function adaptReefscape(_team: TeamBrain, _rules: ReefscapeRules): { id: string; reason: string } | null {
+  return { id: 'reef', reason: 'filling the high BRANCHES first' };
+}
+
 interface ReefPlan {
   faces: Map<number, { face: number; until: number }>;
   stations: Map<number, number>;
@@ -51,6 +68,7 @@ interface ReefPlan {
 export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r: Robot): CycleBot {
   const team = TeamBrain.for(ctx, r.alliance);
   team.usePlanner(planRoles);
+  team.useAdapter('reef', (t) => adaptReefscape(t, rules), REEFSCAPE_AI_STRATEGIES);
   const plan = team.memo<ReefPlan>('reef', () => ({ faces: new Map(), stations: new Map(), cages: new Map() }));
   const now = () => ctx.clock.elapsed;
   const center = C.reefCenter(r.alliance);
@@ -219,10 +237,33 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
     }
   };
 
+  const oppReefZone = (o: Robot) => C.inReefZone(o.alliance, o.pose, o.footprint.length, o.footprint.width) || rules.inBargeZone(o);
+  /** Slow their best CORAL cycler between its STATION and REEF; hang back while it is inside its protected zones. */
+  const defend = (): RobotCommand | null => {
+    const top = team.scout.topScorer();
+    const targets = team.opponents.filter((o) => !o.isClimbing && !o.tippedOver && o.config.placement?.enabled);
+    targets.sort((a, b) => Number(b.held.some((i) => i < C.CORAL_COUNT)) - Number(a.held.some((i) => i < C.CORAL_COUNT)) || Number(b === top) - Number(a === top) || dist(r.pose, a.pose) - dist(r.pose, b.pose));
+    const t = targets[0];
+    if (!t) return null;
+    team.say(r, `Defending ${team.label(t).replace('You', 'the driver')}`, `def:${r.id}:${t.id}`, 15);
+    const goal = C.reefCenter(opp);
+    if (oppReefZone(t)) {
+      const d = dist(t.pose, goal) || 1, stand = C.REEF_ZONE_APOTHEM + half + 0.6;
+      return bot.driveTo({ x: goal.x + (t.pose.x - goal.x) / d * stand, y: goal.y + (t.pose.y - goal.y) / d * stand });
+    }
+    return bot.defend(t, goal);
+  };
+  /** On 'press' one robot (never more: G421) turns defender once only the trough is left. */
+  const presser = () => team.members.filter((o) => o.controller === 'bot' && !o.isClimbing && team.role(o) !== 'algae').sort((a, b) => b.station - a.station)[0];
+
   const think = (): RobotCommand => {
     if (r.isClimbing) return { ...IDLE_COMMAND };
     if (bot.smart) announce();
     const role = bot.role;
+    if (bot.smart && ctx.clock.mode === 'teleop' && (role === 'defender' || (team.strategy === 'press' && reefSaturated(rules, r.alliance) && presser() === r))) {
+      const d = defend();
+      if (d) { if (!coralHeld()) d.intake = false; return d; }
+    }
     if (coralHeld() && maxLevel > 0) return placeCoral();
     if (role === 'algae' || !coralCapable(r)) {
       const w = algaeWork();
