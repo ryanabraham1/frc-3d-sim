@@ -269,39 +269,53 @@ export function seededRandom(seed: number): () => number {
 export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean }): { set(f: number): void } {
   type Slot = { x: number; y: number; z: number; s: number; key: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
-  // Lay out a loosely packed lattice for ball radius r. `inside` (in robot-frame x/z) trims it to a non-rectangular hopper.
-  const layout = (r: number): Slot[] => {
-    const nx = Math.max(1, Math.floor(o.length / (r * 2)));
-    const nz = Math.max(1, Math.floor(o.width / (r * 2)));
-    const ny = Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75)));
+  // Pour `n` balls of radius r into the bin the way they really settle: each lands at a spread-out spot over the
+  // whole floor and rests on whatever is already below it (floor, or the two or three balls it nests between). The
+  // result is an irregular, gap-free heap that fills the full footprint, not a stiff lattice. `inside` (robot-frame
+  // x/z) trims it to a non-rectangular hopper.
+  const pour = (r: number, n: number): Slot[] => {
     const halfX = Math.max(0, o.length / 2 - r), halfZ = Math.max(0, o.width / 2 - r);
+    const cell = r * 2;
+    const cx = Math.max(1, Math.floor(o.length / cell)), cz = Math.max(1, Math.floor(o.width / cell));
+    const spots: [number, number][] = [];
+    for (let i = 0; i < cx; i++) for (let k = 0; k < cz; k++) {
+      const px = (i - (cx - 1) / 2) * (cx > 1 ? (2 * halfX) / (cx - 1) : 0);
+      const pz = (k - (cz - 1) / 2) * (cz > 1 ? (2 * halfZ) / (cz - 1) : 0);
+      if (!o.inside || o.inside(o.x + px, pz)) spots.push([px, pz]);
+    }
+    if (!spots.length) spots.push([0, 0]);
     const out: Slot[] = [];
-    for (let y = 0; y < ny; y++) {
-      const shift = y % 2 ? r * 0.5 : 0;
-      for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
-        const px = THREE.MathUtils.clamp((x - (nx - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.3, -halfX, halfX);
-        const pz = THREE.MathUtils.clamp((z - (nz - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.3, -halfZ, halfZ);
-        if (o.inside && !o.inside(o.x + px, pz)) continue;
-        const py = r + y * r * 1.75 + (rand() - 0.5) * r * 0.2;
-        // Fill order: by height with noise, so the top of the load is a lumpy pile, not a sweeping row.
-        out.push({ x: o.x + px, y: o.y0 + py, z: pz, s: 0.95 + rand() * 0.06, key: py + rand() * r * 3.5 });
+    let order: number[] = [];
+    const reach2 = (r * 1.96) ** 2;
+    for (let i = 0; i < n; i++) {
+      if (!order.length) {
+        order = spots.map((_, j) => j);
+        for (let j = order.length - 1; j > 0; j--) { const m = Math.floor(rand() * (j + 1)); [order[j], order[m]] = [order[m], order[j]]; }
       }
+      const [sx, sz] = spots[order.pop()!];
+      let px = THREE.MathUtils.clamp(sx + (rand() - 0.5) * r * 1.1, -halfX, halfX);
+      let pz = THREE.MathUtils.clamp(sz + (rand() - 0.5) * r * 1.1, -halfZ, halfZ);
+      if (o.inside && !o.inside(o.x + px, pz)) { px = sx; pz = sz; }
+      let py = r;
+      for (const q of out) {
+        const dx = q.x - (o.x + px), dz = q.z - pz, d2 = dx * dx + dz * dz;
+        if (d2 < reach2) py = Math.max(py, q.y - o.y0 + Math.sqrt(reach2 - d2));
+      }
+      out.push({ x: o.x + px, y: o.y0 + py, z: pz, s: 0.97 + rand() * 0.05, key: py + rand() * r * 0.4 });
     }
     return out;
   };
-  // Pick the largest ball that still fits `capacity` balls, so a full hopper is visibly full (no dead space) and a
-  // roomy one gets smaller-looking, denser balls instead of an empty pocket. Real FUEL is ~0.075 m radius.
+  const top = (sl: Slot[], r: number) => sl.reduce((m, q) => Math.max(m, q.y - o.y0 + r), 0);
+  // Pick the largest ball for which `capacity` balls still fit under the lid, so a full hopper is visibly full (no
+  // dead space) and a roomy one gets smaller-looking, denser balls instead of an empty pocket. Real FUEL is ~0.075 m radius.
   let r = 0.075;
-  let slots = layout(r);
+  let slots: Slot[];
   if (o.capacity) {
-    while (slots.length < o.capacity && r > 0.025) { r -= 0.0025; slots = layout(r); }
-    if (slots.length > o.capacity) {
-      slots.sort((a, b) => a.key - b.key);
-      slots.length = o.capacity;
-    }
+    slots = pour(r, o.capacity);
+    while (top(slots, r) > o.height && r > 0.025) { r -= 0.0025; slots = pour(r, o.capacity); }
   } else {
     r = Math.min(0.06, o.length / 6, o.width / 6);
-    slots = layout(r);
+    slots = pour(r, Math.floor(o.length / (r * 2)) * Math.floor(o.width / (r * 2)) * Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75))));
   }
   slots.sort((a, b) => a.key - b.key);
   const count = slots.length;
