@@ -143,9 +143,10 @@ export interface RobotConfig {
     harvestSeconds: number;
     /**
      * Which chassis faces the scorer places on: 'front' (+x, the usual elevator end effector) or 'sides' (an arm that
-     * swings out to either side, e.g. 2025 1778 SubZero, so the robot lines up side-on). Default 'front'.
+     * swings out to either side, e.g. 2025 1778 SubZero, so the robot lines up side-on) or 'ends' (an arm that
+     * flips over the top to score off the front or the back, e.g. 2025 1690 WHISPER). Default 'front'.
      */
-    scoreSide?: 'front' | 'sides';
+    scoreSide?: 'front' | 'sides' | 'ends';
     /** Seconds to hand a floor-intaken piece from the ground intake to the end effector (0 = it intakes directly). */
     handoffSeconds?: number;
   };

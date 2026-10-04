@@ -592,6 +592,34 @@ export function tube(parent: THREE.Object3D, a: [number, number, number], b: [nu
   return mesh;
 }
 
+/**
+ * Round rod whose two ends are re-pinned every frame (gas struts, leadscrews, linkage bars between a fixed and a moving
+ * part): `set(a, b)` with both points in `parent`'s frame, so the rod never floats off either mount.
+ */
+export function link(parent: THREE.Object3D, r: number, m: THREE.Material): { mesh: THREE.Mesh; set(a: THREE.Vector3, b: THREE.Vector3): void } {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 10), m);
+  parent.add(mesh);
+  const up = new THREE.Vector3(0, 1, 0);
+  const d = new THREE.Vector3();
+  return {
+    mesh,
+    set(a, b) {
+      d.subVectors(b, a);
+      const len = Math.max(1e-4, d.length());
+      mesh.position.copy(a).addScaledVector(d, 0.5);
+      mesh.scale.set(1, len, 1);
+      mesh.quaternion.setFromUnitVectors(up, d.divideScalar(len));
+    },
+  };
+}
+
+/** A point of `child` expressed in `parent`'s frame (for `link` ends on moving parts); `out` is reused. */
+export function pointIn(parent: THREE.Object3D, child: THREE.Object3D, x: number, y: number, z: number, out = new THREE.Vector3()): THREE.Vector3 {
+  child.updateWorldMatrix(true, false);
+  parent.updateWorldMatrix(true, false);
+  return parent.worldToLocal(child.localToWorld(out.set(x, y, z)));
+}
+
 /** Square box tube between two points (robot frame) — 1×1 / 2×1 aluminum tubing. */
 export function bar(parent: THREE.Object3D, a: [number, number, number], b: [number, number, number], w: number, m: THREE.Material): THREE.Mesh {
   const va = new THREE.Vector3(...a);

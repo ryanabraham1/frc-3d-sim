@@ -67,7 +67,7 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   p.liftSpeed = bounded(p.liftSpeed, 1.3, 0.25, 2.5);
   p.cycleSeconds = bounded(p.cycleSeconds, 0.6, 0.2, 3);
   p.harvestSeconds = bounded(p.harvestSeconds, 0.45, 0.2, 3);
-  p.scoreSide = p.scoreSide === 'sides' ? 'sides' : 'front';
+  p.scoreSide = p.scoreSide === 'sides' || p.scoreSide === 'ends' ? p.scoreSide : 'front';
   p.handoffSeconds = bounded(p.handoffSeconds, 0.5, 0, 2);
   c.processor = { ...d.processor!, ...c.processor };
   // A CORAL intake needs a way in: floor or funnel.
@@ -139,9 +139,9 @@ export const reefscapeRobotOptions: RobotOption[] = [
     (c) => (c.processor!.enabled && c.options?.net ? 'both' : c.processor!.enabled ? 'processor' : c.options?.net ? 'net' : 'none'),
     (c, v) => { c.processor!.enabled = v === 'processor' || v === 'both'; c.options = { ...c.options, net: v === 'net' || v === 'both' }; },
     'NET: line up at the BARGE, the elevator rises to full height and the rollers toss the ALGAE in (G).'),
-  opt('scoreSide', 'Scorer faces', [['front', 'Front', 'Elevator end effector on the front: drive nose-in to the REEF'], ['sides', 'Both sides', 'An arm on the elevator swings out to either side (1778 SubZero): line up side-on to the REEF']],
-    (c) => c.placement!.scoreSide ?? 'front', (c, v) => { c.placement!.scoreSide = v === 'sides' ? 'sides' : 'front'; },
-    'Side scoring keeps the robot parallel to the REEF face and can score on whichever side faces it.'),
+  opt('scoreSide', 'Scorer faces', [['front', 'Front', 'Elevator end effector on the front: drive nose-in to the REEF'], ['sides', 'Both sides', 'An arm on the elevator swings out to either side (1778 SubZero): line up side-on to the REEF'], ['ends', 'Front and back', 'An arm on the elevator flips over the top (1690 WHISPER): drive in nose-first or tail-first']],
+    (c) => c.placement!.scoreSide ?? 'front', (c, v) => { c.placement!.scoreSide = v === 'sides' || v === 'ends' ? v : 'front'; },
+    'Side scoring keeps the robot parallel to the REEF face; front-and-back scoring never has to turn around.'),
   opt('assist', 'Driver assist', [['align', 'Reef auto-align', 'Holding Space drives to the nearest open BRANCH (vision pose alignment)'], ['manual', 'Manual alignment']],
     (c) => (c.autoAlign ? 'align' : 'manual'), (c, v) => { c.autoAlign = v === 'align'; },
     'CORAL only goes on when the end effector is lined up with the BRANCH (±1 in).'),
@@ -165,7 +165,7 @@ export function reefscapeRobotSummary(config: RobotConfig): string {
   const intake = !c.intake.primary ? '' : c.intake.ground && c.intake.station ? ' (ground + funnel)' : c.intake.ground ? ' (ground)' : ' (funnel)';
   const coral = c.placement!.enabled && c.intake.primary ? `CORAL L1–L${c.placement!.maxLevel}${intake}` : 'CORAL off';
   const algae = c.intake.secondary ? [c.processor!.enabled ? 'PROCESSOR' : '', c.options?.net ? 'NET' : ''].filter(Boolean).join(' + ') || 'ALGAE pickup only' : 'ALGAE knock-off';
-  return `${coral}${c.placement!.scoreSide === 'sides' ? ' (side scoring)' : ''} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
+  return `${coral}${c.placement!.scoreSide === 'sides' ? ' (side scoring)' : c.placement!.scoreSide === 'ends' ? ' (front + back scoring)' : ''} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
 }
 
 export function startPose(a: Alliance, station: number) {

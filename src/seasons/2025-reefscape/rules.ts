@@ -15,7 +15,8 @@ import { coralPoints, reefscapeResults } from './scoring';
 export interface CoralPlacement { i: number; alliance: Alliance; level: number; face: number; branch: number; auto: boolean }
 /**
  * Elevator/end effector: `height` = held piece center height, `forward` = piece center out from the robot center along
- * the scoring direction — the front, or the robot's left/right for side scorers (`side` +1 / -1, 0 = front or stowed).
+ * the scoring direction, `side` quarter turns from the front: 0 = front or stowed, +1 / -1 = left / right (side scorers),
+ * 2 = back (end scorers that flip the arm over the top).
  * `handoff` runs 0→1 while a floor-intaken CORAL travels from the ground intake into the end effector (0 = none).
  */
 interface MechanismState { height: number; level: number; harvest: number; forward: number; aligned: boolean; side: number; handoff: number }
@@ -181,9 +182,14 @@ export class ReefscapeRules implements SeasonRules {
     return { face, branch: options[0].branch, side, approach: options[0].approach };
   }
 
-  /** Scoring side for a robot facing field yaw `toward`: 0 for front scorers, else +1 (left) / -1 (right). */
+  /**
+   * Scoring side for a robot facing field yaw `toward`, in quarter turns from the front: 0 for front scorers, +1 (left)
+   * / -1 (right) for side scorers, 0 (front) / 2 (back) for end scorers.
+   */
   private sideToward(robot: Robot, toward: number): number {
-    if (robot.config.placement!.scoreSide !== 'sides') return 0;
+    const mode = robot.config.placement!.scoreSide;
+    if (mode === 'ends') return Math.cos(toward - robot.pose.yaw) >= 0 ? 0 : 2;
+    if (mode !== 'sides') return 0;
     return Math.sin(toward - robot.pose.yaw) >= 0 ? 1 : -1;
   }
 

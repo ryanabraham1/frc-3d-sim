@@ -102,12 +102,16 @@ describe('real team robots', () => {
       const robot = sim.robot;
       expect(robot.modelHeldAnchor, team.id).toBeDefined();
       // Side scorers (1778's swinging arm) reach out of the robot's left (-z) instead of the front.
-      const side = team.config.placement!.scoreSide === 'sides' ? 1 : 0;
-      robot.placeAnim = { height: 1.75, forward: 0.7, level: 4, side };
-      for (let frame = 0; frame < 120; frame++) robot.syncVisual(1 / 60);
-      robot.visual.updateMatrixWorld(true);
-      const center = robot.visual.worldToLocal(robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3()));
-      expect(center.distanceTo(side ? new THREE.Vector3(0, 1.75, -0.7) : new THREE.Vector3(0.7, 1.75, 0)), team.id).toBeLessThan(0.2);
+      // End scorers (1690's arm that rotates over the top) must also reach out of the back (side 2).
+      const mode = team.config.placement!.scoreSide;
+      for (const side of mode === 'sides' ? [1] : mode === 'ends' ? [0, 2] : [0]) {
+        robot.placeAnim = { height: 1.75, forward: 0.7, level: 4, side };
+        for (let frame = 0; frame < 120; frame++) robot.syncVisual(1 / 60);
+        robot.visual.updateMatrixWorld(true);
+        const center = robot.visual.worldToLocal(robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3()));
+        const want = side === 1 ? new THREE.Vector3(0, 1.75, -0.7) : new THREE.Vector3(side === 2 ? -0.7 : 0.7, 1.75, 0);
+        expect(center.distanceTo(want), `${team.id} side ${side}`).toBeLessThan(0.2);
+      }
     }
   });
 

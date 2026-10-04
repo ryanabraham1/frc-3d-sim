@@ -44,6 +44,13 @@ the floor intake goes on the back (`intake.groundSide`, default `'back'`; statio
 `intakeContains` instead of testing "in front of the bumper", drive bot/auto-pilot collection with `robot.intakeYawOffset`
 (intake-first heading), and keep the orange intake model in `Robot.buildGroundIntake` in sync with the capture zone.
 
+## Team robot models look like the real robot
+
+Building or fixing a real team's model (`registerRobotModel`)? Follow [docs/ROBOT-MODELS.md](docs/ROBOT-MODELS.md):
+research the team's binder, Chief Delphi topics and TBA photos first (`tools/robot-refs.py`), write one builder per
+robot (no shared `style` templates), give every part a load path to the frame (nothing floating), and check every
+pose from several angles in `tools/robot-gallery.html`.
+
 ## Other conventions
 
 - Field coordinates are WPILib's (meters, blue alliance wall at x = 0). Tag manual values with their

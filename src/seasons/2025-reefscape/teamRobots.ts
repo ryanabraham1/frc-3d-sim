@@ -190,6 +190,8 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
   const climber = new THREE.Group();
   arm.add(climber);
   roller(climber, 0.04, 0.16, mat(0x2f80ed, { metal: 0.1 }), 0, 0.07);
+  // Side brackets carry the roller on the truss (it slides along the top chords).
+  sidePlates(climber, [[-0.035, 0.035], [0.035, 0.035], [0.02, 0.085], [-0.02, 0.085]], 0.088, black);
   let ang = 0.3;
   let len = seg;
   let wrist = 0;

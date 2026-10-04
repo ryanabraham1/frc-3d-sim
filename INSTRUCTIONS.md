@@ -141,7 +141,10 @@ build, with the same trade-offs. Lessons from reworking 2024/2025/2026:
    free body and detect scoring from where it ends up (e.g. 2025: a hollow CORAL scores only when a BRANCH is
    inside its bore). Misalignment of about an inch should miss. Released pieces pass through their own robot
    briefly (`pool.setIgnoreRobots`) so the release isn't blocked by the robot's own collider.
-9. **Tests per archetype.** For each preset/option: can/can't pick up from the carpet, catches from the station
+9. **Real team robots get researched, structural models.** When a season adds real teams' robots, build each
+   model the way docs/ROBOT-MODELS.md describes: references first (binder, Chief Delphi, TBA photos via
+   `tools/robot-refs.py`), one builder per robot, and every part attached to the frame.
+10. **Tests per archetype.** For each preset/option: can/can't pick up from the carpet, catches from the station
    chute, auto-align scores / manual misalignment misses, fixed shooters score only from their spot. Tests for
    other features should pick the archetype they need (`preset('turret')`) instead of relying on the default.
 

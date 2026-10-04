@@ -88,6 +88,37 @@ describe('2025 side scoring (swinging arm)', () => {
   });
 });
 
+describe('2025 front-and-back scoring (arm over the top)', () => {
+  const whisper = () => cloneConfig(season.teamRobots!.find((t) => t.id === 'whisper-1690')!.config);
+
+  it('is a robot option and WHISPER uses it, with one floor intake', () => {
+    const opt = reefscapeRobotOptions.find((o) => o.id === 'scoreSide')!;
+    const c = cloneConfig(season.robotDefaults);
+    opt.set(c, 'ends');
+    expect(c.placement!.scoreSide).toBe('ends');
+    expect(whisper().placement!.scoreSide).toBe('ends');
+    expect(whisper().intake.groundSide).toBe('back'); // one floor intake; the arm scores over it too
+  });
+
+  for (const tail of [false, true]) it(`places L4 ${tail ? 'tail-first out of the back' : 'nose-first out of the front'}`, () => {
+    const spot = season.testing!.scoringSpots('blue')[0];
+    const reef = C.reefCenter('blue');
+    const toReef = Math.atan2(reef.y - spot.y, reef.x - spot.x);
+    const sim = make('blue', { ...spot, yaw: toReef + (tail ? Math.PI : 0) }, whisper()); teleop(sim); load(sim, 0);
+    const rules = rulesOf(sim);
+    expect(rules.placementTarget(sim.robot, 4)!.side).toBe(tail ? 2 : 0);
+    // Auto-align keeps whichever end already faces the REEF instead of turning around.
+    const pose = rules.alignPose(sim.robot, 4)!;
+    const t = rules.placementTarget(sim.robot, 4)!;
+    expect(Math.abs(wrapAngle(pose.yaw - (t.approach.faceYaw + (tail ? 0 : Math.PI))))).toBeLessThan(1e-6);
+    const m = rules.mechanisms.get(sim.robot.id)!;
+    let sideAtRelease = -1;
+    run(sim, 4, () => { if (holdingCoral(sim)) sideAtRelease = m.side; return { ...IDLE_COMMAND, shoot: holdingCoral(sim), scoringLevel: 4 }; });
+    expect(sim.ctx.score.counter('blue', 'coralL4')).toBe(1);
+    expect(sideAtRelease).toBe(tail ? 2 : 0);
+  });
+});
+
 describe('2025 ground intake → end effector handoff', () => {
   it('a floor-intaken CORAL is handed off for handoffSeconds before it can be scored', () => {
     const config = preset('all-rounder'); config.placement!.handoffSeconds = 0.6;

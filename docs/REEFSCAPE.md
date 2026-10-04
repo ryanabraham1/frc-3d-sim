@@ -70,6 +70,9 @@ Keys **1–4** select the level. Drive to your REEF and hold **Space**:
 - **Side scorers** (robot option "Scorer faces: Both sides", e.g. 1778 SubZero) have an arm on the elevator
   that swings out to either side: auto-align parks the robot parallel to the REEF face, and the CORAL leaves out
   of whichever side faces it.
+- **End scorers** ("Scorer faces: Front and back", e.g. 1690 WHISPER) have an arm that rotates over the top of the
+  elevator: auto-align keeps whichever end already faces the REEF, and the CORAL leaves out of that end, including
+  the end with the floor intake.
 - **Ground-intake handoff:** a CORAL picked off the carpet rides the intake as it folds in and is handed to the
   end effector (`placement.handoffSeconds`, 0.5 s default [EST]). It can't be scored until the handoff is
   done. Funnel CORAL drops straight into the end effector, and end effectors that pick CORAL up themselves

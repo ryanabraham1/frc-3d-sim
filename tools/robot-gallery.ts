@@ -24,6 +24,13 @@ const pose = document.querySelector<HTMLSelectElement>('#pose')!;
 let reverse = false;
 let red = false;
 let focus = -1;
+// Focused view: drag to orbit, wheel to zoom.
+let orbit = 0, tiltView = 0.55, zoom = 0.6, dragging = false;
+addEventListener('pointerdown', e => { if (focus >= 0 && (e.target as HTMLElement).closest('.card')) dragging = true; });
+addEventListener('pointerup', () => { dragging = false; });
+addEventListener('pointermove', e => { if (!dragging) return; orbit -= e.movementX * 0.01; tiltView = THREE.MathUtils.clamp(tiltView + e.movementY * 0.01, 0.05, 1.45); });
+(window as unknown as { view(o: number, t: number, z: number): void }).view = (o, t, z) => { orbit = o; tiltView = t; zoom = z; };
+addEventListener('wheel', e => { if (focus < 0) return; zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.25, 2); }, { passive: true });
 let items: { scene: THREE.Scene; robot: Robot; physics: PhysicsWorld; el: HTMLElement; camera: THREE.PerspectiveCamera }[] = [];
 function build() {
   for (const i of items) { i.physics.world.free(); i.scene.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); }); }
@@ -70,7 +77,10 @@ function frame(now: number) {
     r.syncVisual(dt);
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
     const scale=Math.max(1.15,r.config.height+0.3,pose.value==='score' && r.config.placement?.enabled ? 2.2 : 0);
-    i.camera.position.set((reverse?-1:1)*scale*1.8,scale*1.4,(reverse?-1:1)*scale*2);
+    if (focus >= 0) {
+      const d=scale*3.0*zoom, a=Math.atan2(2,1.8)+orbit+(reverse?Math.PI:0);
+      i.camera.position.set(Math.cos(a)*Math.cos(tiltView)*d,Math.sin(tiltView)*d+scale*0.3,Math.sin(a)*Math.cos(tiltView)*d);
+    } else i.camera.position.set((reverse?-1:1)*scale*1.8,scale*1.4,(reverse?-1:1)*scale*2);
     i.camera.lookAt(0,scale*0.4,0); i.camera.aspect=rect.width/rect.height; i.camera.updateProjectionMatrix();
     renderer.setViewport(rect.left,innerHeight-rect.bottom,rect.width,rect.height);
     renderer.setScissor(rect.left,innerHeight-rect.bottom,rect.width,rect.height);
