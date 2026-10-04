@@ -226,13 +226,13 @@ robot's hardware so the comparison stays fair.
 
 | Season | Robot | What the sources showed | Stats used |
 | --- | --- | --- | --- |
-| 2026 | 6329 ROMAN | 20.75 in spindexer drum, roller floor, "upkicker", turret, long-armed four-bar intake that folds on impact | cap 60 [EST], 14 FUEL/s, intake 15/s |
-| 2026 | 1778 HAILSTORM | spindexer with grip-taped "bottle rocket" cone (from 4180), compact turret, slapdown intake | cap 45 [EST], 11/s, intake 11/s |
-| 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 55 [EST], 16/s, intake 13/s |
-| 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 68 (team: "almost 70", 50–60 in play), 15/s [EST], intake 12/s |
-| 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 80 and 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
+| 2026 | 6329 ROMAN | 20.75 in spindexer drum, roller floor, "upkicker", turret, long-armed four-bar intake that folds on impact | cap 45 [EST], 14 FUEL/s, intake 15/s |
+| 2026 | 1778 HAILSTORM | spindexer with grip-taped "bottle rocket" cone (from 4180), compact turret, slapdown intake | cap 40 [EST], 11/s, intake 11/s |
+| 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 40 [EST], 16/s, intake 13/s |
+| 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 45 [EST; the team quotes "almost 70" but a non-expanding trench-height hopper holds far less], 15/s [EST], intake 12/s |
+| 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 40 [EST: team's ~80 doesn't fit a non-expanding trench-height box], 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
 | 2025 | 1678 SubLime, 971 Fiddler, 341 Miss Daisy | tall-tower tipping arm / truss elevator with maroon claw / continuous elevator + lantern shoulder | lift, cycle and speed [EST] |
-| 2024 | 1114 Skyfall, 2910 Typhoon, 581 Titan | red gusseted tower / chain-and-sprocket shooter, slow climb / 25.5 × 28.5 in, long hooks | speed, accel, climb time [EST] |
+| 2024 | 1114 Skyfall, 2910 Typhoon, 581 Titan | pivoting shooter arm (code repo: arm + intake only) / TURRET with any-angle feed, slow climb / 25.5 × 28.5 in, long hooks | speed, accel, climb time [EST] |
 
 **Intake rate (2026).** `RobotConfig.intake.rate` caps how many FUEL/s the floor intake swallows (`Robot.tickIntake`; unset
 = unlimited). Nobody publishes it, so `INTAKE_RATE` in `src/seasons/2026-rebuilt/teamRobots.ts` scales it from the

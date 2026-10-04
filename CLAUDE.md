@@ -59,3 +59,22 @@ pose from several angles in `tools/robot-gallery.html`.
   counts in 2025, not just the driver station's).
 - Keep scoring pure and unit-tested; exercise mechanisms through the real Rapier loop in `HeadlessSim`.
 - Browser smoke test: `tools/browser-smoke.mjs` (setup in its header).
+
+## Never model a robot from a guess: verify before you build, and again after
+
+A real team robot built from a wrong assumption (a turret drawn as a pivot, the wrong colours, an intake on the wrong
+end) is worse than no robot. Before `registerRobotModel` for a real team's robot, and again before calling it done:
+
+1. **Photos first.** Run `python3 tools/robot-refs.py tba <team> <year>` and open the `sheet.jpg`. Look at the real robot
+   (match / pit photos), not only a reveal thumbnail or CAD. Note frame colour, what is clear vs solid, where the intake
+   and scoring mechanism sit.
+2. **Read the team's own words for the archetype.** Search the Chief Delphi reveal / CAD / binder thread for the
+   words that decide the config: turret vs pivot vs fixed, which end scores, which end collects (and whether one
+   mechanism does both, like 971's claw), capacity, balls per second. Photos can't tell you "turret".
+3. **Write the checklist in the file's header comment**: archetype (turret / pivot / elevator + arm), intake end, scoring
+   end, colours, capacity and rate with a source or `[EST]`, and the photo or post each came from.
+4. **Capacity must fit the robot.** A non-expanding trench-height box holds about 40-50 FUEL, not 70-80, whatever a
+   quote says; only an expanding hopper (1678, 4414) goes beyond. Compare with the existing robots of the same archetype.
+5. **After building, compare side by side** with the TBA sheet in `tools/robot-gallery.html` (several angles) and fix the
+   mismatches. Don't report a model as accurate until you have done this comparison.
+6. If you can't confirm something, say so in the comment and the final message; don't present it as fact.
