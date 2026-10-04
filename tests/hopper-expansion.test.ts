@@ -13,7 +13,7 @@ beforeAll(async () => { await RAPIER.init(); });
 afterEach(() => { for (const sim of sims.splice(0)) sim.dispose(); });
 
 it('the requested 2026 dumper rates survive normalization', () => {
-  for (const [team, rate] of [[254,25],[3476,20]]) {
+  for (const [team, rate] of [[254,25],[3476,20],[2910,33]]) {
     const c = season.teamRobots!.find(t => t.team === team)!.config;
     expect(season.normalizeRobotConfig!(cloneConfig(c)).launcher.rate).toBe(rate);
   }
@@ -51,10 +51,10 @@ for (const team of [254,4414,1678]) it(`${team}: expanded net physically blocks 
 });
 
 it('net and telescoping expansion do not inflate the requested total capacities', () => {
-  for(const [team,capacity] of [[254,50],[1678,60]]) {
+  for(const [team,capacity] of [[254,50],[1678,60],[2910,40]]) {
     const c=season.teamRobots!.find(t=>t.team===team)!.config;
     expect(c.hopperCapacity).toBe(capacity);
     expect(season.normalizeRobotConfig!(cloneConfig(c)).hopperCapacity).toBe(capacity);
-    expect(c.hopperExpansion!.startCount).toBeLessThan(capacity);
+    if(c.hopperExpansion) expect(c.hopperExpansion.startCount).toBeLessThan(capacity);
   }
 });

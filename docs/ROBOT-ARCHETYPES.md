@@ -198,7 +198,7 @@ not measured team rankings. 2025 profiles vary the actual lift/release/harvest/c
 | --- | --- | --- |
 | 2024 | 1323 MadTown, 118 Twister, 4414 TIDEPOD | Separate AMP arm, turret/diverter, and pivot shooter/forks; drive acceleration and climb timing differ. |
 | 2025 | 1690 WHISPER, 2056 LIGHTNING, 118 Firefly | Vacuum end effector, continuous-belt elevator/gripper, and separate roller channels. Lift speeds 2.2/2.5/1.9 m/s; release delays 0.30/0.40/0.25 s; harvest delays 0.35/0.45/0.30 s. All support full scoring; differences are throughput and mechanism design. |
-| 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 28/24/16 FUEL/s are estimates. Mixtape's heads share the engine's one aim and launch point; independent turret streams are not simulated. |
+| 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 33/24/16 FUEL/s are estimates. Re•Blitz uses 40 capacity and 33 FUEL/s following user guidance (~40 balls, 30–35 FUEL/s). Mixtape's heads share the engine's one aim and launch point; independent turret streams are not simulated. |
 
 ### Flexible hopper nets and loaded clearance
 
