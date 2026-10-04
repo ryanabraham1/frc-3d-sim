@@ -51,7 +51,7 @@ for (const team of [254,4414,1678]) it(`${team}: expanded net physically blocks 
 });
 
 it('net and telescoping expansion do not inflate the requested total capacities', () => {
-  for(const [team,capacity] of [[254,50],[1678,60],[2910,40]]) {
+  for(const [team,capacity] of [[254,50],[1678,60],[2910,40],[971,33]]) {
     const c=season.teamRobots!.find(t=>t.team===team)!.config;
     expect(c.hopperCapacity).toBe(capacity);
     expect(season.normalizeRobotConfig!(cloneConfig(c)).hopperCapacity).toBe(capacity);

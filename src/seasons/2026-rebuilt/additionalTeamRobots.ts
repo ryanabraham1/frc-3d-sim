@@ -122,9 +122,9 @@ export function additionalRebuiltTeamRobots(): TeamRobot[] {
       source: 'https://www.chiefdelphi.com/t/1678-2026-robot-limestone/515709 — reveal and team hopper/CAD discussion',
       config: config(1678,'limestone-1678',false,60,24,4.7,88) },
     { id: 'mixtape-971', team: 971, name: 'Mixtape',
-      description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. Simulator estimates: 45 FUEL, 16 FUEL/s combined, 5.0 m/s drive. Both heads share one simulated aim and launch point.',
+      description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. 33 FUEL capacity (user tuning). Simulator estimates: 16 FUEL/s combined, 5.0 m/s drive. Both heads share one simulated aim and launch point.',
       source: 'https://www.chiefdelphi.com/t/frc-971-spartan-robotics-2026-robot-reveal-mixtape/515582; https://github.com/frc971/971-second-robot-2026',
-      config: config(971,'mixtape-971',true,45,16,5.0,92) },
+      config: config(971,'mixtape-971',true,33,16,5.0,92) },
   ];
 }
 
