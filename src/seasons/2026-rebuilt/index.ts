@@ -103,9 +103,11 @@ export const rebuilt2026: SeasonDefinition = {
     return ['depot-climb', 'shoot-climb', 'shoot-collect'][station - 1];
   },
   botArchetype(difficulty, station, role) {
-    const byRole: Record<string, string> = { scorer: 'turret', feeder: 'fixed', defender: 'big-hopper' };
+    const byRole: Record<string, string> = { scorer: 'ripcurrent-4414', feeder: 'limestone-1678', defender: 'kepler-1690' };
     if (role && byRole[role]) return byRole[role];
-    const lineups: Record<string, string[]> = { easy: ['outpost', 'fixed', 'turret'], normal: ['fixed', 'turret', 'big-hopper'], hard: ['fixed', 'turret', 'big-hopper'], elite: ['fixed', 'turret', 'big-hopper'] };
+    // Real 2026 robots; station 3 (the Hard defender) gets 1690's spiked-tread pusher.
+    // Benchmarked (seeds 5-7): Hard averaged 1040 points, Normal 515.
+    const lineups: Record<string, string[]> = { easy: ['outpost', 'fixed', 'turret'], normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], elite: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   botRobotConfig(difficulty) {

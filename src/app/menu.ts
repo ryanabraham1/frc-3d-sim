@@ -6,6 +6,7 @@ import { checkStartSpot, clampToArea, type StartSpot } from '@engine/startPose';
 import { pushingForce } from '@engine/robot/drivetrain';
 import { formatClock, inch, lb, toInch } from '@engine/units';
 import { SEASONS, getSeason } from '@seasons/index';
+import { aiRobotChoices } from '@engine/ai/robots';
 import { icon } from './icons';
 import { bindHeadingControls, bindPlacementMap, placementDragging, headingControls, placementMap, presetSpot, rotateSpot, syncHeadingControls, type MineState } from './placement';
 import type { LobbyController } from './lobby';
@@ -236,7 +237,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const ally = (s.aiAlly ??= {});
     if (ally.strategy && !strategies.some((x) => x.id === ally.strategy)) ally.strategy = 'auto';
     for (const [k, v] of Object.entries(ally.roles ?? {})) if (v !== 'auto' && !roles.some((x) => x.id === v)) delete ally.roles![Number(k)];
-    for (const [k, v] of Object.entries(ally.archetypes ?? {})) if (v !== 'auto' && !(season.robotPresets ?? []).some((p) => p.id === v)) delete ally.archetypes![Number(k)];
+    for (const [k, v] of Object.entries(ally.archetypes ?? {})) if (v !== 'auto' && !aiRobotChoices(season).some((p) => p.id === v)) delete ally.archetypes![Number(k)];
     const strat = strategies.find((x) => x.id === (ally.strategy ?? 'auto'));
     const roleRow = (station: number) => {
       const cur = ally.roles?.[station] ?? 'auto';
@@ -244,11 +245,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       const desc = roles.find((x) => x.id === cur)?.description;
       const roleSeg = `<div class="seg">${opt(`data-ally-role="${station}" data-choice="auto"`, 'Auto', cur === 'auto')}${roles.map((x) => opt(`data-ally-role="${station}" data-choice="${x.id}" title="${esc(x.description)}"`, x.label, cur === x.id)).join('')}</div>`;
       if (station === s.station) return group(who, roleSeg, cur === 'auto' ? 'Tell your teammates what you will do so they cover the rest.' : `Teammates plan around you: ${desc}`);
-      // Teammates also get a robot: one of the season's archetypes, or the lineup the difficulty would pick.
-      const presets = season.robotPresets ?? [];
+      // Teammates also get a robot: a real team's robot, a generic archetype, or the lineup the difficulty would pick.
+      const presets = aiRobotChoices(season);
       const arch = ally.archetypes?.[station] ?? 'auto';
       const archDesc = presets.find((p) => p.id === arch)?.description;
-      const archSeg = presets.length ? `<div class="seg">${opt(`data-ally-arch="${station}" data-choice="auto"`, 'Auto robot', arch === 'auto')}${presets.map((p) => opt(`data-ally-arch="${station}" data-choice="${p.id}" title="${esc(p.description)}"`, p.label, arch === p.id)).join('')}</div>` : '';
+      const archSeg = presets.length ? `<div class="seg robot-seg">${opt(`data-ally-arch="${station}" data-choice="auto"`, 'Auto robot', arch === 'auto')}${presets.map((p) => opt(`data-ally-arch="${station}" data-choice="${p.id}" title="${esc(p.description)}"`, p.label, arch === p.id)).join('')}</div>` : '';
       return group(who, roleSeg + archSeg, [desc ?? 'The alliance assigns this robot a role from the plan.', archDesc ? `Robot: ${archDesc}` : ''].filter(Boolean).join(' '));
     };
     return `

@@ -294,10 +294,13 @@ export interface SeasonDefinition {
   botAutoRoutine?(station: number, config?: RobotConfig): string;
   botRobotConfig?(difficulty: AiSkill, role?: string): RobotConfig;
   /**
-   * The archetype (a `robotPresets` id) an AI robot plays at this difficulty and driver station — varied lineups of
-   * real builds. `role` is the role the player ordered for that station, if any, so a fitting build can be chosen.
+   * The robot an AI plays at this difficulty and driver station: a `teamRobots` id (a real team's robot, with its
+   * model) or a `robotPresets` archetype id. `role` is the role the player ordered for that station, if any, so a
+   * fitting build can be chosen.
    */
   botArchetype?(difficulty: AiSkill, station: number, role: string | undefined, playerAlliance: boolean): string;
+  /** Which builds (`teamRobots` and `robotPresets`) AI drivers may play (default: all). */
+  aiCanPlay?(config: RobotConfig): boolean;
   /** Alliance strategies the AI can run (first = the season's default plan). */
   aiStrategies?: AiChoice[];
   /** Roles an AI robot (or, on your alliance, you) can take; 'auto' is always offered as well. */

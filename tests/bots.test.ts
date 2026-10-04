@@ -50,9 +50,10 @@ describe.each(SEASONS)('$name AI', (season) => {
     expect(hard.robots[enemy].config.launcher.spread).toBeLessThan(easy.robots[enemy].config.launcher.spread);
     expect(hard.robots[1].config).toEqual(easy.robots[1].config);
     expect(settings.robot).toEqual(easy.robots[0].config);
-    // Without orders the opponents play real archetypes from the season's lineup.
+    // Without orders the opponents play real team robots (their own models) from the season's lineup.
     const lineup = localSetup({ ...settings, aiDifficulty: 'hard' }, season).robots.filter((r) => r.alliance !== settings.alliance);
-    for (const r of lineup) expect(season.robotPresets!.some((p) => p.config.hopperCapacity === r.config.hopperCapacity && p.config.climber.maxLevel === r.config.climber.maxLevel)).toBe(true);
+    for (const r of lineup) expect((season.teamRobots ?? []).some((t) => t.config.model === r.config.model)).toBe(true);
+    if (season.year === 2024) for (const r of lineup) { expect(r.config.launcher.turret).toBe(false); expect(r.config.intake.ground).toBe(true); }
   });
 
   it.each(['blue', 'red'] as const)('collects and scores repeated TELEOP cycles for %s', (alliance) => {
@@ -105,7 +106,8 @@ describe.each(SEASONS)('$name all-AI match', (season) => {
       const cat = res.categories[a];
       if (season.year === 2024) { expect(cat.speakerAmplified ?? 0).toBeGreaterThan(0); expect((cat.onstage ?? 0) + (cat.park ?? 0)).toBeGreaterThan(0); }
       if (season.year === 2025) { expect(cat.autoCoral ?? 0).toBeGreaterThan(21); expect(cat.barge ?? 0).toBeGreaterThanOrEqual(24); }
-      if (season.year === 2026) { expect(cat.towerTeleop ?? 0).toBeGreaterThanOrEqual(60); expect(cat.towerAuto ?? 0).toBeGreaterThan(0); expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
+      // Most real 2026 robots skipped the TOWER for a bigger hopper; only 1690 Kepler in the Hard lineup climbs.
+      if (season.year === 2026) { expect(cat.towerTeleop ?? 0).toBeGreaterThan(0); expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
     }
   }, 300_000);
 });

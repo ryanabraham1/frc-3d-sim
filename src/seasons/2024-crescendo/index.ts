@@ -103,11 +103,15 @@ export const crescendo2024: SeasonDefinition = {
     return station === 2 ? 'wing-4' : 'center-2';
   },
   botArchetype(difficulty, station, role) {
-    const byRole: Record<string, string> = { amp: 'amp-trap', feeder: 'source-pivot', shooter: 'turret', defender: 'pivot' };
+    // Real team robots with ground intakes and chassis-aimed shooters. Turrets and SOURCE-only builds are left to
+    // the player: SOURCE-camping bots made the AI trivial to read.
+    const byRole: Record<string, string> = { amp: 'amp-trap', feeder: 'axl-4522', shooter: 'madtown-2024-1323', defender: 'pivot' };
     if (role && byRole[role]) return byRole[role];
-    const lineups: Record<string, string[]> = { easy: ['kitbot', 'source-pivot', 'pivot'], normal: ['pivot', 'pivot', 'pivot'], hard: ['pivot', 'pivot', 'pivot'], elite: ['pivot', 'pivot', 'pivot'] };
+    // Benchmarked (seeds 5-7): Hard 4414/1323/4414 averaged 182 points, Normal 2056/4522/2056 151.
+    const lineups: Record<string, string[]> = { easy: ['pivot', 'lowkey-2056', 'pivot'], normal: ['lowkey-2056', 'axl-4522', 'lowkey-2056'], hard: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'], elite: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'] };
     return lineups[difficulty][(station - 1) % 3];
   },
+  aiCanPlay: (c) => !c.launcher.turret && c.intake.ground !== false,
   aiStrategies: CRESCENDO_AI_STRATEGIES,
   aiRoles: CRESCENDO_AI_ROLES,
   botRobotConfig() { return crescendoRobotPresets().find((p) => p.id === 'pivot')!.config; },

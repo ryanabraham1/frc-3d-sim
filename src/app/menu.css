@@ -751,3 +751,11 @@
   height: auto;
   min-height: 38px;
 }
+
+/* Teammate robot picker: real team robots plus archetypes wrap onto rows of readable buttons */
+.seg.robot-seg {
+  margin-top: 8px;
+}
+.seg.robot-seg > .opt {
+  flex: 1 1 104px;
+}

@@ -24,6 +24,7 @@ import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone 
 import { checkStartSpot, fieldToSpot, footprintPoly, polysOverlap, resolveStartPose, spotToField } from '../startPose';
 import { clamp, formatClock } from '../units';
 import { aiOrders, radioFor } from '../ai/team';
+import { aiRobotChoices } from '../ai/robots';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
 type GameState = NetGameState;
@@ -93,16 +94,18 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
         if (alliance === s.alliance && station === s.station) continue;
         const orders = aiOrders(s, alliance);
         const difficulty = orders.skill;
-        // A real archetype from the season's presets: the player's pick for that station, else the season's lineup.
-        const presets = season.robotPresets ?? [];
+        // A real team's robot or a generic archetype: the player's pick for that station, else the season's lineup.
+        const choices = aiRobotChoices(season);
         const wanted = orders.archetypes[station];
-        const archetype = presets.find((p) => p.id === wanted) ?? presets.find((p) => p.id === season.botArchetype?.(difficulty, station, orders.roles[station], alliance === s.alliance));
+        const archetype = choices.find((p) => p.id === wanted) ?? choices.find((p) => p.id === season.botArchetype?.(difficulty, station, orders.roles[station], alliance === s.alliance));
         const config = cloneConfig(archetype?.config ?? season.botRobotConfig?.(difficulty, orders.roles[station]) ?? season.robotDefaults);
         // Skill is mostly driving (pace, re-planning); the build gets only a modest speed / accuracy edge.
         config.maxSpeed *= { easy: 0.88, normal: 1, hard: 1.05, elite: 1.08 }[difficulty];
         config.launcher.spread *= { easy: 1.5, normal: 1, hard: 0.8, elite: 0.65 }[difficulty];
         config.launcher.speedError *= { easy: 1.5, normal: 1, hard: 0.8, elite: 0.65 }[difficulty];
-        config.teamNumber = 9000 + setup.robots.length;
+        // Real robots keep their team number unless it's already on the field.
+        const real = archetype?.team;
+        config.teamNumber = real && !setup.robots.some((o) => o.config.teamNumber === real) ? real : 9000 + setup.robots.length;
         const dims = { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry };
         const botFootprint = footprint(config);
         let start = season.startPose(alliance, station);

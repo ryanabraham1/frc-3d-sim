@@ -52,6 +52,9 @@ for an empty field.
   *Press* / *Shift control* / *Stockpile* / *Lockdown*, 2024 *Amplify cycles* / *Feed & shoot* / *Speaker cycles* /
   *Amplify + defense*, 2025 *Reef race* / *All coral* / *Coral + algae* / *Reef race + press*.
 - **Roles per driver station**, including your own: set yours (e.g. *Amp* in 2024) and the bots plan around you.
+- **Robots**: from Normal up, AI robots play real team robots from the season's gallery (their own models and
+  builds: e.g. 2026 Hard fields 4414 RIPCURRENT, 971 and 1690 Kepler). Pick one per teammate, or a generic archetype.
+  2024 AI robots always have ground intakes and chassis-aimed shooters; turrets and SOURCE-only builds are left to you.
 - **AI radio** shows the callouts the bots coordinate with ("AMP 2/2 — load up", "AMPLIFY!", "I'm beached — need a
   push!", "New plan: PRESS — …").
 
