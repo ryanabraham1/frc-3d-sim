@@ -11,6 +11,7 @@ import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 import { pointIn, robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 import { PieceFlow } from './pieceFlow';
+import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
 export interface RobotCommand {
@@ -648,12 +649,97 @@ export class Robot {
     if (!build) return;
     const c = this.config;
     this.anim.hood = c.launcher.angle;
+    this.modelMats = mats;
+    this.modelStart = [this.visual.children.length, this.turret.children.length];
     this.model = build({
       config: c, alliance: this.alliance, fp: this.fp, visual: this.visual, turret: this.turret, mats,
       groundSide: groundSideSign(c), stationSide: stationSideSign(c),
     });
     for (const part of this.model.replaces) for (const o of this.parts.get(part) ?? []) o.visible = false;
     if (this.model.replaces.includes('hopper')) this.hopperFill.visible = false;
+  }
+
+  /**
+   * Render optimization (call once, after the robot is set up for the match): bake every part that never moves
+   * into one mesh per material per rigid group, cutting a team model from ~200 draw calls to a few dozen. Which
+   * parts move is measured, not guessed: a throwaway copy of the team model is run through every animation state
+   * and any node whose transform or visibility changes stays separate. Falls back to merging only the generic
+   * parts if the copy's structure doesn't match.
+   */
+  optimizeVisual(): { before: number; after: number } {
+    const dynamic = new Set<THREE.Object3D>([this.turret, this.climberArm, this.hopperFill, this.statusLight, ...this.netFuel]);
+    for (const o of this.intakeGuide) o.userData.keep = true;
+    if (this.model && !this.probeModelDynamics(dynamic)) {
+      // Unknown which model parts move: keep the whole model as it is.
+      for (const o of this.visual.children.slice(this.modelStart[0])) dynamic.add(o);
+      for (const o of this.turret.children.slice(this.modelStart[1])) dynamic.add(o);
+    }
+    // Small parts don't need to cast shadows (bolts, wires, decals): the shadow pass is a second draw of everything.
+    this.visual.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.castShadow) return;
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      const sc = m.getWorldScale(this.flowScale);
+      if (m.geometry.boundingSphere!.radius * Math.max(sc.x, sc.y, sc.z) < 0.035) m.castShadow = false;
+    });
+    return mergeStatic(this.visual, dynamic);
+  }
+  private modelMats: { dark: THREE.Material; alu: THREE.Material; bumper: THREE.Material } | null = null;
+  private modelStart: [number, number] = [0, 0];
+  private readonly flowScale = new THREE.Vector3();
+
+  /** Build a second copy of the team model, animate it through every state, and mark the real nodes that move. */
+  private probeModelDynamics(dynamic: Set<THREE.Object3D>): boolean {
+    const build = robotModelBuilder(this.config.model);
+    if (!build || !this.modelMats) return false;
+    const c = this.config;
+    const visual = new THREE.Group();
+    const turret = new THREE.Group();
+    let model: RobotModel;
+    try {
+      model = build({ config: c, alliance: this.alliance, fp: this.fp, visual, turret, mats: this.modelMats, groundSide: groundSideSign(c), stationSide: stationSideSign(c) });
+    } catch {
+      return false;
+    }
+    // Pair probe nodes with the real ones (same builder, same structure).
+    const pairs = new Map<THREE.Object3D, THREE.Object3D>();
+    const pair = (a: THREE.Object3D[], b: THREE.Object3D[]): boolean => {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i].type !== b[i].type) return false;
+        pairs.set(a[i], b[i]);
+        if (!pair(a[i].children, b[i].children)) return false;
+      }
+      return true;
+    };
+    const realVisual = this.visual.children.slice(this.modelStart[0], this.modelStart[0] + visual.children.length);
+    const realTurret = this.turret.children.slice(this.modelStart[1]).filter((o) => !o.userData.flowToken);
+    if (!pair(visual.children, realVisual) || !pair(turret.children, realTurret)) return false;
+    const base = poseSnapshot(visual);
+    for (const [k, v] of poseSnapshot(turret)) base.set(k, v);
+    const s: RobotAnimState = { dt: 0.1, time: 0, enabled: false, intaking: false, firing: 0, passing: false, aiming: false, hood: c.launcher.angle, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
+    const probes: Partial<RobotAnimState>[] = [
+      { enabled: false }, { enabled: true }, { intaking: true }, { firing: 1, aiming: true, hood: 0.45 }, { aiming: true, hood: 1.35 },
+      { passing: true }, { climb: 1 }, { climb: 0.25 }, { blocker: 1 }, { fill: 0.5 }, { fill: 1 },
+      { vx: 2, omega: 1.5 }, { vz: 2, omega: -1.5 },
+      { place: { height: 1.7, forward: 0.6, level: 4, side: 0 } }, { place: { height: 1.2, forward: 0.5, level: 3, side: 1 } },
+      { place: { height: 1.2, forward: 0.5, level: 3, side: -1 } }, { place: { height: 1.0, forward: 0.5, level: 2, side: 2 } },
+      { place: { height: 0.45, forward: 0.3, level: 1, handoff: 0.5 } }, { enabled: false },
+    ];
+    const moved = new Set<THREE.Object3D>();
+    for (const p of probes) {
+      for (let i = 0; i < 12; i++) {
+        Object.assign(s, { enabled: true, intaking: false, firing: 0, passing: false, aiming: false, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0, fill: 0 }, p);
+        s.time += s.dt;
+        model.update(s);
+      }
+      for (const [o, key] of base) if (!moved.has(o) && poseKey(o) !== key) moved.add(o);
+    }
+    for (const o of moved) {
+      const real = pairs.get(o);
+      if (real) dynamic.add(real);
+    }
+    return true;
   }
 
   /** Advance the team model's animation (called from syncVisual, once per rendered frame). */

@@ -55,6 +55,8 @@ export interface GameCallbacks {
 }
 
 const PRE_MATCH_COUNTDOWN = 3;
+/** Minimum ms between rendered frames (~60 fps; the 2 ms slack keeps a 60 Hz display drawing every refresh). */
+const MIN_FRAME_MS = 1000 / 60 - 2;
 /** Host streams a snapshot every N physics steps (90 Hz / 3 = 30 Hz). */
 const SNAPSHOT_EVERY_STEPS = 3;
 
@@ -247,6 +249,8 @@ export class Game {
           return m;
         }, round);
       }
+      // Bake each robot's static parts into a few meshes (draw calls dominate the frame cost).
+      robot.optimizeVisual();
       this.robots.push(robot);
       this.robotSetups.set(rs.id, rs);
     }
@@ -394,7 +398,10 @@ export class Game {
       if (this.disposed) return;
       this.raf = requestAnimationFrame(loop);
       if (this.role === 'local') this.tick(now);
-      else if (this.role === 'host' && now - this.lastDraw < this.hostFrameInterval()) return;
+      // Render at most ~60 fps: on 120/144 Hz displays drawing every refresh doubled the CPU/GPU load for no gameplay
+      // gain (physics runs on its own fixed 90 Hz step and input is read every refresh regardless).
+      const minInterval = Math.max(MIN_FRAME_MS, this.role === 'host' ? this.hostFrameInterval() : 0);
+      if (now - this.lastDraw < minInterval) return;
       this.draw(now);
     };
     this.raf = requestAnimationFrame(loop);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { setRobotEnvironment } from '../robot/models';
+import { mergeStatic } from './mergeStatic';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /** Arena background / fog color (house lights down). */
@@ -42,6 +43,7 @@ export class Renderer {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = opts.shadows ?? true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     container.appendChild(this.renderer.domElement);
     // Studio reflections for team robot models only (the field keeps its plain lighting): metal and polycarbonate
     // read as aluminum / smoked plastic instead of flat gray.
@@ -191,6 +193,8 @@ export class Renderer {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) mesh.castShadow = false;
     });
+    // Nothing in the venue moves: bake it into one mesh per material.
+    mergeStatic(venue);
     this.scene.add(venue);
   }
 
@@ -238,8 +242,12 @@ export class Renderer {
   }
 
   render(): void {
+    // Shadows refresh every other frame (~30 Hz at the 60 fps cap): the shadow pass redraws every caster, and a
+    // robot moves ~1 cm between refreshes.
+    if (this.renderer.shadowMap.enabled) this.renderer.shadowMap.needsUpdate = (this.frame++ & 1) === 0;
     this.renderer.render(this.scene, this.camera);
   }
+  private frame = 0;
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
