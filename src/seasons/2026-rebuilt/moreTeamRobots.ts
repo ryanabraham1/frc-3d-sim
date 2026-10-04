@@ -4,6 +4,7 @@ import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillB
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { motor } from '@engine/robot/mechanicalDetail';
+import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
 /**
@@ -143,6 +144,7 @@ registerRobotModel('roman-6329', (k: ModelKit) => {
   turretRing.rotation.x = Math.PI / 2; turretRing.position.y = -0.015; t.add(turretRing);
   // Four-bar intake: two long silver arms and a black roller bank with yellow / purple rings, folded up over the top.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: steel, stow: Math.PI * 0.92, rollerMaterial: black });
+  const slide = slidingHopper(k);
   wheelShaft(intake.tip, 0, 0, { n: 10, r: 0.035, w: 0.02, span: c.intake.width * 0.9, colors: [0x7b4bd6] });
   box(intake.tip, 0.016, 0.075, c.intake.width * 0.65, black, -side * 0.04, 0.065, 0);
   decal(intake.tip, '6329', { w: c.intake.width * 0.6, h: 0.06, x: -side * 0.052, y: 0.065, z: 0, rotY: side > 0 ? -Math.PI / 2 : Math.PI / 2 });
@@ -155,7 +157,7 @@ registerRobotModel('roman-6329', (k: ModelKit) => {
     flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: columnFeed(k, cx, sh.flywheel, R * 0.8, FUEL_R) },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      intake.update(s, latch(d, s));
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
       spinRate = approach(spinRate, !s.enabled ? 0 : s.firing > 0 ? 7 : -1, 6, s.dt);
       spin(drum.floor, spinRate, s.dt, 'y');
       for (const r of floorRollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 18 : 0), s.dt);
@@ -198,6 +200,7 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
   }
   // Intake: silver pocketed arms, black rollers with blue rings.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: steel, rollerMaterial: black });
+  const slide = slidingHopper(k);
   const d = { v: 0 };
   let spinRate = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
@@ -212,7 +215,7 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      intake.update(s, latch(d, s));
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
       spinRate = approach(spinRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
       spin(drum.floor, spinRate, s.dt, 'y');
       sh.update(s);
@@ -249,6 +252,7 @@ registerRobotModel('croquembouche-5940', (k: ModelKit) => {
   for (let i = 0; i < 6; i++) conv.push(roller(k.visual, 0.016, W * 0.9, black, -L * 0.38 + i * L * 0.12, bt + 0.03));
   for (const sz of [-1, 1]) decal(k.visual, 'BREAD', { w: 0.14, h: 0.04, color: '#17181b', background: '#e0b020', x: -L * 0.2, y: bt + 0.07, z: sz * (W / 2 - 0.004), rotY: sz > 0 ? 0 : Math.PI });
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blue, rollerMaterial: mat(0x35b24a, { rough: 0.6 }) });
+  const slide = slidingHopper(k);
   const d = { v: 0 };
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
   return {
@@ -265,7 +269,7 @@ registerRobotModel('croquembouche-5940', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      intake.update(s, latch(d, s));
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
       for (const t of turrets) { t.g.rotation.y = k.turret.rotation.y; t.sh.update(s); }
       for (const r of conv) spin(r, s.enabled && (s.intaking || s.firing > 0) ? 16 : 0, s.dt);
     },
@@ -312,6 +316,7 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
     box(slide, 0.03, 0.12, 0.03, blue, side * (L / 2 + 0.05), bt + 0.04, sz * (W / 2 - 0.04));
   }
   const rollers = [roller(slide, 0.03, W * 0.84, mat(0x38923f, { rough: 0.55 }), side * (L / 2 + 0.06), bt + 0.0), roller(slide, 0.025, W * 0.84, mat(0x38923f, { rough: 0.55 }), side * (L / 2 + 0.01), bt + 0.05)];
+  const hop = slidingHopper(k);
   let out = 0, hoodAng = 0;
   const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.88, height: sh0.h * 0.9, r: FUEL_R });
   return {
@@ -328,6 +333,7 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
       const shuffle = s.firing > 0 ? 0.35 + 0.15 * Math.sin(s.time * 9) : 1;
       out = approach(out, !s.enabled ? 0 : shuffle, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
+      hop.set(out);
       for (const r of rollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 24 : 0), s.dt);
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const w of wheels) spin(w, -fs, s.dt);
@@ -371,6 +377,7 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
   k.visual.add(light);
   // Two long, black foam-wrapped intake rollers side by side on swing arms (the intake is the top roller pair).
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, rollerMaterial: mat(0x1d2025, { rough: 0.95 }) });
+  const slide = slidingHopper(k);
   const d = { v: 0 };
   let hoodAng = 0;
   const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.88, height: sh0.h * 0.9, r: FUEL_R });
@@ -384,7 +391,7 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      intake.update(s, latch(d, s));
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const r of rolls) spin(r, -fs, s.dt);
       hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
@@ -433,13 +440,14 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
   const drum = roller(k.visual, 0.051, W * 0.82, black, tx, sy - 0.025);
   const hood = pivot(k.visual, tx, sy - 0.025); hoodShell(hood, 0.062, W * 0.86, silver);
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: red, rollerMaterial: black, stow: Math.PI * 0.85 });
+  const slide = slidingHopper(k);
   const d = { v: 0 }, pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.92, width: W * 0.87, height: sh.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'], lightAt: [tx, sy + 0.1, W * 0.4],
     flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow,
       feed: () => [new THREE.Vector3(hx, bt + 0.06, 0), new THREE.Vector3(tx + side * 0.06, sy - 0.13, 0), flowAt(k, drum, 0, 0, 0)] },
     update(s) {
-      db.update(s); fill.set(s.fill); pile.setFill(s.fill); intake.update(s, latch(d, s));
+      db.update(s); fill.set(s.fill); pile.setFill(s.fill); { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
       const speed = s.enabled && (s.intaking || s.firing > 0) ? 32 : 0;
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);

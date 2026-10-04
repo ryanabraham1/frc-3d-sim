@@ -4,6 +4,7 @@ import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoo
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { hoodFor } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
+import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
 for (const [id, color, style] of [
@@ -73,6 +74,7 @@ for (const [id, color, style] of [
     camera(k.visual,L*.37,bt+.12,-W*.35);
   }
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, width: W * 0.9, frame: accent, stow: Math.PI * .95, rollerMaterial: style === 'drum' ? mat(0x37963c) : black });
+  const slide = slidingHopper(k);
   let deploy = 0, hood = 0, roofLift = 0;
   camera(k.visual,L*.4,bt+.08,W*.35);
   const r = inch(5.91) / 2;
@@ -90,7 +92,7 @@ for (const [id, color, style] of [
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); intake.update(s,deploy);
+      deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv); }
       if (style === 'expanding') {
         // Automatic simulator contract sequence: count controls the same raised envelope as collision/routing.
         const e = c.hopperExpansion!;

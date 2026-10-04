@@ -5,6 +5,7 @@ import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
+import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
 /**
@@ -137,6 +138,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   for (let i = 1; i < 8; i++) box(panel, len, 0.006, 0.012, black, len / 2, 0.005, -b.width / 2 + (b.width * i) / 8);
   roller(hinge, 0.018, b.width + 0.04, blue);
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blackTube });
+  const slide = slidingHopper(k);
   const deploy = { v: 0 };
   let rotorRate = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
@@ -147,7 +149,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      intake.update(s, latchDeploy(deploy, s));
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
@@ -217,6 +219,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   for (const sz of [-1, 1]) lattice(slide, [side * (L / 2 - 0.25), bt - 0.02, sz * (W / 2 - 0.03)], [side * 0.36, 0, 0], [0, 0.07, 0], { cells: 5, w: 0.016, m: blue, zig: true });
   const rollers = [roller(slide, 0.03, W * 0.9, INTAKE_ORANGE(), side * (L / 2 + 0.1), bt - 0.03), roller(slide, 0.025, W * 0.9, INTAKE_ORANGE(), side * (L / 2 + 0.05), bt + 0.03)];
   const hooks = climberHooks(k.visual, { x: -L * 0.3, y0: bt, length: H - bt - 0.05, spread: W * 0.6, m: k.mats.alu, hook: blue });
+  const hop = slidingHopper(k);
   let out = 0;
   let beltSpin = 0;
   let hoodAng = 0;
@@ -243,6 +246,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       // Out to collect; pulled back in while shooting so it squeezes FUEL toward the shooter.
       out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.3 : 1, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
+      hop.set(out);
       beltSpin = s.enabled && (s.intaking || s.firing > 0) ? 24 : 0;
       for (const r of rollers) spin(r, -side * beltSpin, s.dt);
       fill.set(s.fill);
@@ -299,6 +303,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   gear.position.set(-0.05, 0.09, 0.13);
   sh.flywheel.parent!.add(gear);
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black });
+  const slide = slidingHopper(k);
   const hooks = climberHooks(k.visual, { x: -L * 0.36, y0: bt, length: top - bt, spread: W * 0.55, m: k.mats.alu, hook: black });
   const deploy = { v: 0 };
   const pile = hopperStow({ x: 0, y0: bt + 0.02, length: L * 0.88, width: W * 0.88, height: top - bt, r: FUEL_R });
@@ -317,7 +322,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      intake.update(s, latchDeploy(deploy, s));
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
       fill.set(s.fill);
       sh.update(s);
       spin(gear, flywheelSpeed(s) * 0.6, s.dt, 'y');
@@ -375,6 +380,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
   const sh = turretShooter(t, { width: Math.max(0.19, 0.16 + 0.04), wheel: mat(0x8a9099, { metal: 0.6 }), plate: black, accent: silver, height: 0.15, topY: 0.06 });
   // Intake on silver arms with a silver roller.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: silver });
+  const slide = slidingHopper(k);
   const hooks = climberHooks(k.visual, { x: -L * 0.38, y0: bt, length: H - bt - 0.05, spread: W * 0.6, m: silverTube, hook: black });
   const deploy = { v: 0 };
   let rate = 0;
@@ -386,7 +392,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      intake.update(s, latchDeploy(deploy, s));
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
       fill.set(s.fill);
       rate = approach(rate, !s.enabled ? 0 : s.firing > 0 ? 8 : 1.5, 5, s.dt);
       spin(spindex, rate, s.dt, 'y');
@@ -466,6 +472,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
   for (const sz of [-1, 1]) bar(k.visual, [gx, H - 0.01, sz * (R - 0.03)], [centerX, H - 0.05, sz * 0.15], 0.02, silverTube);
   // Intake on the flat side: silver frame, green compliant wheels.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 3, frame: silverTube, width: W * 0.9 });
+  const slide = slidingHopper(k);
   const deploy = { v: 0 };
   let rotorRate = 0;
   let load = 0;
@@ -484,7 +491,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
     update(s) {
       db.update(s);
       load = s.fill;
-      intake.update(s, latchDeploy(deploy, s));
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 10 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
@@ -552,6 +559,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
   hoodShell(hood, 0.05, W * 0.85, black);
   // Intake on the back that retracts while shooting (compacting the FUEL).
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blackTube });
+  const slide = slidingHopper(k);
   const hooks = climberHooks(k.visual, { x: 0, y0: bt, length: H - bt - 0.05, spread: W * 0.55, m: blackTube, hook: orange });
   let out = 0;
   let hoodAng = 0;
@@ -572,7 +580,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
       db.update(s);
       pile.setFill(s.fill);
       out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 5, s.dt);
-      intake.update(s, out);
+      { const dv = out; intake.update(s, dv); slide.set(dv); }
       fill.set(s.fill);
       const fs = flywheelSpeed(s);
       spin(wheels[0], -fs, s.dt);
