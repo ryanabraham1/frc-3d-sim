@@ -267,15 +267,15 @@ export function seededRandom(seed: number): () => number {
  * drop in and settle instead of popping into place.
  */
 export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean }): { set(f: number): void } {
-  type Slot = { x: number; y: number; z: number; s: number; key: number };
+  type Slot = { x: number; y: number; z: number; s: number; key: number; sy?: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
   // Pour `n` balls of radius r into the bin the way they really settle: foam FUEL rolls off whatever it lands on and
   // comes to rest in the lowest pocket nearby, so the heap fills the whole floor before it builds up, with every ball
   // nested against its neighbors (no gaps) and an uneven, lumpy top. `inside` (robot-frame x/z) trims the footprint
   // for a non-rectangular hopper.
-  const pour = (r: number, n: number): Slot[] => {
+  const pour = (r: number, n: number, k = 1.92): Slot[] => {
     const halfX = Math.max(0, o.length / 2 - r), halfZ = Math.max(0, o.width / 2 - r);
-    const reach2 = (r * 1.92) ** 2; // foam FUEL squashes a little where it touches
+    const reach2 = (r * k) ** 2; // foam FUEL squashes a little where it touches (k = 2 would be rigid spheres)
     const out: Slot[] = [];
     const restHeight = (px: number, pz: number): number => {
       let py = r;
@@ -294,20 +294,22 @@ export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; le
         if (py < by) { by = py; bx = px; bz = pz; }
       }
       if (by === Infinity) { bx = 0; bz = 0; by = restHeight(0, 0); }
-      out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4 });
+      out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4, sy: Math.min(1, 0.95 * k / 1.92) });
     }
     return out;
   };
   const top = (sl: Slot[], r: number) => sl.reduce((m, q) => Math.max(m, q.y - o.y0 + r), 0);
-  // Pick the largest ball for which `capacity` balls still fit under the lid, so a full hopper is visibly full (no
-  // dead space) and a roomy one gets smaller-looking, denser balls instead of an empty pocket. Real FUEL is ~0.075 m radius.
-  let r = 0.075;
+  // Balls are always real FUEL size (r = 0.075 m), the same as outside the robot. A hopper too small for `capacity`
+  // balls packs them tighter instead (foam compresses a little, down to k = 1.7) rather than shrinking the balls.
+  const r = o.capacity ? 0.075 : Math.min(0.06, o.length / 6, o.width / 6);
   let slots: Slot[];
   if (o.capacity) {
-    slots = pour(r, o.capacity);
-    while (top(slots, r) > o.height && r > 0.025) { r -= 0.0025; slots = pour(r, o.capacity); }
+    let k = 1.92;
+    slots = pour(r, o.capacity, k);
+    while (top(slots, r) > o.height && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
+    // Still too tall: the bin holds fewer real-size balls than `capacity`, so show it full of those (never poking out).
+    slots = slots.filter((q) => q.y - o.y0 + r * 0.9 <= o.height);
   } else {
-    r = Math.min(0.06, o.length / 6, o.width / 6);
     slots = pour(r, Math.floor(o.length / (r * 2)) * Math.floor(o.width / (r * 2)) * Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75))));
   }
   slots.sort((a, b) => a.key - b.key);
@@ -318,7 +320,7 @@ export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; le
     const b = slots[i];
     transform.position.set(b.x, b.y + drop, b.z);
     // Foam FUEL squashes a little under the load above it.
-    transform.scale.set(b.s, b.s * 0.94, b.s);
+    transform.scale.set(b.s, b.s * (b.sy ?? 0.94), b.s);
     transform.updateMatrix();
     mesh.setMatrixAt(i, transform.matrix);
   };

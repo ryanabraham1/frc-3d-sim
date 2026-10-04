@@ -354,13 +354,14 @@ export class Robot {
       const ball = new THREE.Mesh(fuelGeometry, fuelMaterial);
       ball.userData.netX = x; ball.userData.netZ = z;
       ball.userData.show = 0.02 + rand() * 0.035;
-      const sq = 0.92 + rand() * 0.1;
-      ball.scale.set(sq, sq * 0.93, sq);
+      ball.userData.dy = (rand() - 0.5) * 0.03; // balls in a heap sit at slightly different heights
+      const sq = 0.97 + rand() * 0.05;
+      ball.scale.set(sq, sq * 0.95, sq);
       this.visual.add(ball); this.netFuel.push(ball);
     }
   }
 
-  private static readonly NET_FUEL_R = 0.07;
+  private static readonly NET_FUEL_R = 0.075; // real FUEL radius: balls under the net are full size
 
   /**
    * Ease the drawn bulge toward the load-based envelope: an under-damped spring (ω ≈ 7 rad/s, ζ ≈ 0.7), so the net
@@ -394,19 +395,25 @@ export class Robot {
       const x = ball.userData.netX as number, z = ball.userData.netZ as number;
       const rise = extra * (1 - x * x) * (1 - z * z);
       ball.visible = rise > (ball.userData.show as number);
-      ball.position.set(cx + x * sx, c.height + rise - Robot.NET_FUEL_R * 0.98, z * sz);
-      if (ball.visible) tops.push({ x: ball.position.x, z: ball.position.z, y: c.height + rise });
+      const lift = rise + (ball.userData.dy as number) * Math.min(1, extra / 0.1);
+      ball.position.set(cx + x * sx, c.height + lift - Robot.NET_FUEL_R * 0.98, z * sz);
+      if (ball.visible) tops.push({ x: ball.position.x, z: ball.position.z, y: c.height + lift });
     }
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const x = grid[i * 3], z = grid[i * 3 + 2];
       const bow = Math.max(0, (1 - x * x) * (1 - z * z));
       const px = cx + x * sx, pz = z * sz;
-      // A slack net sags between balls and drapes over each one (a little cap of the ball's curve).
-      let y = c.height + extra * bow * 0.86 - 0.018 * bow;
+      // A slack net hangs lower than the balls it covers: it rests on their tops and drapes over each ball's curve
+      // (smoothly blended, like cloth), sagging in the gaps between them.
+      let y = c.height + extra * bow * 0.74 - 0.018 * bow;
+      const R = Robot.NET_FUEL_R + 0.008;
       for (const t of tops) {
         const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2;
-        if (d2 < 0.02) y = Math.max(y, t.y - d2 * 7);
+        if (d2 >= R * R) continue;
+        const cap = t.y + 0.008 - R + Math.sqrt(R * R - d2);
+        const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
+        y = Math.max(y, cap) + h * h * k * 0.25;
       }
       p.setXYZ(i, px, y, pz);
     }
