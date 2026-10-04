@@ -67,7 +67,7 @@ function spindexer(parent: THREE.Object3D, o: { x: number; y0: number; R: number
 }
 
 /** A black net lid: a grid of fine lines across the top of the hopper. */
-function netRoof(parent: THREE.Object3D, o: { x: number; y: number; length: number; width: number; nx?: number; nz?: number; color?: number; dome?: number }): void {
+function netRoof(parent: THREE.Object3D, o: { x: number; y: number; length: number; width: number; nx?: number; nz?: number; color?: number; dome?: number; opening?: { x: number; z: number; radius: number } }): void {
   const pts: number[] = [];
   const nx = o.nx ?? 12, nz = o.nz ?? 10, dome = o.dome ?? 0;
   const h = (u: number, v: number) => o.y + dome * Math.sin(Math.PI * u) * Math.sin(Math.PI * v);
@@ -80,8 +80,15 @@ function netRoof(parent: THREE.Object3D, o: { x: number; y: number; length: numb
     const v = j / nz, u0 = i / (nx * seg), u1 = (i + 1) / (nx * seg);
     pts.push(o.x - o.length / 2 + u0 * o.length, h(u0, v), -o.width / 2 + v * o.width, o.x - o.length / 2 + u1 * o.length, h(u1, v), -o.width / 2 + v * o.width);
   }
+  // Leave clearance around a turret so the net never crosses the moving shooter.
+  const positions: number[] = [];
+  for (let i = 0; i < pts.length; i += 6) {
+    const hole = o.opening;
+    if (hole && Math.hypot((pts[i] + pts[i + 3]) / 2 - hole.x, (pts[i + 2] + pts[i + 5]) / 2 - hole.z) < hole.radius) continue;
+    positions.push(...pts.slice(i, i + 6));
+  }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   parent.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: o.color ?? 0x15171a })));
 }
 
@@ -121,7 +128,7 @@ registerRobotModel('roman-6329', (k: ModelKit) => {
   for (const sz of [-1, 1]) {
     lattice(k.visual, [-side * L * 0.43, bt + 0.16, sz * W * 0.47], [side * L * 0.82, 0, 0], [0, H - bt - 0.21, 0], { cells: 4, w: 0.013, m: steelM, zig: true });
   }
-  netRoof(k.visual, { x: 0, y: H - 0.02, length: L * 0.96, width: W * 0.96 });
+  netRoof(k.visual, { x: 0, y: H - 0.02, length: L * 0.96, width: W * 0.96, opening: { x: 0.02, z: 0, radius: 0.2 } });
   // Drum 20.75 in across with a ~6 in centre; the turret stands over its centre.
   const R = inch(20.75) / 2, cx = 0.02;
   const drum = spindexer(k.visual, { x: cx, y0: bt + 0.01, R, wallH: 0.1, coneH: 0.07, plate: black, rib: purple, cone: purple, rim: purple });
@@ -493,8 +500,8 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
 //    27 in square, no climber mentioned. INTAKE on one end: independent polycarbonate arms with silicone-covered
 //    rollers; the sliding hopper extension deploys WITH the intake (surgical-tubing return), like 4414's.
 //    LOOK: white laminated corrugated-plastic side walls (a notch cut low at the front), a black rear section and
-//    black frame, yellow 3D-printed turret ring and wire guides on top, an orange beacon. Capacity is [EST]: not
-//    stated, sized above a trench-height box because it is tall and the hopper slides out. ──
+//    black frame, yellow 3D-printed turret ring and wire guides on top, an orange beacon. Capacity 85 (user-reported 80-90):
+//    a tall box whose hopper slides out, so well above a trench-height box. ──
 registerRobotModel('toploader-604', (k: ModelKit) => {
   const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop, side = k.groundSide;
   const white = mat(0xf2f4f6, { rough: 0.9 }), black = mat(0x17181b, { metal: 0.3, rough: 0.5 }), blackTube = tubeMat(0x1c1e22), yellow = mat(0xe8c21a, { rough: 0.5 }), clear = mat(0xdde5f0, { opacity: 0.25, rough: 0.2 });
@@ -580,8 +587,8 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
       config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 40, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; setRebuiltAccuracy(c, 82); }) },
     { id: 'toploader-604', team: 604, name: 'Toploader',
-      description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Capacity (60) and speed are simulator estimates.',
+      description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Holds 80-90 FUEL (user-reported, tall box with a sliding hopper; simulator uses 85). Speed is a simulator estimate.',
       source: 'Chief Delphi "Team 604 Quixilver - 2026 Robot CAD and Code Release" (Toploader); The Blue Alliance 2026 photos',
-      config: cfg(604, 'toploader-604', { intake: 'both', aim: 'turret', hopper: 60, tall: true, rate: 14, climb: 0 }, (c) => { c.frameLength = c.frameWidth = inch(27); c.maxSpeed = 4.5; setRebuiltAccuracy(c, 88); }) },
+      config: cfg(604, 'toploader-604', { intake: 'both', aim: 'turret', hopper: 85, tall: true, rate: 14, climb: 0 }, (c) => { c.frameLength = c.frameWidth = inch(27); c.maxSpeed = 4.5; setRebuiltAccuracy(c, 88); }) },
   ];
 }

@@ -231,7 +231,7 @@ robot's hardware so the comparison stays fair.
 | 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 40 [EST], 16/s, intake 13/s |
 | 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 45 [EST; the team quotes "almost 70" but a non-expanding trench-height hopper holds far less], 15/s [EST], intake 12/s |
 | 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 40 [EST: team's ~80 doesn't fit a non-expanding trench-height box], 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
-| 2026 | 604 Toploader | tall 27 in BUMP robot, single-stream turret over a dye rotor (team prototype ~15 BPS), white corrugated walls, hopper slides out with the intake, no climber | cap 60 [EST], 14/s, intake 16/s [EST] |
+| 2026 | 604 Toploader | tall 27 in BUMP robot, single-stream turret over a dye rotor (team prototype ~15 BPS), white corrugated walls, hopper slides out with the intake, no climber | cap 85 (user-reported 80-90), 14/s [team prototype ~15], intake 16/s [EST] |
 | 2025 | 1678 SubLime, 971 Fiddler, 341 Miss Daisy | tall-tower tipping arm / truss elevator with maroon claw / continuous elevator + lantern shoulder | lift, cycle and speed [EST] |
 | 2024 | 1114 Skyfall, 2910 Typhoon, 581 Titan | pivoting shooter arm (code repo: arm + intake only) / TURRET with any-angle feed, slow climb / 25.5 × 28.5 in, long hooks | speed, accel, climb time [EST] |
 
