@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, controller, decal, drivebase, hook, lattice, link, mat, pivot, plate, pointIn, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, wire, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, box, controller, decal, drivebase, hook, lattice, link, mat, pivot, plate, pointIn, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, wire, overRollers, underBumperEntry, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { belt, camera, motor } from '@engine/robot/mechanicalDetail';
 import { inch } from '@engine/units';
 import { build, normalizeCrescendoConfig } from './config';
@@ -124,6 +124,8 @@ registerRobotModel('twister-118', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [podX, deckY + 0.03, -(podZ0 + podZ1) / 2],
+    // Under the bumper, between the flex-wheel lift rollers under the deck, up the turret's feeders into the shooter.
+    flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, k.groundSide > 0 ? [lift[1], lift[0]] : lift, 0.03), ...overRollers(k, feed, 0.025)] },
     update(s) {
       db.update(s); intake.update(s);
       tilt = approach(tilt, s.hood - 0.6, 10, s.dt); shooter.rotation.z = tilt;
@@ -206,6 +208,8 @@ registerRobotModel('tidepod-4414', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [baseX, bt + 0.03, W * 0.3],
+    // Under the bumper and up the broad roller ramp inside the uprights into the pod.
+    flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, path, 0.035)] },
     update(s) {
       db.update(s); intake.update(s);
       // Up for the AMP / TRAP and to hook the chain; pulls back down to lift the robot (climb 0.25).
@@ -277,6 +281,8 @@ registerRobotModel('madtown-2024-1323', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [px, py + 0.04, 0],
+    // Under the bumper onto the resting arm, then along its feed rollers toward the flywheels.
+    flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, feed.slice(0, 3), 0.03)] },
     update(s) {
       db.update(s); intake.update(s);
       // Arm angle above horizontal toward the far end: resting, raised to the shot angle, or past vertical (AMP).

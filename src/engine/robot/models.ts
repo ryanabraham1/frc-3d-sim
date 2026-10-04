@@ -1025,3 +1025,18 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
     },
   };
 }
+
+/**
+ * Under-bumper intake entry: the piece (half-thickness `r`) is pulled flat under the bumper on the intake face and
+ * onto the deck just inside the frame.
+ */
+export function underBumperEntry(k: ModelKit, r: number): THREE.Vector3[] {
+  const c = k.config;
+  const side = k.groundSide;
+  return [new THREE.Vector3(side * (k.fp.length / 2 - 0.02), Math.min(r + 0.008, c.bumperBottom + r), 0), new THREE.Vector3(side * (c.frameLength / 2 - 0.09), c.bumperTop + r, 0)];
+}
+
+/** Path riding `lift` above each roller in turn (indexers, conveyors, feeders), read where they are right now. */
+export function overRollers(k: ModelKit, rollers: THREE.Object3D[], lift: number): THREE.Vector3[] {
+  return rollers.map((o) => flowAt(k, o, 0, lift, 0));
+}

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, decal, drivebase, ledStrip, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, type ModelKit } from '@engine/robot/models';
+import { approach, bar, box, decal, drivebase, ledStrip, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, overRollers, underBumperEntry, type ModelKit } from '@engine/robot/models';
 import { inch, lb } from '@engine/units';
 import { build, normalizeCrescendoConfig } from './config';
 
@@ -57,7 +57,8 @@ registerRobotModel('lowkey-2056', (k: ModelKit) => {
   tube(k.visual, [px, py, -tz - 0.05], [px, py, tz + 0.05], 0.011, silver); // solid 7/8 in dead axle
   for (const x of [-L / 2 + 0.08, L * 0.18]) bar(k.visual, [x, bt + 0.02, -tz], [x, bt + 0.02, tz], 0.025, silverTube);
   // Conveyor: blue sushi rollers carrying the NOTE from the back intake up to the shooter's mouth at the axle.
-  for (let i = 0; i < 3; i++) roller(k.visual, 0.0127, 0.3, blue, -L / 2 + 0.07 + i * 0.05, bt + 0.06 + i * 0.07, 0);
+  const conveyor: THREE.Group[] = [];
+  for (let i = 0; i < 3; i++) conveyor.push(roller(k.visual, 0.0127, 0.3, blue, -L / 2 + 0.07 + i * 0.05, bt + 0.06 + i * 0.07, 0));
   // Shooter box on the 17 in arm: pocketed aluminum side rails, flywheels at the far end, feed rollers inboard.
   const arm = pivot(k.visual, px, py);
   const armLen = inch(17);
@@ -87,6 +88,8 @@ registerRobotModel('lowkey-2056', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [px, py + 0.06, 0],
+    // Under the bumper, up the blue sushi-roller conveyor to the shooter mouth at the axle, along the feed rollers.
+    flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, conveyor, 0.03), ...overRollers(k, feed, 0.02)] },
     update(s) {
       base.update(s);
       intake.update(s);

@@ -2,7 +2,7 @@ import { additionalCrescendoTeamRobots } from './additionalTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { belt, camera, motor } from '@engine/robot/mechanicalDetail';
-import { approach, bar, battery, box, controller, decal, drivebase, hook, hoodShell, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, wire, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, battery, box, controller, decal, drivebase, hook, hoodShell, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, wire, flowAt, overRollers, underBumperEntry, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { inch, lb } from '@engine/units';
 import { build, normalizeCrescendoConfig } from './config';
 import { lowKey2056 } from './lowKey2056';
@@ -13,6 +13,9 @@ import { lowKey2056 } from './lowKey2056';
  */
 
 /** Flywheels spool up when enabled, peak right after a shot. */
+/** NOTE half thickness (2 in tall ring) for piece-flow paths. */
+const NOTE_R = inch(1);
+
 function flywheelSpeed(s: RobotAnimState): number {
   return s.enabled ? 40 + 50 * s.firing : 0;
 }
@@ -113,6 +116,8 @@ registerRobotModel('vortex-254', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [bx + 0.03, bt + 0.2, 0],
+    // Under the bumper, across the deck to the turret center, up the blue feed rollers into the shooter.
+    flow: { intake: () => [...underBumperEntry(k, NOTE_R), new THREE.Vector3(L * 0.08, bt + 0.04, 0), ...overRollers(k, feed, 0.03)] },
     update(s) {
       base.update(s);
       intake.update(s);
@@ -192,6 +197,8 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [-L * 0.3, deckY + 0.24, -W * 0.22],
+    // Under the bumper and straight into the shooter head, which the arm lowers to the intake.
+    flow: { intake: () => [...underBumperEntry(k, NOTE_R), flowAt(k, wheels[2], 0, 0.02, 0)] },
     update(s) {
       base.update(s);
       intake.update(s);
@@ -284,6 +291,8 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     lightAt: [-L * 0.38, bt + 0.04, -W * 0.2],
+    // Under the bumper, along the deck to the elevator, up the stage to the carriage's flywheels.
+    flow: { intake: () => [...underBumperEntry(k, NOTE_R), new THREE.Vector3(ex + 0.06, bt + 0.05, 0), flowAt(k, carriage, -0.03, -0.07, 0)] },
     update(s) {
       base.update(s);
       intake.update(s);
