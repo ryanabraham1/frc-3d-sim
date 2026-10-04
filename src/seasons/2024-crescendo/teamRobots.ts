@@ -210,10 +210,10 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
       base.update(s);
       intake.update(s);
       // Raises toward the shot elevation while holding a NOTE; straight up for the AMP / TRAP.
-      const target = s.passing || s.climb > 0.2 ? 1.5 : s.fill > 0 && s.enabled ? Math.min(1.2, s.hood) : s.firing > 0 ? 0.7 : 0;
+      const target = s.passing || s.climb > 0.2 ? 1.5 : s.enabled && (s.aiming || s.firing > 0) ? Math.min(1.5, s.hood) : 0;
       arm = approach(arm, target, 7, s.dt);
       pv.rotation.z = arm;
-      head.rotation.z = -arm * 0.5;
+      head.rotation.z = 0; // shooter is fixed to the pitching arm
       const fs = flywheelSpeed(s);
       wheels[0].rotation.z -= fs * s.dt;
       wheels[1].rotation.z += fs * s.dt;
@@ -317,7 +317,7 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
       stage.position.y = lift;
       carriage.position.y = H - 0.12 + lift;
       // Up for the SPEAKER, pitched down when raised (AMP / TRAP).
-      tilt = approach(tilt, up ? -0.6 : (s.hood - 0.6) * 0.6, 8, s.dt);
+      tilt = approach(tilt, up ? -0.6 : s.aiming || s.firing > 0 ? s.hood : 0, 8, s.dt);
       carriage.rotation.z = tilt;
       const fs = flywheelSpeed(s);
       wheels[0].rotation.z -= fs * s.dt;

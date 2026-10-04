@@ -76,7 +76,7 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv); }
+      deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       {
         // Automatic simulator contract sequence: count controls the same raised envelope as collision/routing.
         const e = c.hopperExpansion!;
@@ -150,7 +150,7 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
     flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
       feed:()=>[new THREE.Vector3(-L*.35,bt+.04+r,0),new THREE.Vector3(L*.22,bt+.12+r,0),flowAt(k,fly,-.09,-.02,0),flowAt(k,fly,.02,.04,0)]},
     update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
-      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv); }
+      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
       for(const wheel of [fly,overspeed,...conveyor])spin(wheel,s.enabled?40+60*s.firing:0,s.dt);
     }};
@@ -192,9 +192,9 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
   let deploy=0,angle=0;
   return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
-      feed:()=>{const i=Math.random()<.5?0:1,z=heads[i].position.z;return [new THREE.Vector3(-L*.2,bt+.04+r,z),new THREE.Vector3(L*.1,bt+.05+r,z),flowAt(k,wheels[i],-.08,-.02,0),flowAt(k,wheels[i],.02,.04,0)];}},
+      feed:(shot=0)=>{const i=shot%heads.length,z=heads[i].position.z;return [new THREE.Vector3(-L*.2,bt+.04+r,z),new THREE.Vector3(L*.1,bt+.05+r,z),flowAt(k,wheels[i],-.08,-.02,0),flowAt(k,wheels[i],.02,.04,0)];}},
     update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
-      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv); }
+      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);
       for(const head of heads)head.rotation.y=k.turret.rotation.y;
       for(const hood of hoods)hood.rotation.z=angle;
@@ -213,7 +213,7 @@ export function additionalRebuiltTeamRobots(): TeamRobot[] {
       source: 'https://www.chiefdelphi.com/t/1678-2026-robot-limestone/515709 — reveal and team hopper/CAD discussion',
       config: config(1678,'limestone-1678',false,60,24,4.7,88) },
     { id: 'mixtape-971', team: 971, name: 'Mixtape',
-      description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. 33 FUEL capacity (user tuning). Simulator estimates: 16 FUEL/s combined, 5.0 m/s drive. Both heads share one simulated aim and launch point.',
+      description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. 33 FUEL capacity (user tuning). Simulator estimates: 16 FUEL/s combined, 5.0 m/s drive. Both heads share simulated aim and alternate shots from their own turret throats.',
       source: 'https://www.chiefdelphi.com/t/frc-971-spartan-robotics-2026-robot-reveal-mixtape/515582; https://github.com/frc971/971-second-robot-2026',
       config: config(971,'mixtape-971',true,33,16,5.0,92) },
   ];
@@ -224,6 +224,10 @@ function config(team: number, model: string, turret: boolean, capacity: number, 
   const c = build({ intake: 'both', aim: turret ? 'turret' : 'align', dumper: !turret, hopper: capacity, tall: false, rate, climb: 0 });
   c.teamNumber = team; c.model = model; c.maxSpeed = speed; c.maxAccel = team === 2910 ? 11 : team === 1678 ? 9 : 10;
   if (team === 1678) { c.frameLength = c.frameWidth = inch(27); c.hopperExpansion = { startCount: 40, fullHeight: inch(29), mechanism: 'telescoping' }; }
+  if (team === 971) {
+    c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .23, side: sign * c.frameWidth * .24 }));
+    c.launcher.muzzleForward = .05;
+  }
   setRebuiltAccuracy(c,accuracy);
   return normalizeRebuiltConfig(c);
 }

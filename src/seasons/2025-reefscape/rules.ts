@@ -6,6 +6,7 @@ import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
 import { groundSideSign, stationSideSign } from '@engine/robot/config';
+import { handoffPoint } from '@engine/robot/handoff';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
@@ -1091,7 +1092,11 @@ export class ReefscapeRules implements SeasonRules {
     // A model's intake anchor already folds in with the intake; the generic intake is fixed, so slide up it.
     const onIntake = intake ? stowed : mouth.lerp(stowed, ease(a));
     if (coral.parent !== visual) visual.add(coral);
-    coral.position.copy(onIntake.lerp(endPos, ease(b)));
+    const path = robot.modelHandoffPath;
+    if (path && path.length > 1) {
+      // Ride the actual conveyor/cradle rather than cutting diagonally through the elevator.
+      handoffPoint(path, endPos, t, coral.position);
+    } else coral.position.copy(onIntake.lerp(endPos, ease(b)));
     coral.position.y += Math.sin(Math.PI * b) * 0.06; // small lift as it clears the bumper / end effector lip
     coral.quaternion.copy(across).slerp(endQ, ease(b));
   }

@@ -19,7 +19,7 @@ import { build, normalizeCrescendoConfig } from './config';
  */
 
 const flywheel = (s: RobotAnimState): number => (s.enabled ? 40 + 50 * s.firing : 0);
-const armAngle = (s: RobotAnimState, rest: number): number => (s.climb > 0.2 ? 0 : s.passing ? 1.75 : s.fill > 0 && s.enabled ? Math.min(1.1, s.hood) : s.firing > 0 ? s.hood : rest);
+const armAngle = (s: RobotAnimState, rest: number): number => (s.climb > 0.2 ? 0 : s.passing ? 1.75 : s.enabled && (s.aiming || s.firing > 0) ? s.hood : rest);
 
 // ── 1114 SKYFALL (TBA 2024 photos): a low red wedge with black gusset plates carrying GM / WCP / GoBeyond logos, a black
 //    SIMBOT SKYFALL nameplate and white LED strip at the front, a silver pocketed shooter arm with ORANGE wheels, hooks ──
@@ -159,10 +159,10 @@ registerRobotModel('typhoon-2910', (k: ModelKit) => {
     flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, conveyor, 0.03), ...overRollers(k, feed, 0.025)] },
     update(s) {
       base.update(s); intake.update(s);
-      tilt = approach(tilt, s.hood - 0.6, 10, s.dt);
+      tilt = approach(tilt, s.enabled && (s.aiming || s.firing > 0) ? s.hood : 0, 10, s.dt);
       shooter.rotation.z = tilt;
       for (const w of wheels) spin(w, flywheel(s) * (w === wheels[0] ? -1 : 1), s.dt);
-      for (const pl of pulleys) pl.rotation.y += flywheel(s) * s.dt * 0.3;
+      for (const pl of pulleys) pl.rotation.z += flywheel(s) * s.dt * 0.3;
       for (const r of [...conveyor, ...feed]) spin(r, s.intaking || s.firing > 0 ? -22 : 0, s.dt);
       hanger.position.y = approach(hanger.position.y, s.climb > 0.5 ? inch(10) : s.climb > 0.1 ? inch(2) : 0, 10, s.dt);
     },

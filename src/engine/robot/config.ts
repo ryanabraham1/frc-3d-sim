@@ -111,6 +111,10 @@ export interface RobotConfig {
      * total shots/s across all exits, so throughput is unchanged. Incompatible with a turret.
      */
     exits?: number;
+    /** Separate turret centers (meters, chassis frame; side positive left). Share aim, alternate shots. */
+    mounts?: { forward: number; side: number }[];
+    /** Throat offset ahead of each turret center; rotates with turret yaw. */
+    muzzleForward?: number;
     /** Chassis-aimed (auto-align) robots hold fire until pointed within this many radians of the target (default 0.05 ≈ 3°). */
     alignTolerance?: number;
     /** Distance between the outermost exits as a fraction of the frame width (default 0.8). */
@@ -170,6 +174,7 @@ export interface RobotConfig {
 
 /** Lateral offsets (m, robot frame; + = robot left) of the launcher's exits: one at the center, or `exits` spread evenly. */
 export function launcherExitOffsets(c: RobotConfig): number[] {
+  if (c.launcher.turret && c.launcher.mounts?.length) return c.launcher.mounts.map(m => m.side);
   const n = Math.max(1, Math.round(c.launcher.exits ?? 1));
   if (n === 1) return [0];
   const span = c.frameWidth * (c.launcher.exitSpan ?? 0.8);
@@ -253,6 +258,12 @@ export function sanitizeConfig(c: RobotConfig, maxHeight: number, maxPerimeter?:
     b.seconds = Math.max(0.05, b.seconds);
   }
   out.preload = Math.min(Math.max(0, Math.round(out.preload)), out.hopperCapacity);
+  if (out.launcher.mounts) {
+    out.launcher.mounts = out.launcher.mounts.filter(m => Number.isFinite(m.forward) && Number.isFinite(m.side)).slice(0,4)
+      .map(m => ({ forward: Math.max(-out.frameLength/2,Math.min(out.frameLength/2,m.forward)), side: Math.max(-out.frameWidth/2,Math.min(out.frameWidth/2,m.side)) }));
+    if (!out.launcher.mounts.length) delete out.launcher.mounts;
+  }
+  if (out.launcher.muzzleForward !== undefined) out.launcher.muzzleForward = Number.isFinite(out.launcher.muzzleForward) ? Math.max(0,Math.min(out.frameLength/2,out.launcher.muzzleForward)) : 0;
   out.launcher.height = Math.min(out.launcher.height, out.height);
   return out;
 }

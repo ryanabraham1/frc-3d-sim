@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, sidePlates, spin, tube, tubeMat, wheelShaft, type ModelKit } from '@engine/robot/models';
+import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, sidePlates, spin, tube, tubeMat, wheelShaft, type ModelKit } from '@engine/robot/models';
 import { belt, motor } from '@engine/robot/mechanicalDetail';
 import { inch, lb } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
@@ -70,16 +70,18 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held, intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
-      if (p.handoff || stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
+      if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: -Math.PI / 2 };
+      else if (stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
       else goal = reachWith(p, dir, ex, la, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.16));
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      eff.rotation.z = -phi + (p.level === 4 ? -1.1 : p.level === 1 ? 0 : -0.5);
+      eff.rotation.z = -phi + (p.handoff ? 0 : p.level === 4 ? -1.1 : p.level === 1 ? 0 : -0.5);
       for (const w of effWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
@@ -157,7 +159,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       const p = place(s);
       let goal: { yc: number; phi: number };
       // Handoff / intake: the claw dips to the floor at the front. Stowed: arm up over the elevator.
-      if (p.handoff || s.intaking) goal = { yc: bt + 0.18, phi: -0.75 };
+      if (p.handoff || s.intaking) goal = { yc: .11 - .03 + Math.sin(.75) * (la - .1) + Math.sin(.1) * .13, phi: -.75 };
       else if (stowed(p)) goal = { yc: yMin, phi: 1.25 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
@@ -231,16 +233,18 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held, intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
-      if (p.handoff || stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
+      if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: -Math.PI / 2 };
+      else if (stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.14));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      eff.rotation.z = -phi + (p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
+      eff.rotation.z = -phi + (p.handoff ? 0 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
       for (const w of effWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
@@ -288,13 +292,14 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   let yc = bt + 0.15, phi = Math.PI / 2, deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s), yMin = bt + 0.12;
-      const goal = p.handoff ? { yc: yMin, phi: Math.PI } : stowed(p) ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, 1, ex + 0.04, la, yMin, top + 0.9);
+      const goal = p.handoff ? { yc: bt + .1 + la, phi: -Math.PI / 2 } : stowed(p) ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, 1, ex + 0.04, la, yMin, top + 0.9);
       yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 10, s.dt);
       const ext = Math.max(0, yc - top + 0.1);
       carriage.position.y = yc; stage.position.y = ext / 2; stage2.position.y = ext;
-      arm.rotation.z = phi; wrist.rotation.z = -phi;
+      arm.rotation.z = phi; wrist.rotation.z = -phi + (p.handoff || stowed(p) ? 0 : p.level === 4 ? -Math.PI / 2 : p.level === 1 ? 0 : -.6);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt); intake.update(s, deploy);
       spin(stars, s.enabled && s.intaking ? -side * 25 : 0, s.dt);
       for (const w of wheels) spin(w, s.enabled && (s.intaking || p.handoff) ? 20 : 0, s.dt);

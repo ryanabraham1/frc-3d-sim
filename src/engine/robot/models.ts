@@ -85,7 +85,9 @@ export interface RobotModel {
   flow?: {
     intake?(): THREE.Vector3[];
     stow?(): THREE.Vector3;
-    feed?(): THREE.Vector3[];
+    feed?(shotIndex?: number): THREE.Vector3[];
+    /** Floor CORAL transfer: intake → conveyor/cradle → end effector, re-read as mechanisms move. */
+    handoff?(): THREE.Vector3[];
   };
 }
 
@@ -146,6 +148,7 @@ export function box(parent: THREE.Object3D, sx: number, sy: number, sz: number, 
 export function roller(parent: THREE.Object3D, radius: number, length: number, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, y, z);
+  g.userData.flowSpinAxis = 'z';
   const drum = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 20), m);
   drum.rotation.x = Math.PI / 2;
   g.add(drum);
@@ -589,6 +592,37 @@ export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: num
   };
 }
 
+/** Parallel-link floor intake: both links pivot, while the roller bank stays level. */
+export function fourBarIntake(kit: ModelKit, o: { reach: number; frame: THREE.Material; rollerMaterial: THREE.Material; stow?: number }): ReturnType<typeof deployableIntake> {
+  const c = kit.config, side = kit.groundSide, w = Math.min(c.intake.width, kit.fp.width - .06);
+  const y = c.bumperTop + .15, spacing = .085;
+  const hinge = pivot(kit.visual, side * (c.frameLength / 2 - .02), y);
+  const dx = o.reach + .09, dy = y - .11, len = Math.hypot(dx, dy);
+  const links = [pivot(hinge, 0, 0), pivot(hinge, 0, -spacing)];
+  for (let i = 0; i < links.length; i++) {
+    links[i].name = `four-bar-link-${i}`;
+    for (const sign of [-1,1]) {
+      bar(links[i], [0,0,sign*w/2], [side*len,0,sign*w/2], .018, o.frame);
+      bar(kit.visual, [side*(c.frameLength/2-.07),c.bumperTop,sign*w/2],
+        [hinge.position.x,y-i*spacing,sign*w/2], .025, o.frame);
+    }
+  }
+  const bank = pivot(links[0], side * len, 0);
+  bank.name = 'four-bar-roller-bank';
+  sidePlates(bank, [[-.09,-spacing],[.07,-spacing],[.07,.04],[-.09,.04]], w/2, o.frame);
+  const rolls = [roller(bank,.035,w*.92,o.rollerMaterial,side*.02,-.035),
+    roller(bank,.025,w*.92,o.rollerMaterial,-side*.06,.005)];
+  const tip = pivot(bank, -side*.015, .02);
+  let speed = 0;
+  return { hinge, tip, update(s, deploy) {
+    const angle = side * ((o.stow ?? Math.PI*.92) * (1-deploy) - Math.atan2(dy,dx)*deploy);
+    for (const link of links) link.rotation.z = angle;
+    bank.rotation.z = -angle;
+    speed = approach(speed, s.enabled && (s.intaking || s.firing > 0) && deploy > .8 ? 26 : 0, 8, s.dt);
+    for (const r of rolls) spin(r,-side*speed,s.dt);
+  } };
+}
+
 /** Flat decal (sponsor logo / name plate) facing +z or −z: a text texture on a disc or rectangle. */
 export function decal(parent: THREE.Object3D, text: string, o: { w: number; h: number; color?: string; background?: string; round?: boolean; x?: number; y?: number; z?: number; rotY?: number }): THREE.Mesh {
   const tex = makeTextTexture(text, { color: o.color ?? '#ffffff', background: o.background, width: 256, height: Math.round((256 * o.h) / o.w) });
@@ -800,6 +834,7 @@ export function hook(parent: THREE.Object3D, x: number, y0: number, z: number, h
 export function wheelShaft(parent: THREE.Object3D, x: number, y: number, o: { n: number; r: number; w: number; span: number; colors: number[]; shaft?: THREE.Material }): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, y, 0);
+  g.userData.flowSpinAxis = 'z';
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, o.span + 0.04, 8), o.shaft ?? mat(0x9aa0a8, { metal: 0.7, rough: 0.3 }));
   shaft.rotation.x = Math.PI / 2;
   g.add(shaft);
@@ -847,6 +882,14 @@ export function jitter(w: number): number {
 
 /** Robot-frame point on a (possibly moving) model part, read when a piece starts its trip. */
 export function flowAt(k: ModelKit, o: THREE.Object3D, x = 0, y = 0, z = 0): THREE.Vector3 {
+  // A throat offset is fixed relative to the roller's bearings, not its spinning tread.
+  // Preserve parent pitch/yaw and static orientation (e.g. a lengthwise roller).
+  if (o.userData.flowSpinAxis && o.parent) {
+    const rotation = o.rotation.clone();
+    rotation[o.userData.flowSpinAxis as 'x' | 'y' | 'z'] = 0;
+    const p = new THREE.Vector3(x, y, z).applyEuler(rotation).add(o.position);
+    return pointIn(k.visual, o.parent, p.x, p.y, p.z);
+  }
   return pointIn(k.visual, o, x, y, z);
 }
 

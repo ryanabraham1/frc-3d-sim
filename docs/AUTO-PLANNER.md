@@ -3,8 +3,10 @@
 On Single player → Match, use **Plan your auto** below the starting-position map. Actions are saved on this device for each season. Editing or choosing **Run this plan** turns off manual AUTO and selects **My planned auto**. Existing preset routines remain available.
 
 - **2025:** Select a reef branch and L1–L4, a coral station, then another branch. Click the map targets or use the Target selector and Add target button. The controller targets the chosen branch exactly; occupied, algae-blocked, unreachable, or unsupported levels are skipped.
-- **2024:** Select wing or center notes in order, and choose Shoot here before clicking a shooting spot. Pickup follows the actual selected note; if another robot takes it, that action is skipped.
-- **2026:** Click Drive here waypoints or drag to draw a route. Add Intake here and Shoot here stops. Crossing the hub row uses the existing bump/trench routing, respecting robot height. Drawn paths stay on your half during AUTO.
+- **2024:** Select wing or center notes in order, and use **Place shooting spot** before clicking where the robot stops to shoot. **Shoot at path end** uses the last location directly. Pickup follows the actual selected note; if another robot takes it, that action is skipped.
+- **2026:** Drag to draw a route. Each drag creates one **Drive path** action. Intake runs automatically whenever there is room. Use **Place shooting spot** to click a gold shooting stop, or **Shoot at path end** to shoot at the last location. Crossing the hub row uses the existing bump/trench routing, respecting robot height. Drawn paths stay on your half during AUTO.
+
+Change **Start direction** to rotate the starting robot. Click a path/stop on the map or in the action list, then select **Choose angle** under **Robot direction** to set its heading. Automatic direction points the intake along travel or faces the goal at a shooting stop; reef/station/note targets choose their own docking heading. Old sampled drawings collapse into one path while preserving their corners.
 
 Use the numbered list to reorder/remove actions, Undo last, or Clear. Stop time limits a stop after arrival; intake and shooting finish early when the robot has collected or emptied its pieces. Travel has a timeout so a blocked action cannot stall the whole routine. Only actions reached before AUTO ends execute. Test the sequence in Solo practice: lines are a waypoint preview, not a collision-free trajectory or a guarantee of scoring.
 

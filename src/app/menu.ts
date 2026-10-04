@@ -569,7 +569,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     };
     all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
     all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
-    if (page === 'play') bindAutoPlanner(el, season, s, () => { save(s); render(); });
+    if (page === 'play') bindAutoPlanner(el, season, s, () => { save(s); render(); }, { setStartYaw: yaw => { const fp = footprint(s.robot); s.startSpot = rotateSpot(season, { alliance: s.alliance, spot: curSpot(), length: fp.length, width: fp.width, blockers: [] }, yaw); save(s); render(); } });
     const routineSel = el.querySelector<HTMLSelectElement>('[data-routine-sel]');
     if (routineSel) routineSel.onchange = () => ((s.autoRoutine = routineSel.value), (s.manualAuto = false), render());
     all('[data-preset]').forEach((b) => (b.onclick = () => {

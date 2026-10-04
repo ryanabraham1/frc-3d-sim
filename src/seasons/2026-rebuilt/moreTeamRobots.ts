@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, fourBarIntake, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
+import { launcherExitOffsets } from '@engine/robot/config';
 import { motor } from '@engine/robot/mechanicalDetail';
 import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
@@ -143,7 +144,7 @@ registerRobotModel('roman-6329', (k: ModelKit) => {
   const turretRing = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.018, 8, 32), purple);
   turretRing.rotation.x = Math.PI / 2; turretRing.position.y = -0.015; t.add(turretRing);
   // Four-bar intake: two long silver arms and a black roller bank with yellow / purple rings, folded up over the top.
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: steel, stow: Math.PI * 0.92, rollerMaterial: black });
+  const intake = fourBarIntake(k, { reach: c.intake.reach, frame: steel, stow: Math.PI * 0.92, rollerMaterial: black });
   const slide = slidingHopper(k);
   wheelShaft(intake.tip, 0, 0, { n: 10, r: 0.035, w: 0.02, span: c.intake.width * 0.9, colors: [0x7b4bd6] });
   box(intake.tip, 0.016, 0.075, c.intake.width * 0.65, black, -side * 0.04, 0.065, 0);
@@ -261,8 +262,8 @@ registerRobotModel('croquembouche-5940', (k: ModelKit) => {
     flow: {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,
-      feed: () => {
-        const t = turrets[Math.random() < 0.5 ? 0 : 1];
+      feed: (shot = 0) => {
+        const t = turrets[shot % turrets.length];
         const z = t.g.position.z;
         return [new THREE.Vector3(-L * 0.3, bt + 0.04 + FUEL_R, z), new THREE.Vector3(tx - 0.12, bt + 0.05 + FUEL_R, z), flowAt(k, t.sh.flywheel, -0.09, -0.02, 0), flowAt(k, t.sh.flywheel, 0.02, 0.04, 0)];
       },
@@ -300,12 +301,12 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
   for (const sz of [-1, 0, 1]) plate(k.visual, [[sx - 0.08, bt], [sx + 0.08, bt], [sx + 0.08, H - 0.12], [sx + 0.02, H - 0.04], [sx - 0.08, H - 0.04]], 0.008, black, sz * W * 0.46);
   box(k.visual, 0.2, 0.012, W * 0.9, black, sx - 0.02, bt + 0.07, 0);
   const stealth = mat(0x2756c9, { rough: 0.55 });
-  wheels.push(roller(k.visual, 0.051, W * 0.9, stealth, sx + 0.02, H - 0.1), roller(k.visual, 0.04, W * 0.9, stealth, sx - 0.07, H - 0.07));
+  wheels.push(roller(k.visual, 0.04, W * 0.9, stealth, sx - 0.07, H - 0.07));
   const hood = pivot(k.visual, sx + 0.05, H - 0.07);
   hoodShell(hood, 0.07, W * 0.9, blue);
   // Split blue drum banks, joined by the exposed common shaft.
   for(const sign of [-1,1]) {
-    const bank=roller(k.visual,.06,W*.32,blue,sx+.02,H-.1,sign*W*.23);wheels.push(bank);
+    const bank=roller(k.visual,.051,W*.32,blue,sx+.02,H-.1,sign*W*.23);wheels.push(bank);
     motor(k.visual,sx-.04,H-.16,sign*W*.47,0x2756c9);
   }
   // Racked intake that slides out the intake end (independent drives each side).
@@ -317,7 +318,10 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
   }
   const rollers = [roller(slide, 0.03, W * 0.84, mat(0x38923f, { rough: 0.55 }), side * (L / 2 + 0.06), bt + 0.0), roller(slide, 0.025, W * 0.84, mat(0x38923f, { rough: 0.55 }), side * (L / 2 + 0.01), bt + 0.05)];
   const hop = slidingHopper(k);
-  let out = 0, hoodAng = 0;
+  let out = 0;
+  hood.name = 'static-shooter-hood';
+  // Published static hood: range is controlled by drum speed, not an animated hood actuator.
+  hood.rotation.z = .15 + hoodFor(c.launcher.angle) * .8;
   const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.88, height: sh0.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -325,7 +329,7 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
     flow: {
       intake: () => { const z = jitter(W * 0.6); return [flowAt(k, rollers[0], -side * 0.02, 0.03, z), flowAt(k, rollers[1], -side * 0.03, 0.04, z), new THREE.Vector3(side * (L / 2 - 0.12), bt + 0.05 + FUEL_R, z * 0.8)]; },
       stow: pile.stow,
-      feed: () => { const z = jitter(W * 0.8); return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx - 0.03, H - 0.14, z), new THREE.Vector3(sx + 0.03, H - 0.07, z)]; },
+      feed: () => { const z = jitter(W * 0.8); return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx - 0.03, H - 0.14, z), new THREE.Vector3(sx + 0.055, H - .1 + .051 + FUEL_R, z)]; },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
@@ -337,8 +341,6 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
       for (const r of rollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 24 : 0), s.dt);
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const w of wheels) spin(w, -fs, s.dt);
-      hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
-      hood.rotation.z = hoodAng;
     },
   };
 });
@@ -426,14 +428,16 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
   blanketGeo.computeVertexNormals();
   const blanket = new THREE.Mesh(blanketGeo, fabric); blanket.position.set(hx, top + 0.008, 0); k.visual.add(blanket);
   const tx = -side * L * 0.35, sy = c.launcher.height;
-  const feedRolls: THREE.Group[] = [];
+  const feedRolls: THREE.Group[] = [], passive: THREE.Group[] = [];
+  // Team Q&A: the bottom X44 drives a cross-robot belt; side-wall rollers are passive.
+  const bottom = roller(k.visual, .022, W * .82, black, hx, bt + .04);
   for (const sz of [-1, 1]) {
     plate(k.visual, [[tx - 0.11, bt], [tx + 0.11, bt], [tx + 0.11, sy + 0.08], [tx - 0.06, sy + 0.1]], 0.008, silver, sz * W * 0.44, [[tx, bt + 0.1, 0.035], [tx, sy - 0.08, 0.025]]);
     motor(k.visual, tx, sy - 0.06, sz * W * 0.46, 0xb93628);
     // Passive side rollers run lengthwise along the two clear walls.
     for (const y of [bt + 0.15, bt + 0.23]) {
       const r = roller(k.visual, 0.018, hl * 0.82, black, hx, y, sz * W * 0.41);
-      r.rotation.y = Math.PI / 2;
+      r.rotation.y = Math.PI / 2; passive.push(r);
     }
   }
   for (let i = 0; i < 3; i++) feedRolls.push(roller(k.visual, 0.025, W * 0.82, black, tx + side * 0.06, bt + 0.09 + i * (sy - bt - 0.15) / 2));
@@ -445,13 +449,20 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'], lightAt: [tx, sy + 0.1, W * 0.4],
     flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow,
-      feed: () => [new THREE.Vector3(hx, bt + 0.06, 0), new THREE.Vector3(tx + side * 0.06, sy - 0.13, 0), flowAt(k, drum, 0, 0, 0)] },
+      feed: (shot = 0) => {
+        const exits = launcherExitOffsets(c), z = -exits[shot % exits.length];
+        return [new THREE.Vector3(hx, bt + .06 + FUEL_R, z),
+          ...feedRolls.map(r => flowAt(k, r, side * .06, .035 + FUEL_R, z)),
+          flowAt(k, drum, -side * .035, .055 + FUEL_R, z)];
+      } },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill); { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       const speed = s.enabled && (s.intaking || s.firing > 0) ? 32 : 0;
+      spin(bottom, side * speed, s.dt);
+      for (const r of passive) spin(r, side * speed * .3, s.dt);
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);
-      hood.rotation.z = approach(hood.rotation.z, -side * hoodFor(s.hood) * 0.14, 6, s.dt);
+      hood.rotation.z = approach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .14 : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -490,7 +501,12 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'], lightAt: [tx, sy + 0.06, W * 0.4],
     flow: { intake: overBumperIntake(k, intakeRolls[0], FUEL_R), stow: pile.stow,
-      feed: () => [new THREE.Vector3(side * L * 0.2, bt + 0.05, 0), new THREE.Vector3(tx + side * 0.08, sy - 0.12, 0), flowAt(k, drum, 0, 0, 0)] },
+      feed: (shot = 0) => {
+        const exits = launcherExitOffsets(c), z = -exits[shot % exits.length];
+        return [...feeding.map(r => flowAt(k, r, 0, .017 + FUEL_R, z)),
+          new THREE.Vector3(tx + side * .08, sy - .1, z),
+          flowAt(k, drum, -side * .035, .055 + FUEL_R, z)];
+      } },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       deploy = approach(deploy, s.enabled && s.intaking ? 1 : 0, 7, s.dt);
@@ -500,7 +516,7 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       for (const r of [...feeding, ...intakeRolls]) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);
       for (const r of hoodRolls) spin(r, -side * speed, s.dt);
-      hood.rotation.z = approach(hood.rotation.z, -side * hoodFor(s.hood) * 0.6, 6, s.dt);
+      hood.rotation.z = approach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .6 : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -587,11 +603,11 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'croquembouche-5940', team: 5940, name: 'Croquembouche',
       description: '5940 BREAD. Their pre-DCMP DOUBLE TURRET robot: two independent turrets over a floor conveyor, black net roof. Twice the stream but power-hungry (brownouts, so they rebuilt into a drum shooter for DCMP). Both turrets share one simulated aim. Holds only about 30 FUEL (user-reported); rate is an estimate.',
       source: 'Chief Delphi "5940 BREAD 2026 Double Turret CAD Release" (Croquembouche, Q&A on brownouts)',
-      config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 30, tall: false, rate: 16, climb: 0 }, (c) => { c.maxSpeed = 4.3; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 30, tall: false, rate: 16, climb: 0 }, (c) => { c.maxSpeed = 4.3; c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .12, side: sign * c.frameWidth * .25 })); c.launcher.muzzleForward = .08; setRebuiltAccuracy(c, 84); }) },
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
       description: '7769 The CREW (5 blue banners). Wide static-hood shooter on 4 in stealth wheels, black sponsor-plated polycarb hopper, intake on independently driven racks that slides out and shuffles while firing to prevent jams. Under-trench box, so it holds about 45 FUEL [EST; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Shoots from the TRENCH without being pushed under. Rate and speed are estimates.',
       source: 'Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. Compact trench-height box, so about 40 FUEL [EST: the quoted ~80 does not fit; a non-expanding trench-height box holds roughly 40]; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',

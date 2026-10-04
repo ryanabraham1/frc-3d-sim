@@ -203,11 +203,17 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
+    intakeAnchor: held,
     lightAt: [-L * 0.42, bt + 0.03, W * 0.3],
     update(s) {
       const p = place(s);
-      const dx = p.forward - px;
-      const dy = p.height - py;
+      const collecting = s.enabled && s.intaking || !!p.handoff;
+      const pitch = collecting ? 0 : wristFor(p.level);
+      const forward = collecting ? k.fp.length / 2 + c.intake.reach * .6 : p.forward;
+      const height = collecting ? .11 : p.height;
+      // Solve to the piece center, including the wrist-to-piece offset.
+      const dx = forward - px - .1 * Math.cos(pitch);
+      const dy = height - py - .1 * Math.sin(pitch);
       ang = approach(ang, Math.atan2(dy, dx), 10, s.dt);
       len = approach(len, Math.max(seg, Math.hypot(dx, dy)), 10, s.dt);
       arm.rotation.z = ang;
@@ -215,7 +221,7 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
       mid.position.x = travel * 0.5;
       inner.position.x = travel;
       tip.position.x = seg + travel;
-      wrist = approach(wrist, wristFor(p.level) - ang, 8, s.dt);
+      wrist = approach(wrist, pitch - ang, 8, s.dt);
       tip.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       climber.position.x = approach(climber.position.x, s.climb > 0.1 ? seg * 0.3 : seg * 0.8, 5, s.dt);

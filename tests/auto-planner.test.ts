@@ -1,6 +1,6 @@
 import { beforeAll, expect, it, vi } from 'vitest';
 import { SEASONS } from '../src/seasons';
-import { cleanAutoPlan, PlannedAutoPilot, planPoint } from '../src/engine/ai/autoPlan';
+import { cleanAutoPlan, PlannedAutoPilot, planPoint, simplifyPath } from '../src/engine/ai/autoPlan';
 import { targetStep } from '../src/app/autoPlanner';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { loadRapier, type RapierModule } from '../src/engine/physics/world';
@@ -104,5 +104,44 @@ it('2025 takes a real station-fed coral before advancing', () => {
     const pilot = new PlannedAutoPilot(sim.ctx, sim.rules, sim.robot, season, { seasonId: season.id, steps: [{ ...targetStep(season, 'station', 0), duration: 4 }] });
     for (let i = 0; i < 8 / sim.physics.dt; i++) { for (const c of sim.ctx.clock.advance(sim.physics.dt)) sim.rules.onPeriodChange(c); sim.step(pilot.update(sim.physics.dt)); }
     expect(sim.robot.held.length).toBeGreaterThan(0);
+  } finally { sim.dispose(); }
+});
+
+it('collapses old sampled drawings into one path without losing corners or shooting stops', () => {
+  const season = SEASONS.find(s => s.year === 2026)!;
+  const points = [{ x: 2, y: 2 }, { x: 2.5, y: 2 }, { x: 3, y: 2 }, { x: 3, y: 2.5 }, { x: 3, y: 3 }];
+  const plan = cleanAutoPlan({ seasonId: season.id, steps: [...points.map(p => ({ action: 'drive', ...p, duration: 2 })), { action: 'shoot', x: 3, y: 3, duration: 3, yaw: Math.PI / 2 }] }, season)!;
+  expect(plan.steps).toHaveLength(2);
+  expect(plan.steps[0].path).toEqual([{ x: 2, y: 2 }, { x: 3, y: 2 }]);
+  expect(plan.steps[1]).toMatchObject({ action: 'shoot', yaw: Math.PI / 2 });
+  expect(simplifyPath(Array.from({ length: 40 }, (_, i) => ({ x: 2 + i / 40, y: 2 })))).toHaveLength(2);
+  expect(cleanAutoPlan({ seasonId: season.id, steps: [{ action: 'drive', x: 3, y: 3, duration: 2, path: [{ x: NaN, y: 2 }] }] }, season)).toBeUndefined();
+});
+it('driving runs the intake automatically and follows a grouped path with a chosen final heading', () => {
+  const season = SEASONS.find(s => s.year === 2026)!;
+  const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
+  try {
+    sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
+    const goal = { x: 2.6, y: 2.6 };
+    const pilot = new PlannedAutoPilot(sim.ctx, sim.rules, sim.robot, season, { seasonId: season.id, steps: [{ action: 'drive', ...goal, path: [{ x: 2.6, y: 2 }], yaw: Math.PI / 2, duration: 2 }] });
+    expect(pilot.update(sim.physics.dt).intake).toBe(true);
+    for (let i = 0; i < 6 / sim.physics.dt; i++) sim.step(pilot.update(sim.physics.dt));
+    expect(Math.hypot(sim.robot.pose.x - goal.x, sim.robot.pose.y - goal.y)).toBeLessThan(.2);
+    expect(Math.abs(Math.atan2(Math.sin(sim.robot.pose.yaw - Math.PI / 2), Math.cos(sim.robot.pose.yaw - Math.PI / 2)))).toBeLessThan(.1);
+    expect(pilot.update(.1).vx).toBe(0);
+  } finally { sim.dispose(); }
+});
+
+it('zero-second intake actions keep moving to the next location with intake running', () => {
+  const season = SEASONS.find(s => s.year === 2026)!;
+  const sim = new HeadlessSim(season, R, { robot: { ...season.robotDefaults, preload: 0 }, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
+  try {
+    sim.rules.stage();
+    const plan = cleanAutoPlan({ seasonId: season.id, steps: [{ action: 'intake', x: 2.1, y: 2, duration: 0 }, { action: 'drive', x: 3, y: 2, path: [], duration: 0 }] }, season)!;
+    expect(plan).toBeDefined();
+    const pilot = new PlannedAutoPilot(sim.ctx, sim.rules, sim.robot, season, plan);
+    const command = pilot.update(sim.physics.dt);
+    expect(command.intake).toBe(true);
+    expect(command.vx).toBeGreaterThan(0.5);
   } finally { sim.dispose(); }
 });

@@ -5,6 +5,8 @@ import { PhysicsWorld, loadRapier } from '../src/engine/physics/world';
 import { Robot, IDLE_COMMAND } from '../src/engine/robot/robot';
 import { cloneConfig } from '../src/engine/robot/config';
 import { FieldFrame } from '../src/engine/coords';
+import { handoffPoint } from '../src/engine/robot/handoff';
+import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -21,6 +23,7 @@ pmrem.dispose();
 const seasonSelect = document.querySelector<HTMLSelectElement>('#season')!;
 for (const s of SEASONS) seasonSelect.add(new Option(`${s.year} ${s.name}`, s.id));
 const pose = document.querySelector<HTMLSelectElement>('#pose')!;
+const hood = document.querySelector<HTMLSelectElement>('#hood')!;
 let reverse = false;
 let red = false;
 let focus = -1;
@@ -31,7 +34,7 @@ addEventListener('pointerup', () => { dragging = false; });
 addEventListener('pointermove', e => { if (!dragging) return; orbit -= e.movementX * 0.01; tiltView = THREE.MathUtils.clamp(tiltView + e.movementY * 0.01, 0.05, 1.45); });
 (window as unknown as { view(o: number, t: number, z: number): void }).view = (o, t, z) => { orbit = o; tiltView = t; zoom = z; };
 addEventListener('wheel', e => { if (focus < 0) return; zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.25, 2); }, { passive: true });
-let items: { scene: THREE.Scene; robot: Robot; physics: PhysicsWorld; el: HTMLElement; camera: THREE.PerspectiveCamera; t: number; next: number }[] = [];
+let items: { scene: THREE.Scene; robot: Robot; physics: PhysicsWorld; el: HTMLElement; camera: THREE.PerspectiveCamera; t: number; next: number; coral?: THREE.Mesh }[] = [];
 /** One game piece as it rests on the carpet (the token the robot's piece flow animates). */
 function pieceToken(s: typeof SEASONS[number]): (() => THREE.Object3D) | null {
   const gp = s.gamePiece;
@@ -71,7 +74,9 @@ function build() {
     const token = pieceToken(s);
     if (token && s.pieceFlow !== false) robot.enablePieceFlow(token, s.gamePiece.shape !== 'ring');
     const camera = new THREE.PerspectiveCamera(35,1,0.01,40);
-    items.push({scene,robot,physics,el,camera,t:0,next:0});
+    const coral = s.gamePiece.shape === 'tube' ? new THREE.Mesh(coralGeometry(),new THREE.MeshStandardMaterial({ color:s.gamePiece.color,roughness:.6 })) : undefined;
+    if (coral) { coral.visible=false; robot.visual.add(coral); }
+    items.push({scene,robot,physics,el,camera,t:0,next:0,coral});
   }
 }
 seasonSelect.onchange = build;
@@ -86,10 +91,19 @@ function frame(now: number) {
     const rect=i.el.getBoundingClientRect(); if(rect.bottom<0||rect.top>innerHeight||!rect.width) continue;
     const r=i.robot; r.enabled=pose.value !== 'idle';
     r.climbPhase=pose.value==='climb'?'align':'none';
-    r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score'};
+    r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
+    r.lastShotAngle = Number(hood.value);
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
     r.placeAnim = {height:pose.value==='score'?1.75:0.45,forward:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:pose.value==='score'&&r.config.placement?.scoreSide==='sides'?1:0};
-    if (pose.value === 'flow') {
+    if (pose.value === 'flow' && i.coral) {
+      // CORAL: collect → conveyor handoff → extend to L4 → retract, using the match's model path.
+      i.t = (i.t + dt) % 6;
+      const collecting = i.t < .8, transfer = i.t >= .8 && i.t < 2.5, scoring = i.t >= 2.5 && i.t < 5;
+      r.held.length = i.t >= .8 && i.t < 5 ? 1 : 0;
+      r.lastCommand = { ...IDLE_COMMAND, intake:collecting, shoot:scoring };
+      r.placeAnim = { height:scoring ? 1.75 : .45, forward:scoring ? .7 : .3, level:4,
+        side:scoring && r.config.placement?.scoreSide==='sides' ? 1 : 0, handoff:transfer ? (i.t-.8)/1.7 : 0 };
+    } else if (pose.value === 'flow') {
       // Loop: intake from the carpet for 2.4 s (or until full), then fire everything at the launcher's rate.
       const c = r.config, cap = Math.max(1, c.hopperCapacity), cycle = 2.4 + Math.min(2.5, cap / Math.max(1, c.launcher.rate)) + 0.6;
       i.t = (i.t + dt) % cycle;
@@ -106,10 +120,29 @@ function frame(now: number) {
         i.next = i.t + 1 / Math.max(1, c.launcher.rate);
         r.held.pop();
       }
-    } else r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):0;
+    } else r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
     r.syncVisual(dt);
+    if (i.coral) {
+      const anchor = r.modelHeldAnchor, p = r.placeAnim!;
+      i.coral.visible = !!anchor && (r.held.length > 0 || pose.value==='score');
+      if (anchor) {
+        r.visual.updateMatrixWorld(true);
+        const end = r.visual.worldToLocal(anchor.getWorldPosition(new THREE.Vector3()));
+        i.coral.position.copy(end);
+        const dir = p.level === 4 ? new THREE.Vector3(0,-1,0) : p.level === 1 ? new THREE.Vector3(0,0,1) : new THREE.Vector3(Math.cos(.6),-Math.sin(.6),0);
+        const scoreQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+        scoreQ.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),(p.side ?? 0)*Math.PI/2));
+        i.coral.quaternion.copy(scoreQ);
+        if (p.handoff) {
+          const path = r.modelHandoffPath ?? (r.modelIntakeAnchor ? [r.visual.worldToLocal(r.modelIntakeAnchor.getWorldPosition(new THREE.Vector3()))] : []);
+          handoffPoint(path,end,p.handoff,i.coral.position);
+          const across = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));
+          i.coral.quaternion.copy(across).slerp(scoreQ,Math.max(0,(p.handoff-.5)*2));
+        }
+      }
+    }
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
-    const scale=Math.max(1.15,r.config.height+0.3,pose.value==='score' && r.config.placement?.enabled ? 2.2 : 0);
+    const scale=Math.max(1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
     if (focus >= 0) {
       const d=scale*3.0*zoom, a=Math.atan2(2,1.8)+orbit+(reverse?Math.PI:0);
       i.camera.position.set(Math.cos(a)*Math.cos(tiltView)*d,Math.sin(tiltView)*d+scale*0.3,Math.sin(a)*Math.cos(tiltView)*d);

@@ -96,6 +96,7 @@ export function turretShooter(turret: THREE.Object3D, o: {
   }
   // Flywheel stack: copper wheels with dark spacers on a steel hex shaft.
   const fly = new THREE.Group();
+  fly.userData.flowSpinAxis = 'z';
   fly.position.set(fx, fy, 0);
   g.add(fly);
   const copper = o.wheel ?? mat(0xc07a45, { metal: 0.75, rough: 0.35 });

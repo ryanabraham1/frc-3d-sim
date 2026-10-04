@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, wheelShaft, wire, type ModelKit, type PlaceAnim, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, wheelShaft, wire, type ModelKit, type PlaceAnim, type RobotAnimState } from '@engine/robot/models';
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { inch } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
@@ -128,6 +128,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     intakeAnchor: intake.tip,
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, .09), new THREE.Vector3(0, bt + .09, .09)] },
     lightAt: [0, top + 0.02, 0],
     update(s) {
       const p = place(s);

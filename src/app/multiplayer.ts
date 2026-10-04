@@ -324,6 +324,6 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   if (lobby.lobby?.placing) {
     bindPlacement(el, lobby, ctx);
     const me = lobby.me;
-    if (me?.slot) bindAutoPlanner(el, ctx.season, ctx.s, ctx.rerender, { alliance: slotAlliance(me.slot), disabled: !!me.ready, changed: () => lobby.syncMine(true) });
+    if (me?.slot) bindAutoPlanner(el, ctx.season, ctx.s, ctx.rerender, { alliance: slotAlliance(me.slot), startSpot: me.spot, station: slotStation(me.slot), disabled: !!me.ready, changed: () => lobby.syncMine(true), setStartYaw: yaw => { const m = mineState(lobby, ctx); if (m) lobby.place(rotateSpot(ctx.season, m, yaw), false); } });
   }
 }
