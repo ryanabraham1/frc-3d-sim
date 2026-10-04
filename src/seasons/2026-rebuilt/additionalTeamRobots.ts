@@ -82,7 +82,10 @@ for (const [id, color, style] of [
         // Automatic simulator contract sequence: count controls the same raised envelope as collision/routing.
         const e = c.hopperExpansion!;
         const load = Math.max(0,Math.min(1,(s.fill*c.hopperCapacity-e.startCount)/(c.hopperCapacity-e.startCount)));
-        roofLift = (e.fullHeight-H)*load;
+        // The telescoping rails creep up (and settle back) instead of jumping a step per FUEL.
+        const lift = (e.fullHeight-H)*load;
+        roofLift = s.dt > 0 ? approach(roofLift,lift,6,s.dt) : lift;
+        if (Math.abs(roofLift-lift) < 1e-4) roofLift = lift;
         roof.position.y = roofLift;
         const p = net!.geometry.getAttribute('position') as THREE.BufferAttribute;
         let n = 0;

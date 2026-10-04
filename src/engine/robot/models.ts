@@ -236,29 +236,82 @@ export function hopperWalls(parent: THREE.Object3D, o: { x: number; y0: number; 
   return g;
 }
 
+/** Small deterministic PRNG (mulberry32) so a robot's random-looking details are the same every frame and session. */
+export function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /**
  * Round FUEL inside the hopper, filled from the floor up with `set(fill)` (0–1).
- * Instancing preserves the recognizable game-piece shape without one draw call per ball.
+ * Instancing preserves the recognizable game-piece shape without one draw call per ball. The balls are loosely
+ * packed (offset layers, jitter, slightly squashed foam), fill in an uneven pile rather than row by row, and new ones
+ * drop in and settle instead of popping into place.
  */
 export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number }): { set(f: number): void } {
-  // A single instanced draw call gives FUEL a readable round silhouette instead of a solid yellow cube.
   const r = Math.min(0.06, o.length / 6, o.width / 6);
   const nx = Math.max(1, Math.floor(o.length / (r * 2)));
   const nz = Math.max(1, Math.floor(o.width / (r * 2)));
   const ny = Math.max(1, Math.floor(o.height / (r * 1.75)));
-  const count = nx * nz * ny;
+  const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
+  const halfX = o.length / 2 - r, halfZ = o.width / 2 - r;
+  // Rest positions: alternate layers shift half a ball (loose close packing), every ball jittered a little.
+  const slots: { x: number; y: number; z: number; s: number; key: number }[] = [];
+  for (let y = 0; y < ny; y++) {
+    const shift = y % 2 ? r * 0.5 : 0;
+    for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
+      const px = THREE.MathUtils.clamp((x - (nx - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.5, -halfX, halfX);
+      const pz = THREE.MathUtils.clamp((z - (nz - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.5, -halfZ, halfZ);
+      const py = r + y * r * 1.75 + (rand() - 0.5) * r * 0.3;
+      // Fill order: by height with noise, so the top of the load is a lumpy pile, not a sweeping row.
+      slots.push({ x: o.x + px, y: o.y0 + py, z: pz, s: 0.93 + rand() * 0.08, key: py + rand() * r * 3.5 });
+    }
+  }
+  slots.sort((a, b) => a.key - b.key);
+  const count = slots.length;
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 10, 7), mat(o.color, { rough: 0.8, metal: 0 }), count);
   const transform = new THREE.Object3D();
-  let i = 0;
-  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
-    transform.position.set(o.x + (x - (nx - 1) / 2) * r * 2, o.y0 + r + y * r * 1.75, (z - (nz - 1) / 2) * r * 2);
+  const place = (i: number, drop: number) => {
+    const b = slots[i];
+    transform.position.set(b.x, b.y + drop, b.z);
+    // Foam FUEL squashes a little under the load above it.
+    transform.scale.set(b.s, b.s * 0.94, b.s);
     transform.updateMatrix();
-    mesh.setMatrixAt(i++, transform.matrix);
-  }
+    mesh.setMatrixAt(i, transform.matrix);
+  };
+  for (let i = 0; i < count; i++) place(i, 0);
   mesh.computeBoundingSphere();
   mesh.count = 0;
   parent.add(mesh);
-  return { set(f) { mesh.count = Math.min(count, Math.round(Math.max(0, f) * count)); mesh.visible = mesh.count > 0; } };
+  // Balls added since the last frame fall from above the pile and settle (seconds since each started falling).
+  const falling = new Map<number, number>();
+  const FALL = 0.22, DROP = r * 3;
+  let last = -1;
+  return {
+    set(f) {
+      const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
+      const dt = last < 0 ? 0 : Math.min(0.1, now - last);
+      last = now;
+      const want = Math.min(count, Math.round(Math.max(0, f) * count));
+      for (let i = mesh.count; i < want; i++) if (last >= 0 && dt > 0) falling.set(i, 0);
+      for (const i of falling.keys()) if (i >= want) { falling.delete(i); place(i, 0); }
+      mesh.count = want;
+      mesh.visible = want > 0;
+      if (!falling.size) return;
+      for (const [i, t] of falling) {
+        const k = Math.min(1, (t + dt) / FALL);
+        place(i, DROP * (1 - k) * (1 - k)); // accelerates down like it's dropping
+        if (k >= 1) falling.delete(i); else falling.set(i, t + dt);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    },
+  };
 }
 
 /**

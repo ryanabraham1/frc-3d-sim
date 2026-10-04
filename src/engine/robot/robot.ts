@@ -9,7 +9,7 @@ import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, footprint, groundSid
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
-import { robotModelBuilder, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
+import { robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
 export interface RobotCommand {
@@ -120,6 +120,10 @@ export class Robot {
   private expansionHeight = -1;
   private hopperNet?: THREE.LineSegments;
   private netFuel: THREE.Mesh[] = [];
+  /** Net bulge actually drawn (m above `height`) and its rate: a soft spring chasing the load-based envelope. */
+  private netShown = 0;
+  private netVel = 0;
+  private lastSync = -1;
   /** Actual envelope used for obstacle routing and flexible-roof collisions. */
   get clearanceHeight(): number { return loadedRobotHeight(this.config, this.held.length); }
   /** Lowest overhead obstacle above the robot this tick (set by the sim from the season; Infinity = none). */
@@ -313,30 +317,75 @@ export class Robot {
     this.hopperNet.name = 'stretching-hopper-net';
     this.hopperNet.userData.grid = positions;
     this.visual.add(this.hopperNet);
-    const fuelGeometry = new THREE.SphereGeometry(0.07, 10, 7);
+    const fuelGeometry = new THREE.SphereGeometry(Robot.NET_FUEL_R, 10, 7);
     const fuelMaterial = new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.85 });
-    for (let x = -1; x <= 1; x++) for (let z = -2; z <= 2; z++) {
+    // FUEL heaped under the net at loose random spots (seeded by team, so each robot looks the same every match). Each
+    // one shows once the net has lifted enough to uncover it, so they appear one by one as the bulge grows.
+    const rand = seededRandom(this.config.teamNumber * 7919 + 13);
+    const spots: { x: number; z: number }[] = [];
+    for (let tries = 0; spots.length < 22 && tries < 600; tries++) {
+      const x = (rand() * 2 - 1) * 0.82, z = (rand() * 2 - 1) * 0.85;
+      if (spots.every((p) => Math.hypot((p.x - x) * this.config.frameLength * 0.38, (p.z - z) * this.config.frameWidth * 0.46) > Robot.NET_FUEL_R * 1.75)) spots.push({ x, z });
+    }
+    for (const { x, z } of spots) {
       const ball = new THREE.Mesh(fuelGeometry, fuelMaterial);
-      ball.userData.netX = x * 0.6; ball.userData.netZ = z * 0.42;
+      ball.userData.netX = x; ball.userData.netZ = z;
+      ball.userData.show = 0.02 + rand() * 0.035;
+      const sq = 0.92 + rand() * 0.1;
+      ball.scale.set(sq, sq * 0.93, sq);
       this.visual.add(ball); this.netFuel.push(ball);
     }
   }
 
-  private updateHopperNet(): void {
+  private static readonly NET_FUEL_R = 0.07;
+
+  /**
+   * Ease the drawn bulge toward the load-based envelope: an under-damped spring (ω ≈ 7 rad/s, ζ ≈ 0.7), so the net
+   * creeps up as FUEL comes in, settles with a little give, and sags back as the hopper empties. Visual only:
+   * collisions and routing use `clearanceHeight`.
+   */
+  private stepNetBulge(dt: number): void {
+    const target = this.clearanceHeight - this.config.height;
+    if (dt <= 0) {
+      if (this.lastSync < 0) this.netShown = target;
+      return;
+    }
+    const w = 7, zeta = 0.7;
+    for (let left = dt; left > 1e-6; left -= 0.02) {
+      const h = Math.min(0.02, left);
+      this.netVel += (-(2 * zeta * w) * this.netVel - w * w * (this.netShown - target)) * h;
+      this.netShown = Math.max(0, this.netShown + this.netVel * h);
+    }
+    if (Math.abs(this.netShown - target) < 1e-4 && Math.abs(this.netVel) < 1e-3) { this.netShown = target; this.netVel = 0; }
+  }
+
+  private updateHopperNet(dt: number): void {
     const net = this.hopperNet;
     if (!net) return;
-    const c = this.config, extra = this.clearanceHeight - c.height;
+    this.stepNetBulge(dt);
+    const c = this.config, extra = this.netShown;
+    const cx = -c.frameLength * 0.1, sx = c.frameLength * 0.38, sz = c.frameWidth * 0.46;
+    // Uncovered FUEL rides up under the net; its tops are where the strands drape.
+    const tops: { x: number; z: number; y: number }[] = [];
+    for (const ball of this.netFuel) {
+      const x = ball.userData.netX as number, z = ball.userData.netZ as number;
+      const rise = extra * (1 - x * x) * (1 - z * z);
+      ball.visible = rise > (ball.userData.show as number);
+      ball.position.set(cx + x * sx, c.height + rise - Robot.NET_FUEL_R * 0.98, z * sz);
+      if (ball.visible) tops.push({ x: ball.position.x, z: ball.position.z, y: c.height + rise });
+    }
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const x = grid[i * 3], z = grid[i * 3 + 2];
       const bow = Math.max(0, (1 - x * x) * (1 - z * z));
-      p.setXYZ(i, -c.frameLength * 0.1 + x * c.frameLength * 0.38, c.height + extra * bow - 0.018 * bow, z * c.frameWidth * 0.46);
-    }
-    for (const ball of this.netFuel) {
-      const x = ball.userData.netX as number, z = ball.userData.netZ as number;
-      const rise = extra * (1 - x * x) * (1 - z * z);
-      ball.visible = rise > 0.035;
-      ball.position.set(-c.frameLength * 0.1 + x * c.frameLength * 0.38, c.height + rise - 0.08, z * c.frameWidth * 0.46);
+      const px = cx + x * sx, pz = z * sz;
+      // A slack net sags between balls and drapes over each one (a little cap of the ball's curve).
+      let y = c.height + extra * bow * 0.86 - 0.018 * bow;
+      for (const t of tops) {
+        const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2;
+        if (d2 < 0.02) y = Math.max(y, t.y - d2 * 7);
+      }
+      p.setXYZ(i, px, y, pz);
     }
     p.needsUpdate = true; net.geometry.computeBoundingSphere();
   }
@@ -1491,8 +1540,11 @@ export class Robot {
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
   syncVisual(frameDt?: number): void {
+    const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
+    const dt = frameDt ?? (this.lastSync < 0 ? 0 : clamp(now - this.lastSync, 0, 0.1));
     this.updateHopperEnvelope();
-    this.updateHopperNet();
+    this.updateHopperNet(dt);
+    this.lastSync = now;
     const t = this.body.translation();
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);

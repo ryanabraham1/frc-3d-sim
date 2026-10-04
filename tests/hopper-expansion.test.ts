@@ -25,9 +25,17 @@ for (const team of [254,4414,1678]) it(`${team}: expanded net physically blocks 
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: start }); sims.push(sim);
   const r = sim.robot, threshold = c.hopperExpansion!.startCount;
   expect(loadedRobotHeight(c, threshold)).toBeLessThan(C.TRENCH_CLEARANCE);
-  sim.load(c.hopperCapacity); r.syncVisual(0.05);
+  r.syncVisual(0.05);
+  sim.load(c.hopperCapacity);
   const net = r.visual.getObjectByName(team === 1678 ? 'telescoping-hopper-net' : 'stretching-hopper-net') as THREE.LineSegments;
   expect(net).toBeDefined();
+  const netTop = () => { const q = net.geometry.getAttribute('position'); let m = 0; for (let i = 0; i < q.count; i++) m = Math.max(m, q.getY(i)); return m; };
+  // The bulge creeps up over several frames instead of jumping to the full envelope.
+  const steps: number[] = [];
+  for (let k = 0; k < 4; k++) { r.syncVisual(0.05); steps.push(netTop()); }
+  expect(steps[0]).toBeLessThan(steps[3]);
+  for (let k = 0; k < 60; k++) r.syncVisual(0.05); // settle
+  expect(steps[0]).toBeLessThan(netTop() - 0.02);
   if(team === 1678) {
     expect(r.visual.getObjectByName('stretching-hopper-net')).toBeUndefined();
     const roof = r.visual.getObjectByName('telescoping-hopper-roof')!;
@@ -42,7 +50,7 @@ for (const team of [254,4414,1678]) it(`${team}: expanded net physically blocks 
   expect(r.pose.x).toBeLessThan(C.HUB_CENTER.x + C.TRENCH_DEPTH / 2);
   // Emptying lowers the collision envelope and allows the same robot through.
   for (const i of r.held) sim.pool.reserve(i); r.held.length = 0;
-  r.syncVisual(0.05);
+  for (let k = 0; k < 60; k++) r.syncVisual(0.05);
   expect(r.clearanceHeight).toBe(c.height);
   if(team === 1678) expect(r.visual.getObjectByName('telescoping-hopper-roof')!.position.y).toBe(0);
   expect(r.body.mass()).toBeCloseTo(mass, 3);
