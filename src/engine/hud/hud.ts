@@ -7,8 +7,6 @@ export interface ModalButton {
   onClick: () => void;
 }
 
-const INTRO_KEY = 'frc-sim:seen-controls';
-
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 /** Generic in-game DOM overlay. Seasons render into the provided slots. */
@@ -108,22 +106,10 @@ export class Hud {
   }
 
   /**
-   * Match-start onboarding: the full controls panel the first time a player ever starts a match, afterwards a small
-   * hint that fades out.
+   * Match-start hint: a small chip with the key controls that fades out. The full controls panel never opens on its
+   * own (it would cover the field while the match starts); players open it with `?`.
    */
   showIntro(seconds: number): () => void {
-    let first = false;
-    try {
-      first = !localStorage.getItem(INTRO_KEY);
-      localStorage.setItem(INTRO_KEY, '1');
-    } catch {
-      // Storage blocked: treat as a returning player.
-    }
-    if (first) {
-      this.toggleHelp(true);
-      const t = setTimeout(() => this.toggleHelp(false), seconds * 1000 * 1.5);
-      return () => clearTimeout(t);
-    }
     this.hint.innerHTML = `<kbd>?</kbd> controls &nbsp;·&nbsp; <kbd>V</kbd> camera &nbsp;·&nbsp; <kbd>P</kbd> pause`;
     this.hint.classList.remove('hidden', 'fade');
     const fade = setTimeout(() => this.hint.classList.add('fade'), seconds * 1000);
