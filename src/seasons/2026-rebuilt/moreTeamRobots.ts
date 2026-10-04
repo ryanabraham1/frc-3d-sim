@@ -157,7 +157,7 @@ registerRobotModel('roman-6329', (k: ModelKit) => {
     flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: columnFeed(k, cx, sh.flywheel, R * 0.8, FUEL_R) },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       spinRate = approach(spinRate, !s.enabled ? 0 : s.firing > 0 ? 7 : -1, 6, s.dt);
       spin(drum.floor, spinRate, s.dt, 'y');
       for (const r of floorRollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 18 : 0), s.dt);
@@ -215,7 +215,7 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       spinRate = approach(spinRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
       spin(drum.floor, spinRate, s.dt, 'y');
       sh.update(s);
@@ -269,7 +269,7 @@ registerRobotModel('croquembouche-5940', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       for (const t of turrets) { t.g.rotation.y = k.turret.rotation.y; t.sh.update(s); }
       for (const r of conv) spin(r, s.enabled && (s.intaking || s.firing > 0) ? 16 : 0, s.dt);
     },
@@ -333,7 +333,7 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
       const shuffle = s.firing > 0 ? 0.35 + 0.15 * Math.sin(s.time * 9) : 1;
       out = approach(out, !s.enabled ? 0 : shuffle, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
-      hop.set(out);
+      hop.set(out, s.fill);
       for (const r of rollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 24 : 0), s.dt);
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const w of wheels) spin(w, -fs, s.dt);
@@ -391,7 +391,7 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const r of rolls) spin(r, -fs, s.dt);
       hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
@@ -447,7 +447,7 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
     flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow,
       feed: () => [new THREE.Vector3(hx, bt + 0.06, 0), new THREE.Vector3(tx + side * 0.06, sy - 0.13, 0), flowAt(k, drum, 0, 0, 0)] },
     update(s) {
-      db.update(s); fill.set(s.fill); pile.setFill(s.fill); { const dv = latch(d, s); intake.update(s, dv); slide.set(dv); }
+      db.update(s); fill.set(s.fill); pile.setFill(s.fill); { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       const speed = s.enabled && (s.intaking || s.firing > 0) ? 32 : 0;
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);
@@ -495,7 +495,7 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       deploy = approach(deploy, s.enabled && s.intaking ? 1 : 0, 7, s.dt);
       intake.position.x = side * (L * 0.4 + deploy * c.intake.reach);
-      hop.set(deploy);
+      hop.set(deploy, s.fill);
       const speed = s.enabled && (s.intaking || s.firing > 0) ? 30 : 0;
       for (const r of [...feeding, ...intakeRolls]) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);

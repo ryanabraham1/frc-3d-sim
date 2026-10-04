@@ -149,7 +149,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
@@ -246,7 +246,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       // Out to collect; pulled back in while shooting so it squeezes FUEL toward the shooter.
       out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.3 : 1, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
-      hop.set(out);
+      hop.set(out, s.fill);
       beltSpin = s.enabled && (s.intaking || s.firing > 0) ? 24 : 0;
       for (const r of rollers) spin(r, -side * beltSpin, s.dt);
       fill.set(s.fill);
@@ -322,7 +322,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       sh.update(s);
       spin(gear, flywheelSpeed(s) * 0.6, s.dt, 'y');
@@ -392,7 +392,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       rate = approach(rate, !s.enabled ? 0 : s.firing > 0 ? 8 : 1.5, 5, s.dt);
       spin(spindex, rate, s.dt, 'y');
@@ -499,7 +499,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
     update(s) {
       db.update(s);
       load = s.fill;
-      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv); }
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 10 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');
@@ -588,7 +588,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
       db.update(s);
       pile.setFill(s.fill);
       out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 5, s.dt);
-      { const dv = out; intake.update(s, dv); slide.set(dv); }
+      { const dv = out; intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       const fs = flywheelSpeed(s);
       spin(wheels[0], -fs, s.dt);
