@@ -3,6 +3,7 @@ import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
+import { Referee } from '@engine/match/referee';
 import type { AimTarget, Robot } from '@engine/robot/robot';
 import * as C from './constants';
 import { dir, RebuiltFieldRefs, side, towerSlots } from './field';
@@ -51,6 +52,8 @@ export class RebuiltRules implements SeasonRules {
   private releaseTimer: Record<Alliance, number> = { red: 0, blue: 0 };
   private lastHpOpen: Record<Alliance, number> = { red: -99, blue: -99 };
   private processing: Processing[] = [];
+  private exitFreeAt: Record<Alliance, number[]> = { red: [0, 0, 0, 0], blue: [0, 0, 0, 0] };
+  private exitCursor: Record<Alliance, number> = { red: 0, blue: 0 };
   /** Recently launched FUEL → who launched it and whether from outside their ALLIANCE ZONE (for G407). */
   private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; t: number; team: number }>();
   private g407Cooldown = new Map<number, number>();
@@ -60,13 +63,27 @@ export class RebuiltRules implements SeasonRules {
   private climbHintAt = -99;
   private towerAuto: Record<Alliance, number> = { red: 0, blue: 0 };
   private towerTeleop: Record<Alliance, number> = { red: 0, blue: 0 };
+  /** The head referee: contact, tipping, collusion and FUEL calls shared by every season. */
+  readonly ref: Referee;
+  /** G420 contact episodes already called (`attackerId:victimId`), and robots awarded LEVEL 3 for one. */
+  private g420Live = new Set<string>();
+  private readonly g420Award = new Set<number>();
+  /** G403: opponent contacts already called after a robot crossed the CENTER LINE in AUTO. */
+  private g403Contacts = new Set<string>();
+  /** G408: FUEL the HUB just released that nothing has touched yet. */
+  private hubDrops = new Map<number, { t: number; grounded: boolean }>();
+  /** G408: a robot's current run of catches, and how many strategic instances it has been called for. */
+  private catches = new Map<number, { count: number; last: number; called: boolean }>();
+  private strategicCatches = new Map<number, number>();
   private readonly tmp = new THREE.Vector3();
   private readonly tmp2 = new THREE.Vector3();
 
   constructor(
     private readonly ctx: SeasonContext,
     readonly refs: RebuiltFieldRefs,
-  ) {}
+  ) {
+    this.ref = new Referee(ctx, { tip: 'G417', collusion: 'G419' } /* G404, G405 and G416 are too hard to judge: not called */);
+  }
 
   // ─────────────────────────── helpers used by AI / HUD ───────────────────────────
 
@@ -197,6 +214,9 @@ export class RebuiltRules implements SeasonRules {
   stage(): void {
     const { pool, robots, rng } = this.ctx;
     this.pins.reset();
+    this.ref.reset();
+    this.g420Live.clear(); this.g420Award.clear(); this.g403Contacts.clear();
+    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear();
     const st = stageFuel(
       robots.map((r) => Math.min(r.config.preload, r.config.hopperCapacity)),
       rng,
@@ -256,11 +276,12 @@ export class RebuiltRules implements SeasonRules {
     if (to === 'post') {
       // TELEOP TOWER assessed at end of match [M 6.5 D]
       for (const a of ALLIANCES) {
-        const levels = robots.filter((r) => r.alliance === a && r.climbPhase === 'hanging').map((r) => r.climbLevel);
+        const lvl = (r: Robot) => (this.g420Award.has(r.id) ? 3 : r.climbLevel);
+        const levels = robots.filter((r) => r.alliance === a && (r.climbPhase === 'hanging' || this.g420Award.has(r.id))).map(lvl);
         this.towerTeleop[a] = teleopTowerPoints(levels);
         score.set(a, 'towerTeleop', this.towerTeleop[a]);
         for (const r of robots.filter((x) => x.alliance === a)) {
-          score.setCredit(r.id, 'towerTeleop', r.climbPhase === 'hanging' ? teleopTowerPoints([r.climbLevel]) : 0);
+          score.setCredit(r.id, 'towerTeleop', r.climbPhase === 'hanging' || this.g420Award.has(r.id) ? teleopTowerPoints([lvl(r)]) : 0);
         }
       }
     }
@@ -271,13 +292,21 @@ export class RebuiltRules implements SeasonRules {
     const t = this.now;
 
     // Hub processing → exits into the NEUTRAL ZONE.
-    for (let i = this.processing.length - 1; i >= 0; i--) {
+    // Each of the 4 exits is a narrow chute that passes FUEL one at a time, so a burst of scores trickles out
+    // as a stream of balls fanning into the neutral zone instead of one clump. Oldest ready ball first.
+    for (let i = 0; i < this.processing.length; ) {
       const pr = this.processing[i];
-      if (pr.releaseAt > t) continue;
+      if (pr.releaseAt > t) { i++; continue; }
       const hub = this.refs.hubs[pr.alliance].center;
       const d = dir(pr.alliance);
-      const exit = rng.int(0, C.HUB_EXIT_COUNT - 1);
-      const oy = hub.y + (exit - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT);
+      const free = this.exitFreeAt[pr.alliance];
+      let exit = -1;
+      for (let k = 0; k < C.HUB_EXIT_COUNT; k++) {
+        const e = (this.exitCursor[pr.alliance] + k) % C.HUB_EXIT_COUNT;
+        if (free[e] <= t) { exit = e; break; }
+      }
+      if (exit < 0) { i++; continue; }
+      const oy = hub.y + (exit - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT) + rng.range(-0.03, 0.03);
       const ox = hub.x + d * (C.HUB_SIZE / 2 + pool.radius + 0.04);
       // Don't spawn inside a robot parked at the exit (it will be released when clear).
       const blocked = this.ctx.robots.some((r) => {
@@ -286,11 +315,18 @@ export class RebuiltRules implements SeasonRules {
       });
       if (blocked) {
         pr.releaseAt = t + 0.25;
+        i++;
         continue;
       }
+      // Roll out of the opening: mostly forward, fanned sideways in proportion to the exit's offset from center.
+      const fan = (exit - (C.HUB_EXIT_COUNT - 1) / 2) * 0.35 + rng.range(-0.2, 0.2);
+      const speed = rng.range(1.4, 3.2);
       frame.toWorld(ox, oy, C.HUB_EXIT_HEIGHT, this.tmp);
-      frame.velToWorld(d * rng.range(1.2, 3.2), rng.range(-1.0, 1.0), 0.3, this.tmp2);
+      frame.velToWorld(d * speed * Math.cos(fan), speed * Math.sin(fan), 0.1, this.tmp2);
       pool.placeWorld(pr.idx, this.tmp, this.tmp2);
+      this.hubDrops.set(pr.idx, { t, grounded: false });
+      free[exit] = t + rng.range(0.14, 0.26);
+      this.exitCursor[pr.alliance] = (exit + 1) % C.HUB_EXIT_COUNT;
       this.processing.splice(i, 1);
     }
 
@@ -375,9 +411,106 @@ export class RebuiltRules implements SeasonRules {
         toast(`MAJOR FOUL G403 — ${r.config.teamNumber} crossed the CENTER LINE in AUTO`, 'foul', r.alliance);
       }
     }
+    this.ref.update(dt);
+    if (clock.started && clock.mode !== 'disabled') this.callFouls(dt);
     if (clock.started && clock.mode !== 'disabled') reportPins(this.pins.updateRobots(dt, robots, this.ctx.physics), this.ctx, t);
     for (const [id, cd] of this.g407Cooldown) this.g407Cooldown.set(id, cd - dt);
     for (const [idx, l] of this.launches) if (pool.state[idx] !== 'field' || t - l.t > 8) this.launches.delete(idx);
+  }
+
+  // ─────────────────────────── referee calls ───────────────────────────
+
+  /** Bumpers touching (or climbing on) the robot's own TOWER, or within a hand's width of it. */
+  touchingOwnTower(r: Robot): boolean {
+    if (r.isClimbing) return true;
+    const ty = C.TOWER_CENTER_Y;
+    return r.corners().some((p) => {
+      const lx = r.alliance === 'blue' ? p.x : C.FIELD_LENGTH - p.x;
+      return lx <= C.TOWER_DEPTH + 0.06 && Math.abs(p.y - ty) <= C.TOWER_WIDTH / 2 + 0.06;
+    });
+  }
+
+  private callFouls(dt: number): void {
+    const { robots, clock, pool } = this.ctx;
+    const t = this.now;
+    const id = clock.current.id;
+
+    // G403 (second half): an additional MAJOR FOUL per contact with an opponent while across the CENTER LINE.
+    if (id === 'auto') {
+      for (const r of robots) {
+        if (!this.g403Called.has(r.id)) continue;
+        for (const o of robots) {
+          if (o.alliance === r.alliance) continue;
+          const k = `${r.id}:${o.id}`;
+          if (this.ref.touching(r, o)) {
+            if (!this.g403Contacts.has(k)) {
+              this.g403Contacts.add(k);
+              this.ref.call({ rule: 'G403', kind: 'major', robot: r, note: `contacted ${o.config.teamNumber} across the CENTER LINE in AUTO` });
+            }
+          } else this.g403Contacts.delete(k);
+        }
+      }
+    }
+
+    // G420: TOWER protection, last 30 s. No contact (direct, or through a FUEL both are touching) with an opponent
+    // in contact with its TOWER, whoever starts it. If that opponent is off the ground it is awarded LEVEL 3.
+    if (id === 'endgame') {
+      const live = new Set<string>();
+      for (const v of robots) {
+        if (!this.touchingOwnTower(v)) continue;
+        for (const a of robots) {
+          if (a.alliance === v.alliance || !this.ref.touching(a, v)) continue;
+          const k = `${a.id}:${v.id}`;
+          live.add(k);
+          if (this.g420Live.has(k)) continue;
+          const lifted = v.climbPhase === 'rise' || v.climbPhase === 'hanging' || v.elevation > 0.03;
+          if (lifted) this.g420Award.add(v.id);
+          this.ref.call({ rule: 'G420', kind: 'major', robot: a, note: `contacted ${v.config.teamNumber} at its TOWER${lifted ? ` · ${v.config.teamNumber} awarded LEVEL 3` : ''}` });
+        }
+      }
+      this.g420Live = live;
+    }
+
+    // G419: two or more partners walling off the opponent's TOWER from a robot that is trying to get to it.
+    if (id === 'endgame' || id === 'shift4') {
+      for (const a of ALLIANCES) {
+        const opp = opponent(a);
+        this.ref.blockAccess(dt, `tower:${opp}`, a, side(opp, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y), `blocked ${opp.toUpperCase()}'s TOWER`);
+      }
+    }
+
+    // G408: FUEL released by the HUB may not be caught (more than MOMENTARY control) before anything else touches it.
+    for (const [idx, d] of this.hubDrops) {
+      const age = t - d.t;
+      if (pool.state[idx] === 'held') {
+        this.hubDrops.delete(idx);
+        const owner = robots.find((r) => r.id === pool.owner[idx]);
+        if (owner && !d.grounded && age < 0.8) this.catchFuel(owner, t);
+        continue;
+      }
+      if (pool.state[idx] !== 'field' || age > 1.5) { this.hubDrops.delete(idx); continue; }
+      if (pool.position(idx).y < pool.radius * 1.3) d.grounded = true;
+    }
+    for (const [rid, c] of this.catches) {
+      if (t - c.last <= 1.2) continue;
+      this.catches.delete(rid);
+      const r = robots.find((x) => x.id === rid);
+      if (r && !c.called) this.ref.call({ rule: 'G408', kind: 'minor', robot: r, note: 'caught FUEL released by the HUB' });
+    }
+  }
+
+  /** One FUEL from the HUB went straight into a robot. A run of 3+ is strategic (sitting under the HUB). */
+  private catchFuel(r: Robot, t: number): void {
+    const c = this.catches.get(r.id) ?? { count: 0, last: t, called: false };
+    c.count++;
+    c.last = t;
+    this.catches.set(r.id, c);
+    if (c.count < 3 || c.called) return;
+    c.called = true;
+    const n = (this.strategicCatches.get(r.id) ?? 0) + 1;
+    this.strategicCatches.set(r.id, n);
+    // First strategic catch: MAJOR FOUL and VERBAL WARNING; any after that: MAJOR FOUL and YELLOW CARD.
+    this.ref.call({ rule: 'G408', kind: 'major', robot: r, ...(n > 1 ? { card: 'yellow' as const } : {}), note: `sat under the HUB catching FUEL${n === 1 ? ' · verbal warning' : ''}` });
   }
 
   private scoreFuel(a: Alliance, idx: number): void {
@@ -410,6 +543,8 @@ export class RebuiltRules implements SeasonRules {
   onLaunch(robot: Robot, pieceIndex: number): void {
     // Launching anywhere is legal; G407 is assessed if this FUEL ends up in our HUB (see scoreFuel).
     this.ctx.score.tally(robot.id, 'shots');
+    const target = robot.lastCommand.pass && !robot.lastCommand.shoot ? this.passTarget(robot) : this.aimTarget(robot);
+    this.ref.launched(robot, pieceIndex, target?.point ?? null);
     this.launches.set(pieceIndex, {
       robotId: robot.id,
       alliance: robot.alliance,
@@ -535,6 +670,7 @@ export class RebuiltRules implements SeasonRules {
         row('TELEOP TOWER', (a) => s.category(a, 'towerTeleop'), false, ['towerTeleop']),
         row('Foul points received', (a) => s.foulPointsFor(a)),
         row('Fouls committed (minor / major)', (a) => `${s.foulCount(a, 'minor')} / ${s.foulCount(a, 'major')}`),
+        row('Cards (yellow / red)', (a) => `${s.cardCount(a, 'yellow')} / ${s.cardCount(a, 'red')}`),
         row('FUEL into inactive hub (0 pts)', (a) => s.counter(a, 'fuelInactive')),
         row('TOTAL', (a) => s.total(a), true),
       ],
