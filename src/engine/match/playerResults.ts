@@ -35,6 +35,8 @@ export function buildPlayerResults(
       stats.push({ label: 'Accuracy', value: `${Math.round((Math.min(scored, shots) / shots) * 100)}%` });
     }
     stats.push({ label: 'Fouls (minor / major)', value: `${minor} / ${major}` });
+    const yellow = score.cardsFor(p.id, 'yellow'), red = score.cardsFor(p.id, 'red');
+    if (yellow + red > 0) stats.push({ label: 'Cards (yellow / red)', value: `${yellow} / ${red}` });
     if (minor + major > 0) stats.push({ label: 'Foul points given', value: minor * foulValues.minor + major * foulValues.major });
     return { ...p, total: lines.reduce((s, l) => s + l.value, 0), rows: lines, stats };
   });

@@ -4,6 +4,7 @@ import { ALLIANCES, opponent, type Alliance } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
+import { Referee } from '@engine/match/referee';
 import { groundSideSign, stationSideSign } from '@engine/robot/config';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
@@ -81,7 +82,10 @@ export class ReefscapeRules implements SeasonRules {
   private readonly coralMat = new THREE.MeshStandardMaterial({ color: C.COLORS.coral, roughness: 0.65, side: THREE.DoubleSide });
   private readonly algaeMat = new THREE.MeshStandardMaterial({ color: C.COLORS.algae, roughness: 0.7 });
 
+  /** The head referee (shared calls: combat, tipping, collusion, launching at robots, ejecting pieces). */
+  readonly ref: Referee;
   constructor(readonly ctx: SeasonContext, readonly refs: ReefscapeFieldRefs) {
+    this.ref = new Referee(ctx, { combat: 'G423', tip: 'G424', collusion: 'G426', launchAtRobot: 'G406', eject: 'G407' });
     for (const robot of ctx.robots) {
       this.mechanisms.set(robot.id, { height: 0.45, level: robot.config.placement!.maxLevel, harvest: 0, forward: robot.footprint.length / 2 - 0.05, aligned: false, side: 0, handoff: 0 });
       const mast = new THREE.Group(); mast.name = 'reefscape-elevator';
@@ -107,7 +111,7 @@ export class ReefscapeRules implements SeasonRules {
 
   stage(): void {
     const { pool, robots } = this.ctx;
-    this.placements.length = 0; this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear(); this.pins.reset();
+    this.placements.length = 0; this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear(); this.pins.reset(); this.ref.reset();
     this.autoTrough = { blue: 0, red: 0 };
     this.autoAssessed = this.bargeAssessed = false;
     this.grips.length = 0;
@@ -618,8 +622,11 @@ export class ReefscapeRules implements SeasonRules {
   onLaunch(robot: Robot, i: number): void {
     this.launchedBy.set(i, { robotId: robot.id, at: this.ctx.clock.elapsed });
     this.ctx.score.tally(robot.id, 'shots');
-    if (i < C.CORAL_COUNT && !C.inReefZone(robot.alliance, robot.pose, robot.footprint.length, robot.footprint.width)) {
-      this.ctx.score.foul({ t: this.ctx.clock.elapsed, alliance: robot.alliance, kind: 'major', rule: 'G412', robotId: robot.id });
+    // CORAL has no goal to throw at, ALGAE is thrown at the NET: a piece that hits an opponent was launched at it (G406).
+    const n = C.netCenter(robot.alliance);
+    this.ref.launched(robot, i, i < C.CORAL_COUNT ? null : this.ctx.frame.toWorld(n.x, n.y, C.NET_HEIGHT), i < C.CORAL_COUNT);
+    if (i < C.CORAL_COUNT && !C.inReefZone(robot.alliance, robot.pose, robot.footprint.length, robot.footprint.width) && this.ctx.clock.mode !== 'disabled') {
+      this.ref.call({ rule: 'G412', kind: 'major', robot, note: 'launched CORAL from outside the REEF ZONE' });
     }
   }
 
@@ -689,7 +696,9 @@ export class ReefscapeRules implements SeasonRules {
     this.detectCoral(dt);
     for (const a of ALLIANCES) this.refs.algaeColliders[a].forEach((c, f) => c.setEnabled(this.reefAlgae(a, f)));
     if (!this.activeScoring()) return;
+    this.ref.update(dt);
     this.enforceProtectedContact();
+    this.enforceBlockade(dt);
     if (this.ctx.clock.mode !== 'disabled') reportPins(this.pins.updateRobots(dt, this.ctx.robots, this.ctx.physics), this.ctx, this.ctx.clock.elapsed);
     const { pool, frame, score } = this.ctx;
     for (let i = C.CORAL_COUNT; i < pool.count; i++) {
@@ -720,6 +729,7 @@ export class ReefscapeRules implements SeasonRules {
       if (pool.state[i] !== 'field') continue;
       const p = frame.toField(pool.position(i));
       if (p.x < -0.7 || p.x > C.FIELD_LENGTH + 0.7 || p.y < -0.7 || p.y > C.FIELD_WIDTH + 0.7 || p.z < -0.3) {
+        this.ref.ejected(i); // G407
         pool.placeField(i, clamp(p.x, 0.7, C.FIELD_LENGTH - 0.7), clamp(p.y, 0.7, C.FIELD_WIDTH - 0.7));
       }
     }
@@ -913,11 +923,19 @@ export class ReefscapeRules implements SeasonRules {
       if (defenders.length < 2) { this.defenderTime[a] = 0; continue; }
       const old = this.defenderTime[a]; this.defenderTime[a] += dt;
       if (old === 0 || Math.floor(old / 3) < Math.floor(this.defenderTime[a] / 3)) {
-        this.ctx.score.foul({ t: this.ctx.clock.elapsed, alliance: a, kind: old === 0 ? 'minor' : 'major', rule: 'G421', robotId: defenders[1].id });
-        this.ctx.toast('G421 · only one defender beyond the BARGE ZONES', 'foul', a);
+        this.ref.call({ rule: 'G421', kind: old === 0 ? 'minor' : 'major', robot: defenders[1], note: 'was a second defender beyond the BARGE ZONES' });
       }
     }
   }
+  /** G426: two or more partners walling off the opponent's CAGES from a climber that is trying to get to them. */
+  private enforceBlockade(dt: number): void {
+    if (this.ctx.clock.current.id !== 'endgame') return;
+    for (const a of ALLIANCES) {
+      const opp = opponent(a), c = C.cage(opp, 2);
+      this.ref.blockAccess(dt, `cage:${opp}`, a, c, `blocked ${opp.toUpperCase()}'s CAGES`, { wall: 3.2, want: 4.5, min: 1.2 });
+    }
+  }
+
   /** Bumpers completely on the opponent's side of both BARGE ZONES (G403/G421). */
   private beyondBarge(r: Robot): boolean {
     return r.corners().every((p) => r.alliance === 'blue' ? p.x > C.FIELD_LENGTH / 2 + C.BARGE_ZONE_DEPTH / 2 : p.x < C.FIELD_LENGTH / 2 - C.BARGE_ZONE_DEPTH / 2);
@@ -938,7 +956,7 @@ export class ReefscapeRules implements SeasonRules {
       const key = `${r.id}:${s}`;
       if (contact && !this.cageContacts.has(key) && this.ctx.clock.mode !== 'disabled') {
         const auto = this.ctx.clock.mode === 'auto';
-        this.ctx.score.foul({ t: this.ctx.clock.elapsed, alliance: r.alliance, kind: 'major', rule: auto ? 'G405' : 'G418', robotId: r.id });
+        this.ref.call({ rule: auto ? 'G405' : 'G418', kind: 'major', robot: r, note: `contacted ${opponent(r.alliance).toUpperCase()}'s CAGE` });
         if (!auto) this.forcedBarge[opponent(r.alliance)] = true;
       }
       if (contact) this.cageContacts.add(key); else this.cageContacts.delete(key);
@@ -950,10 +968,7 @@ export class ReefscapeRules implements SeasonRules {
     const live = new Set<string>();
     for (const r of this.ctx.robots) for (const other of this.ctx.robots) {
       if (r.alliance === other.alliance) continue;
-      let contact = false;
-      for (let i = 0; i < r.body.numColliders() && !contact; i++) for (let j = 0; j < other.body.numColliders() && !contact; j++) {
-        this.ctx.physics.world.contactPair(r.body.collider(i), other.body.collider(j), (manifold) => { if (manifold.numContacts() > 0) contact = true; });
-      }
+      const contact = this.ref.touching(r, other); // direct, or through a game piece both are touching
       if (!contact) continue;
       let rule: string | null = null;
       if (this.ctx.clock.mode === 'auto' && this.beyondBarge(r)) rule = 'G403';
@@ -962,8 +977,9 @@ export class ReefscapeRules implements SeasonRules {
       if (!rule) continue;
       const key = `${r.id}:${other.id}:${rule}`; live.add(key);
       if (!this.protectedContacts.has(key)) {
-        this.ctx.score.foul({ t: this.ctx.clock.elapsed, alliance: r.alliance, kind: 'major', rule, robotId: r.id });
-        this.ctx.toast(`${rule} · protected opponent contact · +6 to ${other.alliance.toUpperCase()}`, 'foul', r.alliance);
+        // G403: MAJOR FOUL and VERBAL WARNING, YELLOW CARD for any subsequent violation during the event.
+        const again = rule === 'G403' && this.ctx.score.fouls.some((f) => f.robotId === r.id && f.rule === 'G403');
+        this.ref.call({ rule, kind: 'major', robot: r, ...(again ? { card: 'yellow' as const } : {}), note: `contacted ${other.config.teamNumber}${rule === 'G403' ? ' across the BARGE ZONE in AUTO' : rule === 'G428' ? ' at its CAGE' : ' in its protected ZONE'}` });
       }
     }
     this.protectedContacts.clear(); for (const key of live) this.protectedContacts.add(key);

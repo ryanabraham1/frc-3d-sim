@@ -615,29 +615,30 @@ export class Game {
     if (inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1) && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance, inp.humanPlayerAlt);
 
     for (const r of this.robots) {
-      r.enabled = enabled;
+      const on = enabled && !r.sidelined; // a red-carded robot sits out the rest of the match
+      r.enabled = on;
       let cmd: RobotCommand = IDLE_COMMAND;
-      if (enabled) {
+      if (on) {
         if (!this.manual(r)) cmd = this.autoPilots.get(r.id)?.update(dt) ?? IDLE_COMMAND;
         else if (r === this.player) cmd = this.playerCommand(inp, r);
         else if (r.controller === 'bot') cmd = this.botPilots.get(r.id)?.update(dt) ?? IDLE_COMMAND;
         else cmd = this.hostSync?.command(r.id) ?? IDLE_COMMAND;
       }
       // Driver-assist layers: season assists (e.g. reef auto-align) then chassis auto-align onto the shot target.
-      if (enabled && this.rules.adjustCommand) cmd = this.rules.adjustCommand(r, cmd, dt);
+      if (on && this.rules.adjustCommand) cmd = this.rules.adjustCommand(r, cmd, dt);
       const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
-      if (enabled) cmd = r.autoAlign(cmd, target);
+      if (on) cmd = r.autoAlign(cmd, target);
       r.lastCommand = cmd;
       r.overheadLimit = this.rules.overheadClearance?.(r) ?? Infinity;
       r.drive(cmd, dt);
-      if (enabled) {
+      if (on) {
         if (cmd.descend && r.isClimbing) this.rules.requestDescend(r);
         else if (cmd.climb !== null && !r.isClimbing && !r.tippedOver && r.config.climber.maxLevel > 0) this.rules.requestClimb(r, cmd.climb);
       }
       r.tick(dt);
       r.aimTurretAt(target, dt);
-      const handled = enabled && this.rules.handleMechanisms?.(r, cmd, dt);
-      if (enabled && !handled && (cmd.shoot || cmd.pass)) {
+      const handled = on && this.rules.handleMechanisms?.(r, cmd, dt);
+      if (on && !handled && (cmd.shoot || cmd.pass)) {
         const shot = r.launch(target, this.rng);
         if (shot) {
           const idx = r.held.pop()!;

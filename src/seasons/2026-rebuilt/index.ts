@@ -135,6 +135,10 @@ export const rebuilt2026: SeasonDefinition = {
     { title: 'TRAVERSAL RP', detail: 'TOWER points at or above threshold.', value: '50', tag: 'RP' },
     { title: 'G407 — score from your zone', detail: 'Launching FUEL into your HUB while bumpers are outside your ALLIANCE ZONE. Feeding FUEL back into your zone from anywhere is legal (G key).', value: 'MAJOR 15', tag: 'G4' },
     { title: 'G403 — AUTO center line', detail: 'Bumpers completely across the CENTER LINE during AUTO.', value: 'MAJOR 15', tag: 'G4' },
+    { title: 'G420 — TOWER protection', detail: 'Last 30 s: no contact (even through a FUEL) with an opponent touching its TOWER, whoever starts it. If it is off the ground it is awarded LEVEL 3.', value: 'MAJOR 15', tag: 'G4' },
+    { title: 'G417 — no tipping', detail: 'Driving into a robot that is tipping, or tipping it twice (MAJOR + YELLOW); pushing a robot lying on its side (MAJOR + RED). A second yellow is a red card (robot disabled).', value: 'MAJOR + YELLOW', tag: 'G4' },
+    { title: 'G419 — no walling off the TOWER', detail: 'Two or more partners keeping an opponent climber from its TOWER: MAJOR after 3 s, again every 3 s.', value: 'MAJOR 15', tag: 'G4' },
+    { title: 'G408 — don’t catch FUEL', detail: 'FUEL released by the HUB may not be caught before it touches anything else. MINOR; sitting under the HUB for 3+ is MAJOR (yellow card if repeated).', value: 'MINOR 5', tag: 'G4' },
     { title: 'Robot limits', detail: 'R104/R107: 30 in tall max, 110 in frame perimeter. TRENCH clearance is 22.25 in.', value: '30 in', tag: 'R1' },
   ],
   testing: {

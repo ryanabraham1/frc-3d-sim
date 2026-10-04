@@ -3,6 +3,7 @@ import { ALLIANCES, opponent, type Alliance, type FieldPoint } from '@engine/coo
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
+import { Referee } from '@engine/match/referee';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch } from '@engine/units';
 import { convexOverlap } from '@engine/zones';
@@ -61,7 +62,11 @@ export class CrescendoRules implements SeasonRules {
   private stageAssessed = false;
   private readonly heldVisuals = new Map<number, THREE.Mesh>();
 
+  /** The head referee (shared calls: combat, tipping, collusion, launching at robots, ejecting NOTES). */
+  readonly ref: Referee;
+
   constructor(readonly ctx: SeasonContext, readonly refs: CrescendoFieldRefs) {
+    this.ref = new Referee(ctx, { combat: 'G418', tip: 'G419', collusion: 'G421', launchAtRobot: 'G406', eject: 'G407', labels: { minor: 'FOUL', major: 'TECH FOUL' } });
     for (const r of ctx.robots) {
       r.hideHopperFill();
       const m = noteMesh(false);
@@ -147,6 +152,7 @@ export class CrescendoRules implements SeasonRules {
 
   stage(): void {
     const { pool, robots } = this.ctx;
+    this.ref.reset();
     this.bank = { blue: 0, red: 0 };
     this.amplifiedUntil = { blue: -Infinity, red: -Infinity };
     this.coopUsed = { blue: false, red: false };
@@ -309,6 +315,9 @@ export class CrescendoRules implements SeasonRules {
     const a = robot.alliance;
     this.launches.set(i, { robotId: robot.id, alliance: a, t: this.now });
     this.ctx.score.tally(robot.id, 'shots');
+    // A NOTE that heads away from the SPEAKER and into an opponent was launched at it (G406).
+    const goal = this.aimTarget(robot);
+    this.ref.launched(robot, i, goal?.point ?? null);
     const shot = robot.lastCommand.shoot;
     // G404: in AUTO, a robot completely outside its WING may not send NOTES into it (TECH FOUL).
     if (this.ctx.clock.mode === 'auto' && !this.inWing(robot, a)) this.foul(robot, 'major', 'G404', 'AUTO shot from outside your WING');
@@ -642,10 +651,15 @@ export class CrescendoRules implements SeasonRules {
         if (pool.state[i] !== 'field') continue;
       }
       // NOTES that leave the FIELD are not returned to play [M 6.8].
-      if (p.x < -0.35 || p.x > C.L + 0.35 || p.y < -0.35 || p.y > C.W + 0.35 || p.z < -0.3) pool.reserve(i, 'out');
+      if (p.x < -0.35 || p.x > C.L + 0.35 || p.y < -0.35 || p.y > C.W + 0.35 || p.z < -0.3) {
+        this.ref.ejected(i); // G407
+        pool.reserve(i, 'out');
+      }
     }
     if (this.ctx.clock.started && this.ctx.clock.mode !== 'disabled') {
+      this.ref.update(dt);
       this.checkContacts();
+      if (this.isEndgame()) for (const a of ALLIANCES) this.ref.blockAccess(dt, `stage:${opponent(a)}`, a, C.stageCenter(opponent(a)), `blocked ${opponent(a).toUpperCase()}'s STAGE`, { wall: 3.2, want: 4.5, min: 1.2 });
       reportPins(this.pins.updateRobots(dt, this.ctx.robots, this.ctx.physics), this.ctx, this.now);
     }
   }
@@ -671,13 +685,7 @@ export class CrescendoRules implements SeasonRules {
   private checkContacts(): void {
     const { robots, physics, pool, clock } = this.ctx;
     const live = new Set<string>();
-    const touching = (r: Robot, o: Robot) => {
-      let hit = false;
-      for (let i = 0; i < r.body.numColliders() && !hit; i++) for (let j = 0; j < o.body.numColliders() && !hit; j++) {
-        physics.world.contactPair(r.body.collider(i), o.body.collider(j), (m) => { if (m.numContacts() > 0) hit = true; });
-      }
-      return hit;
-    };
+    const touching = (r: Robot, o: Robot) => this.ref.touching(r, o); // direct, or through a NOTE both are touching
     const call = (key: string, fire: () => void) => {
       live.add(key);
       if (!this.contacts.has(key)) fire();

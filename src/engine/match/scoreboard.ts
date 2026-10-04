@@ -1,6 +1,8 @@
 import { Alliance, opponent } from '../coords';
 
 export type FoulKind = 'minor' | 'major';
+/** A card shown with a foul. A red card disables the robot for the rest of the match. */
+export type CardKind = 'yellow' | 'red';
 
 export interface FoulRecord {
   t: number;
@@ -9,6 +11,8 @@ export interface FoulRecord {
   rule: string;
   robotId: number;
   note?: string;
+  /** Card issued with this foul (the manual's "MAJOR FOUL and YELLOW CARD"). */
+  card?: CardKind;
 }
 
 export interface ScoreEvent {
@@ -114,6 +118,16 @@ export class Scoreboard {
 
   foul(f: FoulRecord): void {
     this.fouls.push(f);
+  }
+
+  /** Cards shown to an alliance's robots. */
+  cardCount(alliance: Alliance, card: CardKind): number {
+    return this.fouls.filter((f) => f.alliance === alliance && f.card === card).length;
+  }
+
+  /** Cards shown to one robot. */
+  cardsFor(robotId: number, card: CardKind): number {
+    return this.fouls.filter((f) => f.robotId === robotId && f.card === card).length;
   }
 
   foulCount(alliance: Alliance, kind: FoulKind): number {

@@ -24,6 +24,7 @@ export function reefscapeResults(score: Scoreboard, robotCounts: Record<Alliance
     winner, rp, rpDetail,
     rows: [row('AUTO leave', 'leave'), row('AUTO coral', 'autoCoral'), row('TELEOP coral', 'teleopCoral'), row('Algae · processor', 'processor'), row('Algae · net', 'net'), row('Park / cages', 'barge'),
       { label: 'Opponent fouls', blue: score.foulPointsFor('blue'), red: score.foulPointsFor('red') },
+      { label: 'Cards (yellow / red)', blue: `${score.cardCount('blue', 'yellow')} / ${score.cardCount('blue', 'red')}`, red: `${score.cardCount('red', 'yellow')} / ${score.cardCount('red', 'red')}` },
       { label: 'TOTAL', blue: score.total('blue'), red: score.total('red'), emphasis: true },
       { label: 'Coopertition points', blue: coop ? 1 : 0, red: coop ? 1 : 0 },
       { label: 'Ranking points', blue: rp.blue, red: rp.red, emphasis: true }],
