@@ -250,8 +250,8 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
   }
 
   // TRENCHes along both guardrails [M 5.6, Figure 5-10]: a sloped-end pedestal between the opening and the BUMP
-  // (the 47in depth), an alliance-colored square-tube arm cantilevered from its top over the 50.34in opening, a steel
-  // leg with a leveling foot at the guardrail end, and the AprilTag bracket on top of the arm.
+  // (the 47in depth), an alliance-colored square-tube arm cantilevered from its top over the 50.34in opening (no leg: the real
+  // TRENCH has none), and the AprilTag bracket on top of the arm.
   const td = C.TRENCH_DEPTH;
   const ad = C.TRENCH_ARM_DEPTH;
   const armBot = C.TRENCH_CLEARANCE;
@@ -299,11 +299,6 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
       b.boxMinMax([hub.x + fs * (ad / 2) - (fs > 0 ? 0 : inch(0.25)), Math.min(gy - inch(5), gy + inch(5)), armBot - inch(4)],
         [hub.x + fs * (ad / 2) + (fs > 0 ? inch(0.25) : 0), Math.max(gy - inch(5), gy + inch(5)), armTop + inch(1)], gusset);
     }
-    // Leg at the guardrail end: steel tube down to a leveling foot.
-    const legY = yRail + sd * inch(1.5);
-    b.box([hub.x, legY, armBot / 2], [inch(1.5), inch(1.5), armBot], steel);
-    b.cylinder([hub.x, legY, 0], [hub.x, legY, inch(0.6)], inch(1.6), { ...steel, color: 0x2a2d33, collide: false });
-    b.box([hub.x, legY + sd * inch(0.5), armTop - inch(1.5)], [ad + inch(0.5), inch(1), inch(3)], { ...gusset, color: C.COLORS.steel });
     // AprilTag bracket on top of the arm, centered on the opening (tag centers 35in off the floor [M 5.10]).
     const tagY = yRail + sd * C.TRENCH_OPENING_CENTER_Y;
     const bh = C.TRENCH_HEIGHT - armTop;
