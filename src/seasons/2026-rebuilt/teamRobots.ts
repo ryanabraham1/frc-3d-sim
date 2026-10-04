@@ -64,7 +64,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.97, width: W * 0.97, height: hopH, m: smoke });
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.06, sz * W * 0.485], [L * 0.96, 0, 0], [0, 0.05, 0], { cells: 8, w: 0.012, m: teal, zig: true });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.485, bt, sz * W * 0.485], [sx * L * 0.485, H - 0.01, sz * W * 0.485], 0.02, tealTube);
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: hopH * 0.85, color: FUEL });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   // Dye rotor: a big flat spoked disc on the floor that sweeps FUEL into the turret.
   const rotor = new THREE.Group();
   rotor.position.set(L * 0.05, bt + 0.02, 0);
@@ -150,7 +150,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
     decal(k.visual, 'AT', { w: 0.07, h: 0.05, x: 0, y: H - 0.15, z, rotY });
     decal(k.visual, 'MADTOWN', { w: 0.15, h: 0.035, x: L * 0.22, y: H - 0.16, z, rotY });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH * 0.85, color: FUEL });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   // Dye rotor on the floor feeding the turret column; the turret sits forward of center so the folded blocker clears it.
   const tx = -side * L * 0.2;
   const rotor = new THREE.Group();
@@ -226,7 +226,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   const hopH = H - bt - 0.03;
   hopperWalls(k.visual, { x: hx, y0: bt, length: hl, width: W * 0.98, height: hopH, m: smoke });
   // Flexible net roof is drawn by Robot from hopperExpansion, following actual load.
-  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.96, width: W * 0.94, height: hopH * 0.9, color: FUEL });
+  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
     const z = sz * (W * 0.49 + 0.006);
@@ -303,7 +303,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.47, bt, sz * W * 0.47], [L * 0.94, 0, 0], [0, top - bt, 0], { cells: 5, w: 0.014, m: black });
   for (const sx of [-1, 1]) lattice(k.visual, [sx * L * 0.47, bt, -W * 0.47], [0, 0, W * 0.94], [0, top - bt, 0], { cells: 4, w: 0.014, m: black });
   box(k.visual, L * 0.92, 0.006, W * 0.92, gray, 0, bt + 0.01, 0);
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.9, width: W * 0.9, height: (top - bt) * 0.85, color: FUEL });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity });
   // Curved lattice arch over the front half.
   const arch: [number, number, number][] = [];
   for (let i = 0; i <= 8; i++) {
@@ -374,7 +374,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
     decal(k.visual, 'BOEING   Altinbas   OVERCHARGE', { w: 0.42, h: 0.03, x: 0, y: bt + hopH * 0.85, z, rotY });
     decal(k.visual, 'ROBOTICS · ISTANBUL', { w: 0.3, h: 0.025, x: 0, y: bt + hopH * 0.25, z, rotY });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: hopH * 0.85, color: FUEL });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   // Spindexer bowl: a wide grippy disc floor with a center cone, spinning.
   const spindex = new THREE.Group();
   spindex.position.set(0, bt + 0.02, 0);
@@ -473,7 +473,12 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
     bar(k.visual, [x, bt, z], [x, H - 0.045, z], 0.014, gray);
   }
   // Keep the round pieces inside the curved half of the hopper.
-  const fill = fillBlock(k.visual, { x: centerX - side * R * 0.25, y0: bt + 0.03, length: R * 1.1, width: W * 0.65, height: hopH * 0.85, color: FUEL });
+  // The round hopper: FUEL packs the whole D-shaped footprint (semicircle plus the straight run to the flat edge).
+  const fill = fillBlock(k.visual, {
+    x: (flatX + centerX - side * R) / 2, y0: bt + 0.03, length: Math.abs(flatX - centerX) + R, width: W * 0.97, height: hopH * 0.97,
+    color: FUEL, capacity: c.hopperCapacity,
+    inside: (x, z) => (side * (x - centerX) > 0 || Math.hypot(x - centerX, z) < R - 0.01) && side * (flatX - x) > 0.01,
+  });
   // Dye rotor: a wide gray slotted disc on the floor.
   const rotor = new THREE.Group();
   rotor.position.set(centerX - side * R * 0.12, bt + 0.02, 0);
@@ -550,7 +555,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
   box(k.visual, hl, 0.005, W * 0.96, mat(0xeef2f5, { opacity: 0.5, metal: 0 }), hx, H - 0.04, 0);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [hx + (sx * hl) / 2, bt, sz * W * 0.48], [hx + (sx * hl) / 2, H - 0.04, sz * W * 0.48], 0.035, blackTube);
   for (const y of [bt + hopH * 0.45, H - 0.045]) for (const sz of [-1, 1]) bar(k.visual, [hx - hl / 2, y, sz * W * 0.485], [hx + hl / 2, y, sz * W * 0.485], 0.02, orangeTube);
-  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.95, width: W * 0.92, height: hopH * 0.88, color: FUEL });
+  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
     const z = sz * (W * 0.48 + 0.006);

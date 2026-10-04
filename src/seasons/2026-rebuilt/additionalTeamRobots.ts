@@ -14,7 +14,7 @@ for (const [id, color, style] of [
   const black = mat(0x16191d), accent = tubeMat(color), smoke = mat(0x64707b, { opacity: 0.35 });
   const db = drivebase(k, { motorRing: color });
   hopperWalls(k.visual, { x: -L * 0.08, y0: bt, length: L * 0.8, width: W * 0.94, height: H - bt - 0.06, m: smoke });
-  const fill = fillBlock(k.visual, { x: -L * 0.08, y0: bt + 0.02, length: L * 0.76, width: W * 0.88, height: (style === 'expanding' ? c.hopperExpansion!.fullHeight : H) - bt - 0.09, color: 0xf2c200 });
+  const fill = fillBlock(k.visual, { x: -L * 0.08, y0: bt + 0.02, length: L * 0.78, width: W * 0.92, height: (style === 'expanding' ? c.hopperExpansion!.fullHeight : H) - bt - 0.07, color: 0xf2c200, capacity: c.hopperCapacity });
   const roof = new THREE.Group(); k.visual.add(roof);
   if (style === 'drum') box(roof, L * 0.75, 0.006, W * 0.93, smoke, -L * 0.1, H - 0.035, 0);
   // Mixtape has an open clear hopper, not a mesh lid.

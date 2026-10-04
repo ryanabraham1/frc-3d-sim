@@ -254,24 +254,42 @@ export function seededRandom(seed: number): () => number {
  * packed (offset layers, jitter, slightly squashed foam), fill in an uneven pile rather than row by row, and new ones
  * drop in and settle instead of popping into place.
  */
-export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number }): { set(f: number): void } {
-  const r = Math.min(0.06, o.length / 6, o.width / 6);
-  const nx = Math.max(1, Math.floor(o.length / (r * 2)));
-  const nz = Math.max(1, Math.floor(o.width / (r * 2)));
-  const ny = Math.max(1, Math.floor(o.height / (r * 1.75)));
+export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean }): { set(f: number): void } {
+  type Slot = { x: number; y: number; z: number; s: number; key: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
-  const halfX = o.length / 2 - r, halfZ = o.width / 2 - r;
-  // Rest positions: alternate layers shift half a ball (loose close packing), every ball jittered a little.
-  const slots: { x: number; y: number; z: number; s: number; key: number }[] = [];
-  for (let y = 0; y < ny; y++) {
-    const shift = y % 2 ? r * 0.5 : 0;
-    for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
-      const px = THREE.MathUtils.clamp((x - (nx - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.5, -halfX, halfX);
-      const pz = THREE.MathUtils.clamp((z - (nz - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.5, -halfZ, halfZ);
-      const py = r + y * r * 1.75 + (rand() - 0.5) * r * 0.3;
-      // Fill order: by height with noise, so the top of the load is a lumpy pile, not a sweeping row.
-      slots.push({ x: o.x + px, y: o.y0 + py, z: pz, s: 0.93 + rand() * 0.08, key: py + rand() * r * 3.5 });
+  // Lay out a loosely packed lattice for ball radius r. `inside` (in robot-frame x/z) trims it to a non-rectangular hopper.
+  const layout = (r: number): Slot[] => {
+    const nx = Math.max(1, Math.floor(o.length / (r * 2)));
+    const nz = Math.max(1, Math.floor(o.width / (r * 2)));
+    const ny = Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75)));
+    const halfX = Math.max(0, o.length / 2 - r), halfZ = Math.max(0, o.width / 2 - r);
+    const out: Slot[] = [];
+    for (let y = 0; y < ny; y++) {
+      const shift = y % 2 ? r * 0.5 : 0;
+      for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) {
+        const px = THREE.MathUtils.clamp((x - (nx - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.3, -halfX, halfX);
+        const pz = THREE.MathUtils.clamp((z - (nz - 1) / 2) * r * 2 + shift + (rand() - 0.5) * r * 0.3, -halfZ, halfZ);
+        if (o.inside && !o.inside(o.x + px, pz)) continue;
+        const py = r + y * r * 1.75 + (rand() - 0.5) * r * 0.2;
+        // Fill order: by height with noise, so the top of the load is a lumpy pile, not a sweeping row.
+        out.push({ x: o.x + px, y: o.y0 + py, z: pz, s: 0.95 + rand() * 0.06, key: py + rand() * r * 3.5 });
+      }
     }
+    return out;
+  };
+  // Pick the largest ball that still fits `capacity` balls, so a full hopper is visibly full (no dead space) and a
+  // roomy one gets smaller-looking, denser balls instead of an empty pocket. Real FUEL is ~0.075 m radius.
+  let r = 0.075;
+  let slots = layout(r);
+  if (o.capacity) {
+    while (slots.length < o.capacity && r > 0.025) { r -= 0.0025; slots = layout(r); }
+    if (slots.length > o.capacity) {
+      slots.sort((a, b) => a.key - b.key);
+      slots.length = o.capacity;
+    }
+  } else {
+    r = Math.min(0.06, o.length / 6, o.width / 6);
+    slots = layout(r);
   }
   slots.sort((a, b) => a.key - b.key);
   const count = slots.length;
