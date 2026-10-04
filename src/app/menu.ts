@@ -1,6 +1,7 @@
 import type { CameraMode } from '@engine/camera/cameras';
 import type { GameSettings, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
+import { ACTIONS, codeLabel, keybinds, SLOTS, type ActionId } from '@engine/input/keybinds';
 import { cloneConfig, DEFAULT_WHEEL_COF, footprint, RobotConfig } from '@engine/robot/config';
 import { checkStartSpot, clampToArea, type StartSpot } from '@engine/startPose';
 import { pushingForce } from '@engine/robot/drivetrain';
@@ -345,12 +346,35 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     return playTab === 'robot' ? robotTab : playTab === 'ai' && hasAi ? aiTab : matchTab;
   };
 
-  const controlsPage = () => `
+  /** The key slot waiting for a key press on the Controls page, and the last change made. */
+  let capturing: { id: ActionId; slot: number } | null = null;
+  let bindNote = '';
+  const labelOf = (id: ActionId) => ACTIONS.find((a) => a.id === id)!.label;
+
+  const controlsPage = () => {
+    const groups = [...new Set(ACTIONS.map((a) => a.group))];
+    const slotBtn = (id: ActionId, slot: number) => {
+      const on = capturing?.id === id && capturing.slot === slot;
+      const code = keybinds.slots(id)[slot];
+      return `<button class="keycap ${on ? 'capturing' : ''} ${code ? '' : 'empty'}" data-bind="${id}" data-slot="${slot}" aria-label="${esc(labelOf(id))}, key ${slot + 1}: ${code ? esc(codeLabel(code)) : 'unbound'}. Click to change." title="${code ? 'Click, then press a new key · Backspace clears' : 'Click, then press a key'}">${on ? 'Press a key…' : esc(codeLabel(code))}</button>`;
+    };
+    const rows = (group: string) =>
+      ACTIONS.filter((a) => a.group === group)
+        .map((a) => `<div class="row"><div class="row-text"><div class="row-title">${esc(a.label)}</div></div><div class="keycaps">${Array.from({ length: SLOTS }, (_, i) => slotBtn(a.id, i)).join('')}</div></div>`)
+        .join('');
+    return `
+    <section class="panel">
+      <div class="panel-head"><span>Key bindings</span><span class="dim" role="status">${esc(capturing ? `Press a key for “${labelOf(capturing.id)}” · Esc cancels · Backspace clears` : bindNote || 'Click a key to change it')}</span><button class="link" data-k="resetKeys" ${keybinds.isCustomized() ? '' : 'disabled'}>${icon.reset(13)} Reset to defaults</button></div>
+      <div class="keybinds">${groups.map((g) => `<div class="keygroup">${esc(g)}</div><div class="list">${rows(g)}</div>`).join('')}</div>
+    </section>
+    <div class="section-label">Reference</div>
+    ${keybinds.isCustomized() ? '<div class="config-note">The descriptions below list the default keys; your bindings above take effect in the match.</div>' : ''}
     <section class="panel list">
       ${(season.controlsHelp ?? DEFAULT_CONTROLS_HELP)
         .map(([k, v]) => `<div class="row"><div class="row-text"><div class="row-title">${esc(v)}</div></div><kbd>${esc(k)}</kbd></div>`)
         .join('')}
     </section>`;
+  };
 
   const rulesPage = () => `
     <section class="panel list">
@@ -446,6 +470,21 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   onKey = (e: KeyboardEvent) => {
     if (!el.isConnected) return document.removeEventListener('keydown', onKey);
+    if (capturing) {
+      // Capture the next physical key for the slot being rebound; nothing else may react to it.
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      const { id, slot } = capturing;
+      if (e.code === 'Escape') bindNote = '';
+      else if (e.code === 'Backspace' || e.code === 'Delete') (keybinds.set(id, slot, ''), (bindNote = `Cleared ${labelOf(id)}`));
+      else {
+        const taken = keybinds.set(id, slot, e.code);
+        bindNote = `${labelOf(id)} → ${codeLabel(e.code)}${taken ? ` (was ${labelOf(taken)}, now unbound)` : ''}`;
+      }
+      capturing = null;
+      return render();
+    }
     const tag = (e.target as HTMLElement | null)?.tagName;
     if (e.key === 'Escape' && page !== 'play') {
       page = 'play';
@@ -456,8 +495,14 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   const bind = () => {
     const all = <T extends Element>(sel: string) => Array.from(el.querySelectorAll<T & HTMLElement>(sel));
+    all<HTMLButtonElement>('[data-bind]').forEach((b) => (b.onclick = () => {
+      capturing = { id: b.dataset.bind as ActionId, slot: Number(b.dataset.slot) };
+      render();
+      el.querySelector<HTMLElement>('.keycap.capturing')?.focus();
+    }));
+    all('[data-k="resetKeys"]').forEach((b) => (b.onclick = () => (keybinds.resetAll(), (bindNote = 'Restored default keys'), (capturing = null), render())));
     all('[data-ptab]').forEach((b) => (b.onclick = () => ((playTab = b.dataset.ptab as PlayTab), render())));
-    all('[data-page]').forEach((b) => (b.onclick = () => ((page = b.dataset.page as Page), render())));
+    all('[data-page]').forEach((b) => (b.onclick = () => ((page = b.dataset.page as Page), (capturing = null), render())));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);

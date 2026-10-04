@@ -1,3 +1,5 @@
+import { keybinds, type ActionId } from './keybinds';
+
 /**
  * Keyboard + gamepad → DriverInput (driver-perspective, normalized). The game converts this to a
  * field-frame RobotCommand using the active camera's reference yaw.
@@ -67,35 +69,36 @@ export class InputManager {
     window.removeEventListener('blur', this.blur);
   }
 
-  private k(code: string): boolean {
-    return this.keys.has(code);
+  /** Is any key bound to this action held? Bindings are read live, so menu changes apply immediately. */
+  private k(action: ActionId): boolean {
+    return keybinds.codes(action).some((c) => this.keys.has(c));
   }
-  private edge(code: string): boolean {
-    return this.pressed.has(code);
+  private edge(action: ActionId): boolean {
+    return keybinds.codes(action).some((c) => this.pressed.has(c));
   }
 
   /** Read and consume edge events. Call once per rendered frame. */
   read(): DriverInput {
-    let forward = (this.k('KeyW') || this.k('ArrowUp') ? 1 : 0) - (this.k('KeyS') || this.k('ArrowDown') ? 1 : 0);
-    let left = (this.k('KeyA') ? 1 : 0) - (this.k('KeyD') ? 1 : 0);
-    let rotate = (this.k('KeyQ') || this.k('ArrowLeft') ? 1 : 0) - (this.k('KeyE') || this.k('ArrowRight') ? 1 : 0);
-    let shoot = this.k('Space') || this.k('KeyK');
-    let pass = this.k('KeyG');
-    let intake = this.k('KeyJ');
-    let climb = this.k('KeyC');
-    let descend = this.k('KeyX');
-    let humanPlayer = this.edge('KeyH');
-    let humanPlayerAlt = this.edge('KeyB') ? 2 : this.edge('KeyN') ? 3 : this.edge('KeyM') ? 4 : 0;
-    const precision = this.k('ShiftLeft') || this.k('ShiftRight');
-    let levelUp = this.edge('BracketRight');
-    let levelDown = this.edge('BracketLeft');
-    let setLevel: number | null = this.edge('Digit1') ? 1 : this.edge('Digit2') ? 2 : this.edge('Digit3') ? 3 : this.edge('Digit4') ? 4 : null;
-    let cameraNext = this.edge('KeyV');
-    const cameraFlip = this.edge('KeyT');
-    let pause = this.edge('Escape') || this.edge('KeyP');
-    const restart = this.edge('KeyR');
-    const toggleIntake = this.edge('KeyI');
-    const toggleHelp = this.edge('Slash') || this.edge('F1');
+    let forward = (this.k('forward') ? 1 : 0) - (this.k('backward') ? 1 : 0);
+    let left = (this.k('left') ? 1 : 0) - (this.k('right') ? 1 : 0);
+    let rotate = (this.k('rotateLeft') ? 1 : 0) - (this.k('rotateRight') ? 1 : 0);
+    let shoot = this.k('shoot');
+    let pass = this.k('pass');
+    let intake = this.k('intake');
+    let climb = this.k('climb');
+    let descend = this.k('descend');
+    let humanPlayer = this.edge('humanPlayer');
+    let humanPlayerAlt = this.edge('humanPlayerB') ? 2 : this.edge('humanPlayerN') ? 3 : this.edge('humanPlayerM') ? 4 : 0;
+    const precision = this.k('precision');
+    let levelUp = this.edge('levelUp');
+    let levelDown = this.edge('levelDown');
+    let setLevel: number | null = this.edge('level1') ? 1 : this.edge('level2') ? 2 : this.edge('level3') ? 3 : this.edge('level4') ? 4 : null;
+    let cameraNext = this.edge('cameraNext');
+    const cameraFlip = this.edge('cameraFlip');
+    let pause = this.edge('pause');
+    const restart = this.edge('restart');
+    const toggleIntake = this.edge('toggleIntake');
+    const toggleHelp = this.edge('toggleHelp');
 
     // Gamepad (standard mapping): LS move, RS-x rotate, RT shoot, LT intake, A climb, B descend,
     // X human player, Y camera, D-pad up/down level, Start pause.

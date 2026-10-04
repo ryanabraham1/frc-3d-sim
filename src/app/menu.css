@@ -593,6 +593,55 @@
   color: var(--accent-bright);
 }
 
+/* Key binding editor (Controls page) */
+.keygroup {
+  padding: 12px 18px 6px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.keybinds .list {
+  columns: 1;
+}
+.keybinds .list .row {
+  padding: 7px 18px;
+}
+.keycaps {
+  display: flex;
+  gap: 8px;
+}
+.keycap {
+  min-width: 84px;
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.keycap:hover {
+  border-color: var(--accent);
+}
+.keycap.empty {
+  color: var(--faint);
+}
+.keycap.capturing {
+  color: var(--accent-bright);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.link:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* Info pages */
 .list .row {
   display: flex;
