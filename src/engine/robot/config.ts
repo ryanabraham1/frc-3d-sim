@@ -76,6 +76,12 @@ export interface RobotConfig {
   };
   /** Optional flexible hopper roof: starts bulging above this load, reaches fullHeight at capacity. */
   hopperExpansion?: { startCount: number; fullHeight: number; mechanism?: 'telescoping' };
+  /**
+   * Optional defensive SHOT BLOCKER: a panel hinged on the top edge of the intake side (so it extends over the same
+   * side as the intake) that swings out and up over an adjacent robot's shooter. `reach` = horizontal extension past
+   * the frame perimeter, `rise` = how far its outer edge ends above `height`, `seconds` = deploy/stow time.
+   */
+  shotBlocker?: { reach: number; rise: number; width: number; seconds: number };
   hopperCapacity: number;
   preload: number;
 
@@ -100,6 +106,8 @@ export interface RobotConfig {
      * total shots/s across all exits, so throughput is unchanged. Incompatible with a turret.
      */
     exits?: number;
+    /** Chassis-aimed (auto-align) robots hold fire until pointed within this many radians of the target (default 0.05 ≈ 3°). */
+    alignTolerance?: number;
     /** Distance between the outermost exits as a fraction of the frame width (default 0.8). */
     exitSpan?: number;
     /** 1-sigma random error (radians) applied to yaw & pitch. */
@@ -230,6 +238,13 @@ export function sanitizeConfig(c: RobotConfig, maxHeight: number, maxPerimeter?:
     const e = out.hopperExpansion;
     e.startCount = Number.isFinite(e.startCount) ? Math.max(0, Math.min(out.hopperCapacity - 1, e.startCount)) : out.hopperCapacity - 1;
     e.fullHeight = Number.isFinite(e.fullHeight) ? Math.max(out.height, Math.min(maxHeight, e.fullHeight)) : out.height;
+  }
+  if (out.shotBlocker) {
+    const b = out.shotBlocker;
+    b.rise = Math.min(Math.max(0, b.rise), maxHeight - out.height);
+    b.reach = Math.max(0.05, b.reach);
+    b.width = Math.min(Math.max(0.1, b.width), out.frameWidth);
+    b.seconds = Math.max(0.05, b.seconds);
   }
   out.preload = Math.min(Math.max(0, Math.round(out.preload)), out.hopperCapacity);
   out.launcher.height = Math.min(out.launcher.height, out.height);

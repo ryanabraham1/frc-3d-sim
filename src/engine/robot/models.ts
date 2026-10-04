@@ -41,6 +41,8 @@ export interface RobotAnimState {
   fill: number;
   /** 0 = stowed, 1 = hooks raised to grab (align), 0.25 = pulled in (rising / hanging). */
   climb: number;
+  /** Shot blocker deployment (config.shotBlocker): 0 = stowed flat on top, 1 = swung out over the intake side. */
+  blocker: number;
   /** Season-supplied placement mechanism pose (REEFSCAPE end effector): height above robot origin, forward reach. */
   place: PlaceAnim | null;
   /** Chassis-frame velocity (m/s; x forward, z = robot right) and yaw rate (rad/s) — swerve modules steer/roll with it. */

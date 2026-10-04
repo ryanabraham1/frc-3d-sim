@@ -241,8 +241,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const remaining = ctx.clock.driveRemaining;
 
     // END GAME climb: empty the hopper on the way, start early enough to reach the top rung.
-    // Leave time to empty the hopper on the way (shots fired from the zone still count in END GAME).
-    if (r.config.climber.maxLevel > 0 && remaining < climbTime() + 4 + r.held.length / r.config.launcher.rate) {
+    // Leave time to empty the hopper on the way (shots fired from the zone still count in END GAME), plus a 6 s cushion:
+    // 150 lb robots get up to speed slower than the straight-line travel estimate assumes.
+    if (r.config.climber.maxLevel > 0 && remaining < climbTime() + 6 + r.held.length / r.config.launcher.rate) {
       const slot = mySlot();
       if (slot) {
         claimSlot(slot.idx);

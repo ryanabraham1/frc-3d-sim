@@ -82,10 +82,11 @@ const F_INTAKE = 1;
 const F_SHOOT = 2;
 const F_PASS = 4;
 const F_DESCEND = 8;
+const F_BLOCK = 16;
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
 export function packCommand(c: RobotCommand): PackedCommand {
-  const flags = (c.intake ? F_INTAKE : 0) | (c.shoot ? F_SHOOT : 0) | (c.pass ? F_PASS : 0) | (c.descend ? F_DESCEND : 0);
+  const flags = (c.intake ? F_INTAKE : 0) | (c.shoot ? F_SHOOT : 0) | (c.pass ? F_PASS : 0) | (c.descend ? F_DESCEND : 0) | (c.block ? F_BLOCK : 0);
   const packed: PackedCommand = [r3(c.vx), r3(c.vy), r3(c.omega), flags, c.climb ?? -1];
   if (c.scoringLevel !== undefined) packed.push(c.scoringLevel);
   return packed;
@@ -103,6 +104,7 @@ export function unpackCommand(p: unknown): RobotCommand | null {
     shoot: (flags & F_SHOOT) !== 0,
     pass: (flags & F_PASS) !== 0,
     descend: (flags & F_DESCEND) !== 0,
+    ...((flags & F_BLOCK) !== 0 ? { block: true } : {}),
     climb: climb >= 0 ? climb : null,
     ...(p.length === 6 ? { scoringLevel: p[5] } : {}),
   };

@@ -111,6 +111,7 @@ export class HeadlessSim {
     const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
     cmd = robot.autoAlign(cmd, target);
     robot.lastCommand = cmd;
+    robot.overheadLimit = rules.overheadClearance?.(robot) ?? Infinity;
     robot.drive(cmd, dt);
     if (cmd.descend && robot.isClimbing) rules.requestDescend(robot);
     else if (cmd.climb !== null && !robot.isClimbing && !robot.tippedOver && robot.config.climber.maxLevel > 0) rules.requestClimb(robot, cmd.climb);
@@ -129,7 +130,7 @@ export class HeadlessSim {
         this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius, pool.colliderHalfHeight));
       }
     }
-    if (!rules.handlesIntake && cmd.intake && robot.capacityLeft > 0) {
+    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0) {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);
@@ -137,7 +138,7 @@ export class HeadlessSim {
         if ((p.y < 0.4 && robot.intakeContains(p, pool.radius)) || robot.stationContains(p, pool.radius)) {
           pool.hold(i, robot.id);
           robot.held.push(i);
-          if (robot.capacityLeft <= 0) break;
+          if (robot.intakeRoom <= 0) break;
         }
       }
     }

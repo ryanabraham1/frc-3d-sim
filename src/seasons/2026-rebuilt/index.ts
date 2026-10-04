@@ -1,7 +1,6 @@
 import { createRebuiltBot, REBUILT_AI_ROLES, REBUILT_AI_STRATEGIES } from './bots';
 import type { MapShape, SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
-import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, RebuiltAutoPilot } from './autopilot';
@@ -50,7 +49,9 @@ export const rebuilt2026: SeasonDefinition = {
   carpetColor: C.COLORS.carpet,
   maxRobotHeight: C.MAX_ROBOT_HEIGHT,
   maxRobotPerimeter: C.MAX_ROBOT_PERIMETER,
-  maxRobotWeight: lb(135) + BATTERY_MASS, // R408: robot + bumpers, plus the battery
+  // R408 allows 135 lb robot + bumpers plus the 13 lb battery (148 lb); stock robots are set to 150 lb (user decision),
+  // so the weight slider goes to 150.
+  maxRobotWeight: lb(150),
   foulValues: { minor: 5, major: 15 },
 
   timeline: TIMELINE,
@@ -164,5 +165,5 @@ export const rebuilt2026: SeasonDefinition = {
       );
     },
   },
-  controlsHelp: [...DEFAULT_CONTROLS_HELP, ['Aiming', 'Turret robots aim themselves; turretless robots with chassis auto-align rotate onto the HUB while you hold Space (you keep driving)'], ['REBUILT tips', 'Score (Space) only while YOUR hub is lit and your bumpers are in your ALLIANCE ZONE; from the neutral zone, feed (G) FUEL home']],
+  controlsHelp: [...DEFAULT_CONTROLS_HELP, ['F', 'Shot blocker up / down (1323 MadTown): stops the intake, and a raised blocker can\'t fit under the TRENCH'], ['Aiming', 'Turret robots aim themselves; turretless robots with chassis auto-align rotate onto the HUB while you hold Space (you keep driving)'], ['REBUILT tips', 'Score (Space) only while YOUR hub is lit and your bumpers are in your ALLIANCE ZONE; from the neutral zone, feed (G) FUEL home']],
 };

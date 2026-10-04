@@ -5,7 +5,7 @@
  */
 export type ActionId =
   | 'forward' | 'backward' | 'left' | 'right' | 'rotateLeft' | 'rotateRight' | 'precision'
-  | 'shoot' | 'pass' | 'intake' | 'toggleIntake' | 'climb' | 'descend'
+  | 'shoot' | 'pass' | 'intake' | 'toggleIntake' | 'climb' | 'descend' | 'toggleBlocker'
   | 'humanPlayer' | 'humanPlayerB' | 'humanPlayerN' | 'humanPlayerM'
   | 'levelUp' | 'levelDown' | 'level1' | 'level2' | 'level3' | 'level4'
   | 'cameraNext' | 'cameraFlip' | 'pause' | 'restart' | 'toggleHelp';
@@ -35,6 +35,7 @@ export const ACTIONS: ActionDef[] = [
   def('toggleIntake', 'Robot', 'Toggle auto-intake', 'KeyI'),
   def('climb', 'Robot', 'Climb', 'KeyC'),
   def('descend', 'Robot', 'Descend', 'KeyX'),
+  def('toggleBlocker', 'Robot', 'Shot blocker up / down (robots that have one)', 'KeyF'),
   def('levelUp', 'Robot', 'Level up', 'BracketRight'),
   def('levelDown', 'Robot', 'Level down', 'BracketLeft'),
   def('level1', 'Robot', 'Select level 1', 'Digit1'),

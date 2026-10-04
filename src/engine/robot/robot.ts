@@ -26,6 +26,8 @@ export interface RobotCommand {
   descend: boolean;
   /** Season scoring selection, e.g. REEFSCAPE elevator L1-L4. */
   scoringLevel?: number;
+  /** Hold the shot blocker out (robots with config.shotBlocker). */
+  block?: boolean;
 }
 
 export const IDLE_COMMAND: RobotCommand = { vx: 0, vy: 0, omega: 0, intake: false, shoot: false, pass: false, climb: null, descend: false };
@@ -112,11 +114,31 @@ export class Robot {
 
   private readonly fp: { length: number; width: number };
   private expansionCollider?: RAPIER.Collider;
+  private blockerCollider?: RAPIER.Collider;
+  /** Shot blocker deployment: 0 = stowed, 1 = fully out (config.shotBlocker). */
+  blockerDeploy = 0;
   private expansionHeight = -1;
   private hopperNet?: THREE.LineSegments;
   private netFuel: THREE.Mesh[] = [];
   /** Actual envelope used for obstacle routing and flexible-roof collisions. */
   get clearanceHeight(): number { return loadedRobotHeight(this.config, this.held.length); }
+  /** Lowest overhead obstacle above the robot this tick (set by the sim from the season; Infinity = none). */
+  overheadLimit = Infinity;
+  /**
+   * Pieces the intake may still take right now: none while the shot blocker is out, else `capacityLeft`, but never enough to grow an expanding hopper into the
+   * obstacle overhead (a net robot under the TRENCH stops intaking at its trench-safe load).
+   */
+  get intakeRoom(): number {
+    // The shot blocker folds over the intake side: the intake can't run while it's up or moving.
+    if (this.blockerDeploy > 0) return 0;
+    let room = this.capacityLeft;
+    if (this.config.hopperExpansion && this.overheadLimit < Infinity) {
+      let n = this.held.length;
+      while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
+      room = Math.min(room, n - this.held.length);
+    }
+    return Math.max(0, room);
+  }
   private hopperFill!: THREE.Mesh;
   private turret!: THREE.Group;
   private climberArm!: THREE.Mesh;
@@ -126,10 +148,10 @@ export class Robot {
   private readonly parts = new Map<ModelPart, THREE.Object3D[]>();
   /** Real-team visual model (config.model), animated from `anim` every frame. */
   private model: RobotModel | null = null;
-  private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, hood: 0, fill: 0, climb: 0, place: null, vx: 0, vz: 0, omega: 0 };
+  private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, hood: 0, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
   private lastFrame = -1;
   private lastHeld = 0;
-  /** Replicated mechanism bits (1 intake, 2 pass) on multiplayer clients; null = read lastCommand. */
+  /** Replicated mechanism bits (1 intake, 2 pass, 4 shot blocker out) on multiplayer clients; null = read lastCommand. */
   private netAct: number | null = null;
   /** Placement-season end effector pose for team models (set by the season each frame). */
   placeAnim: PlaceAnim | null = null;
@@ -210,6 +232,57 @@ export class Robot {
         .setTranslation(-c.frameLength * 0.1, c.height, 0).setMass(0).setFriction(0.2).setCollisionGroups(GROUPS.robot), this.body);
       this.expansionCollider.setEnabled(false);
     }
+    if (c.shotBlocker) {
+      // A thin panel that stops game pieces and hits field structure (a raised blocker can't pass under the TRENCH
+      // arm). Other robots don't touch it: it sits above bumper height, and robots would wedge on a 1 cm plate.
+      const b = c.shotBlocker;
+      // 4 cm thick so a fast FUEL can't clip through an edge between steps.
+      this.blockerCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(Math.hypot(b.reach, b.rise) / 2, 0.02, b.width / 2)
+        .setMass(0).setFriction(0.4).setRestitution(0.25).setCollisionGroups(collisionGroups(Group.ROBOT, Group.PIECE | Group.FIELD)), this.body);
+      this.blockerCollider.setEnabled(false);
+    }
+  }
+
+  /** Panel angle above the outward horizontal: π = folded inward on top, atan2(rise, reach) = fully out. */
+  blockerAngle(deploy = this.blockerDeploy): number {
+    const b = this.config.shotBlocker;
+    if (!b) return Math.PI;
+    return Math.PI - deploy * (Math.PI - Math.atan2(b.rise, b.reach));
+  }
+
+  /** Hinge of the shot blocker in robot-local coordinates (top edge of the frame on the intake side). */
+  blockerHinge(): { x: number; y: number } {
+    // At the robot's top, so the out-swung panel clears the 20 in guardrails by ~½ in.
+    return { x: groundSideSign(this.config) * this.config.frameLength / 2, y: this.config.height };
+  }
+
+  /**
+   * Swing the shot blocker toward the commanded state. It stays down while climbing, disabled or tipped. Under an
+   * overhead obstacle lower than its raised top (the TRENCH arm) it can't start rising; once up, the panel collider
+   * stops the robot at the arm instead.
+   */
+  private updateBlocker(cmd: RobotCommand, dt: number): void {
+    const b = this.config.shotBlocker;
+    if (!b) return;
+    const roofed = this.overheadLimit < this.config.height + b.rise;
+    const want = !!cmd.block && this.enabled && this.climbPhase === 'none' && !this.tippedOver;
+    const rate = dt / b.seconds;
+    this.blockerDeploy = clamp(want ? (roofed ? this.blockerDeploy : this.blockerDeploy + rate) : this.blockerDeploy - rate, 0, 1);
+    this.poseBlocker();
+  }
+
+  private poseBlocker(): void {
+    const col = this.blockerCollider;
+    const b = this.config.shotBlocker;
+    if (!col || !b) return;
+    col.setEnabled(this.blockerDeploy > 0.02);
+    const side = groundSideSign(this.config);
+    const phi = this.blockerAngle();
+    const half = Math.hypot(b.reach, b.rise) / 2;
+    const h = this.blockerHinge();
+    col.setTranslationWrtParent({ x: h.x + side * Math.cos(phi) * half, y: h.y + Math.sin(phi) * half, z: 0 });
+    const ang = Math.atan2(Math.sin(phi), side * Math.cos(phi));
+    col.setRotationWrtParent({ x: 0, y: 0, z: Math.sin(ang / 2), w: Math.cos(ang / 2) });
   }
 
   private updateHopperEnvelope(): void {
@@ -546,9 +619,15 @@ export class Robot {
     this.lastFrame = now;
     a.time += a.dt;
     a.enabled = this.enabled;
-    const act = this.netAct ?? (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0);
-    a.intaking = (act & 1) !== 0;
+    const act = this.netAct ?? this.actBits();
+    a.intaking = (act & 1) !== 0 && this.blockerDeploy === 0;
     a.passing = (act & 2) !== 0;
+    if (this.netAct !== null && this.config.shotBlocker) {
+      // Replicas aren't driven: swing the blocker toward the host's state at the real deploy speed.
+      this.blockerDeploy = clamp(this.blockerDeploy + ((act & 4) ? 1 : -1) * a.dt / this.config.shotBlocker.seconds, 0, 1);
+      this.poseBlocker();
+    }
+    a.blocker = this.blockerDeploy;
     // A piece leaving the robot (shot, placed or fed) flashes the shooter / end effector.
     if (this.held.length < this.lastHeld) a.firing = 1;
     this.lastHeld = this.held.length;
@@ -777,6 +856,7 @@ export class Robot {
    */
   drive(cmd: RobotCommand, dt: number): void {
     this.updateHopperEnvelope();
+    this.updateBlocker(cmd, dt);
     if (this.climbPhase !== 'none') {
       this.driven = null;
       return;
@@ -1162,8 +1242,8 @@ export class Robot {
     const c0 = this.config;
     const c = c0.launcher;
     if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none' || this.tippedOver) return null;
-    // Auto-align robots hold fire until the chassis points at the target (~3°).
-    if (target && !c.turret && this.config.autoAlign && Math.abs(this.alignError) > 0.05) return null;
+    // Auto-align robots hold fire until the chassis points at the target (launcher.alignTolerance, default ~3°).
+    if (target && !c.turret && this.config.autoAlign && Math.abs(this.alignError) > (c.alignTolerance ?? 0.05)) return null;
     if (!this.projectileSet && !Robot.warnedProjectile && typeof console !== 'undefined') {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
@@ -1342,9 +1422,14 @@ export class Robot {
       climbSlot: this.climbSlot,
       climbProgress: this.climbProgress,
       cmdSeq,
-      act: (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0),
+      act: this.actBits(),
       hood: this.lastShotAngle,
     };
+  }
+
+  /** Mechanism bits replicated to clients: 1 intake, 2 pass, 4 shot blocker out. */
+  private actBits(): number {
+    return (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0) | (this.lastCommand.block && this.blockerDeploy > 0 ? 4 : 0);
   }
 
   /** Replica update from a (possibly interpolated) snapshot. The body is only posed, never simulated. */
@@ -1389,6 +1474,8 @@ export class Robot {
     this.turretYaw = pose.yaw;
     this.fireCooldown = 0;
     this.held.length = 0;
+    this.blockerDeploy = 0;
+    this.poseBlocker();
   }
 
   /** Hide the generic hopper fill (seasons that draw their own held game piece). */

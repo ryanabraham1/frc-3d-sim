@@ -180,12 +180,29 @@ launch points and scoring still come from the config, and the floor intake follo
 | 2025 | 254 Undertow | blue two-stage elevator with zig-zag top, smoked CORAL funnel with NASA logo, ground intake linkage, roller-claw climber | 254 2025 Technical Binder; team254.com/first/2025 photo |
 | 2025 | 1778 SubZero | silver belt elevator with an A-frame brace, two cascading stages, carriage arm that swings 290° to either side (scores side-on to the REEF), floor intake that folds up under the hanging arm for the handoff, no climber | Chief Delphi "1778 Chill Out \| REEFSCAPE Robot Reveal" and "1778 2025 CAD & Code Release" |
 | 2026 | 4414 RIPCURRENT | smoked bumper walls, teal trusses, flat spoked dye rotor, pancake turret on a column, hopper extension that slides out with the latched intake | 4414 2026 Technical Binder (2026.team4414.com) |
+| 2026 | 1323 MadTown | black sponsor-panel hopper box, slatted top cage, dye rotor + turret on a column (a smaller, slower-firing RIPCURRENT), and a slatted SHOT BLOCKER hinged on the intake-side top edge | 2026 Champs match photos/video; Chief Delphi "How does 1323 get away with such a complicated robot?" |
 | 2026 | 254 Overload | smoked hopper box with sponsor decals, full-width plate-wall shooter, intake on blue truss rails that retracts while shooting | Chief Delphi "Team 254 Presents: Overload" |
 | 2026 | 1690 Kepler | black X-lattice walls, top arch, turret on an 8 in bearing, gear-driven shooter | Chief Delphi "FRC Orbit 1690 2026 Robot CAD Release" |
 | 2026 | 4946 Moto Moto (BUMP) | half-circle "roomba" ~30 in tall: D-shaped bumper, round clear hopper, dye rotor, turret on a center column, silver goalpost over the flat-side intake | 4946 2026 Engineering Report; Chief Delphi "4946 The Alpha Dogs 2026 Robot: Moto Moto" |
 | 2026 | 3476 Sandspit (BUMP) | tall closed clear hopper, black dotted corner posts, orange rails + A-frame, teal printed lattice, wide multi-lane shooter, retracting intake | Chief Delphi "Team 3476: Code Orange 2026 Sandspit Robot Reveal"; TBA 2026 media |
 | 2026 | 9483 Enigma (BUMP) | too tall for the TRENCH: black hopper box with big team numbers, silver corner extrusions, spindexer bowl, turret | Chief Delphi "Team 9483 Presents: Enigma"; TBA 2026 media |
 
+
+**Shot blocker (1323).** `config.shotBlocker` is a full-width panel hinged on the top edge of the intake side, so it
+extends past the same side as the intake (R: 12 in past the FRAME PERIMETER, on one side; 30 in max height). It swings
+from folded on top to `atan2(rise, reach)` above horizontal in `seconds`, driven by `RobotCommand.block` (toggle F /
+gamepad L3, rebindable). Its collider is a real 4 cm Rapier plate on the robot body that stops game pieces and hits
+field structure, so a raised blocker catches the TRENCH arm and the robot can't drive under it; it can't be raised
+while under the arm. Other robots don't touch it (it sits above bumper height, and a thin plate would wedge robots),
+which is the one approximation. The intake can't run while it is up or moving (it covers the intake side). Against a
+front-edge dumper (254) parked bumper to bumper, 0 of 20 shots get past it raised vs 20 of 20 stowed
+(`tests/shot-blocker.test.ts`); streams outside its width, or from a turret set back from the edge, can still clear
+it. AI-driven 1323s don't raise it yet.
+
+**Stock 2026 weight and chassis-aim tolerance.** Every stock 2026 robot (presets and team robots) weighs 150 lb
+(`REBUILT_ROBOT_MASS`, user decision; R408's 135 lb + battery is 148 lb, so the weight slider goes to 150). The presets'
+`weight` field now only scales acceleration. Chassis-aimed 2026 shooters fire within 0.15 rad (~9°) of the HUB
+(`launcher.alignTolerance`; other seasons keep ~3°), so a shove costs accuracy instead of stopping the stream.
 
 ### Additional top-team profiles
 
@@ -210,7 +227,10 @@ with expansion above 70. Full-load roof heights
 interpolates the loaded envelope, bows a crossed-strand net upward over visible FUEL, and adds a massless
 upper collider. Emptying lowers both the roof and collider. Robot routing uses `clearanceHeight`, so an
 overfilled net robot chooses the BUMP instead of planning through the TRENCH. The fixed shooter exit height
-stays unchanged. Multiplayer derives the same net shape from the existing replicated held-piece count.
+stays unchanged. While a net/telescoping robot is over a TRENCH arm, or within 0.6 m of one, its intake stops taking FUEL once the
+envelope would exceed `TRENCH_SAFE_HEIGHT` (22.25 in minus ½ in), via `SeasonRules.overheadClearance` and
+`Robot.intakeRoom`; it resumes after it clears the TRENCH. This keeps an intaking driver from swelling the hopper into
+the arm and jamming. Multiplayer derives the same net shape from the existing replicated held-piece count.
 This is an approximate rigid collision envelope for a flexible net; individual strand elasticity is not simulated.
 Use the gallery's “Full hopper (100%)” pose to inspect the bulge and “Stowed” to inspect the relaxed roof.
 

@@ -64,6 +64,7 @@ function frame(now: number) {
     const r=i.robot; r.enabled=pose.value !== 'idle';
     r.climbPhase=pose.value==='climb'?'align':'none';
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score'};
+    r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
     r.placeAnim = {height:pose.value==='score'?1.75:0.45,forward:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:pose.value==='score'&&r.config.placement?.scoreSide==='sides'?1:0};
     r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):0;
     r.syncVisual(dt);

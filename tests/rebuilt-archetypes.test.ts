@@ -97,7 +97,8 @@ describe('2026 REBUILT robot archetypes', () => {
         return { ...IDLE_COMMAND, shoot: true };
       });
       results.push(season.testing!.goalCount(sim.ctx, 'blue'));
-      if (aim === 'align') expect(Math.abs(Math.atan2(hub.y - sim.robot.pose.y, hub.x - sim.robot.pose.x) - yawAtShot)).toBeLessThan(0.08);
+      // Fires once inside the 2026 chassis-aim tolerance (0.15 rad), still swinging onto the HUB.
+      if (aim === 'align') expect(Math.abs(Math.atan2(hub.y - sim.robot.pose.y, hub.x - sim.robot.pose.x) - yawAtShot)).toBeLessThan(0.16);
     }
     expect(results[0]).toBeGreaterThanOrEqual(6);
     expect(results[1]).toBe(0);

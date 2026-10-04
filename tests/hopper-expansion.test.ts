@@ -58,3 +58,39 @@ it('net and telescoping expansion do not inflate the requested total capacities'
     if(c.hopperExpansion) expect(c.hopperExpansion.startCount).toBeLessThan(capacity);
   }
 });
+
+for (const team of [254, 4414, 1678]) it(`${team}: intaking through the trench stops at the trench-safe load instead of jamming, then resumes after`, () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
+  let safe = c.hopperExpansion!.startCount;
+  while (loadedRobotHeight(c, safe + 1) <= C.TRENCH_SAFE_HEIGHT) safe++;
+  const hubX = C.HUB_CENTER.x, y = C.TRENCH_OPENING_CENTER_Y;
+  // Intake is on the back: face away from travel (yaw π) with FUEL strewn inside the trench and beyond it.
+  const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: hubX - 2.2, y, yaw: Math.PI } }); sims.push(sim);
+  const r = sim.robot;
+  sim.load(safe);
+  sim.scatter([-0.9, -0.5, -0.1, 0.3, 0.7, 1.2, 1.5, 1.8].map((dx, k) => ({ x: hubX + dx, y: y + (k % 2 ? 0.1 : -0.1) })));
+  let peak = 0, inside = 0;
+  sim.run(8, { ...IDLE_COMMAND, vx: 1.5, intake: true }, () => {
+    const under = r.overheadLimit < Infinity && Math.abs(r.pose.x - hubX) < C.TRENCH_DEPTH / 2;
+    if (under) { peak = Math.max(peak, r.clearanceHeight); inside = Math.max(inside, r.held.length); }
+    return false;
+  });
+  expect(inside).toBe(safe);
+  expect(peak).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
+  expect(r.pose.x).toBeGreaterThan(hubX + C.TRENCH_DEPTH / 2 + 0.5);
+  expect(r.held.length).toBeGreaterThan(safe);
+});
+
+it('a net robot under the trench may keep intaking below the trench-safe load, and a plain robot is never limited', () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === 254)!.config);
+  const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(sim);
+  const r = sim.robot;
+  let safe = c.hopperExpansion!.startCount;
+  while (loadedRobotHeight(c, safe + 1) <= C.TRENCH_SAFE_HEIGHT) safe++;
+  sim.load(safe - 3);
+  r.overheadLimit = sim.rules.overheadClearance!(r);
+  expect(r.overheadLimit).toBe(C.TRENCH_SAFE_HEIGHT);
+  expect(r.intakeRoom).toBe(3);
+  const plain = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
+  expect(plain.rules.overheadClearance!(plain.robot)).toBe(Infinity);
+});

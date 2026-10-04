@@ -148,6 +148,12 @@ export interface SeasonRules {
    * auto-align. Chassis auto-align onto the shot target is applied by the engine afterwards.
    */
   adjustCommand?(robot: Robot, command: RobotCommand, dt: number): RobotCommand;
+  /**
+   * Optional: height of the lowest fixed overhead obstacle (e.g. a TRENCH arm) over the robot's footprint right now,
+   * `Infinity` when there is none. Robots whose loaded envelope grows with held pieces stop taking more in while
+   * under it, instead of swelling into the obstacle and jamming.
+   */
+  overheadClearance?(robot: Robot): number;
   /** Stage game pieces and robot preloads for a fresh match. */
   stage(): void;
   onPeriodChange(change: PeriodChange): void;

@@ -194,6 +194,8 @@ export class Game {
   private fpsAcc = 0;
   private fpsFrames = 0;
   private autoIntake: boolean;
+  /** Driver's shot blocker toggle (F); only robots with config.shotBlocker act on it. */
+  private blockerUp = false;
   /** Player was told their robot tipped over (reset once it is back on its wheels). */
   private tipNotified = false;
   climbLevel: number;
@@ -522,6 +524,13 @@ export class Game {
       this.autoIntake = !this.autoIntake;
       this.hud.toast(`Auto-intake ${this.autoIntake ? 'ON' : 'OFF'}`);
     }
+    if (inp.toggleBlocker && this.player) {
+      if (!this.player.config.shotBlocker) this.hud.toast('This robot has no shot blocker');
+      else {
+        this.blockerUp = !this.blockerUp;
+        this.hud.toast(`Shot blocker ${this.blockerUp ? 'UP' : 'DOWN'}`);
+      }
+    }
   }
 
   private playerCommand(inp: DriverInput, robot: Robot): RobotCommand {
@@ -539,11 +548,13 @@ export class Game {
       vx: (f * Math.cos(ref) - l * Math.sin(ref)) * sp,
       vy: (f * Math.sin(ref) + l * Math.cos(ref)) * sp,
       omega: inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : 0.75),
-      intake: this.autoIntake || inp.intake,
+      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together.
+      intake: (this.autoIntake || inp.intake) && !(this.blockerUp && robot.config.shotBlocker),
       shoot: inp.shoot,
       pass: inp.pass,
       climb: inp.climb ? this.climbLevel : null,
       descend: inp.descend,
+      ...(this.blockerUp && robot.config.shotBlocker ? { block: true } : {}),
       ...(this.season.maxScoringLevel ? { scoringLevel: this.scoringLevel } : {}),
     };
   }
@@ -587,6 +598,7 @@ export class Game {
       const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
       if (enabled) cmd = r.autoAlign(cmd, target);
       r.lastCommand = cmd;
+      r.overheadLimit = this.rules.overheadClearance?.(r) ?? Infinity;
       r.drive(cmd, dt);
       if (enabled) {
         if (cmd.descend && r.isClimbing) this.rules.requestDescend(r);
@@ -611,7 +623,7 @@ export class Game {
       const pool = this.pool;
       const zones: { r: Robot; z: IntakeZone }[] = [];
       for (const r of this.robots) {
-        const z = r.lastCommand.intake && r.capacityLeft > 0 ? r.intakeZone() : null;
+        const z = r.lastCommand.intake && r.intakeRoom > 0 ? r.intakeZone() : null;
         if (z) zones.push({ r, z });
       }
       for (let i = 0; i < pool.count && zones.length; i++) {
@@ -623,7 +635,7 @@ export class Game {
           if (intakeZoneContains(z, p, pool.radius, 0.4)) {
             pool.hold(i, r.id);
             r.held.push(i);
-            if (r.capacityLeft <= 0) zones.splice(k, 1);
+            if (r.intakeRoom <= 0) zones.splice(k, 1);
             break;
           }
         }
@@ -776,6 +788,7 @@ export class Game {
           `<div>Camera: ${this.camera.label} <span class="dim">(V${this.camera.mode === 'chase' ? ' · T flips' : ''})</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +
           `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(I)</span></div>` +
+          (p.config.shotBlocker ? `<div>Shot blocker: ${this.blockerUp ? (p.blockerDeploy < 1 && p.overheadLimit < Infinity ? 'held down by TRENCH' : 'UP · intake off') : 'down'} <span class="dim">(F)</span></div>` : '') +
           (this.season.maxScoringLevel
             ? `<div>Reef target: L${this.scoringLevel} <span class="dim">(1-4)</span></div><div>Cage: ${this.season.climberLabels?.[p.config.climber.maxLevel] ?? 'Deep'} <span class="dim">(C)</span></div>`
             : this.season.climberLabels

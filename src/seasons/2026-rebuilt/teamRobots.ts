@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { belt, fasteners, motor } from '@engine/robot/mechanicalDetail';
-import { inch, lb } from '@engine/units';
+import { inch } from '@engine/units';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
 /**
@@ -118,6 +118,89 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
       for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
       hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
       sh.hood.rotation.z = hoodAng;
+    },
+  };
+});
+
+// ── 1323 MadTown (match photos, 2026 Champs): squared-off black hopper box with sponsor panels (WE BELIEVE,
+//    fabworks…), a black slatted cage on top, a turret over a dye rotor like 4414's, and a black slatted SHOT BLOCKER
+//    hinged on the top edge of the intake side that swings out and up over a neighbouring trench robot's shooter ──
+registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
+  const c = k.config;
+  const L = c.frameLength;
+  const W = c.frameWidth;
+  const H = c.height;
+  const bt = c.bumperTop;
+  const blue = mat(0x2d6fe0, { metal: 0.5, rough: 0.4 });
+  const black = mat(0x131417, { metal: 0.3, rough: 0.55 });
+  const blackTube = darkTubeMat(0x17181b);
+  const smoke = mat(0x1d1f23, { opacity: 0.82, metal: 0.1, rough: 0.3 });
+  const side = k.groundSide;
+  const db = drivebase(k, { motorRing: 0x2d6fe0 });
+  const hopH = H - bt - 0.04;
+  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: smoke });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.48, bt, sz * W * 0.48], [sx * L * 0.48, H - 0.02, sz * W * 0.48], 0.022, blackTube);
+  // Slatted black cage around the top of the hopper.
+  for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.1, sz * W * 0.48], [L * 0.96, 0, 0], [0, 0.08, 0], { cells: 7, w: 0.012, m: black });
+  for (const sz of [-1, 1]) {
+    const rotY = sz > 0 ? 0 : Math.PI;
+    const z = sz * (W * 0.48 + 0.006);
+    decal(k.visual, 'WE BELIEVE', { w: 0.16, h: 0.035, x: -L * 0.22, y: H - 0.15, z, rotY });
+    decal(k.visual, 'fabworks', { w: 0.14, h: 0.03, x: -L * 0.22, y: bt + hopH * 0.35, z, rotY });
+    decal(k.visual, 'AT', { w: 0.07, h: 0.05, x: 0, y: H - 0.15, z, rotY });
+    decal(k.visual, 'MADTOWN', { w: 0.15, h: 0.035, x: L * 0.22, y: H - 0.16, z, rotY });
+  }
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH * 0.85, color: FUEL });
+  // Dye rotor on the floor feeding the turret column; the turret sits forward of center so the folded blocker clears it.
+  const tx = -side * L * 0.2;
+  const rotor = new THREE.Group();
+  rotor.position.set(0, bt + 0.02, 0);
+  const rr = Math.min(L, W) * 0.38;
+  rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, 0.015, 36), black));
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    box(rotor, rr * 0.8, 0.035, 0.012, i % 2 ? blue : black, Math.cos(a) * rr * 0.5, 0.025, -Math.sin(a) * rr * 0.5).rotation.y = a;
+  }
+  k.visual.add(rotor);
+  const t = k.turret;
+  t.position.set(tx, H - 0.07, 0);
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, H - 0.07 - bt - 0.04, 16), black);
+  column.position.set(tx, (H - 0.07 + bt + 0.04) / 2, 0);
+  k.visual.add(column);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.01, 6, 32), blue);
+  ring.rotation.x = Math.PI / 2;
+  t.add(ring);
+  const sh = shooterHead(t, { width: 0.15, wheelR: inch(2), wheel: mat(0x2b2d31, { rough: 0.7 }), plate: black, hood: blue, y: 0.04 });
+  // Shot blocker: a slatted panel on a hinge along the top edge of the intake side (local +x of the hinge = outward).
+  const b = c.shotBlocker!;
+  const len = Math.hypot(b.reach, b.rise);
+  const out = Math.atan2(b.rise, b.reach);
+  const hinge = pivot(k.visual, side * L / 2, H);
+  const panel = new THREE.Group();
+  hinge.add(panel);
+  for (const z of [-b.width / 2, b.width / 2]) bar(panel, [0, 0, z], [len, 0, z], 0.02, blackTube);
+  for (let i = 0; i <= 4; i++) bar(panel, [(len * i) / 4, 0, -b.width / 2], [(len * i) / 4, 0, b.width / 2], 0.015, black);
+  for (let i = 1; i < 8; i++) box(panel, len, 0.006, 0.012, black, len / 2, 0.005, -b.width / 2 + (b.width * i) / 8);
+  roller(hinge, 0.018, b.width + 0.04, blue);
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blackTube });
+  const deploy = { v: 0 };
+  let rotorRate = 0;
+  let hoodAng = 0;
+  return {
+    replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    lightAt: [side * L * 0.4, H - 0.01, W * 0.4],
+    update(s) {
+      db.update(s);
+      intake.update(s, latchDeploy(deploy, s));
+      fill.set(s.fill);
+      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 8 : -1.2, 6, s.dt);
+      spin(rotor, rotorRate, s.dt, 'y');
+      for (const w of sh.wheels) spin(w, -flywheelSpeed(s), s.dt);
+      hoodAng = approach(hoodAng, (s.hood - 1.0) * 0.9, 9, s.dt);
+      sh.hood.rotation.z = hoodAng;
+      // Same pose as the collider in Robot.poseBlocker: folded inward (π) → out at atan2(rise, reach).
+      const phi = Math.PI - s.blocker * (Math.PI - out);
+      hinge.rotation.z = Math.atan2(Math.sin(phi), side * Math.cos(phi));
     },
   };
 });
@@ -547,13 +630,26 @@ export function rebuiltTeamRobots(): TeamRobot[] {
       }),
     },
     {
+      id: 'madtown-2026-1323', team: 1323, name: 'MadTown',
+      description: '1323 MadTown Robotics (2026 World Champions). A trench-height turret robot in the RIPCURRENT mould: dye rotor feeding a turret that shoots on the move, slightly smaller hopper (70 FUEL) and lower fire rate (13 FUEL/s) than 4414. Its signature SHOT BLOCKER, a slatted panel hinged on the intake-side top edge, swings out 12 in and up to the 30 in height limit over a neighbouring trench robot\'s shooter (F / gamepad L3). Raised, it hits the TRENCH arm, so the robot cannot drive under, and it cannot be raised under the arm. The intake is off while it is up. No climber [EST].',
+      source: 'Match photos/video (2026 Champs, Einstein); Chief Delphi "How does 1323 get away with such a complicated robot?" ("turreted dye rotor with a shot blocker"); user tuning relative to 4414',
+      config: teamConfig(1323, 'madtown-2026-1323', { intake: 'both', aim: 'turret', hopper: 70, tall: false, rate: 13, climb: 0 }, (c) => {
+        c.frameLength = inch(27); // [EST] near-square frame in photos
+        c.frameWidth = inch(27);
+        // [R: 12 in extension past the FRAME PERIMETER, on the intake side so the intake and blocker share one side;
+        // 30 in max height] Full frame width; deploy time [EST].
+        c.shotBlocker = { reach: inch(12), rise: inch(30) - c.height, width: c.frameWidth, seconds: 0.35 };
+        setRebuiltAccuracy(c, 88); // [EST]
+        c.maxSpeed = 4.6; // [EST]
+      }),
+    },
+    {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, 50-FUEL total net hopper, 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter. 115 lb.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, 50-FUEL total net hopper, 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
       config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 50, tall: false, rate: 25, climb: 1 }, (c) => {
         c.hopperExpansion = { startCount: 40, fullHeight: inch(28) }; // [EST] net bulges when over trench-safe load
         c.launcher.exits = 3; // [EST] wide multi-wheel shooter
-        c.mass = lb(115);
       }),
     },
     {

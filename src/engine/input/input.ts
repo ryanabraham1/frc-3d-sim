@@ -31,6 +31,8 @@ export interface DriverInput {
   pause: boolean;
   restart: boolean;
   toggleIntake: boolean;
+  /** Raise / lower the shot blocker (robots with config.shotBlocker). */
+  toggleBlocker: boolean;
   toggleHelp: boolean;
 }
 
@@ -98,10 +100,11 @@ export class InputManager {
     let pause = this.edge('pause');
     const restart = this.edge('restart');
     const toggleIntake = this.edge('toggleIntake');
+    let toggleBlocker = this.edge('toggleBlocker');
     const toggleHelp = this.edge('toggleHelp');
 
     // Gamepad (standard mapping): LS move, RS-x rotate, RT shoot, LT intake, A climb, B descend,
-    // X human player, Y camera, D-pad up/down level, Start pause.
+    // X human player, Y camera, D-pad up/down level, Start pause, L3 shot blocker.
     this.padEdges.clear();
     const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
     const pad = Array.from(pads).find((p) => p && p.connected) ?? null;
@@ -131,6 +134,7 @@ export class InputManager {
       levelUp ||= e(12);
       levelDown ||= e(13);
       pause ||= e(9);
+      toggleBlocker ||= e(10);
       if (e(14)) setLevel = 1;
       if (e(15)) setLevel = 3;
     }
@@ -155,6 +159,7 @@ export class InputManager {
       pause,
       restart,
       toggleIntake,
+      toggleBlocker,
       toggleHelp,
     };
   }
@@ -175,5 +180,5 @@ export const DEFAULT_CONTROLS_HELP: [string, string][] = [
   ['Mouse drag / wheel', 'Orbit / zoom (Free orbit camera)'],
   ['P / Esc', 'Pause'],
   ['?', 'Toggle this help'],
-  ['Gamepad', 'LS drive · RS rotate · RT shoot · RB feed · LT intake · A climb · B descend · X human player · Y camera'],
+  ['Gamepad', 'LS drive · RS rotate · RT shoot · RB feed · LT intake · A climb · B descend · X human player · Y camera · L3 shot blocker'],
 ];

@@ -121,6 +121,30 @@ export class RebuiltRules implements SeasonRules {
     return this.ctx.score.category(a, 'towerAuto') + this.ctx.score.category(a, 'towerTeleop');
   }
 
+  /**
+   * [M 5.6] A robot over a TRENCH arm (either hub row, both guardrails) has only TRENCH_CLEARANCE above it. The
+   * margin starts the limit before the robot gets there (the intake mouth reaches past the bumper and the robot
+   * keeps rolling), so a FUEL taken on the way in can't swell the hopper into the arm. For a shot blocker it only
+   * reports the arm actually overhead (the blocker can't be raised into it; a raised one hits the arm physically).
+   */
+  overheadClearance(robot: Robot): number {
+    const blocker = robot.config.shotBlocker;
+    if (!robot.config.hopperExpansion && !blocker) return Infinity;
+    const margin = robot.config.hopperExpansion ? 0.6 : 0;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of robot.corners()) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    // The arm ends at the BUMP edge (see buildBumpsAndTrenches).
+    const reach = Math.min(C.TRENCH_WIDTH, C.HUB_CENTER.y - C.HUB_SIZE / 2 - C.BUMP_WIDTH);
+    for (const hubX of [C.HUB_CENTER.x, C.FIELD_LENGTH - C.HUB_CENTER.x]) {
+      if (maxX < hubX - C.TRENCH_DEPTH / 2 - margin || minX > hubX + C.TRENCH_DEPTH / 2 + margin) continue;
+      if (minY < reach + margin || maxY > C.FIELD_WIDTH - reach - margin) return C.TRENCH_SAFE_HEIGHT;
+    }
+    return Infinity;
+  }
+
   chuteCount(a: Alliance): number {
     return this.ctx.pool.countIn('reserve', CHUTE_TAG(a));
   }

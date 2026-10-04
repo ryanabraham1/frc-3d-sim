@@ -44,6 +44,8 @@ export const TRENCH_DEPTH = inch(47);
 export const TRENCH_HEIGHT = inch(40.25);
 export const TRENCH_OPENING_WIDTH = inch(50.34);
 export const TRENCH_CLEARANCE = inch(22.25);
+/** Tallest a robot may swell to under the TRENCH and still roll: Rapier needs ~1 cm to spare or it contacts the arm. */
+export const TRENCH_SAFE_HEIGHT = TRENCH_CLEARANCE - inch(0.5);
 export const TRENCH_OPENING_CENTER_Y = 0.6445; // [TAG] tags 17/28 centered on the opening
 export const TRENCH_ARM_THICKNESS = inch(6); // [EST]
 

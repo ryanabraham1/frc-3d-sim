@@ -61,6 +61,7 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
         const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(r) : rules.aimTarget(r);
         if (enabled) cmd = r.autoAlign(cmd, target);
         r.lastCommand = cmd;
+        r.overheadLimit = rules.overheadClearance?.(r) ?? Infinity;
         r.drive(cmd, dt);
         if (enabled) {
           if (cmd.descend && r.isClimbing) rules.requestDescend(r);
@@ -80,7 +81,10 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
         }
       }
       if (enabled && !rules.handlesIntake) {
-        const zones = ctx.robots.flatMap((r) => { const z = r.lastCommand.intake && r.capacityLeft > 0 ? r.intakeZone() : null; return z ? [{ r, z }] : []; });
+        const zones = ctx.robots.flatMap((r) => {
+          const z = r.lastCommand.intake && r.intakeRoom > 0 ? r.intakeZone() : null;
+          return z ? [{ r, z }] : [];
+        });
         for (let i = 0; i < pool.count && zones.length; i++) {
           if (pool.state[i] !== 'field') continue;
           const p = pool.position(i);
@@ -89,7 +93,7 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
             if (r.justLaunched(i) || !intakeZoneContains(z, p, pool.radius, 0.4)) continue;
             pool.hold(i, r.id);
             r.held.push(i);
-            if (r.capacityLeft <= 0) zones.splice(k, 1);
+            if (r.intakeRoom <= 0) zones.splice(k, 1);
             break;
           }
         }
