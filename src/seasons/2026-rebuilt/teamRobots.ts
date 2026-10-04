@@ -599,7 +599,7 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
  */
 const INTAKE_RATE: Record<number, number> = {
   4414: 18, 254: 16, 9128: 17, 6329: 15, 2910: 14, 1323: 14, 3476: 14, 9483: 13, 4946: 13, 5940: 13,
-  1678: 12, 7769: 12, 971: 11, 1690: 11, 1778: 11,
+  604: 16, 1678: 12, 7769: 12, 971: 11, 1690: 11, 1778: 11,
 };
 
 export function rebuiltTeamRobots(): TeamRobot[] {

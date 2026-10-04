@@ -217,7 +217,7 @@ not measured team rankings. 2025 profiles vary the actual lift/release/harvest/c
 | 2025 | 1690 WHISPER, 2056 LIGHTNING, 118 Firefly | Vacuum end effector, continuous-belt elevator/gripper, and separate roller channels. Lift speeds 2.2/2.5/1.9 m/s; release delays 0.30/0.40/0.25 s; harvest delays 0.35/0.45/0.30 s. All support full scoring; differences are throughput and mechanism design. |
 | 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 33/24/16 FUEL/s are estimates. Re•Blitz uses 40 capacity and 33 FUEL/s following user guidance (~40 balls, 30–35 FUEL/s). Mixtape holds 33 FUEL following user tuning. Its heads share the engine's one aim and launch point; independent turret streams are not simulated. |
 
-### Robots added from CAD / reveal research (3 per past season, 5 for 2026)
+### Robots added from CAD / reveal research (3 per past season, 6 for 2026)
 
 Each was picked from a Chief Delphi reveal or CAD release with photos or renders, modeled in
 `src/seasons/<year>/moreTeamRobots.ts` in the clean flat style of rebuildsim.com (solid colours, clear walls, every
@@ -231,6 +231,7 @@ robot's hardware so the comparison stays fair.
 | 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 40 [EST], 16/s, intake 13/s |
 | 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 45 [EST; the team quotes "almost 70" but a non-expanding trench-height hopper holds far less], 15/s [EST], intake 12/s |
 | 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 40 [EST: team's ~80 doesn't fit a non-expanding trench-height box], 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
+| 2026 | 604 Toploader | tall 27 in BUMP robot, single-stream turret over a dye rotor (team prototype ~15 BPS), white corrugated walls, hopper slides out with the intake, no climber | cap 60 [EST], 14/s, intake 16/s [EST] |
 | 2025 | 1678 SubLime, 971 Fiddler, 341 Miss Daisy | tall-tower tipping arm / truss elevator with maroon claw / continuous elevator + lantern shoulder | lift, cycle and speed [EST] |
 | 2024 | 1114 Skyfall, 2910 Typhoon, 581 Titan | pivoting shooter arm (code repo: arm + intake only) / TURRET with any-angle feed, slow climb / 25.5 × 28.5 in, long hooks | speed, accel, climb time [EST] |
 

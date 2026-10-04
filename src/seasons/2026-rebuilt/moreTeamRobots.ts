@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, flowAt, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { motor } from '@engine/robot/mechanicalDetail';
@@ -425,7 +425,7 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
   for (let i = 0; i < 3; i++) feedRolls.push(roller(k.visual, 0.025, W * 0.82, black, tx + side * 0.06, bt + 0.09 + i * (sy - bt - 0.15) / 2));
   const drum = roller(k.visual, 0.051, W * 0.82, black, tx, sy - 0.025);
   const hood = pivot(k.visual, tx, sy - 0.025); hoodShell(hood, 0.062, W * 0.86, silver);
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: red, rollerMaterial: black, stow: 0.15 });
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: red, rollerMaterial: black, stow: Math.PI * 0.85 });
   const d = { v: 0 }, pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.92, width: W * 0.87, height: sh.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'], lightAt: [tx, sy + 0.1, W * 0.4],
@@ -488,6 +488,59 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
   };
 });
 
+// ── 604 TOPLOADER (checklist, 2026): TBA photos + the team's CAD/code release post. ARCHETYPE: single-stream TURRET over
+//    a dye-rotor "serializer" (~15 BPS in the team's prototype), shoots on the fly; a tall BUMP robot (not trench height),
+//    27 in square, no climber mentioned. INTAKE on one end: independent polycarbonate arms with silicone-covered
+//    rollers; the sliding hopper extension deploys WITH the intake (surgical-tubing return), like 4414's.
+//    LOOK: white laminated corrugated-plastic side walls (a notch cut low at the front), a black rear section and
+//    black frame, yellow 3D-printed turret ring and wire guides on top, an orange beacon. Capacity is [EST]: not
+//    stated, sized above a trench-height box because it is tall and the hopper slides out. ──
+registerRobotModel('toploader-604', (k: ModelKit) => {
+  const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop, side = k.groundSide;
+  const white = mat(0xf2f4f6, { rough: 0.9 }), black = mat(0x17181b, { metal: 0.3, rough: 0.5 }), blackTube = tubeMat(0x1c1e22), yellow = mat(0xe8c21a, { rough: 0.5 }), clear = mat(0xdde5f0, { opacity: 0.25, rough: 0.2 });
+  const db = drivebase(k, { tube: blackTube, motorRing: 0xe8c21a });
+  const hopH = H - bt - 0.04;
+  // White corrugated side walls with a black rear section at the shooting end.
+  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: white, frame: blackTube });
+  box(k.visual, L * 0.3, hopH, W * 0.96, black, -side * L * 0.33, bt + hopH / 2, 0);
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH * 0.5, color: FUEL, capacity: c.hopperCapacity });
+  // Sliding hopper extension that deploys with the intake.
+  const tray = new THREE.Group();
+  k.visual.add(tray);
+  hopperWalls(tray, { x: side * (L / 2 - 0.12), y0: bt + 0.02, length: 0.24, width: W * 0.9, height: hopH * 0.85, m: white, frame: blackTube });
+  // Dye rotor and the inset turret, yellow ring and wire guides on top.
+  const rr = Math.min(L, W) * 0.4, cx = L * 0.02;
+  const dye = dyeRotor(k.visual, { x: cx, y0: bt + 0.02, R: rr, wallH: 0.09, towerX: cx, towerR: 0.085, towerTop: H - 0.08, plate: black, accent: yellow, motors: 2 });
+  const t = k.turret;
+  t.position.set(cx, H - 0.07, 0);
+  const sh = turretShooter(t, { width: 0.19, wheel: mat(0x2a2d32, { rough: 0.8 }), plate: black, accent: yellow, height: 0.15, topY: 0.06 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.012, 8, 40), yellow);
+  ring.rotation.x = Math.PI / 2; ring.position.set(cx, H - 0.025, 0); k.visual.add(ring);
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.016, 0.03, 12), mat(0xff8a1a, { emissive: 0xff6a00 }));
+  beacon.position.set(-L * 0.38, H + 0.01, -W * 0.38); k.visual.add(beacon);
+  for (const sz of [-1, 1]) decal(k.visual, '604', { w: 0.12, h: 0.07, color: '#17181b', x: -L * 0.05, y: bt + 0.18, z: sz * (W * 0.48 + 0.006), rotY: sz > 0 ? 0 : Math.PI });
+  // Intake: independent polycarbonate arms with silicone-covered rollers.
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: clear, rollerMaterial: mat(0x1d2025, { rough: 0.95 }) });
+  const d = { v: 0 };
+  let rotorRate = 0;
+  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: hopH * 0.5, r: FUEL_R });
+  return {
+    replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    lightAt: [-L * 0.38, H + 0.03, -W * 0.38],
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: () => [...dye.feed(FUEL_R), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)] },
+    update(s) {
+      db.update(s); fill.set(s.fill); pile.setFill(s.fill);
+      const dv = latch(d, s);
+      intake.update(s, dv);
+      tray.position.x = side * dv * 0.2;
+      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 9 : -1.2, 6, s.dt);
+      spin(dye.floor, rotorRate, s.dt, 'y');
+      for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
+      sh.update(s);
+    },
+  };
+});
+
 const cfg = (team: number, model: string, o: Parameters<typeof build>[0], tweak: (c: ReturnType<typeof build>) => void) => {
   const c = build(o);
   c.teamNumber = team;
@@ -505,7 +558,7 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'rubble-581', team: 581, name: 'Rubble',
       description: '581 Blazing Bulldogs. Champs rebuild: full-width drum and adjustable roller hood, translating rack intake, rising roller floor and smoked hopper with a net roof. Capacity, rate and speed are simulator estimates.',
       source: 'Spectrum CAD Collection row 10; Team 581 CAD and code release https://www.chiefdelphi.com/t/521762',
-      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28.5); c.frameWidth = inch(27); c.maxSpeed = 4.7; setRebuiltAccuracy(c, 86); }) },
+      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; setRebuiltAccuracy(c, 86); }) },
     { id: 'roman-6329', team: 6329, name: 'ROMAN',
       description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056). Turret over a 20.75 in spindexer drum fed by a wide, uninterrupted roller floor, an \"upkicker\" lifting FUEL into the shooter, and a long-armed four-bar intake that folds out of the way on impacts. Capacity, rate and speed are simulator estimates.",
       source: 'Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN" (reveal Q&A and Roman II CAD release)',
@@ -526,5 +579,9 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. Compact trench-height box, so about 40 FUEL [EST: the quoted ~80 does not fit; a non-expanding trench-height box holds roughly 40]; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
       config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 40, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; setRebuiltAccuracy(c, 82); }) },
+    { id: 'toploader-604', team: 604, name: 'Toploader',
+      description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Capacity (60) and speed are simulator estimates.',
+      source: 'Chief Delphi "Team 604 Quixilver - 2026 Robot CAD and Code Release" (Toploader); The Blue Alliance 2026 photos',
+      config: cfg(604, 'toploader-604', { intake: 'both', aim: 'turret', hopper: 60, tall: true, rate: 14, climb: 0 }, (c) => { c.frameLength = c.frameWidth = inch(27); c.maxSpeed = 4.5; setRebuiltAccuracy(c, 88); }) },
   ];
 }
