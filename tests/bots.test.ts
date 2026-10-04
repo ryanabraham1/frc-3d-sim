@@ -9,6 +9,7 @@ import { fieldToSpot, footprintPoly, polysOverlap } from '../src/engine/startPos
 import { footprint } from '../src/engine/robot/config';
 import { defaultSettings } from '../src/app/menu';
 import { SEASONS } from '../src/seasons';
+import type { RebuiltRules } from '../src/seasons/2026-rebuilt/rules';
 
 let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
@@ -225,4 +226,36 @@ it('REBUILT defense reduces a shooter’s physical scoring instead of just follo
 it('routes to fuel inside a barrier lane instead of stopping at its exit', () => {
   const goal = { x: 2, y: 1.5 };
   expect(routeThroughBands({ x: 0.6, y: 1.5 }, goal, [{ xMin: 1, xMax: 3, gaps: [{ yMin: 0, yMax: 3 }] }], 0.4, 0.5)).toBe(goal);
+});
+
+it('REBUILT Hard steals opposing fuel and physically feeds it home during its inactive shift', () => {
+  const season = SEASONS[0], config = season.botRobotConfig!('hard');
+  const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', station: 1,
+    pose: { x: 13.6, y: 0.75, yaw: Math.PI }, extraRobots: [
+      { config, alliance: 'blue', station: 2, pose: season.startPose('blue', 2), id: 1 },
+    ] });
+  try {
+    sim.ctx.settings.alliance = 'red'; sim.ctx.settings.aiDifficulty = 'hard';
+    sim.rules.stage();
+    for (const piece of sim.robot.held.splice(0)) sim.pool.reserve(piece);
+    for (const piece of sim.pool.indices('field')) sim.pool.reserve(piece);
+    sim.scatter(Array.from({ length: 35 }, (_, i) => ({ x: 14.3 + (i % 5) * 0.13, y: 0.55 + Math.floor(i / 5) * 0.13 })));
+    sim.rules.onPeriodChange(sim.ctx.clock.start());
+    for (const change of sim.ctx.clock.advance(35)) sim.rules.onPeriodChange(change);
+    (sim.rules as RebuiltRules).firstInactive = 'blue';
+    const bot = season.createBotPilot!(sim.ctx, sim.rules, sim.robot);
+    let stolen = 0, passed = 0;
+    const dt = sim.physics.dt;
+    for (let step = 0; step < 22 / dt; step++) {
+      for (const change of sim.ctx.clock.advance(dt)) sim.rules.onPeriodChange(change);
+      const before = sim.robot.held.length, fired = sim.fired;
+      sim.step(bot.update(dt));
+      if (sim.robot.pose.x > 12.5) stolen += Math.max(0, sim.robot.held.length - before);
+      if (sim.robot.lastCommand.pass) passed += sim.fired - fired;
+    }
+    expect(stolen).toBeGreaterThan(10);
+    expect(passed).toBeGreaterThan(10);
+    const homeFuel = sim.pool.indices('field').filter((i) => sim.frame.toField(sim.pool.position(i)).x < 4);
+    expect(homeFuel.length + (sim.robot.pose.x < 4 ? sim.robot.held.length : 0)).toBeGreaterThan(5);
+  } finally { sim.dispose(); }
 });

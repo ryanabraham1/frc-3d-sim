@@ -1,8 +1,11 @@
+import { additionalCrescendoTeamRobots } from './additionalTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
+import { belt, camera, motor } from '@engine/robot/mechanicalDetail';
 import { approach, bar, battery, box, controller, decal, drivebase, hook, hoodShell, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, wire, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { inch, lb } from '@engine/units';
 import { build, normalizeCrescendoConfig } from './config';
+import { lowKey2056 } from './lowKey2056';
 
 /**
  * Real 2024 CRESCENDO robots (docs/ROBOT-ARCHETYPES.md "Real team robots"). Capabilities come from each team's
@@ -257,14 +260,24 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
   box(carriage, 0.23, 0.01, 0.25, dark, 0.025, -0.087, 0);
   box(carriage, 0.06, 0.12, 0.2, silver, -0.07, 0, 0);
   const held = pivot(carriage, 0.0, 0.0);
-  // One tall perforated climber tube at the front corner, a hook on its sliding inner tube.
+  // AXL has two tall outer climber tubes with bronze hooks, framing the silver elevator.
   const cx = L / 2 - 0.07;
   const cz = -(W / 2 - 0.09);
   bar(k.visual, [cx, bt, cz], [cx, H - 0.03, cz], 0.04, silverTube);
   const climber = new THREE.Group();
   k.visual.add(climber);
   bar(climber, [cx, H - 0.35, cz], [cx, H + 0.02, cz], 0.028, silverTube);
-  hook(climber, cx, H - 0.02, cz, 0.08, dark, -1, 0.009);
+  hook(climber, cx, H - 0.02, cz, 0.08, mat(0xa49566,{metal:.7}), -1, 0.009);
+  bar(k.visual,[cx,bt,-cz],[cx,H-.03,-cz],.04,silverTube);
+  bar(climber,[cx,H-.35,-cz],[cx,H+.02,-cz],.028,silverTube);
+  hook(climber,cx,H-.02,-cz,.08,mat(0xa49566,{metal:.7}),-1,.009);
+  for(const sign of [-1,1]) {
+    motor(carriage,-.045,.035,sign*.17);
+    belt(carriage,[-.045,.035],[.15,.06],sign*.145);
+    belt(carriage,[.15,.06],[.1,-.05],sign*.145);
+    belt(k.visual,[ex,bt+.05],[ex,H-.05],sign*.16,.023);
+  }
+  camera(k.visual,L*.38,bt+.07,-W*.32);
   let lift = 0;
   let tilt = 0;
   return {
@@ -299,6 +312,7 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
 
 export function crescendoTeamRobots(): TeamRobot[] {
   return [
+    ...additionalCrescendoTeamRobots(),
     {
       id: 'vortex-254', team: 254, name: 'Vortex',
       description: '254 Cheesy Poofs. Full-width under-bumper intake, NOTES fed around a 360° turret into a quad-flywheel hooded shooter (shoots on the move), "amplifier" arm for the AMP and TRAP, 1 s chain climb. 125 lb.',
@@ -331,5 +345,6 @@ export function crescendoTeamRobots(): TeamRobot[] {
         c.launcher.height = inch(20);
       }),
     },
+    lowKey2056(),
   ];
 }

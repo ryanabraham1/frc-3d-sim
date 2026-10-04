@@ -78,7 +78,7 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     { key: 'tread', label: 'Tread grip μ', min: 0.6, max: 1.5, step: 0.05, get: (c) => c.wheelCOF ?? DEFAULT_WHEEL_COF, set: (c, v) => (c.wheelCOF = v) },
     { key: 'cap', label: 'Capacity', min: 1, max: season.robotLimits?.capacity ?? 120, step: 1, get: (c) => c.hopperCapacity, set: (c, v) => (c.hopperCapacity = Math.round(v)) },
     { key: 'pre', label: 'Preload', min: 0, max: season.robotLimits?.preload ?? 8, step: 1, get: (c) => c.preload, set: (c, v) => (c.preload = Math.round(v)) },
-    { key: 'rate', label: 'Shots/s', min: 1, max: 20, step: 0.5, get: (c) => c.launcher.rate, set: (c, v) => (c.launcher.rate = v) },
+    { key: 'rate', label: 'Shots/s', min: 1, max: 30, step: 0.5, get: (c) => c.launcher.rate, set: (c, v) => (c.launcher.rate = v) },
     {
       key: 'acc',
       label: 'Accuracy %',
@@ -132,6 +132,7 @@ function group(label: string, body: string, hint = '', cls = ''): string {
 }
 
 const CAMERAS: [CameraMode, string][] = [
+  ['follow', '3rd person'],
   ['chase', 'Chase'],
   ['driver', 'Driver station'],
   ['overhead', 'Overhead'],

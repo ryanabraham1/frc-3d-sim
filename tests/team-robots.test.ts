@@ -101,11 +101,13 @@ describe('real team robots', () => {
       sims.push(sim);
       const robot = sim.robot;
       expect(robot.modelHeldAnchor, team.id).toBeDefined();
-      robot.placeAnim = { height: 1.75, forward: 0.7, level: 4 };
+      // Side scorers (1778's swinging arm) reach out of the robot's left (-z) instead of the front.
+      const side = team.config.placement!.scoreSide === 'sides' ? 1 : 0;
+      robot.placeAnim = { height: 1.75, forward: 0.7, level: 4, side };
       for (let frame = 0; frame < 120; frame++) robot.syncVisual(1 / 60);
       robot.visual.updateMatrixWorld(true);
       const center = robot.visual.worldToLocal(robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3()));
-      expect(center.distanceTo(new THREE.Vector3(0.7, 1.75, 0)), team.id).toBeLessThan(0.2);
+      expect(center.distanceTo(side ? new THREE.Vector3(0, 1.75, -0.7) : new THREE.Vector3(0.7, 1.75, 0)), team.id).toBeLessThan(0.2);
     }
   });
 

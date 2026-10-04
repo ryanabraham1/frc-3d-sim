@@ -156,8 +156,8 @@ export const rebuiltRobotOptions: RobotOption[] = [
   opt('height', 'Height', [['trench', 'Under TRENCH (21 in)', 'Fits under the 22¼ in TRENCH'], ['tall', 'Tall (30 in)', 'Must cross the BUMPs']],
     (c) => (c.height <= C.TRENCH_CLEARANCE ? 'trench' : 'tall'),
     (c, v) => { c.height = v === 'tall' ? inch(30) : inch(21); c.launcher.height = Math.min(c.launcher.height, c.height - inch(2)); }),
-  opt('rate', 'Shooter', [['8', 'Single (8/s)'], ['12', 'Double (12/s)'], ['16', 'Quad (16/s)']],
-    (c) => String([8, 12, 16].reduce((b, x) => (Math.abs(x - c.launcher.rate) < Math.abs(b - c.launcher.rate) ? x : b), 8)),
+  opt('rate', 'Shooter', [['8', '8/s'], ['12', '12/s'], ['16', '16/s'], ['20', '20/s'], ['25', '25/s'], ['30', '30/s']],
+    (c) => String([8, 12, 16, 20, 25, 30].reduce((b, x) => (Math.abs(x - c.launcher.rate) < Math.abs(b - c.launcher.rate) ? x : b), 8)),
     (c, v) => { c.launcher.rate = Number(v); }),
   opt('climb', 'TOWER climb', [['0', 'None'], ['1', 'LEVEL 1'], ['2', 'LEVEL 2'], ['3', 'LEVEL 3']],
     (c) => String(c.climber.maxLevel), (c, v) => { c.climber.maxLevel = Number(v); }, 'TELEOP 10 / 20 / 30 · AUTO LEVEL 1 15.'),
@@ -167,8 +167,9 @@ export function rebuiltSpecBars(config: RobotConfig) {
   const c = normalizeRebuiltConfig(config);
   const intake = c.intake.ground && c.intake.station ? 'ground + OUTPOST' : c.intake.ground ? 'ground' : 'OUTPOST only';
   return [
+    ...(c.hopperExpansion ? [{ label: 'Trench-safe load', value: `≤${c.hopperExpansion.startCount} FUEL · net expands when fuller`, frac: c.hopperExpansion.startCount / c.hopperCapacity }] : []),
     { label: 'FUEL hopper', value: `${c.hopperCapacity}`, frac: c.hopperCapacity / 80 },
-    { label: 'Fire rate', value: `${c.launcher.rate} /s`, frac: c.launcher.rate / 16 },
+    { label: 'Fire rate', value: `${c.launcher.rate} /s`, frac: c.launcher.rate / 30 },
     { label: 'Shooter', value: (c.launcher.exits ?? 1) > 1 ? `Dumper ×${c.launcher.exits}` : 'Single stream', frac: (c.launcher.exits ?? 1) > 1 ? 1 : 0.4 },
     { label: 'Aiming', value: c.launcher.turret ? 'Turret' : c.autoAlign ? 'Auto-align' : 'Driver', frac: c.launcher.turret ? 1 : c.autoAlign ? 0.7 : 0.3 },
     { label: 'Intake', value: intake, frac: (Number(c.intake.ground) * 2 + Number(c.intake.station)) / 3 },

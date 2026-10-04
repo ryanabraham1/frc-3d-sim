@@ -169,7 +169,7 @@ export const DEFAULT_CONTROLS_HELP: [string, string][] = [
   ['H', 'Human player: release chute'],
   ['V', 'Cycle camera'],
   ['T', 'Chase camera: look along the intake side / the shooter side'],
-  ['Mouse drag / wheel', 'Orbit / zoom (Follow camera)'],
+  ['Mouse drag / wheel', 'Orbit / zoom (Free orbit camera)'],
   ['P / Esc', 'Pause'],
   ['?', 'Toggle this help'],
   ['Gamepad', 'LS drive · RS rotate · RT shoot · RB feed · LT intake · A climb · B descend · X human player · Y camera'],

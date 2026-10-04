@@ -65,12 +65,24 @@ Keys **1–4** select the level. Drive to your REEF and hold **Space**:
   real BRANCH pipe ends up inside its bore (§6.5.1) and it stays there 0.3 s. From testing: L2/L3 score
   within about ±0.9 in laterally and miss at ~1.3 in; L4 tolerates ~1.3 in and a few degrees of yaw.
   A missed CORAL bounces off the REEF onto the carpet.
+- The elevator / arm only rise into scoring position **while Space is held** (the same press that starts
+  auto-align); otherwise they stay stowed low for driving. Let go early and they drop back down.
+- **Side scorers** (robot option "Scorer faces: Both sides", e.g. 1778 SubZero) have an arm on the elevator
+  that swings out to either side: auto-align parks the robot parallel to the REEF face, and the CORAL leaves out
+  of whichever side faces it.
+- **Ground-intake handoff:** a CORAL picked off the carpet rides the intake as it folds in and is handed to the
+  end effector (`placement.handoffSeconds`, 0.5 s default [EST]). It can't be scored until the handoff is
+  done. Funnel CORAL drops straight into the end effector, and end effectors that pick CORAL up themselves
+  (2910 Spectre) skip the handoff.
 
 Staged ALGAE physically sits in front of L3 (even faces) or L2 (odd faces) and blocks placement there
 until it's removed. Hold **J** at the REEF to remove it: robots with an ALGAE intake keep it, others knock
 it onto the carpet. ALGAE is neutral and can be harvested from either REEF.
 
-With ALGAE and no CORAL, **Space** shoots the NET (chassis auto-align turns the robot toward it), and **G**
+With ALGAE and no CORAL, hold **Space** near your BARGE to score the NET the way 2025 robots did, without a
+shooter: auto-align lines the robot up facing the BARGE, the elevator rises to full height, and the rollers
+outtake the ALGAE up and over the NET lip at a fixed speed. Physics decides whether it drops in, so standing
+too far away falls short. **G**
 feeds the PROCESSOR, which transfers that ALGAE to the opponent's human player (thrown at their NET only in
 TELEOP, button **B**).
 
@@ -138,7 +150,8 @@ real chute exit geometry, which the manual doesn't dimension. ALGAE uses a spher
 rigid-body collider. CORAL mass is 0.65 kg within the manual's 0.5–0.8 kg range; ALGAE mass of 0.45 kg,
 friction, rebound, damping, elevator speed and human-player launch speed are simulation assumptions.
 The end effector is kinematic: it holds CORAL rigidly and releases it at a fixed speed along the BRANCH axis
-(the real intake-wheel ejection is not simulated). Reef auto-align drives to the ideal pose with a P-controller
+(the real intake-wheel ejection is not simulated). The NET outtake is a fixed release (80 in, 3.7 m/s up, 1.5 m/s out [EST]) rather than simulated rollers, and the
+handoff is a timed transfer animated between the model's intake and end effector. Reef auto-align drives to the ideal pose with a P-controller
 plus Gaussian noise rather than simulating a camera. Nets use a rigid cup/sensor instead of deformable fabric. Staged
 reef ALGAE is retained until harvested. Cages swing as rigid pendulums (the chain is treated as a rigid link,
 ~8 kg estimated mass). The climb itself is the engine's kinematic animation, during which the robot

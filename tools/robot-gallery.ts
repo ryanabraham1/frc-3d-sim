@@ -64,8 +64,8 @@ function frame(now: number) {
     const r=i.robot; r.enabled=pose.value !== 'idle';
     r.climbPhase=pose.value==='climb'?'align':'none';
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score'};
-    r.placeAnim = {height:pose.value==='score'?1.75:0.45,forward:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1};
-    r.held.length=pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):0;
+    r.placeAnim = {height:pose.value==='score'?1.75:0.45,forward:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:pose.value==='score'&&r.config.placement?.scoreSide==='sides'?1:0};
+    r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):0;
     r.syncVisual(dt);
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
     const scale=Math.max(1.15,r.config.height+0.3,pose.value==='score' && r.config.placement?.enabled ? 2.2 : 0);

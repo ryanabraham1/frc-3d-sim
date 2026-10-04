@@ -5,11 +5,11 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
-import { robotModelBuilder, type ModelPart, type RobotAnimState, type RobotModel } from './models';
+import { robotModelBuilder, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
 export interface RobotCommand {
@@ -111,6 +111,12 @@ export class Robot {
   private climbTo = { x: 0, y: 0, z: 0, yaw: 0 };
 
   private readonly fp: { length: number; width: number };
+  private expansionCollider?: RAPIER.Collider;
+  private expansionHeight = -1;
+  private hopperNet?: THREE.LineSegments;
+  private netFuel: THREE.Mesh[] = [];
+  /** Actual envelope used for obstacle routing and flexible-roof collisions. */
+  get clearanceHeight(): number { return loadedRobotHeight(this.config, this.held.length); }
   private hopperFill!: THREE.Mesh;
   private turret!: THREE.Group;
   private climberArm!: THREE.Mesh;
@@ -126,7 +132,7 @@ export class Robot {
   /** Replicated mechanism bits (1 intake, 2 pass) on multiplayer clients; null = read lastCommand. */
   private netAct: number | null = null;
   /** Placement-season end effector pose for team models (set by the season each frame). */
-  placeAnim: { height: number; forward: number; level: number } | null = null;
+  placeAnim: PlaceAnim | null = null;
 
   constructor(
     readonly physics: PhysicsWorld,
@@ -154,6 +160,7 @@ export class Robot {
     this.wheelShape = new R.Ball(Robot.WHEEL_RADIUS);
     this.buildColliders();
     this.buildVisual(scene);
+    this.buildHopperNet();
     this.syncVisual();
   }
 
@@ -198,6 +205,67 @@ export class Robot {
       .setMass(m * 0.35)
       .setCollisionGroups(GROUPS.robot);
     this.physics.world.createCollider(frameCol, this.body);
+    if (c.hopperExpansion) {
+      this.expansionCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(c.frameLength * 0.32, 0.001, c.frameWidth * 0.42)
+        .setTranslation(-c.frameLength * 0.1, c.height, 0).setMass(0).setFriction(0.2).setCollisionGroups(GROUPS.robot), this.body);
+      this.expansionCollider.setEnabled(false);
+    }
+  }
+
+  private updateHopperEnvelope(): void {
+    const collider = this.expansionCollider;
+    if (!collider) return;
+    const extra = this.clearanceHeight - this.config.height;
+    if (Math.abs(extra - this.expansionHeight) < 1e-6) return;
+    this.expansionHeight = extra;
+    collider.setEnabled(extra > 0.001);
+    if (extra <= 0.001) return;
+    collider.setShape(new this.physics.R.Cuboid(this.config.frameLength * 0.32, extra / 2, this.config.frameWidth * 0.42));
+    collider.setTranslationWrtParent({ x: -this.config.frameLength * 0.1, y: this.config.height + extra / 2, z: 0 });
+  }
+
+  private buildHopperNet(): void {
+    if (!this.config.hopperExpansion || this.config.hopperExpansion.mechanism === 'telescoping') return;
+    // Real crossed strands, anchored at the hopper rim, with a bowed flexible center.
+    const segments = 16, positions: number[] = [];
+    for (let axis = 0; axis < 2; axis++) for (let line = 0; line <= segments; line++) for (let step = 0; step < segments; step++) {
+      for (const endpoint of [step, step + 1]) {
+        const a = line / segments * 2 - 1, b = endpoint / segments * 2 - 1;
+        positions.push(axis ? b : a, 0, axis ? a : b);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x25282d }));
+    this.hopperNet.name = 'stretching-hopper-net';
+    this.hopperNet.userData.grid = positions;
+    this.visual.add(this.hopperNet);
+    const fuelGeometry = new THREE.SphereGeometry(0.07, 10, 7);
+    const fuelMaterial = new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.85 });
+    for (let x = -1; x <= 1; x++) for (let z = -2; z <= 2; z++) {
+      const ball = new THREE.Mesh(fuelGeometry, fuelMaterial);
+      ball.userData.netX = x * 0.6; ball.userData.netZ = z * 0.42;
+      this.visual.add(ball); this.netFuel.push(ball);
+    }
+  }
+
+  private updateHopperNet(): void {
+    const net = this.hopperNet;
+    if (!net) return;
+    const c = this.config, extra = this.clearanceHeight - c.height;
+    const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = grid[i * 3], z = grid[i * 3 + 2];
+      const bow = Math.max(0, (1 - x * x) * (1 - z * z));
+      p.setXYZ(i, -c.frameLength * 0.1 + x * c.frameLength * 0.38, c.height + extra * bow - 0.018 * bow, z * c.frameWidth * 0.46);
+    }
+    for (const ball of this.netFuel) {
+      const x = ball.userData.netX as number, z = ball.userData.netZ as number;
+      const rise = extra * (1 - x * x) * (1 - z * z);
+      ball.visible = rise > 0.035;
+      ball.position.set(-c.frameLength * 0.1 + x * c.frameLength * 0.38, c.height + rise - 0.08, z * c.frameWidth * 0.46);
+    }
+    p.needsUpdate = true; net.geometry.computeBoundingSphere();
   }
 
   private buildVisual(scene: THREE.Scene): void {
@@ -442,6 +510,11 @@ export class Robot {
   /** Where the team model holds a game piece (seasons parent their held-piece mesh here), if it has one. */
   get modelHeldAnchor(): THREE.Object3D | undefined {
     return this.model?.heldAnchor;
+  }
+
+  /** Where the team model's ground intake carries a piece (for handoff animations), if it has one. */
+  get modelIntakeAnchor(): THREE.Object3D | undefined {
+    return this.model?.intakeAnchor;
   }
 
   /** True when this robot's team model draws `part` itself (seasons hide their own version of it, e.g. the mast). */
@@ -703,6 +776,7 @@ export class Robot {
    * pushing matches and spins come out of mass, tread grip, motor limits and where the hit lands.
    */
   drive(cmd: RobotCommand, dt: number): void {
+    this.updateHopperEnvelope();
     if (this.climbPhase !== 'none') {
       this.driven = null;
       return;
@@ -1330,6 +1404,8 @@ export class Robot {
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
   syncVisual(frameDt?: number): void {
+    this.updateHopperEnvelope();
+    this.updateHopperNet();
     const t = this.body.translation();
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);

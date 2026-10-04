@@ -350,7 +350,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     place(sim, 1, 2.5); expect(sim.ctx.score.counter('blue', 'coralL1')).toBe(2);
   });
   it('replicates the raised elevator collider used by client drive prediction', () => {
-    const host = make(); load(host, 0); run(host, 2.5, { ...IDLE_COMMAND, scoringLevel: 4 });
+    const host = make(); load(host, 0); run(host, 2.5, { ...IDLE_COMMAND, shoot: true, scoringLevel: 4 }); // Space raises it
     const client = make(); client.rules.applyNetState!(host.rules.netState!()); client.rules.updateVisuals(0, 0);
     const collider = client.robot.body.collider(client.robot.body.numColliders() - 1);
     const m = (host.rules as ReefscapeRules).mechanisms.get(0)!;
@@ -453,8 +453,8 @@ describe('2025 REEFSCAPE manual implementation', () => {
     const lane = season.testing!.traversals()[0];
     for (const level of [1, 4]) {
       const sim = make('blue', { ...lane.from, yaw: 0 }); load(sim, 0);
-      run(sim, 2, { ...IDLE_COMMAND, scoringLevel: level });
-      run(sim, 3, { ...IDLE_COMMAND, vx: 2, scoringLevel: level });
+      run(sim, 2, { ...IDLE_COMMAND, shoot: true, scoringLevel: level }); // Space raises the elevator
+      run(sim, 3, { ...IDLE_COMMAND, shoot: true, vx: 2, scoringLevel: level });
       if (level === 1) expect(sim.robot.pose.x).toBeGreaterThan(C.FIELD_LENGTH / 2 + 0.7);
       else {
         // The raised elevator catches on the barge: the robot stops short, or (tilt is simulated) pitches back

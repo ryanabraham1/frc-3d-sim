@@ -162,24 +162,71 @@ in the 3D model, and the INTAKE/SHOOTER labels on the menu robot, mark the side.
 
 ## Real team robots (playable, `season.teamRobots`)
 
-Past seasons also offer real top robots (three per season, plus three over-the-BUMP robots for 2026), picked in the menu under "Play as a real robot" (QoL only; not
+Past seasons also offer real top robots (at least six per season, including nine for 2026), picked in the menu under "Play as a real robot" (QoL only; not
 needed for a new game at kickoff). Each is a normal `RobotConfig` (capabilities the team published; anything not
 published is marked `[EST]` in `src/seasons/<season>/teamRobots.ts`) plus `config.model`, a simplified animated 3D
 model registered with `registerRobotModel` (`src/engine/robot/models.ts`). Models are built from the team's photos /
 CAD renders to match the silhouette and signature features, not internals. They are visual only: capture zones,
-launch points and scoring still come from the config, and the floor intake stays orange and on the back.
+launch points and scoring still come from the config, and the floor intake follows each profile’s configured side. Roller colors follow the robot references where available.
 
 | Season | Robot | What the model shows | Sources |
 | --- | --- | --- | --- |
 | 2024 | 254 Vortex | blue "goalpost" climber uprights + black truss crossbar, NASA sponsor panel, turret with tall D-plates and two pairs of flywheels out the sides, amp arm | 254 2024 Technical Binder; team254.com/first/2024 photos; Chief Delphi "2024 VORTEX" |
 | 2024 | 1690 Doppler | 11 in pancake deck with exposed motors, silver ladder arm that swings the shooter box from flat to vertical, thin climb hooks. Intake and shooter share the front (the arm takes the NOTE straight from the intake) | Chief Delphi "Orbit 1690 Presents: Doppler"; reveal video |
-| 2024 | 4522 AXL | raw silver frame + X brace, braced elevator, carriage with 2×2 flywheels that rises for AMP/TRAP, single climber tube | Team SCREAM Open Alliance thread; The Blue Alliance 2024 media |
+| 2024 | 4522 AXL | raw silver frame + X brace, braced elevator, carriage with 2×2 flywheels that rises for AMP/TRAP, twin outer climber tubes with bronze hooks and exposed belts | Team SCREAM Open Alliance thread; The Blue Alliance 2024 media |
+| 2024 | 2056 LOW-KEY | white triangular sponsor tower that fits under the STAGE, 17 in shoulder arm with a pocketed shooter box and blue 4 in flywheels, under-bumper intake + conveyor, riveted baseplate, pneumatic double hook | OP Robotics 2024 Crescendo Technical Binder (2056.ca) |
 | 2025 | 2910 Spectre | lattice-truss telescoping arm on a geared pivot, green LED strips, brass ballast, arm climber carriage | Onshape "Spectre" article; frcteam2910.org 2025 recap; TBA 2025 media |
 | 2025 | 1323 MadTown | blue pivoting four-stage elevator with cable chains, black sponsor gussets, CORAL + ALGAE floor intakes | Chief Delphi "1323 MadTown Robot Reveal?"; TBA 2025 media |
 | 2025 | 254 Undertow | blue two-stage elevator with zig-zag top, smoked CORAL funnel with NASA logo, ground intake linkage, roller-claw climber | 254 2025 Technical Binder; team254.com/first/2025 photo |
+| 2025 | 1778 SubZero | silver belt elevator with an A-frame brace, two cascading stages, carriage arm that swings 290° to either side (scores side-on to the REEF), floor intake that folds up under the hanging arm for the handoff, no climber | Chief Delphi "1778 Chill Out \| REEFSCAPE Robot Reveal" and "1778 2025 CAD & Code Release" |
 | 2026 | 4414 RIPCURRENT | smoked bumper walls, teal trusses, flat spoked dye rotor, pancake turret on a column, hopper extension that slides out with the latched intake | 4414 2026 Technical Binder (2026.team4414.com) |
 | 2026 | 254 Overload | smoked hopper box with sponsor decals, full-width plate-wall shooter, intake on blue truss rails that retracts while shooting | Chief Delphi "Team 254 Presents: Overload" |
 | 2026 | 1690 Kepler | black X-lattice walls, top arch, turret on an 8 in bearing, gear-driven shooter | Chief Delphi "FRC Orbit 1690 2026 Robot CAD Release" |
 | 2026 | 4946 Moto Moto (BUMP) | half-circle "roomba" ~30 in tall: D-shaped bumper, round clear hopper, dye rotor, turret on a center column, silver goalpost over the flat-side intake | 4946 2026 Engineering Report; Chief Delphi "4946 The Alpha Dogs 2026 Robot: Moto Moto" |
 | 2026 | 3476 Sandspit (BUMP) | tall closed clear hopper, black dotted corner posts, orange rails + A-frame, teal printed lattice, wide multi-lane shooter, retracting intake | Chief Delphi "Team 3476: Code Orange 2026 Sandspit Robot Reveal"; TBA 2026 media |
 | 2026 | 9483 Enigma (BUMP) | too tall for the TRENCH: black hopper box with big team numbers, silver corner extrusions, spindexer bowl, turret | Chief Delphi "Team 9483 Presents: Enigma"; TBA 2026 media |
+
+
+### Additional top-team profiles
+
+The additional profiles live in each season's `additionalTeamRobots.ts`, keeping independently contributed
+robots separate. Their sources are linked in each profile's `source`. Geometry is a simplified recreation;
+unpublished drive speeds, dimensions, capacity, accuracy and mechanism timings are simulator estimates,
+not measured team rankings. 2025 profiles vary the actual lift/release/harvest/climb parameters that rules use.
+
+| Season | Added robots | Distinguishing behavior |
+| --- | --- | --- |
+| 2024 | 1323 MadTown, 118 Twister, 4414 TIDEPOD | Separate AMP arm, turret/diverter, and pivot shooter/forks; drive acceleration and climb timing differ. |
+| 2025 | 1690 WHISPER, 2056 LIGHTNING, 118 Firefly | Vacuum end effector, continuous-belt elevator/gripper, and separate roller channels. Lift speeds 2.2/2.5/1.9 m/s; release delays 0.30/0.40/0.25 s; harvest delays 0.35/0.45/0.30 s. All support full scoring; differences are throughput and mechanism design. |
+| 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 28/24/16 FUEL/s are estimates. Mixtape's heads share the engine's one aim and launch point; independent turret streams are not simulated. |
+
+### Flexible hopper nets and loaded clearance
+
+254 Overload is configured at 25 FUEL/s, 3476 Sandspit at 20 FUEL/s (requested tuning).
+Overload now has 80 total capacity with a 50-FUEL trench-safe load; RIPCURRENT keeps 85 total with
+70 trench-safe. These thresholds follow user guidance; total capacity for Overload and full-load roof heights
+(28 in for 254, 27 in for 4414, 29 in for Limestone) are estimates. Above the threshold, `hopperExpansion`
+interpolates the loaded envelope, bows a crossed-strand net upward over visible FUEL, and adds a massless
+upper collider. Emptying lowers both the roof and collider. Robot routing uses `clearanceHeight`, so an
+overfilled net robot chooses the BUMP instead of planning through the TRENCH. The fixed shooter exit height
+stays unchanged. Multiplayer derives the same net shape from the existing replicated held-piece count.
+This is an approximate rigid collision envelope for a flexible net; individual strand elasticity is not simulated.
+Use the gallery's “Full hopper (100%)” pose to inspect the bulge and “Stowed” to inspect the relaxed roof.
+
+
+Limestone’s `hopperExpansion.mechanism = 'telescoping'` uses a rigid raised rectangular rim,
+exposed nested lift tubes and slider collars. A crossed net bridges the roof to the intake lip;
+it is separate from the elastic domes on 254/4414. The simulator automatically raises and
+contracts this mechanism from held count (65–100 FUEL), so its visual roof, collision height
+and routing agree. Real Citrus uses hybrid driver/automatic controls; this implementation
+approximates the contract sequence rather than adding another driver button. The 65-FUEL
+threshold is simulator tuning, not a published Citrus measurement. Source:
+https://www.chiefdelphi.com/t/1678-citrus-circuits-2026-cad-and-robot-code-release/521535?page=2
+
+Additional visual detail includes pulley flanges, transmission belts, motor cans, shaft hubs,
+pocketed plates with fasteners, camera brackets, elevator belts, and vacuum-cup bellows.
+2024 layouts distinguish MadTown’s long blue side rails and low roller path, Twister’s gold
+truss turret with eight wheels, TIDEPOD’s broad roller channel and angled teal rails, and
+AXL’s silver elevator with two outer hooks. These are procedural reference-based models,
+not exact CAD imports. MadTown reference: https://www.thebluealliance.com/team/1323/2024
+(pit photo https://i.imgur.com/bdVVTHY.jpeg).

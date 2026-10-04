@@ -1,8 +1,10 @@
+import { additionalReefscapeTeamRobots } from './additionalTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, decal, deployableIntake, drivebase, lattice, ledStrip, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, box, decal, deployableIntake, drivebase, intakeDeployTarget, lattice, ledStrip, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, type ModelKit, type PlaceAnim, type RobotAnimState } from '@engine/robot/models';
 import { inch, lb } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
+import { subZero1778 } from './subZero1778';
 
 /**
  * Real 2025 REEFSCAPE robots (docs/ROBOT-ARCHETYPES.md "Real team robots"). The REEFSCAPE rules own the end
@@ -11,7 +13,7 @@ import { build, normalizeReefscapeConfig } from './config';
  */
 
 /** Rules' end effector, or a stowed pose before the first frame. */
-function place(s: RobotAnimState): { height: number; forward: number; level: number } {
+function place(s: RobotAnimState): PlaceAnim {
   return s.place ?? { height: 0.45, forward: 0.3, level: 1 };
 }
 
@@ -113,6 +115,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'funnel', 'climber'],
     heldAnchor: held,
+    intakeAnchor: intake.tip,
     lightAt: [ex - 0.015, H - 0.01, 0],
     update(s) {
       const p = place(s);
@@ -124,10 +127,11 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
       const forward = Math.max(0.06, p.forward - ex - 0.17);
       reach.scale.x = forward; reach.position.x = forward / 2;
       eff.wrist.position.x = forward;
-      wrist = approach(wrist, wristFor(p.level), 8, s.dt);
+      // Handoff: the wrist flips back to meet the ground intake folding up over the back bumper.
+      wrist = approach(wrist, p.handoff ? Math.PI - 0.5 : wristFor(p.level), 8, s.dt);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
-      deploy = approach(deploy, s.intaking && s.enabled ? 1 : 0, 7, s.dt);
+      deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
       claw.rotation.x = approach(claw.rotation.x, s.climb > 0.1 ? 1.3 : 0, 5, s.dt); // swings out to the robot's right (+z)
       spin(clawRoller, s.climb > 0.5 ? 12 : 0, s.dt);
@@ -284,24 +288,27 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
+    intakeAnchor: coralIntake.tip,
     lightAt: [-L * 0.42, bt + 0.04, 0],
     update(s) {
       const p = place(s);
       // At rest (end effector parked low, not scoring the trough) hold the photo pose; otherwise reach the rules'
       // end effector so CORAL leaves exactly where it is placed.
-      const resting = p.height < 0.55 && p.level !== 1;
+      // Handoff: elevator upright and short, wrist pointing back down at the CORAL intake folding in.
+      const handoff = (p.handoff ?? 0) > 0;
+      const resting = !handoff && p.height < 0.55 && p.level !== 1;
       const dx = p.forward - px;
       const dy = p.height - py;
-      lean = approach(lean, resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), 8, s.dt);
-      along = approach(along, resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
+      lean = approach(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), 8, s.dt);
+      along = approach(along, handoff ? 0.3 : resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
       tilt.rotation.z = -lean;
       const ext = Math.max(0, along - stageLen + 0.05);
       for (let i = 1; i < stages.length; i++) stages[i].position.y = (ext * i) / (stages.length - 1);
       carriage.position.set(0.04, along, 0);
-      wrist = approach(wrist, (resting ? -0.2 : wristFor(p.level)) + lean, 8, s.dt);
+      wrist = approach(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, 8, s.dt);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
-      deploy = approach(deploy, s.intaking && s.enabled ? 1 : 0, 7, s.dt);
+      deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       coralIntake.update(s, deploy);
       // The ALGAE intake doubles as the CAGE latch: out while intaking or climbing.
       algaeIntake.update(s, Math.max(deploy * 0.7, s.climb > 0.1 ? 0.6 : 0));
@@ -320,6 +327,7 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
 
 export function reefscapeTeamRobots(): TeamRobot[] {
   return [
+    ...additionalReefscapeTeamRobots(),
     {
       id: 'spectre-2910', team: 2910, name: 'Spectre',
       description: '2910 Jack in the Bot (2025 World Champions). Pivot + two-stage telescoping arm + wrist with one end effector for CORAL and ALGAE (L1–L4, NET, PROCESSOR), picks CORAL off the floor, brass ballast up front, 1.5 s deep climb.',
@@ -327,6 +335,7 @@ export function reefscapeTeamRobots(): TeamRobot[] {
       config: teamConfig(2910, 'spectre-2910', { coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, (c) => {
         c.climber.secondsToClimb = 1.5;
         c.placement!.liftSpeed = 1.6; // [EST]
+        c.placement!.handoffSeconds = 0; // the end effector itself picks CORAL off the carpet
       }),
     },
     {
@@ -346,5 +355,6 @@ export function reefscapeTeamRobots(): TeamRobot[] {
         c.mass = lb(115);
       }),
     },
+    subZero1778(),
   ];
 }

@@ -29,10 +29,11 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
     },
     score: () => {
       if (!r.held.some((i) => i < C.CORAL_COUNT)) {
-        const net = C.netCenter(r.alliance);
-        const spot = { x: net.x + (r.alliance === 'blue' ? -2 : 2), y: net.y };
-        const cmd = bot.driveTo(spot, Math.atan2(net.y - r.pose.y, net.x - r.pose.x));
-        cmd.shoot = dist(r.pose, spot) < 0.2;
+        // ALGAE: line up at the BARGE and outtake it into the NET from the raised elevator.
+        const spot = rules.netPose(r);
+        if (!spot) return bot.driveTo(supply);
+        const cmd = bot.driveTo(spot, spot.yaw);
+        cmd.shoot = dist(r.pose, spot) < (r.config.autoAlign ? 1.2 : 0.04) && Math.abs(wrapAngle(spot.yaw - r.pose.yaw)) < (r.config.autoAlign ? 0.6 : 0.03);
         return cmd;
       }
       // L1 remains available after the finite branches fill up.

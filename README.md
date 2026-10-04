@@ -49,8 +49,11 @@ pace; teammates stay on Normal. Hard uses competitive builds, shoots while movin
 seeks open high-value reef branches, coordinates AMP amplification, and attempts endgame climbs. Bots
 reserve separate pieces and reef faces, sidestep stalled approaches, and skip temporarily unreachable pieces.
 REBUILT Hard assigns scorer, feeder and defender roles: continuous collection and shooting during active
-shifts, physical feeding from the neutral zone, and a defender contesting scoring while the opponent hub is active. During its own active shift it scores;
-when both hubs are active it compares scoring opportunity with the shooting rate it could deny. The defender releases contact and separates to avoid sustained pins, then returns to contest the route.
+shifts, physical feeding from the neutral zone, and raids for opposing fuel when the return trip fits before
+the next active shift. Fed home fuel stays available for scorers. The defender contests scoring while the
+opponent hub is active and prioritizes scoring during its own active shift. When both hubs are active it
+compares scoring opportunity with the shooting rate it could deny. It releases contact and separates to
+avoid sustained pins, then returns to contest the route.
 Bots take the center of crossing lanes and can reach fuel inside a trench or bump band.
 Teammates follow a consistent passing direction to break head-on deadlocks. AUTO routines spread across
 preload scoring, depot collection and neutral collection rather than sending everyone down the same path.

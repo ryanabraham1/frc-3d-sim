@@ -125,6 +125,11 @@ export class RebuiltRules implements SeasonRules {
     return this.ctx.pool.countIn('reserve', CHUTE_TAG(a));
   }
 
+  /** G418 seconds currently counted against this robot for pinning (0 when it isn't pinning anyone). */
+  pinCount(robotId: number): number {
+    return this.pins.countFor(robotId);
+  }
+
   hubCenter(a: Alliance): { x: number; y: number } {
     return this.refs.hubs[a].center;
   }

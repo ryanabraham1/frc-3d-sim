@@ -390,14 +390,23 @@ export class CrescendoRules implements SeasonRules {
     return true;
   }
 
-  /** A NOTE still sliding down / sitting in front of this alliance's SOURCE. */
+  /**
+   * The automatic human player waits while a NOTE is still in the CHUTE or falling out of it, or while two collectable
+   * NOTES already lie in front of the SOURCE. A single NOTE that came to rest against the wall or on a BUMPER (out of an
+   * intake's reach) doesn't stop the next drop, which would otherwise leave robots waiting at the SOURCE indefinitely.
+   */
   private noteAtSource(a: Alliance): boolean {
     const { pool, frame } = this.ctx;
     const mid = C.sourcePoint(a, 0.5, 0);
-    return pool.indices('field').some((i) => {
+    let resting = 0;
+    for (const i of pool.indices('field')) {
       const q = frame.toField(pool.position(i));
-      return Math.hypot(q.x - mid.x, q.y - mid.y) < 1.4;
-    });
+      if (Math.hypot(q.x - mid.x, q.y - mid.y) >= 1.4) continue;
+      if (q.z > C.SOURCE_OPENING_BOTTOM / 3) return true;
+      // NOTES jammed into the guardrail corner can't be collected, so they don't hold up the human player.
+      if (Math.min(q.x, C.L - q.x, q.y, C.W - q.y) > 0.4) resting++;
+    }
+    return resting >= 2;
   }
 
   /** The alliance robot the SOURCE human player feeds: the one nearest the SOURCE (player's robot first). */

@@ -12,6 +12,14 @@ export function stationSideSign(c: RobotConfig): 1 | -1 {
   return c.intake.stationSide === 'back' ? -1 : 1;
 }
 
+/** Loaded envelope; fixed mechanism/launcher height remains unchanged. */
+export function loadedRobotHeight(c: RobotConfig, count: number): number {
+  const e = c.hopperExpansion;
+  if (!e) return c.height;
+  const fill = Math.min(1, Math.max(0, (count - e.startCount) / Math.max(1, c.hopperCapacity - e.startCount)));
+  return c.height + (e.fullHeight - c.height) * fill;
+}
+
 export type AimAssist = 'full' | 'speed' | 'off';
 
 /** Everything that defines a simulated robot. All values SI. */
@@ -66,6 +74,8 @@ export interface RobotConfig {
     station?: boolean;
     stationSide?: 'front' | 'back';
   };
+  /** Optional flexible hopper roof: starts bulging above this load, reaches fullHeight at capacity. */
+  hopperExpansion?: { startCount: number; fullHeight: number; mechanism?: 'telescoping' };
   hopperCapacity: number;
   preload: number;
 
@@ -123,6 +133,13 @@ export interface RobotConfig {
     reach: number;
     cycleSeconds: number;
     harvestSeconds: number;
+    /**
+     * Which chassis faces the scorer places on: 'front' (+x, the usual elevator end effector) or 'sides' (an arm that
+     * swings out to either side, e.g. 2025 1778 SubZero, so the robot lines up side-on). Default 'front'.
+     */
+    scoreSide?: 'front' | 'sides';
+    /** Seconds to hand a floor-intaken piece from the ground intake to the end effector (0 = it intakes directly). */
+    handoffSeconds?: number;
   };
   /** Processor feeding can be available independently of a projectile launcher. */
   processor?: { enabled: boolean };
@@ -209,6 +226,11 @@ export function sanitizeConfig(c: RobotConfig, maxHeight: number, maxPerimeter?:
   out.mass = Math.min(Math.max(out.mass, lb(50)), lb(160));
   if (out.wheelCOF !== undefined) out.wheelCOF = Math.min(Math.max(out.wheelCOF, 0.5), 1.6);
   out.hopperCapacity = Math.max(0, Math.round(out.hopperCapacity));
+  if (out.hopperExpansion) {
+    const e = out.hopperExpansion;
+    e.startCount = Number.isFinite(e.startCount) ? Math.max(0, Math.min(out.hopperCapacity - 1, e.startCount)) : out.hopperCapacity - 1;
+    e.fullHeight = Number.isFinite(e.fullHeight) ? Math.max(out.height, Math.min(maxHeight, e.fullHeight)) : out.height;
+  }
   out.preload = Math.min(Math.max(0, Math.round(out.preload)), out.hopperCapacity);
   out.launcher.height = Math.min(out.launcher.height, out.height);
   return out;

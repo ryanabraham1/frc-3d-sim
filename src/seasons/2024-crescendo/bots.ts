@@ -7,11 +7,31 @@ import * as C from './constants';
 
 export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r: Robot): CycleBot {
   const spot = C.side(r.alliance, 2.3 + (r.station - 1) * 0.4, C.SPEAKER_Y + (r.station - 2) * 0.5);
-  const supply = { ...C.sourcePoint(r.alliance, 0.5, r.footprint.length / 2 + 0.02), yaw: C.sideYaw(C.sourceEnd(r.alliance), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x)) };
+  const sourceYaw = C.sideYaw(C.sourceEnd(r.alliance), Math.atan2(C.SOURCE_NORMAL.y, C.SOURCE_NORMAL.x));
+  const sourceMid = C.sourcePoint(r.alliance, 0.5, 0);
+  // A SOURCE intake catches NOTES at the CHUTE opening; a ground intake waits far enough out for the NOTE to land
+  // on the carpet in front of it (the intake faces the SOURCE either way).
+  const supply = { ...C.sourcePoint(r.alliance, 0.5, r.footprint.length / 2 + (r.config.intake.station ? 0.02 : 0.75)), yaw: sourceYaw };
+  const sourceTurn = () => {
+    // One robot at a time works the SOURCE. Queuing everyone at the opening traps dropped NOTES between bumpers and
+    // the human player stops dropping into a blocked CHUTE, which left whole alliances parked there.
+    const empty = ctx.robots.filter((o) => o.alliance === r.alliance && !o.isClimbing && !o.held.length)
+      .sort((a, b) => dist(a.pose, sourceMid) - dist(b.pose, sourceMid));
+    const rank = Math.max(0, empty.indexOf(r));
+    return rank === 0 ? supply : { ...C.sourcePoint(r.alliance, 0.5 + (r.station - 2) * 0.35, 2.4 + rank * 0.9), yaw: sourceYaw };
+  };
   const stages = (['blue', 'red'] as const).map((a) => ({ ...C.stageCenter(a), r: 1.7 + r.footprint.width / 2 }));
   const bot: CycleBot = new CycleBot(ctx, r, {
-    accepts: (i, p) => !C.isHighNote(i) && ((r.alliance === 'blue' ? p.x < C.L / 2 + 0.4 : p.x > C.L / 2 - 0.4) || dist(p, supply) < 2) && !stages.some((s) => dist(s, p) < s.r),
-    supply: () => supply,
+    accepts: (i, p) => !C.isHighNote(i) && ((r.alliance === 'blue' ? p.x < C.L / 2 + 0.4 : p.x > C.L / 2 - 0.4) || dist(p, sourceMid) < 2.6) && !stages.some((s) => dist(s, p) < s.r),
+    supply: sourceTurn,
+    collectPose: (p) => {
+      // A NOTE that slid out of the CHUTE usually rests against the angled SOURCE wall: back straight into it.
+      const n = { x: Math.cos(sourceYaw), y: Math.sin(sourceYaw) };
+      const fromWall = (p.x - sourceMid.x) * n.x + (p.y - sourceMid.y) * n.y;
+      if (fromWall > 0.7 || dist(p, sourceMid) > 2.6 || r.config.intake.groundSide === 'front') return null;
+      const off = r.footprint.length / 2 + (dist(r.pose, p) > r.footprint.length / 2 + 0.6 ? 0.5 : 0.05);
+      return { x: p.x + n.x * off, y: p.y + n.y * off, yaw: sourceYaw };
+    },
     endgame: () => {
       if (ctx.clock.matchRemaining > 18 || !r.config.climber.maxLevel) return null;
       const chain = C.chainGeometry(r.alliance, r.station - 1);

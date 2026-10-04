@@ -1,4 +1,4 @@
-import type { Vector3 } from 'three';
+import { Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
@@ -15,8 +15,9 @@ import type { NetClient } from '../net/netClient';
 import type { HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
 import { slotId } from '../net/protocol';
 import { Ticker } from '../net/ticker';
-import { collisionGroups, Group, PhysicsWorld, RapierModule } from '../physics/world';
+import { PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
+import { OcclusionFader } from '../render/occlusionFader';
 import { Renderer } from '../render/renderer';
 import { cloneConfig, footprint, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
@@ -147,6 +148,9 @@ export class Game {
   readonly rules: SeasonRules;
   readonly ctx: SeasonContext;
   readonly camera: CameraRig;
+  /** Fades field elements that hide the player's robot from the camera. */
+  private fader!: OcclusionFader;
+  private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
   /** AUTO-period drivers per robot id (drivers can't control robots in AUTO). */
   private readonly autoPilots = new Map<number, AutoPilot>();
@@ -332,8 +336,8 @@ export class Game {
     const eye = this.player ?? this.robots[0];
     const eyePos = eye ? season.driverEye(eye.alliance, eye.station) : season.driverEye(settings.alliance, settings.station);
     this.camera = new CameraRig(this.renderer.camera, this.renderer.renderer.domElement, this.frame, eyePos);
-    this.camera.occlusion = (from, to) => this.cameraOcclusion(from, to);
     this.camera.setMode(this.player ? (settings.camera ?? 'driver') : 'overhead');
+    this.fader = new OcclusionFader(this.ctx.builder.root);
     this.seasonHud = season.createHud(this.ctx, this.rules, this.hud.slots);
     if (this.state === 'waiting') this.hud.showBanner('WAITING FOR PLAYERS…', 60);
     else this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
@@ -448,6 +452,7 @@ export class Game {
     this.pool.syncVisuals();
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.pose ?? null, undefined, this.player?.elevation ?? 0);
+    this.updateFader(dt);
     this.updateHud(dt);
     this.renderer.render();
 
@@ -464,17 +469,15 @@ export class Game {
     }
   }
 
-  /** Distance along from→to to the first solid field element or other robot (own robot excluded), or null. */
-  private cameraOcclusion(from: Vector3, to: Vector3): number | null {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const dz = to.z - from.z;
-    const len = Math.hypot(dx, dy, dz);
-    if (len < 1e-3) return null;
-    const ray = new this.physics.R.Ray(from, { x: dx / len, y: dy / len, z: dz / len });
-    const filter = collisionGroups(Group.ALL, Group.FIELD | Group.ROBOT);
-    const hit = this.physics.world.castRay(ray, len, true, undefined, filter, undefined, this.player?.body);
-    return hit ? hit.timeOfImpact : null;
+  /** See-through whatever field element is between the camera and the player's robot, in every view. */
+  private updateFader(dt: number): void {
+    const robot = this.player;
+    if (robot) {
+      const [low, high] = this.fadeTargets;
+      low.copy(robot.visual.position).y += 0.25;
+      high.copy(robot.visual.position).y += 0.9;
+    }
+    this.fader.update(dt, this.renderer.camera.position, robot ? this.fadeTargets : []);
   }
 
   private handleUiInput(inp: DriverInput): void {
@@ -844,6 +847,7 @@ export class Game {
     this.hostSync?.dispose();
     this.input.dispose();
     this.camera.dispose();
+    this.fader.clear();
     this.hud.dispose();
     this.renderer.dispose();
     this.physics.free();

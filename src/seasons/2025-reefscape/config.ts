@@ -32,8 +32,10 @@ export function reefscapeRobotDefaults() {
   c.intake.station = true;
   c.intake.groundSide = 'back';
   c.intake.stationSide = 'back';
-  c.options = { algaeGround: false };
-  c.placement = { enabled: true, maxLevel: 4, liftSpeed: 1.3, reach: inch(18), cycleSeconds: 0.6, harvestSeconds: 0.45 };
+  // ALGAE NET scoring: the elevator rises at the BARGE and the rollers outtake the ALGAE over the NET lip — almost no
+  // 2025 team shot it, so it is a mechanism option rather than a launcher.
+  c.options = { algaeGround: false, net: false };
+  c.placement = { enabled: true, maxLevel: 4, liftSpeed: 1.3, reach: inch(18), cycleSeconds: 0.6, harvestSeconds: 0.45, scoreSide: 'front', handoffSeconds: 0.5 };
   c.processor = { enabled: false };
   c.launcher.enabled = false;
   c.launcher.turret = false; // pick-and-place game: no turret (it would make placement trivially easy)
@@ -55,7 +57,9 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   const bounded = (v: number | undefined, fallback: number, lo: number, hi: number) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v!)) : fallback;
   c.intake.primary ??= true; c.intake.secondary ??= true;
   c.intake.ground ??= true; c.intake.groundSide ??= 'back'; c.intake.station ??= false; c.intake.stationSide ??= 'back';
-  c.options = { ...d.options, ...c.options };
+  // Older configs flagged NET scoring with the launcher; NET scoring is now the elevator outtake.
+  c.options = { ...d.options, ...c.options, net: !!(c.options?.net ?? c.launcher.enabled) };
+  c.launcher.enabled = false;
   c.placement = { ...d.placement!, ...c.placement };
   const p = c.placement;
   p.maxLevel = Math.round(bounded(p.maxLevel, 4, 1, 4));
@@ -63,6 +67,8 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   p.liftSpeed = bounded(p.liftSpeed, 1.3, 0.25, 2.5);
   p.cycleSeconds = bounded(p.cycleSeconds, 0.6, 0.2, 3);
   p.harvestSeconds = bounded(p.harvestSeconds, 0.45, 0.2, 3);
+  p.scoreSide = p.scoreSide === 'sides' ? 'sides' : 'front';
+  p.handoffSeconds = bounded(p.handoffSeconds, 0.5, 0, 2);
   c.processor = { ...d.processor!, ...c.processor };
   // A CORAL intake needs a way in: floor or funnel.
   if (c.intake.primary && !c.intake.ground && !c.intake.station) c.intake.primary = false;
@@ -91,7 +97,7 @@ export function build(b: Build): RobotConfig {
   c.intake.secondary = b.algae !== 'none';
   c.options = { ...c.options, algaeGround: b.algae === 'reefGround' };
   c.processor!.enabled = b.algaeScore === 'processor' || b.algaeScore === 'both';
-  c.launcher.enabled = b.algaeScore === 'net' || b.algaeScore === 'both';
+  c.options = { ...c.options, net: b.algaeScore === 'net' || b.algaeScore === 'both' };
   c.climber.maxLevel = b.climb;
   c.autoAlign = b.align;
   if (b.coral === 'l1') { c.height = inch(24); c.placement!.reach = inch(10); }
@@ -105,7 +111,7 @@ export function reefscapeRobotPresets() {
     { id: 'all-rounder', label: 'Ground-intake all-rounder', description: 'CORAL ground intake + funnel, L1–L4, reef and floor ALGAE into NET and PROCESSOR, auto-align, deep climb. The elite do-everything build.', config: build({ coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
     { id: 'mid-elevator', label: 'L2–L3 elevator', description: 'Single-stage elevator: funnel-fed CORAL on L1–L3, reef ALGAE to the PROCESSOR, shallow climb. A common mid-tier build.', config: build({ coral: 'l3', intake: 'funnel', algae: 'reef', algaeScore: 'processor', climb: 1, align: true }) },
     { id: 'trough', label: 'L1 trough bot', description: 'Low, simple robot: CORAL ground intake scoring only the L1 trough, floor ALGAE to the PROCESSOR, shallow climb, no auto-align (kit-bot style).', config: build({ coral: 'l1', intake: 'ground', algae: 'reefGround', algaeScore: 'processor', climb: 1, align: false }) },
-    { id: 'algae', label: 'ALGAE specialist', description: 'No CORAL scoring: removes reef ALGAE and collects it from the floor, shoots the NET and feeds the PROCESSOR, deep climb.', config: build({ coral: 'none', intake: 'none', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
+    { id: 'algae', label: 'ALGAE specialist', description: 'No CORAL scoring: removes reef ALGAE and collects it from the floor, outtakes it into the NET from a raised elevator and feeds the PROCESSOR, deep climb.', config: build({ coral: 'none', intake: 'none', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }) },
   ];
 }
 
@@ -124,9 +130,13 @@ export const reefscapeRobotOptions: RobotOption[] = [
   opt('algae', 'ALGAE handling', [['none', 'Knock off only', 'The elevator can still knock reef ALGAE onto the carpet'], ['reef', 'Grab from REEF'], ['reefGround', 'REEF + ground']],
     (c) => !c.intake.secondary ? 'none' : c.options?.algaeGround ? 'reefGround' : 'reef',
     (c, v) => { c.intake.secondary = v !== 'none'; c.options = { ...c.options, algaeGround: v === 'reefGround' }; }),
-  opt('algaeScore', 'ALGAE scoring', [['none', 'None'], ['processor', 'PROCESSOR'], ['net', 'NET shooter'], ['both', 'Both']],
-    (c) => (c.processor!.enabled && c.launcher.enabled ? 'both' : c.processor!.enabled ? 'processor' : c.launcher.enabled ? 'net' : 'none'),
-    (c, v) => { c.processor!.enabled = v === 'processor' || v === 'both'; c.launcher.enabled = v === 'net' || v === 'both'; }),
+  opt('algaeScore', 'ALGAE scoring', [['none', 'None'], ['processor', 'PROCESSOR'], ['net', 'NET (elevator)', 'Raise the elevator at the BARGE and outtake the ALGAE over the NET lip'], ['both', 'Both']],
+    (c) => (c.processor!.enabled && c.options?.net ? 'both' : c.processor!.enabled ? 'processor' : c.options?.net ? 'net' : 'none'),
+    (c, v) => { c.processor!.enabled = v === 'processor' || v === 'both'; c.options = { ...c.options, net: v === 'net' || v === 'both' }; },
+    'NET: line up at the BARGE, the elevator rises to full height and the rollers toss the ALGAE in (G).'),
+  opt('scoreSide', 'Scorer faces', [['front', 'Front', 'Elevator end effector on the front: drive nose-in to the REEF'], ['sides', 'Both sides', 'An arm on the elevator swings out to either side (1778 SubZero): line up side-on to the REEF']],
+    (c) => c.placement!.scoreSide ?? 'front', (c, v) => { c.placement!.scoreSide = v === 'sides' ? 'sides' : 'front'; },
+    'Side scoring keeps the robot parallel to the REEF face and can score on whichever side faces it.'),
   opt('assist', 'Driver assist', [['align', 'Reef auto-align', 'Holding Space drives to the nearest open BRANCH (vision pose alignment)'], ['manual', 'Manual alignment']],
     (c) => (c.autoAlign ? 'align' : 'manual'), (c, v) => { c.autoAlign = v === 'align'; },
     'CORAL only goes on when the end effector is lined up with the BRANCH (±1 in).'),
@@ -140,7 +150,7 @@ export function reefscapeSpecBars(config: RobotConfig) {
   const intake = !c.intake.primary ? 'no intake' : c.intake.ground && c.intake.station ? 'ground + funnel' : c.intake.ground ? 'ground' : 'funnel';
   return [
     { label: 'CORAL', value: c.placement!.enabled ? `L1–L${c.placement!.maxLevel} · ${intake}` : 'Off', frac: c.placement!.enabled ? c.placement!.maxLevel / 4 : 0 },
-    { label: 'ALGAE', value: !c.intake.secondary ? 'Knock off' : [c.processor!.enabled ? 'PROCESSOR' : '', c.launcher.enabled ? 'NET' : ''].filter(Boolean).join(' + ') || 'Pickup only', frac: Number(c.intake.secondary) * (Number(c.processor!.enabled) + Number(c.launcher.enabled)) / 2 },
+    { label: 'ALGAE', value: !c.intake.secondary ? 'Knock off' : [c.processor!.enabled ? 'PROCESSOR' : '', c.options?.net ? 'NET' : ''].filter(Boolean).join(' + ') || 'Pickup only', frac: Number(c.intake.secondary) * (Number(c.processor!.enabled) + Number(!!c.options?.net)) / 2 },
     { label: 'Mechanism reach', value: `${(c.placement!.reach / 0.0254).toFixed(1)} in`, frac: c.placement!.reach / inch(18) },
   ];
 }
@@ -149,8 +159,8 @@ export function reefscapeRobotSummary(config: RobotConfig): string {
   const c = normalizeReefscapeConfig(config);
   const intake = !c.intake.primary ? '' : c.intake.ground && c.intake.station ? ' (ground + funnel)' : c.intake.ground ? ' (ground)' : ' (funnel)';
   const coral = c.placement!.enabled && c.intake.primary ? `CORAL L1–L${c.placement!.maxLevel}${intake}` : 'CORAL off';
-  const algae = c.intake.secondary ? [c.processor!.enabled ? 'PROCESSOR' : '', c.launcher.enabled ? 'NET' : ''].filter(Boolean).join(' + ') || 'ALGAE pickup only' : 'ALGAE knock-off';
-  return `${coral} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
+  const algae = c.intake.secondary ? [c.processor!.enabled ? 'PROCESSOR' : '', c.options?.net ? 'NET' : ''].filter(Boolean).join(' + ') || 'ALGAE pickup only' : 'ALGAE knock-off';
+  return `${coral}${c.placement!.scoreSide === 'sides' ? ' (side scoring)' : ''} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
 }
 
 export function startPose(a: Alliance, station: number) {

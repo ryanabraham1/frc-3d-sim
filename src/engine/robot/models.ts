@@ -16,6 +16,13 @@ import { HEADLESS, makeTextTexture } from '../render/text';
 /** Generic robot parts a team model can replace (they are hidden when listed in `RobotModel.replaces`). */
 export type ModelPart = 'bumpers' | 'chassis' | 'hopper' | 'launcher' | 'climber' | 'intakeRollers' | 'funnel' | 'mast';
 
+/**
+ * Placement mechanism pose from the season rules. `forward` is the reach from the robot center along the scoring
+ * direction: the front (+x), or the robot's left / right when `side` is +1 / -1 (side-scoring arms). `handoff` runs
+ * 0→1 while a floor-intaken piece is passed from the ground intake to the end effector (0 = no handoff).
+ */
+export interface PlaceAnim { height: number; forward: number; level: number; side?: number; handoff?: number }
+
 /** What a model sees each frame. */
 export interface RobotAnimState {
   /** Seconds since the last frame (clamped) and a running clock. */
@@ -35,7 +42,7 @@ export interface RobotAnimState {
   /** 0 = stowed, 1 = hooks raised to grab (align), 0.25 = pulled in (rising / hanging). */
   climb: number;
   /** Season-supplied placement mechanism pose (REEFSCAPE end effector): height above robot origin, forward reach. */
-  place: { height: number; forward: number; level: number } | null;
+  place: PlaceAnim | null;
   /** Chassis-frame velocity (m/s; x forward, z = robot right) and yaw rate (rad/s) — swerve modules steer/roll with it. */
   vx: number;
   vz: number;
@@ -62,6 +69,8 @@ export interface RobotModel {
   update(s: RobotAnimState): void;
   /** Where the robot's held game piece is drawn (seasons parent their held-piece mesh here). */
   heldAnchor?: THREE.Object3D;
+  /** Where a piece rides on the ground intake (its roller), so seasons can animate the handoff to `heldAnchor`. */
+  intakeAnchor?: THREE.Object3D;
   /** Status light position (robot frame), on top of the model's structure. */
   lightAt?: [number, number, number];
 }
@@ -123,9 +132,20 @@ export function box(parent: THREE.Object3D, sx: number, sy: number, sz: number, 
 export function roller(parent: THREE.Object3D, radius: number, length: number, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Group {
   const g = new THREE.Group();
   g.position.set(x, y, z);
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 14), m);
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 20), m);
   drum.rotation.x = Math.PI / 2;
   g.add(drum);
+  // Aluminum hubs, axle and radial spokes distinguish wheels from featureless cylinders.
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, length + 0.025, 8), HUB);
+  shaft.rotation.x = Math.PI / 2; g.add(shaft);
+  for (const sign of [-1, 1]) {
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.33, radius * 0.33, 0.005, 12), HUB);
+    hub.rotation.x = Math.PI / 2; hub.position.z = sign * (length / 2 + 0.003); g.add(hub);
+    for (let i = 0; i < 3; i++) {
+      const spoke = box(g, radius * 1.3, radius * 0.08, 0.003, HUB, 0, 0, sign * (length / 2 + 0.006));
+      spoke.rotation.z = i * Math.PI / 3;
+    }
+  }
   const stripe = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.5, radius * 0.25, length * 1.01), STRIPE);
   stripe.position.y = radius * 0.92;
   g.add(stripe);
@@ -286,7 +306,18 @@ export function plate(parent: THREE.Object3D, pts: [number, number][], t: number
 
 /** Pair of mirrored side plates at ±z (see `plate`). */
 export function sidePlates(parent: THREE.Object3D, pts: [number, number][], halfGap: number, m: THREE.Material, holes: [number, number, number][] = [], t = 0.006): void {
-  for (const sz of [-1, 1]) plate(parent, pts, t, m, sz * halfGap, holes);
+  for (const sz of [-1, 1]) {
+    plate(parent, pts, t, m, sz * halfGap, holes);
+    const bolts = new THREE.InstancedMesh(new THREE.CylinderGeometry(.0035,.0035,.004,6),HUB,pts.length);
+    const center = pts.reduce((a,p)=>[a[0]+p[0]/pts.length,a[1]+p[1]/pts.length],[0,0]);
+    const d = new THREE.Object3D(); d.rotation.x = Math.PI/2;
+    pts.forEach(([x,y],i)=> {
+      const dx=center[0]-x, dy=center[1]-y, length=Math.hypot(dx,dy);
+      d.position.set(x+dx/length*.012,y+dy/length*.012,sz*(halfGap+t/2+.002));
+      d.updateMatrix(); bolts.setMatrixAt(i,d.matrix);
+    });
+    parent.add(bolts);
+  }
 }
 
 /** Vertical post / standoff from y0 to y1. */
@@ -418,7 +449,12 @@ export function underBumperIntake(kit: ModelKit, o: { n?: number; width?: number
  * swings out and down over the bumper to the carpet when `set(deploy)` reaches 1. An orange roller bar at the tip
  * spins while intaking. `reach` = how far past the frame the roller lands.
  */
-export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: number; width?: number; rollers?: number; frame?: THREE.Material; stow?: number }): { update(s: RobotAnimState, deploy: number): void; hinge: THREE.Group } {
+/** Ground intake deploy target: out while the driver intakes, folding back in (carrying the piece) during a handoff. */
+export function intakeDeployTarget(s: RobotAnimState): number {
+  return s.intaking && s.enabled && !(s.place?.handoff ?? 0) ? 1 : 0;
+}
+
+export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: number; width?: number; rollers?: number; frame?: THREE.Material; stow?: number; rollerMaterial?: THREE.Material }): { update(s: RobotAnimState, deploy: number): void; hinge: THREE.Group; tip: THREE.Group } {
   const c = kit.config;
   const side = kit.groundSide;
   const hingeY = o.hingeY ?? c.bumperTop + 0.06;
@@ -435,15 +471,18 @@ export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: num
   hinge.add(arms);
   const frameM = o.frame ?? kit.mats.alu;
   for (const sz of [-1, 1]) box(arms, len, 0.035, 0.02, frameM, (side * len) / 2, 0, sz * (w / 2 + 0.012));
-  const orange = INTAKE_ORANGE();
+  const orange = o.rollerMaterial ?? INTAKE_ORANGE();
   const rollers: THREE.Group[] = [];
   const nr = o.rollers ?? 2;
   for (let i = 0; i < nr; i++) rollers.push(roller(arms, 0.03, w, orange, side * (len - i * 0.075), 0, 0));
+  // A captured piece rides just inboard of the rollers.
+  const tip = pivot(arms, side * (len - 0.06), 0.05);
   sidePlates(arms, [[side * (len - nr * 0.075), -0.035], [side * (len + 0.04), -0.035], [side * (len + 0.04), 0.035], [side * (len - nr * 0.075), 0.035]], w / 2 + 0.012, frameM);
   box(arms, 0.012, 0.012, w, frameM, side * (len * 0.5), 0.02, 0);
   let speed = 0;
   return {
     hinge,
+    tip,
     update(s, deploy) {
       // Stowed: arms point straight up (angle +90° from the intake face); deployed: `down` below horizontal.
       // Default stow: upright against the frame; `stow` > 90° folds it back in over the robot.

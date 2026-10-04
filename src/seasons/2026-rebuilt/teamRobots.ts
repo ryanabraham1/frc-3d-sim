@@ -1,6 +1,8 @@
+import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { belt, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { inch, lb } from '@engine/units';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
@@ -30,6 +32,13 @@ function shooterHead(parent: THREE.Object3D, o: { width: number; wheelR: number;
   box(head, 0.2, 0.012, o.width, o.plate, -0.025, -0.028, 0);
   box(head, 0.025, 0.025, o.width + 0.03, o.plate, -0.08, 0.1, 0);
   const wheels = [roller(head, o.wheelR, o.width, o.wheel, 0.02, 0.03), roller(head, o.wheelR * 0.6, o.width, o.wheel, -0.09, 0.015)];
+  for(const sign of [-1,1]) {
+    const z = sign*(o.width/2+.023);
+    motor(head,-.075,-.025,z+sign*.03);
+    belt(head,[-.075,-.025],[.02,.03],z);
+    fasteners(head,[[-.1,.025],[-.065,.105],[.065,-.015],[.075,.045]],z-sign*.01);
+    bar(head,[-.1,.09,z],[.015,.12,z],.008,mat(0xb9c2ca,{metal:.8}));
+  }
   const hoodPivot = pivot(head, -0.02, 0.03);
   hoodShell(hoodPivot, o.wheelR + 0.01, o.width, o.hood);
   return { hood: hoodPivot, wheels };
@@ -126,7 +135,6 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   const blue = mat(0x1f5fd0, { metal: 0.6, rough: 0.35 });
   const blueTube = tubeMat(0x1f5fd0);
   const smoke = mat(0x1e2024, { opacity: 0.8, metal: 0.1, rough: 0.25 });
-  const lid = mat(0xb9c0c8, { opacity: 0.55, metal: 0.1, rough: 0.2 });
   const side = k.groundSide;
   const db = drivebase(k, { motorRing: 0x1f5fd0 });
   // Closed smoked hopper box behind the shooter with a light lid.
@@ -134,7 +142,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   const hl = L * 0.72;
   const hopH = H - bt - 0.03;
   hopperWalls(k.visual, { x: hx, y0: bt, length: hl, width: W * 0.98, height: hopH, m: smoke });
-  box(k.visual, hl, 0.006, W * 0.98, lid, hx, H - 0.03, 0);
+  // Flexible net roof is drawn by Robot from hopperExpansion, following actual load.
   const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.96, width: W * 0.94, height: hopH * 0.9, color: FUEL });
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
@@ -436,7 +444,7 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
 
 // ── 3476 Code Orange "Sandspit" (photos: The Blue Alliance 2026 media; Chief Delphi reveal): a tall closed clear
 //    hopper box with black perforated corner posts and orange rails, teal 3D-printed lattice, an orange A-frame,
-//    a wide multi-lane shooter fed by a top roller, and an intake that retracts to compact FUEL into it ──
+//    a 20 FUEL/s wide multi-lane shooter fed by a top roller, and an intake that retracts to compact FUEL into it ──
 registerRobotModel('sandspit-3476', (k: ModelKit) => {
   const c = k.config;
   const L = c.frameLength;
@@ -524,23 +532,26 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
 
 export function rebuiltTeamRobots(): TeamRobot[] {
   return [
+    ...additionalRebuiltTeamRobots(),
     {
       id: 'ripcurrent-4414', team: 4414, name: 'RIPCURRENT',
-      description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake to hold 85+ FUEL under the TRENCH. No climber.',
+      description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake to hold 85 FUEL; net bulges above 70 FUEL and loses TRENCH clearance. No climber.',
       source: '4414 2026 Technical Binder (2026.team4414.com); Chief Delphi "Team 4414 HighTide 2026 Tech Binder - RIPCURRENT"',
       config: teamConfig(4414, 'ripcurrent-4414', { intake: 'both', aim: 'turret', hopper: 85, tall: false, rate: 15, climb: 0 }, (c) => {
         // 25 × 32 in frame with chamfered back corners, inside the 110 in perimeter: modeled as an equal-perimeter box.
         c.frameLength = inch(24);
         c.frameWidth = inch(31);
+        c.hopperExpansion = { startCount: 70, fullHeight: inch(27) }; // [EST] net expansion above ~70 FUEL
         setRebuiltAccuracy(c, 90); // [EST] precomputed robust shot map
         c.maxSpeed = 4.4; // [EST] geared 7.67:1 for low current draw
       }),
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, closed hopper with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter. 115 lb.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, 80-FUEL net hopper (50 trench-safe), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter. 115 lb.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
-      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 50, tall: false, rate: 16, climb: 1 }, (c) => {
+      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: false, rate: 25, climb: 1 }, (c) => {
+        c.hopperExpansion = { startCount: 50, fullHeight: inch(28) }; // [EST] net bulges when over trench-safe load
         c.launcher.exits = 3; // [EST] wide multi-wheel shooter
         c.mass = lb(115);
       }),
@@ -578,9 +589,9 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'sandspit-3476', team: 3476, name: 'Sandspit',
-      description: '3476 Code Orange — a tall closed-hopper BUMP bot: a wide multi-lane shooter fed by a top roller, the intake retracts while shooting to compact FUEL into it, chassis-aimed; an Orbit-style climber added for Champs.',
+      description: '3476 Code Orange — a tall closed-hopper BUMP bot: a 20 FUEL/s wide multi-lane shooter fed by a top roller, the intake retracts while shooting to compact FUEL into it, chassis-aimed; an Orbit-style climber added for Champs.',
       source: 'Chief Delphi "Team 3476: Code Orange 2026 Sandspit Robot Reveal"; The Blue Alliance 2026 media',
-      config: teamConfig(3476, 'sandspit-3476', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: true, rate: 16, climb: 1 }, (c) => {
+      config: teamConfig(3476, 'sandspit-3476', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: true, rate: 20, climb: 1 }, (c) => {
         c.launcher.exits = 3; // [EST] "2/3 lane shooter"
         c.hopperCapacity = 70; // [EST]
       }),

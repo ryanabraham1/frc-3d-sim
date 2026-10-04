@@ -6,7 +6,7 @@ import { BATTERY_MASS } from '@engine/robot/drivetrain';
 import { lb } from '@engine/units';
 import * as C from './constants';
 import { AUTO_ROUTINES, CrescendoAutoPilot } from './autopilot';
-import { CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
+import { build, CLIMBER_LABELS, crescendoRobotDefaults, crescendoRobotOptions, crescendoRobotPresets, crescendoSpecBars, driverEye, normalizeCrescendoConfig, startPose, TIMELINE } from './config';
 import { crescendoTeamRobots } from './teamRobots';
 import { buildCrescendoField, type CrescendoFieldRefs } from './field';
 import { CrescendoHud } from './hud';
@@ -97,7 +97,9 @@ export const crescendo2024: SeasonDefinition = {
   createAutoPilot(ctx, rules, robot, routine) {
     return new CrescendoAutoPilot(ctx, rules as CrescendoRules, robot, routine);
   },
-  botRobotConfig(difficulty) { return difficulty === 'hard' ? crescendoRobotPresets().find((p) => p.id === 'turret')!.config : this.robotDefaults; },
+  // AI robots are ground-intake, chassis-aimed pivot shooters (the dominant 2024 build). Turrets and SOURCE intakes
+  // stay available to the player through the Robot panel.
+  botRobotConfig() { return build({ ground: true, source: false, shooter: 'pivot', aim: 'align', amp: true, climb: 1 }); },
   createBotPilot(ctx, rules, robot) { return createCrescendoBot(ctx, rules as CrescendoRules, robot); },
   createHud(ctx, rules, slots) {
     return new CrescendoHud(ctx, rules as CrescendoRules, slots);

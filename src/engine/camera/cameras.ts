@@ -3,32 +3,33 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FieldFrame, FieldPoint, FieldPose } from '../coords';
 import { clamp, wrapAngle } from '../units';
 
-/**
- * Casts a ray through the solid field (and other robots) from `from` toward `to` (world coords). Returns
- * the distance to the first hit, or null when the segment is clear. Used to keep chase cameras out of walls.
- */
-export type CameraOcclusion = (from: THREE.Vector3, to: THREE.Vector3) => number | null;
-
-export type CameraMode = 'driver' | 'chase' | 'overhead' | 'orbit';
-export const CAMERA_MODES: CameraMode[] = ['driver', 'chase', 'overhead', 'orbit'];
+export type CameraMode = 'driver' | 'follow' | 'chase' | 'overhead' | 'orbit';
+export const CAMERA_MODES: CameraMode[] = ['driver', 'follow', 'chase', 'overhead', 'orbit'];
 export const CAMERA_LABELS: Record<CameraMode, string> = {
   driver: 'Driver station',
+  follow: '3rd person',
   chase: 'Chase (locked behind)',
   overhead: 'Overhead',
   orbit: 'Free orbit',
 };
 
-const CHASE_MARGIN = 0.25;
-const CHASE_MIN_DIST = 0.6;
-/** Extra clear distance (m) required before the chase camera moves back out after being pulled in. */
-const CHASE_RELEASE_BAND = 0.2;
+/** 3rd-person camera: distance behind the robot (toward its driver station) and height above it, m. */
+const FOLLOW_BACK = 3.4;
+const FOLLOW_HEIGHT = 2.5;
+/** How far past the robot (downfield) the 3rd-person camera aims, m. */
+const FOLLOW_LEAD = 1.2;
+/** How far the 3rd-person camera may sit beyond either alliance wall (short of the driver-station booths), m. */
+const FOLLOW_WALL_OVERHANG = 0.8;
 
 /**
  * Camera rig with the standard FRC viewpoints. `referenceYaw` is the field yaw that "forward" on the
  * sticks maps to — fixed for driver-station/overhead (field-oriented driving), camera yaw otherwise.
  *
+ * follow: 3rd person. Trails the robot from its driver's side but keeps the driver-station heading, so the view
+ *         never swings when the robot turns and field-oriented sticks still match the screen. It doesn't pull in
+ *         for obstacles: in every view, the game fades whatever field element hides the robot (`OcclusionFader`).
  * chase:  locked behind the robot, looking along its intake side (so you see where you're about to intake)
- *         or its shooter side (toggle with `toggleChaseFacing`); pulled in when field elements are in the way.
+ *         or its shooter side (toggle with `toggleChaseFacing`).
  */
 export class CameraRig {
   mode: CameraMode = 'driver';
@@ -38,18 +39,11 @@ export class CameraRig {
   private readonly desiredLook = new THREE.Vector3();
   private initialized = false;
 
-  /** Set by the game: lets the chase camera stay in front of walls and other solid field elements. */
-  occlusion: CameraOcclusion | null = null;
-  private readonly anchor = new THREE.Vector3();
-  /** Fraction (0..1) of the chase offset kept after pulling in for obstacles. Snaps in, eases back out. */
-  private chaseScale = 1;
   /** Which end of the robot the chase camera looks toward. */
   chaseFacing: 'intake' | 'shooter' = 'intake';
   /** Yaw offset (0 or π) from the robot's heading to its floor-intake direction; the game keeps it current. */
   chaseIntakeOffset = 0;
   private chaseFlip = 0;
-  private readonly offset = new THREE.Vector3();
-  private readonly probe = new THREE.Vector3();
 
   constructor(
     readonly camera: THREE.PerspectiveCamera,
@@ -67,8 +61,7 @@ export class CameraRig {
   }
 
   setMode(mode: CameraMode): void {
-    // Saved settings from older versions may name the removed 'follow' (3rd person) mode.
-    if (!CAMERA_MODES.includes(mode)) mode = 'chase';
+    if (!CAMERA_MODES.includes(mode)) mode = 'follow';
     this.mode = mode;
     this.orbit.enabled = mode === 'orbit';
     if (mode === 'orbit') {
@@ -76,7 +69,6 @@ export class CameraRig {
       this.orbit.update();
     }
     this.initialized = false;
-    this.chaseScale = 1;
   }
 
   /** Swing the chase view between the intake side and the shooter side. */
@@ -98,7 +90,7 @@ export class CameraRig {
   }
 
   get referenceYaw(): number {
-    if (this.mode === 'driver' || this.mode === 'overhead') return this.driverEye.yaw;
+    if (this.mode === 'driver' || this.mode === 'overhead' || this.mode === 'follow') return this.driverEye.yaw;
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
     return Math.atan2(-dir.z, dir.x);
@@ -116,6 +108,15 @@ export class CameraRig {
         const far = { x: e.x + Math.cos(e.yaw) * f.length * 0.55, y: f.width / 2 };
         const fx = focus ?? t;
         f.toWorld(far.x * 0.45 + fx.x * 0.55, far.y * 0.35 + fx.y * 0.65, 0, this.desiredLook);
+        break;
+      }
+      case 'follow': {
+        const yaw = this.driverEye.yaw;
+        const c = Math.cos(yaw);
+        const s = Math.sin(yaw);
+        const camX = clamp(t.x - c * FOLLOW_BACK, -FOLLOW_WALL_OVERHANG, f.length + FOLLOW_WALL_OVERHANG);
+        f.toWorld(camX, t.y - s * FOLLOW_BACK, targetZ + FOLLOW_HEIGHT, this.desiredPos);
+        f.toWorld(t.x + c * FOLLOW_LEAD, t.y + s * FOLLOW_LEAD, targetZ + 0.2, this.desiredLook);
         break;
       }
       case 'chase': {
@@ -140,30 +141,10 @@ export class CameraRig {
         return;
       }
     }
-    if (this.mode === 'chase') this.pullInFromObstacles(dt, t, targetZ);
     this.camera.position.lerp(this.desiredPos, k);
     this.lookAt.lerp(this.desiredLook, k);
     this.camera.lookAt(this.lookAt);
     this.initialized = true;
-  }
-
-  /**
-   * Shorten the chase offset when something solid is between the robot and the camera's target spot, so the
-   * view is never buried inside a field element. The ray goes to the *target* position (not the smoothed
-   * camera), so the result doesn't feed back into itself: a closer obstacle snaps the offset in, a clearer
-   * view eases it back out slowly, which keeps the camera from jittering along grazing edges.
-   */
-  private pullInFromObstacles(dt: number, t: FieldPose, targetZ: number): void {
-    this.frame.toWorld(t.x, t.y, targetZ + 0.6, this.anchor);
-    const offset = this.offset.copy(this.desiredPos).sub(this.anchor);
-    const len = offset.length();
-    let target = 1;
-    const hit = this.occlusion && len > 1e-3 ? this.occlusion(this.anchor, this.probe.copy(this.desiredPos)) : null;
-    if (hit !== null) target = clamp((hit - CHASE_MARGIN) / len, Math.min(1, CHASE_MIN_DIST / len), 1);
-    if (target < this.chaseScale) this.chaseScale = target;
-    // Dead-band: only back out again when there is clearly more room, so a noisy hit distance can't pump the camera.
-    else if ((target - this.chaseScale) * len > CHASE_RELEASE_BAND) this.chaseScale += (target - this.chaseScale) * (1 - Math.exp(-dt * 2.5));
-    this.desiredPos.copy(this.anchor).addScaledVector(offset, this.chaseScale);
   }
 
   dispose(): void {
