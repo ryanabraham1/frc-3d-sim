@@ -83,6 +83,16 @@ holes), `lattice` (truss beams and panels: give it an origin, a direction along 
   (`scoreSide: 'sides'`), 2 back (`scoreSide: 'ends'`). For elevator + arm robots, solve with
   `reachWith(p, dir, hubX, armLength, yMin, yMax)` in `2025-reefscape/additionalTeamRobots.ts`. Size the arm so
   the held piece actually reaches the target: the team-robots test checks it within 0.2 m.
+- Hoods: `s.aiming` is true while the driver holds shoot / pass, and `s.hood` then tracks the solved launch angle
+  live (re-solved ~7x a second from where the robot is). Stow the hood flat when not aiming and swing it to
+  `hoodFor(s.hood)` when aiming, so it visibly re-adjusts with range. Turret robots should use
+  `turretShooter()` (`engine/robot/turretShooter.ts`, after 4414's CAD) rather than a box with a wheel.
+- 2026 indexers: build dye rotors with `dyeRotor()` (`models.ts`): pocketed spinning plate, fenced tub, spiral guide
+  wall with feed rollers, open tower to the turret, external Krakens. Spin `floor` and `rollers` from `update`.
+- Piece flow: return `flow: { intake, stow, feed }` (robot-frame points, read when a piece starts moving) so captured
+  pieces visibly ride through **this** robot's mechanism: under / over the real rollers, onto the pile
+  (`hopperStow`), along the floor or up the tower into the shooter (`overBumperIntake`, `columnFeed`, a dye rotor's
+  `feed`). Paths must stay inside the robot's parts, never through a wall. Anything omitted uses a generic path.
 - If the real robot can do something the rules don't support (WHISPER scoring off both ends), add it to the rules
   as a config option with a test (`placement.scoreSide = 'ends'`). Don't fake it in the model.
 
@@ -90,7 +100,7 @@ holes), `lattice` (truss beams and panels: give it an origin, a direction along 
 
 `npm run dev`, then open `/tools/robot-gallery.html`. Click a robot to focus it. Drag to orbit and scroll to zoom,
 or from the browser tools call `view(orbit, tilt, zoom)`, e.g. `view(0.6, 0.4, 0.5)`. Go through **Stowed,
-Intaking, Scoring/extended and Climbing**, and look from both ends and from low down. Compare side by side with the
+Intaking, Scoring/extended, Climbing and Piece flow** (loops intake → hopper → shooter so you can watch the paths), and look from both ends and from low down. Compare side by side with the
 contact sheet. Look for these specifically:
 
 - gaps between parts that should touch (stage to rail, brace to frame, arm to hub);

@@ -242,3 +242,11 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
   end up around a BRANCH), reef auto-align option, physical CORAL STATION CHUTE, no turret. 2024: physical 50°
   SOURCE CHUTE with an H button, intake/shooter/aim/AMP/climber options. 2026: intake/aim/hopper/height/rate/climb
   options. Guidance for future seasons: INSTRUCTIONS.md §3b, CLAUDE.md.
+- 2026-10-04: **Polish pass.** Game pieces animate through robots (`engine/robot/pieceFlow.ts`; each 2026 team model
+  routes pieces through its own intake, hopper, dye rotor / floor lanes and shooter; 2024 NOTEs ride into the held
+  position; REEFSCAPE keeps its CORAL handoff). Dye rotors rebuilt from 4414's CAD; turret shooters rebuilt
+  (`turretShooter.ts`) with hoods that track the solved angle while aiming; dumper hoods lift on shoot. TRENCH remodeled
+  as pedestal + 6in arm + leg (Figure 5-10), with collisions to match. Dark event venue (empty tiered seating, drape,
+  trusses), dark HUD panels (score bar stays white), key hint instead of the auto-opening controls panel, fps only in
+  dev / `?fps`, WebAudio field cues with a pause-menu toggle. Bumpers lost the INTAKE text; the carpet capture guide
+  shows only under the driver's robot.
