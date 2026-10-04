@@ -21,6 +21,8 @@ export interface AutoStep {
   path?: { x: number; y: number }[];
   /** Blue-frame robot heading; absent means face the intake along travel / face the goal. */
   yaw?: number;
+  /** Drive paths only: shoot on the move (a miss is the planner's responsibility). */
+  fire?: boolean;
 }
 export interface AutoPlan { seasonId: string; steps: AutoStep[] }
 
@@ -36,13 +38,13 @@ export function cleanAutoPlan(value: unknown, season: Pick<SeasonDefinition, 'id
     if (s.action === 'note' && (!Number.isInteger(s.target) || s.target! < 0 || s.target! > 7)) return undefined;
     if (s.yaw !== undefined && !Number.isFinite(s.yaw)) return undefined;
     if (s.path !== undefined && (s.action !== 'drive' || !Array.isArray(s.path) || s.path.length > 80 || s.path.some(q => !q || ![q.x, q.y].every(Number.isFinite) || q.x < 0 || q.x > season.fieldLength || q.y < 0 || q.y > season.fieldWidth))) return undefined;
-    steps.push({ ...(s.path !== undefined ? { path: s.path.map(q => ({ x: q.x, y: q.y })) } : {}), ...(s.yaw !== undefined ? { yaw: Math.atan2(Math.sin(s.yaw), Math.cos(s.yaw)) } : {}), action: s.action, x: s.x, y: s.y, duration: s.duration, ...(s.target !== undefined ? { target: s.target } : {}), ...(s.level !== undefined ? { level: s.level } : {}) });
+    steps.push({ ...(s.fire && s.action === 'drive' ? { fire: true } : {}), ...(s.path !== undefined ? { path: s.path.map(q => ({ x: q.x, y: q.y })) } : {}), ...(s.yaw !== undefined ? { yaw: Math.atan2(Math.sin(s.yaw), Math.cos(s.yaw)) } : {}), action: s.action, x: s.x, y: s.y, duration: s.duration, ...(s.target !== undefined ? { target: s.target } : {}), ...(s.level !== undefined ? { level: s.level } : {}) });
   }
   // Older drawings stored every sample as an action. Keep their geometry but show one path.
   const compact: AutoStep[] = [];
   for (let i = 0; i < steps.length;) {
     let end = i;
-    while (end < steps.length && steps[end].action === 'drive' && steps[end].path === undefined && steps[end].yaw === undefined) end++;
+    while (end < steps.length && steps[end].action === 'drive' && steps[end].path === undefined && steps[end].yaw === undefined && !steps[end].fire) end++;
     if (end - i >= 3) { const last = steps[end - 1]; compact.push({ ...last, path: simplifyPath(steps.slice(i, end)).slice(0, -1) }); i = end; }
     else { compact.push(steps[i]); i++; }
   }
@@ -124,6 +126,14 @@ export class PlannedAutoPilot implements AutoPilot {
     cmd.vx = drive.vx; cmd.vy = drive.vy;
     if (s.action === 'drive' && drive.dist > 0.2) yaw = Math.atan2(drive.vy, drive.vx) + r.intakeYawOffset;
     if (s.yaw !== undefined && !['reef', 'station', 'note'].includes(s.action)) yaw = planPoint(this.season, r.alliance, { ...s, yaw: s.yaw }).yaw;
+    if (s.fire && s.action === 'drive') {
+      const target = this.rules.aimTarget(r);
+      if (target) {
+        const p = this.ctx.frame.toField(target.point), face = Math.atan2(p.y - r.pose.y, p.x - r.pose.x);
+        if (s.yaw === undefined) yaw = face;
+        cmd.shoot = r.config.launcher.turret || Math.abs(Math.atan2(Math.sin(face - r.pose.yaw), Math.cos(face - r.pose.yaw))) < .15;
+      }
+    }
     cmd.omega = turnToward(r.pose.yaw, yaw, r.config.maxOmega, 6);
     const reached = Math.hypot(goal.x - r.pose.x, goal.y - r.pose.y) < tolerance;
     if (intermediate && Math.hypot(goal.x - r.pose.x, goal.y - r.pose.y) < .28) { this.pathIndex++; this.travelBudget = this.elapsed = 0; return this.update(0); }

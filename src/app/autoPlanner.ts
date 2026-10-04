@@ -28,6 +28,7 @@ export function stepLabel(s: AutoStep): string {
   if (s.action === 'station') return `${s.target === 0 ? 'Lower' : 'Upper'} station · intake`;
   if (s.action === 'note') return `${s.target! < 3 ? `Wing ${s.target! + 1}` : `Center ${s.target! - 2}`} · pick up`;
   if (s.action === 'intake' && s.duration === 0) return 'Collect while driving';
+  if (s.action === 'drive' && s.fire) return 'Drive path · shooting';
   return `${labels[s.action]}${s.action === 'wait' ? ` · ${s.duration}s` : ''}`;
 }
 export function targetStep(_season: SeasonDefinition, action: AutoStep['action'], target: number, level = 4): AutoStep {
@@ -90,7 +91,7 @@ export function autoPlanner(season: SeasonDefinition, s: GameSettings, opts: Pla
     <div class="auto-map ${tool.action === 'shoot' ? 'placing-shot' : ''}">${svg}</div>
     <div class="auto-legend"><span><i class="auto-line"></i>Drive path · intake on</span>${season.year !== 2025 ? '<span><i class="auto-shot-dot"></i>Stop &amp; shoot</span>' : ''}</div>
     <ol class="auto-steps">${plan.steps.map((t, i) => `<li class="${tool.selected === i ? 'selected' : ''} ${t.action === 'shoot' ? 'shoot-step' : ''}"><button class="auto-step-label" data-auto-edit="${i}" ${disabled}>${esc(stepLabel(t))}</button><span class="dim">${t.yaw === undefined ? 'Direction: automatic' : `Direction: ${deg(t.yaw)}°`}</span><button class="opt" data-auto-up="${i}" aria-label="Move action ${i + 1} up" ${!i || opts.disabled ? 'disabled' : ''}>↑</button><button class="opt" data-auto-down="${i}" aria-label="Move action ${i + 1} down" ${i === plan.steps.length - 1 || opts.disabled ? 'disabled' : ''}>↓</button><button class="opt" data-auto-remove="${i}" aria-label="Remove action ${i + 1}" ${disabled}>×</button></li>`).join('')}</ol>
-    ${selected ? `<div class="auto-step-editor"><b>Action ${tool.selected + 1}: ${esc(stepLabel(selected))}</b>${!['reef', 'station', 'note'].includes(selected.action) ? `<div class="auto-tools"><label>Robot direction <select class="pick" data-auto-facing ${disabled}><option value="auto" ${selected.yaw === undefined ? 'selected' : ''}>Automatic${selected.action === 'shoot' ? ' · face goal' : ' · intake faces path'}</option><option value="custom" ${selected.yaw !== undefined ? 'selected' : ''}>Choose angle</option></select></label>${selected.yaw !== undefined ? `<label>Angle ${headings(selected.yaw, 'data-auto-yaw aria-label="Action robot direction in degrees"')}</label>` : ''}</div>` : '<p class="hint">The robot automatically faces this target.</p>'}${selected.action !== 'drive' ? `<label class="auto-stop-time">${selected.action === 'shoot' ? 'Shoot for up to' : selected.action === 'intake' ? 'Stop time (0 = keep moving)' : 'Wait up to'} <input data-auto-stop-time type="number" min="0" max="10" step="0.5" value="${selected.duration}" ${disabled}/> seconds</label>` : ''}</div>` : ''}
+    ${selected ? `<div class="auto-step-editor"><b>Action ${tool.selected + 1}: ${esc(stepLabel(selected))}</b>${!['reef', 'station', 'note'].includes(selected.action) ? `<div class="auto-tools"><label>Robot direction <select class="pick" data-auto-facing ${disabled}><option value="auto" ${selected.yaw === undefined ? 'selected' : ''}>Automatic${selected.action === 'shoot' ? ' · face goal' : ' · intake faces path'}</option><option value="custom" ${selected.yaw !== undefined ? 'selected' : ''}>Choose angle</option></select></label>${selected.yaw !== undefined ? `<label>Angle ${headings(selected.yaw, 'data-auto-yaw aria-label="Action robot direction in degrees"')}</label>` : ''}</div>` : '<p class="hint">The robot automatically faces this target.</p>'}${selected.action === 'drive' && season.year !== 2025 ? `<label class="auto-stop-time"><input type="checkbox" data-auto-fire ${selected.fire ? 'checked' : ''} ${disabled}/> Shoot while driving (turrets aim for you; other robots turn to face the goal and may miss)</label>` : ''}${selected.action !== 'drive' ? `<label class="auto-stop-time">${selected.action === 'shoot' ? 'Shoot for up to' : selected.action === 'intake' ? 'Stop time (0 = keep moving)' : 'Wait up to'} <input data-auto-stop-time type="number" min="0" max="10" step="0.5" value="${selected.duration}" ${disabled}/> seconds</label>` : ''}</div>` : ''}
     ${!plan.steps.length ? '<p class="hint">Start by drawing a path, or choose Shoot at start to score your preload.</p>' : ''}
     <details class="auto-options"><summary>More options</summary><button class="opt" data-auto-mode="wait" ${disabled}>Add wait</button><label>Default stop time <input data-auto-duration type="number" min="0" max="10" step="0.5" value="${tool.duration}" ${disabled}/> seconds</label></details>
     <p class="hint">${s.autoRoutine === 'custom' && !s.manualAuto ? 'This auto is selected.' : 'Choose Run this plan to use it.'} Collecting never needs a stop. Click an action to change its direction. Test in Solo practice; the match stops your auto when time runs out.</p>
@@ -130,6 +131,8 @@ export function bindAutoPlanner(el: HTMLElement, season: SeasonDefinition, s: Ga
   if (facing) facing.onchange = () => { const step = plan().steps[tool.selected]; if (!step) return; if (facing.value === 'auto') delete step.yaw; else step.yaw ??= startFor(season, s, opts).yaw; changed(); };
   const yaw = root.querySelector<HTMLInputElement>('[data-auto-yaw]');
   if (yaw) yaw.onchange = () => { if (Number.isFinite(Number(yaw.value))) { plan().steps[tool.selected].yaw = Number(yaw.value) * Math.PI / 180; changed(); } };
+  const fire = root.querySelector<HTMLInputElement>('[data-auto-fire]');
+  if (fire) fire.onchange = () => { const step = plan().steps[tool.selected]; if (!step) return; if (fire.checked) step.fire = true; else delete step.fire; changed(); };
   const time = root.querySelector<HTMLInputElement>('[data-auto-stop-time]');
   if (time) time.onchange = () => { plan().steps[tool.selected].duration = Math.max(0, Math.min(10, Number(time.value))); changed(); };
   for (const kind of ['up', 'down', 'remove']) root.querySelectorAll<HTMLElement>(`[data-auto-${kind}]`).forEach(b => b.onclick = () => {
@@ -157,7 +160,7 @@ export function bindAutoPlanner(el: HTMLElement, season: SeasonDefinition, s: Ga
     const q = p.matrixTransform(m.inverse());
     return planPoint(season, opts.alliance ?? s.alliance, { x: q.x, y: season.fieldWidth - q.y });
   };
-  const valid = (p: { x: number; y: number }) => p.x >= 0 && p.y >= 0 && p.x <= season.fieldLength && p.y <= season.fieldWidth && (season.year !== 2026 || p.x < season.fieldLength / 2 - Math.max(footprint(s.robot).length, footprint(s.robot).width) / 2 - .15);
+  const valid = (p: { x: number; y: number }) => p.x >= 0 && p.y >= 0 && p.x <= season.fieldLength && p.y <= season.fieldWidth;
   let drawn: { x: number; y: number }[] = [];
   let down = false;
   let pendingMarker = -1;

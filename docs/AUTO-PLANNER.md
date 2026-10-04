@@ -4,7 +4,9 @@ On Single player → Match, use **Plan your auto** below the starting-position m
 
 - **2025:** Select a reef branch and L1–L4, a coral station, then another branch. Click the map targets or use the Target selector and Add target button. The controller targets the chosen branch exactly; occupied, algae-blocked, unreachable, or unsupported levels are skipped.
 - **2024:** Select wing or center notes in order, and use **Place shooting spot** before clicking where the robot stops to shoot. **Shoot at path end** uses the last location directly. Pickup follows the actual selected note; if another robot takes it, that action is skipped.
-- **2026:** Drag to draw a route. Each drag creates one **Drive path** action. Intake runs automatically whenever there is room. Use **Place shooting spot** to click a gold shooting stop, or **Shoot at path end** to shoot at the last location. Crossing the hub row uses the existing bump/trench routing, respecting robot height. Drawn paths stay on your half during AUTO.
+- **2026:** Drag to draw a route. Each drag creates one **Drive path** action. Intake runs automatically whenever there is room. Use **Place shooting spot** to click a gold shooting stop, or **Shoot at path end** to shoot at the last location. Crossing the hub row uses the existing bump/trench routing, respecting robot height. You can draw past the centerline anywhere on the field.
+
+**Shoot while driving:** select a Drive path and tick *Shoot while driving*. Turret robots keep aiming and firing at the goal as they travel; robots without a turret turn to face the goal and fire once lined up. Nothing compensates for the motion, so a poorly planned path can miss.
 
 Change **Start direction** to rotate the starting robot. Click a path/stop on the map or in the action list, then select **Choose angle** under **Robot direction** to set its heading. Automatic direction points the intake along travel or faces the goal at a shooting stop; reef/station/note targets choose their own docking heading. Old sampled drawings collapse into one path while preserving their corners.
 

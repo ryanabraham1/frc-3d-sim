@@ -145,3 +145,17 @@ it('zero-second intake actions keep moving to the next location with intake runn
     expect(command.vx).toBeGreaterThan(0.5);
   } finally { sim.dispose(); }
 });
+
+it('shoot-while-driving paths keep the flag and fire while still travelling', () => {
+  const season = SEASONS.find(s => s.year === 2026)!;
+  const plan = cleanAutoPlan({ seasonId: season.id, steps: [{ action: 'drive', x: 9, y: 2, path: [{ x: 6, y: 2 }], duration: 2, fire: true }] }, season)!;
+  expect(plan.steps[0].fire).toBe(true);
+  const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
+  try {
+    sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
+    const pilot = new PlannedAutoPilot(sim.ctx, sim.rules, sim.robot, season, plan);
+    let fired = false;
+    for (let i = 0; i < 120; i++) { const c = pilot.update(sim.physics.dt); if (c.shoot && Math.hypot(c.vx, c.vy) > .5) fired = true; sim.step(c); }
+    expect(fired).toBe(true);
+  } finally { sim.dispose(); }
+});
