@@ -25,6 +25,8 @@ export interface BotStrategy {
   onStuck?(): void;
   /** True = let go of a climb made earlier (an AUTO climb) and get back to work. */
   release?(): boolean;
+  /** Extra command fields while hanging / climbing (e.g. 2024: place the held NOTE in the TRAP). */
+  climbing?(): Partial<RobotCommand> | null;
 }
 
 /** Repeated physical collect/score cycles. No pieces or points are created by the AI. */
@@ -72,7 +74,7 @@ export class CycleBot implements AutoPilot {
   update(dt: number): RobotCommand {
     const r = this.robot;
     this.team.tick();
-    if (r.isClimbing) return { ...IDLE_COMMAND, descend: !!this.strategy.release?.() };
+    if (r.isClimbing) return { ...IDLE_COMMAND, descend: !!this.strategy.release?.(), ...(this.strategy.climbing?.() ?? {}) };
     if (r.tippedOver) return { ...IDLE_COMMAND };
     const rescue = this.rescue();
     if (rescue) return this.antiPin(rescue, dt);
@@ -255,6 +257,31 @@ export class CycleBot implements AutoPilot {
     if (p.y < half && vy < 0 || p.y > this.ctx.frame.width - half && vy > 0) vy = 0;
     return { ...IDLE_COMMAND, vx: near && v.dist < 0.035 ? 0 : vx, vy: near && v.dist < 0.035 ? 0 : vy,
       omega: turnToward(p.yaw, yaw ?? Math.atan2(v.vy, v.vx), r.config.maxOmega * this.pace) };
+  }
+
+  private dockedSince = -1;
+  private redockUntil = -1;
+  private redockTo: FieldPoint | null = null;
+  /**
+   * Station watchdog: docked at a supply point (`docked`) without getting a piece for `patience` s, back off to
+   * `away` for a moment and come back in, which is what a driver does when a piece hangs up in the chute against
+   * the bumper. Returns the back-off command while backing off, else null. Call every tick while waiting to dock.
+   */
+  redock(docked: boolean, away: FieldPoint, yaw: number, patience = 2.5): RobotCommand | null {
+    const now = this.ctx.clock.elapsed;
+    if (now < this.redockUntil && this.redockTo) {
+      this.dockedSince = -1;
+      return this.driveTo(this.redockTo, yaw, undefined, 0.2);
+    }
+    if (!docked) { this.dockedSince = -1; return null; }
+    if (this.dockedSince < 0) this.dockedSince = now;
+    if (now - this.dockedSince > patience) {
+      this.redockUntil = now + 0.7;
+      this.redockTo = away;
+      this.dockedSince = -1;
+      return this.driveTo(away, yaw, undefined, 0.2);
+    }
+    return null;
   }
 
   private releaseTarget(): void {

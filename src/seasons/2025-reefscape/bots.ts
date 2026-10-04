@@ -230,6 +230,35 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
     return null;
   };
 
+  const stationIntake = r.config.intake.station !== false;
+  /** A CORAL lying (or hung up in the CHUTE) right at our bumper without being taken: the dock needs a nudge. */
+  const pieceStuckNear = (): boolean => {
+    for (let i = 0; i < C.CORAL_COUNT; i++) {
+      if (ctx.pool.state[i] !== 'field') continue;
+      const p = ctx.frame.toField(ctx.pool.position(i));
+      if (Math.hypot(p.x - r.pose.x, p.y - r.pose.y) < half + 0.6 && ctx.pool.velocity(i).y ** 2 + ctx.pool.velocity(i).x ** 2 < 0.05) return true;
+    }
+    return false;
+  };
+  /** Nearest CORAL lying on the carpet on our side that a ground intake can reach (none without one). */
+  const groundCoral = (): FieldPoint | null => {
+    // Robots with a station intake are faster taking CORAL from the human player (benchmarks: chasing loose CORAL
+    // halved their AUTO); floor-pickup robots live off the carpet.
+    if (r.config.intake.ground === false || coralHeld() || stationIntake) return null;
+    let best: FieldPoint | null = null, cost = Infinity;
+    for (let i = 0; i < C.CORAL_COUNT; i++) {
+      if (ctx.pool.state[i] !== 'field') continue;
+      const p = ctx.frame.toField(ctx.pool.position(i));
+      if (p.z > 0.3 || p.x < 0.35 || p.x > C.FIELD_LENGTH - 0.35 || p.y < 0.35 || p.y > C.FIELD_WIDTH - 0.35) continue;
+      if (fromWall(p.x) > C.FIELD_LENGTH / 2 - C.BARGE_ZONE_DEPTH / 2 - half - 0.2) continue;
+      // CORAL tight against our REEF base can't be reached by a floor intake.
+      if (dist(p, center) < C.REEF_APOTHEM + 0.25) continue;
+      const d = dist(r.pose, p);
+      if (d < cost) { cost = d; best = p; }
+    }
+    return best;
+  };
+
   const announce = () => {
     for (const level of [4, 3, 2]) {
       const full = [0, 1, 2, 3, 4, 5].every((f) => [0, 1].every((b) => rules.occupied(r.alliance, level, f, b)));
@@ -272,8 +301,32 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
     // Holding ALGAE we can score: do it on the way (it can't be dropped for free).
     if (algaeHeld() && (r.config.options?.net || r.config.processor?.enabled)) return scoreAlgae();
     if (!coralCapable(r)) return bot.driveTo(netSpot());
-    // Collect CORAL: from the station (or a CORAL on the carpet next to us with a ground intake).
+    // Collect CORAL. A ground intake grabs any loose CORAL on our side first (dropped, missed, knocked off).
+    const loose = groundCoral();
+    if (loose) {
+      const yaw = Math.atan2(loose.y - r.pose.y, loose.x - r.pose.x) + r.intakeYawOffset;
+      const cmd = bot.driveTo(loose, dist(r.pose, loose) < 2.5 ? yaw : undefined, undefined, 0.3);
+      cmd.intake = true;
+      return cmd;
+    }
     const pose = supplyPose();
+    if (stationIntake) {
+      // Docked and nothing coming (CORAL hung up in the CHUTE against our bumper): back off and re-dock.
+      const st = C.stations(r.alliance)[plan.stations.get(r.id) ?? 0];
+      const away = { x: pose.x + Math.cos(st.yaw) * 0.6, y: pose.y + Math.sin(st.yaw) * 0.6 };
+      const nudge = bot.redock(dist(r.pose, pose) < 0.25 && pieceStuckNear(), away, pose.yaw);
+      if (nudge) { nudge.intake = true; return nudge; }
+    }
+    if (!stationIntake) {
+      // No station intake (floor-pickup robots like 1690 WHISPER): hold a little off the CORAL STATION, intake
+      // toward it, so the human player's CORAL drops onto the carpet in front of us; then drive over it.
+      const st = C.stations(r.alliance)[plan.stations.get(r.id) ?? 0];
+      const back = 0.55 + half;
+      const wait = { x: st.x + Math.cos(st.yaw) * back, y: st.y + Math.sin(st.yaw) * back };
+      const cmd = bot.driveTo(wait, st.yaw + Math.PI + r.intakeYawOffset);
+      cmd.intake = true;
+      return cmd;
+    }
     const cmd = bot.driveTo(pose, pose.yaw);
     cmd.intake = true;
     return cmd;

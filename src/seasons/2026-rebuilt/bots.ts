@@ -78,6 +78,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const myLane = () => laneY(r.station - 1);
   // Shooting spot inside the ALLIANCE ZONE, ~2-3 m from the HUB (best accuracy), on our own lane when far away.
   const shootSpot = (): FieldPoint => {
+    if (chassisAim) return stanceSpot();
     const p = r.pose;
     const y = clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
     return { x: side(r.alliance, 2.7, 0).x, y };
@@ -171,7 +172,44 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     return { ...bot.driveTo(p, yaw,undefined,.3), intake: r.capacityLeft > 0, ...extra };
   };
 
+  // Chassis-aimed robots (dumpers, fixed shooters) score like real drivers play them: drive to a stance ~1.8 m from the
+  // HUB facing it, stop, square up and unload. Measured standing still: 97-100% from 1.6-2 m, vs ~40% firing while
+  // chasing FUEL around the zone. Turrets keep shooting on the move.
+  const chassisAim = !r.config.launcher.turret;
+  const hubP = side(r.alliance, C.HUB_CENTER.x, C.HUB_CENTER.y);
+  const towardWall = r.alliance === 'blue' ? Math.PI : 0;
+  const stanceSpot = (): FieldPoint => {
+    // Angle around the HUB on the wall side, from where the robot is; teammates already there push it round.
+    const off = (a: number) => wrap(a - towardWall);
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    let a = towardWall + clamp(off(Math.atan2(r.pose.y - hubP.y, r.pose.x - hubP.x)), -0.8, 0.8);
+    const spotAt = (ang: number) => {
+      // Far enough that the whole bumper stays inside the ALLIANCE ZONE (the HUB straddles the zone line).
+      const minD = (C.ALLIANCE_ZONE_DEPTH - C.HUB_CENTER.x) * -1 + half + 0.12;
+      const d = Math.max(1.8, minD / Math.max(0.35, Math.abs(Math.cos(ang - towardWall))));
+      return { x: hubP.x + Math.cos(ang) * d, y: clamp(hubP.y + Math.sin(ang) * d, half + 0.3, C.FIELD_WIDTH - half - 0.3) };
+    };
+    for (let k = 0; k < 3; k++) {
+      const p = spotAt(a);
+      const taken = team.members.some((o) => o !== r && dist(o.pose, p) < Math.max(o.footprint.length, o.footprint.width) + 0.15);
+      if (!taken) return p;
+      a = towardWall + clamp(off(a) + (off(a) >= 0 ? -0.55 : 0.55) * (k + 1) * (k % 2 ? -1 : 1), -0.8, 0.8);
+    }
+    return spotAt(a);
+  };
+  const stanceCommand = (live: boolean): RobotCommand => {
+    const spot = stanceSpot();
+    const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x);
+    const there = dist(r.pose, spot) < 0.3;
+    const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
+    cmd.intake = r.capacityLeft > 0;
+    // Fire once planted (auto-align squares the chassis; it holds fire until aligned).
+    cmd.shoot = inZone() && live && r.held.length > 0 && (there || (insideZone() && r.speed < 0.4));
+    return cmd;
+  };
+
   const shootingCommand = (active: boolean): RobotCommand => {
+    if (chassisAim && r.held.length > 0) return stanceCommand(active);
     // In the zone with FUEL: shoot, and keep scooping up FUEL lying in the zone (fed stockpile, misses).
     const zoneFuel = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7, 4) : null;
     const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(insideZone() && inZone() ? r.pose : shootSpot());

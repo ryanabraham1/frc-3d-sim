@@ -107,8 +107,9 @@ export const crescendo2024: SeasonDefinition = {
     // the player: SOURCE-camping bots made the AI trivial to read.
     const byRole: Record<string, string> = { amp: 'amp-trap', feeder: 'axl-4522', shooter: 'madtown-2024-1323', defender: 'pivot' };
     if (role && byRole[role]) return byRole[role];
-    // Benchmarked (seeds 5-7): Hard 4414/1323/4414 averaged 182 points, Normal 2056/4522/2056 151.
-    const lineups: Record<string, string[]> = { easy: ['pivot', 'lowkey-2056', 'pivot'], normal: ['lowkey-2056', 'axl-4522', 'lowkey-2056'], hard: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'], elite: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'], einstein: ['tidepod-4414', 'madtown-2024-1323', 'tidepod-4414'] };
+    // Benchmarked as full alliances (seeds 5-7, 2026-10-04): 2056 192, 1323 175, 4522 175, 4414 169, 1690 134. Hard fields
+    // the two best; Normal the rest. Seeds 5-6: Hard 191/203, Normal 163/169.
+    const lineups: Record<string, string[]> = { easy: ['pivot', 'lowkey-2056', 'pivot'], normal: ['tidepod-4414', 'axl-4522', 'doppler-1690'], hard: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'], elite: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'], einstein: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   aiCanPlay: (c) => !c.launcher.turret && c.intake.ground !== false,

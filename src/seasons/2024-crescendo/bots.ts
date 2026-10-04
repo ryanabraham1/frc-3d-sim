@@ -95,6 +95,7 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
   const range = fixedShooter ? 1.45 : 5.0;
   const now = () => ctx.clock.elapsed;
   const held = () => rules.heldNote(r) !== undefined;
+  const trapCapable = r.config.climber.maxLevel >= 2;
   const amplified = () => rules.amplified(r.alliance);
 
   // Measured in the headless sim: on-axis shots go in out to ~5.8 m; the STAGE truss and legs block lines that cross it.
@@ -189,9 +190,26 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
   // Where the feeder's lobs land (just outside our WING, on the SOURCE side): wait there for the next one.
   const landing = C.side(r.alliance, C.WING_DEPTH + 0.9, 1.9);
   const goToSource = (): RobotCommand => {
+    // A NOTE lying next to the SOURCE (dropped short, bounced off a bumper) is quicker to take off the carpet.
+    if (r.config.intake.ground !== false) {
+      const n = nearestNote(2.5);
+      if (n) return collect(n);
+    }
     // One robot docks at the SOURCE at a time (a crowd knocks NOTES out of the CHUTE); the rest queue clear of it.
     const docked = team.members.find((o) => o !== r && !o.isClimbing && dist(o.pose, supply) < 1.6 && rules.heldNote(o) === undefined);
     const wait = docked && (team.role(docked) === 'feeder' || dist(docked.pose, supply) < dist(r.pose, supply));
+    if (!wait) {
+      // Docked and nothing coming (a NOTE hung up in the CHUTE): back off and re-dock, like a driver would.
+      const out = Math.hypot(supply.x - sourceMid.x, supply.y - sourceMid.y) || 1;
+      const away = { x: supply.x + (supply.x - sourceMid.x) / out * 0.6, y: supply.y + (supply.y - sourceMid.y) / out * 0.6 };
+      const stuck = Array.from({ length: C.NOTE_COUNT }, (_, i) => i).some((i) => {
+        if (ctx.pool.state[i] !== 'field') return false;
+        const p = ctx.frame.toField(ctx.pool.position(i)), v = ctx.pool.velocity(i);
+        return Math.hypot(p.x - r.pose.x, p.y - r.pose.y) < half + 0.7 && v.x * v.x + v.y * v.y + v.z * v.z < 0.05;
+      });
+      const nudge = bot.redock(dist(r.pose, supply) < 0.3 && stuck, away, supply.yaw);
+      if (nudge) { nudge.intake = true; return nudge; }
+    }
     const cmd = wait ? bot.driveTo(queueSpot, supply.yaw) : bot.driveTo(supply, supply.yaw);
     cmd.intake = true;
     return cmd;
@@ -271,7 +289,8 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
     // Approach from the chain's outward side, clear of the core and the legs.
     const outer = { x: goal.x + Math.cos(g.normal) * 1, y: goal.y + Math.sin(g.normal) * 1 };
     const cmd = bot.driveTo(dist(r.pose, goal) < 1.1 ? goal : outer, g.normal + Math.PI);
-    cmd.shoot = held() && inRange(r.pose) && !rules.inWing(r, opp) && dist(r.pose, goal) > 1.2;
+    // A TRAP robot keeps its NOTE for the TRAP; everyone else empties on the way.
+    cmd.shoot = held() && !trapCapable && inRange(r.pose) && !rules.inWing(r, opp) && dist(r.pose, goal) > 1.2;
     if (rules.chainFor(r)?.chain === slot.chain) cmd.climb = 1;
     return cmd;
   };
@@ -339,6 +358,8 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
     accepts: (i, p) => noteOk(i, { ...p, z: 0 }),
     supply: () => supply,
     endgame,
+    // On the chain with a NOTE and a TRAP mechanism: place it in the TRAP above (5 pts) [M 6.5.1].
+    climbing: () => ({ shoot: r.climbPhase === 'hanging' && held() && trapCapable }),
     tactics: () => think(),
     cautious: (o) => convexOverlap(o.corners(), protectedZones[0]) || convexOverlap(o.corners(), protectedZones[1]) ||
       protectedZones.some((z) => convexOverlap(r.corners(), z)) ||
