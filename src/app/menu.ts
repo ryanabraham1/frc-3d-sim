@@ -239,7 +239,17 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     if (ally.strategy && !strategies.some((x) => x.id === ally.strategy)) ally.strategy = 'auto';
     for (const [k, v] of Object.entries(ally.roles ?? {})) if (v !== 'auto' && !roles.some((x) => x.id === v)) delete ally.roles![Number(k)];
     for (const [k, v] of Object.entries(ally.archetypes ?? {})) if (v !== 'auto' && !aiRobotChoices(season).some((p) => p.id === v)) delete ally.archetypes![Number(k)];
+    const opp = (s.aiOpponent ??= {});
+    for (const [k, v] of Object.entries(opp.archetypes ?? {})) if (v !== 'auto' && !aiRobotChoices(season).some((p) => p.id === v)) delete opp.archetypes![Number(k)];
     const strat = strategies.find((x) => x.id === (ally.strategy ?? 'auto'));
+    // Opponent robots: pick a real team's robot or an archetype per opposing driver station (Auto = the difficulty's lineup).
+    const oppRow = (station: number) => {
+      const presets = aiRobotChoices(season);
+      const arch = opp.archetypes?.[station] ?? 'auto';
+      const archDesc = presets.find((p) => p.id === arch)?.description;
+      const seg = `<div class="seg robot-seg">${opt(`data-opp-arch="${station}" data-choice="auto"`, 'Auto robot', arch === 'auto')}${presets.map((p) => opt(`data-opp-arch="${station}" data-choice="${p.id}" title="${esc(p.description)}"`, p.label, arch === p.id)).join('')}</div>`;
+      return group(`Opponent · station ${station}`, seg, archDesc ? `Robot: ${archDesc}` : 'Auto: the robot this difficulty fields at this station.');
+    };
     const roleRow = (station: number) => {
       const cur = ally.roles?.[station] ?? 'auto';
       const who = station === s.station ? `You · station ${station}` : `Teammate · station ${station}`;
@@ -258,7 +268,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       ${group('Teammate skill', `<div class="seg">${SKILLS.map((d) => opt(`data-ally-skill="${d}"`, skillLabel(d), (ally.skill ?? 'normal') === d)).join('')}</div>`, `Your two AI teammates: ${skillHint[ally.skill ?? 'normal']}`)}
       ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate (AMPLIFY calls, rescues, plan switches).')}
       ${strategies.length ? group('Alliance strategy', `<div class="seg">${strategies.map((x) => opt(`data-ally-strategy="${x.id}" title="${esc(x.description)}"`, x.label, (ally.strategy ?? 'auto') === x.id)).join('')}</div>`, strat?.description ?? '', 'wide') : ''}
-      ${roles.length ? [1, 2, 3].map(roleRow).join('') : ''}`;
+      ${roles.length ? [1, 2, 3].map(roleRow).join('') : ''}
+      ${aiRobotChoices(season).length ? [1, 2, 3].map(oppRow).join('') : ''}`;
   };
 
   const playPage = () => {
@@ -545,6 +556,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-ally-arch]').forEach((b) => (b.onclick = () => {
       const ally = (s.aiAlly ??= {});
       (ally.archetypes ??= {})[Number(b.dataset.allyArch)] = b.dataset.choice!;
+      render();
+    }));
+    all('[data-opp-arch]').forEach((b) => (b.onclick = () => {
+      const opp = (s.aiOpponent ??= {});
+      (opp.archetypes ??= {})[Number(b.dataset.oppArch)] = b.dataset.choice!;
       render();
     }));
     all('[data-radio]').forEach((b) => (b.onclick = () => ((s.aiRadio = b.dataset.radio as GameSettings['aiRadio']), render())));
