@@ -18,6 +18,7 @@ const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
 type Page = 'play' | 'controls' | 'rules' | 'multiplayer';
+type PlayTab = 'match' | 'ai' | 'robot';
 
 function load(): Partial<GameSettings> | null {
   try {
@@ -126,8 +127,8 @@ function opt(attrs: string, label: string, on: boolean, extra = '', lead = ''): 
   return `<button class="opt ${on ? 'on' : ''} ${extra}" ${attrs}>${lead}<span>${esc(label)}</span></button>`;
 }
 
-function group(label: string, body: string, hint = ''): string {
-  return `<div class="group"><div class="label">${esc(label)}</div>${body}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
+function group(label: string, body: string, hint = '', cls = ''): string {
+  return `<div class="group ${cls}"><div class="label">${esc(label)}</div>${body}${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>`;
 }
 
 const CAMERAS: [CameraMode, string][] = [
@@ -182,6 +183,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     };
   }
   let page: Page = opts.page ?? 'play';
+  let playTab: PlayTab = 'match';
   const lobby = opts.lobby;
 
   const el = document.createElement('div');
@@ -251,9 +253,9 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     return `
       ${group('AI difficulty', `<div class="seg">${SKILLS.map((d) => opt(`data-difficulty="${d}"`, skillLabel(d), (s.aiDifficulty ?? 'normal') === d)).join('')}</div>`, `Opponents: ${skillHint[s.aiDifficulty ?? 'normal']}`)}
       ${group('Teammate skill', `<div class="seg">${SKILLS.map((d) => opt(`data-ally-skill="${d}"`, skillLabel(d), (ally.skill ?? 'normal') === d)).join('')}</div>`, `Your two AI teammates: ${skillHint[ally.skill ?? 'normal']}`)}
-      ${strategies.length ? group('Alliance strategy', `<div class="seg">${strategies.map((x) => opt(`data-ally-strategy="${x.id}" title="${esc(x.description)}"`, x.label, (ally.strategy ?? 'auto') === x.id)).join('')}</div>`, strat?.description ?? '') : ''}
-      ${roles.length ? [1, 2, 3].map(roleRow).join('') : ''}
-      ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate (AMPLIFY calls, rescues, plan switches).')}`;
+      ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate (AMPLIFY calls, rescues, plan switches).')}
+      ${strategies.length ? group('Alliance strategy', `<div class="seg">${strategies.map((x) => opt(`data-ally-strategy="${x.id}" title="${esc(x.description)}"`, x.label, (ally.strategy ?? 'auto') === x.id)).join('')}</div>`, strat?.description ?? '', 'wide') : ''}
+      ${roles.length ? [1, 2, 3].map(roleRow).join('') : ''}`;
   };
 
   const playPage = () => {
@@ -261,26 +263,42 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const r = s.robot;
     const routine = season.autoRoutines.find((x) => x.id === s.autoRoutine);
     const acc = F.acc.get(r);
-    const left = `
+    const hasAi = s.aiOpponents !== false;
+    const hpHint = season.humanPlayerHint
+      ? s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual
+      : season.maxScoringLevel
+        ? s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.'
+        : s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.';
+    const settings = `
+      <section class="panel settings">
+        <div class="panel-head"><span>Match setup</span><span class="dim">${season.year} ${esc(season.name)} · ${formatClock(matchLength())} match</span></div>
+        <div class="settings-grid">
+          ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
+          ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
+          ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, '', 'wide')}
+          ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
+          ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
+          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${season.autoRoutines.map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
+        </div>
+      </section>`;
+    const map = `
+      <section class="panel map-panel">
+        <div class="panel-head"><span>Starting spot</span><span class="dim">Station ${s.station}${s.startSpot ? ' · custom start' : ''}</span>${season.startArea ? `<button class="link" data-place="reset">${icon.reset(13)} Station preset</button>` : ''}</div>
+        <div class="map-wrap">${mapHtml()}</div>
+        ${season.startArea ? `<div class="place-wrap">${headingControls(curSpot().yaw)}</div>` : ''}
+        <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Station presets</span>${season.startArea ? '<span class="lg"><i class="sw zone"></i>Legal start zone</span>' : ''}<span class="sp">${season.startArea ? 'Drag your robot in the green zone, drag the knob on its nose to rotate (Shift = 15° steps), or click a ring for a station preset.' : 'Click a circle to move to that driver station.'}</span></div>
+      </section>`;
+    const matchTab = `<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}</div></div>`;
+    const aiTab = `
+      <section class="panel">
+        <div class="panel-head"><span>AI opponents &amp; teammates</span><span class="dim">${esc(season.name)}</span></div>
+        <div class="settings-grid ai-grid">${aiGroups()}</div>
+      </section>`;
+    const robotCard = `
       <section class="panel robot-card ${s.alliance}">
         <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
         <div class="robot-art">${robotArt(s.alliance, r.teamNumber, r.intake.groundSide)}</div>
         <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}${s.startSpot ? ' · custom start' : ''}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
-        <button class="wide-btn" data-k="resetRobot"><span>Reset robot</span>${icon.reset(18)}</button>
-      </section>
-      ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
-      ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
-      ${s.aiOpponents !== false ? aiGroups() : ''}
-      ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`)}
-      ${group('Autonomous', `<div class="seg">${season.autoRoutines.map((x) => opt(`data-routine="${x.id}"`, x.label, x.id === s.autoRoutine)).join('')}</div>`, routine?.description ?? '')}
-      ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, season.humanPlayerHint ? (s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual) : season.maxScoringLevel ? (s.autoHumanPlayer ? 'Nearby CORAL stations supply you; human players throw received ALGAE in TELEOP.' : 'Press H to toggle CORAL stations and throw received ALGAE in TELEOP.') : (s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.'))}
-      ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.')}`;
-    const right = `
-      <section class="panel map-panel">
-        <div class="panel-head"><span>Starting spot</span><span class="dim" style="margin-left:auto">${season.year} ${esc(season.name)} · ${formatClock(matchLength())} match</span></div>
-        <div class="map-wrap">${mapHtml()}</div>
-        ${season.startArea ? `<div class="place-wrap">${headingControls(curSpot().yaw, `<button class="link" data-place="reset">${icon.reset(13)} Station preset</button>`)}</div>` : ''}
-        <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Station presets</span>${season.startArea ? '<span class="lg"><i class="sw zone"></i>Legal start zone</span>' : ''}<span class="sp">${season.startArea ? 'Drag your robot anywhere in the green zone, drag the knob on its nose to rotate (Shift = 15° steps), or click a ring for a station preset.' : 'Click a circle to move to that driver station.'}</span></div>
       </section>`;
     const fields = season.robotFields ?? ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'];
     const same = (c: RobotConfig) => JSON.stringify({ ...r, teamNumber: 0 }) === JSON.stringify({ ...c, teamNumber: 0 });
@@ -303,21 +321,26 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       { label: 'Accuracy', value: `${acc}%`, frac: acc / 100 },
     ];
     const spec = `
-      <section class="panel" style="margin-top:22px">
+      <section class="panel spec-panel">
         <div class="panel-head"><span>Robot</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${season.year} defaults</button></div>
         ${teamPicker}
         ${profiles}
+        <div class="tune-opts">${options}</div>
+        <div class="tune">${fields.filter((k) => F[k]).map((k) => numInput(F[k])).join('')}</div>
+        ${season.robotHint ? `<div class="config-note">${esc(season.robotHint)}<br/>Speeds, cycle times and accuracy are simulator tuning; mechanism choices mirror real ${season.year} robot archetypes.</div>` : ''}
+      </section>`;
+    const summary = `
+      <section class="panel">
+        <div class="panel-head"><span>Build summary</span></div>
         <div class="spec-bars">
           ${specBar('Speed', `${F.speed.get(r)} ft/s`, F.speed.get(r) / 22)}
           ${specBar('Pushing', `${Math.round(pushingForce(r) / LBF)} lbf`, pushingForce(r) / LBF / 200)}
           ${bars.map((x) => specBar(x.label, x.value, x.frac)).join('')}
           ${specBar('Climb', season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel === 0 ? 'None' : `L${r.climber.maxLevel}`), r.climber.maxLevel / Math.max(1, season.maxClimbLevel))}
         </div>
-        <div class="tune-opts">${options}</div>
-        <div class="tune">${fields.filter((k) => F[k]).map((k) => numInput(F[k])).join('')}</div>
-        ${season.robotHint ? `<div class="config-note">${esc(season.robotHint)}<br/>Speeds, cycle times and accuracy are simulator tuning; mechanism choices mirror real ${season.year} robot archetypes.</div>` : ''}
       </section>`;
-    return `<div class="play-grid"><div class="col">${left}</div><div class="col">${right}</div></div>${spec}`;
+    const robotTab = `<div class="robot-grid"><div class="col">${robotCard}${summary}</div><div class="col">${spec}</div></div>`;
+    return playTab === 'robot' ? robotTab : playTab === 'ai' && hasAi ? aiTab : matchTab;
   };
 
   const controlsPage = () => `
@@ -379,8 +402,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         : null;
     const t = titles[page];
     // innerHTML below rebuilds the scroll container; keep the user's place when changing a setting on the same page.
+    if (playTab === 'ai' && s.aiOpponents === false) playTab = 'match';
+    const pageKey = page === 'play' ? `play:${playTab}` : page;
     const prevPage = el.dataset.page;
     const scrollTop = el.querySelector<HTMLElement>('.main')?.scrollTop ?? 0;
+    const playTabs = `<div class="subtabs" role="tablist">${([['match', 'Match'], ...(s.aiOpponents !== false ? [['ai', 'AI']] : []), ['robot', 'Robot']] as [PlayTab, string][]).map(([id, label]) => `<button class="subtab ${playTab === id ? 'on' : ''}" role="tab" aria-selected="${playTab === id}" data-ptab="${id}">${label}</button>`).join('')}</div>`;
     const tab = (p: Page, label: string) => `<button class="bbtn ${page === p ? 'on' : ''}" data-page="${p}">${label}</button>`;
     el.innerHTML = `
       <header class="topbar">
@@ -389,7 +415,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         <div class="team-chip"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i>Team ${s.robot.teamNumber}</div>
       </header>
       <main class="main">
-        <h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>
+        <div class="titlebar"><h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>${page === 'play' ? playTabs : ''}</div>
         ${mp ? mp.body : page === 'play' ? playPage() : page === 'controls' ? controlsPage() : rulesPage()}
       </main>
       <footer class="bar-bottom">
@@ -401,8 +427,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}`
         }
       </footer>`;
-    el.dataset.page = page;
-    if (prevPage === page) {
+    el.dataset.page = pageKey;
+    if (prevPage === pageKey) {
       const main = el.querySelector<HTMLElement>('.main');
       if (main) main.scrollTop = scrollTop;
     }
@@ -428,6 +454,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   const bind = () => {
     const all = <T extends Element>(sel: string) => Array.from(el.querySelectorAll<T & HTMLElement>(sel));
+    all('[data-ptab]').forEach((b) => (b.onclick = () => ((playTab = b.dataset.ptab as PlayTab), render())));
     all('[data-page]').forEach((b) => (b.onclick = () => ((page = b.dataset.page as Page), render())));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
@@ -439,8 +466,9 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       render();
     };
     all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
-        all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
-    all('[data-routine]').forEach((b) => (b.onclick = () => ((s.autoRoutine = b.dataset.routine!), render())));
+    all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
+    const routineSel = el.querySelector<HTMLSelectElement>('[data-routine-sel]');
+    if (routineSel) routineSel.onchange = () => ((s.autoRoutine = routineSel.value), render());
     all('[data-preset]').forEach((b) => (b.onclick = () => {
       const preset = season.robotPresets?.find((p) => p.id === b.dataset.preset);
       if (!preset) return;
@@ -500,7 +528,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       };
     });
     const wrap = el.querySelector<HTMLElement>('.map-wrap');
-    if (wrap && page === 'play') {
+    if (wrap && page === 'play' && playTab === 'match') {
       const fp = footprint(s.robot);
       const mine = (): MineState => ({ alliance: s.alliance, spot: curSpot(), length: fp.length, width: fp.width, blockers: [] });
       const redraw = () => {

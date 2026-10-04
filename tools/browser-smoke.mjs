@@ -34,8 +34,8 @@ await page.click('[data-page="rules"]');
 await page.screenshot({ path: `${out}/rules.png`, fullPage: true });
 await page.click('[data-page="play"]');
 // Use the first scripted AUTO routine instead of manual AUTO driving.
-const routine = await page.$('[data-routine]');
-if (routine) await routine.click();
+const routine = await page.$('[data-routine-sel]');
+if (routine) await page.selectOption('[data-routine-sel]', { index: 0 });
 await page.click('[data-toggle="manualAuto"]');
 await page.click('[data-k="start"]');
 await page.waitForFunction(() => !!window.game, null, { timeout: 60000 });
