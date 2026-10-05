@@ -223,6 +223,7 @@ export function additionalRebuiltTeamRobots(): TeamRobot[] {
 // [EST] performance tuning; chassis dimensions for 1678 are published.
 function config(team: number, model: string, turret: boolean, capacity: number, rate: number, speed: number, accuracy: number) {
   const c = build({ intake: 'both', aim: turret ? 'turret' : 'align', dumper: !turret, hopper: capacity, tall: false, rate, climb: 0 });
+  if (team === 971) { c.frameLength = .6223; c.frameWidth = .762; c.height = .638352; }
   c.teamNumber = team; c.model = model; c.maxSpeed = speed; c.maxAccel = team === 2910 ? 11 : team === 1678 ? 9 : 10;
   if (team === 1678) { c.frameLength = c.frameWidth = inch(27); c.hopperExpansion = { startCount: 40, fullHeight: inch(29), mechanism: 'telescoping' }; }
   if (team === 971) {

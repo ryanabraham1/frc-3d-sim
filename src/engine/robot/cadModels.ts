@@ -4,8 +4,9 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import type { ModelKit, RobotModel, RobotModelBuilder } from './models';
 import { getRobotEnvironment } from './models';
 import { cadHopper } from './cadHopper';
+import { build9470Cad, build6800Cad, build971Cad } from './additionalCadModels';
 
-export const CAD_MODEL_IDS = ['toploader-604', 'limestone-1678', 'rubble-581'] as const;
+export const CAD_MODEL_IDS = ['toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971'] as const;
 const assets = new Map<string, THREE.Group>();
 const pending = new Map<string, Promise<void>>();
 let enabled = true;
@@ -21,7 +22,8 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
 export async function prepareCadModels(ids: readonly (string | undefined)[] = CAD_MODEL_IDS): Promise<void> {
   if (typeof document === 'undefined') return;
-  await Promise.all([...new Set(ids)].filter((id): id is typeof CAD_MODEL_IDS[number] => CAD_MODEL_IDS.includes(id as typeof CAD_MODEL_IDS[number])).map(id => {
+  const requested = ids.includes('ctrl-alt-defeat-9470') ? [...ids,'intake-581-donor'] : ids;
+  await Promise.all([...new Set(requested)].filter((id): id is typeof CAD_MODEL_IDS[number] | 'intake-581-donor' => id === 'intake-581-donor' || CAD_MODEL_IDS.includes(id as typeof CAD_MODEL_IDS[number])).map(id => {
     if (assets.has(id)) return Promise.resolve();
     let request = pending.get(id);
     if (!request) {
@@ -40,28 +42,13 @@ export function cadRobotModelBuilder(id: string | undefined): RobotModelBuilder 
 }
 
 function buildCadModel(id: string, k: ModelKit): RobotModel {
-  const root = assets.get(id)!.clone(true);
+  const root = ownedClone(assets.get(id)!);
   root.name = `cad-${id}`;
   root.userData.cadModel = id;
-  root.traverse(o => {
-    const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    // Each robot owns geometry; preview disposal and visual merging cannot alter the cached asset.
-    m.geometry = m.geometry.clone();
-    const materialCopies = (Array.isArray(m.material) ? m.material : [m.material]).map(material => {
-      const copy = material.clone() as THREE.MeshStandardMaterial;
-      if (copy.isMeshStandardMaterial) {
-        // Onshape's exported CAD swatches need a darker, matte finish under the game's bright field lighting.
-        if (copy.name !== 'rubber') copy.color.convertSRGBToLinear();
-        if (copy.userData.cadSheet) copy.flatShading = true;
-        copy.envMap = getRobotEnvironment(); copy.envMapIntensity = .25;
-      }
-      return copy;
-    });
-    m.material = Array.isArray(m.material) ? materialCopies : materialCopies[0];
-    m.castShadow = m.receiveShadow = true;
-  });
   k.visual.add(root);
+  if (id === 'ctrl-alt-defeat-9470') return build9470Cad(root,k,()=>animated,assets.has('intake-581-donor') ? ownedClone(assets.get('intake-581-donor')!.getObjectByName('intake')!) : undefined);
+  if (id === 'downpour-6800') return build6800Cad(root,k,()=>animated);
+  if (id === 'mixtape-971') return build971Cad(root,k,()=>animated);
   const get = (name: string) => root.getObjectByName(name);
   const pivot = (name: string, at: [number, number, number], parent: THREE.Object3D = root): THREE.Group => {
     const group = new THREE.Group(); group.name = `cad-${name}-pivot`; group.position.fromArray(at);
@@ -71,7 +58,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     return group;
   };
   const isToploader = id === 'toploader-604', isLimestone = id === 'limestone-1678';
-  const intakePivot: [number, number, number] = isToploader ? [-.3048,.206375,0] : isLimestone ? [-.311652,.322253,0] : [0,0,0];
+  const intakePivot: [number, number, number] = isToploader ? [-.3048,.206375,0] : isLimestone ? [-.30465,.1689,0] : [0,0,0];
   const intake = pivot('intake', intakePivot);
   const flywheelCenter: [number, number, number] = isToploader ? [.02608,.5969,-.07444] : isLimestone ? [.2881,.4768,.00947] : [.28575,.47625,0];
   const flywheel = pivot('flywheel', flywheelCenter);
@@ -118,9 +105,9 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
         if (turret) turret.rotation.y = k.turret.rotation.y - Math.PI/2;
         if (serializer) serializer.rotation.y += (s.enabled ? s.firing > 0 ? 8 : 1.5 : 0)*s.dt;
       } else if (isLimestone) {
-        // Shaft 1507 defines the slapdown axis; the whole intake rides the horizontal hopper slide.
-        intake.position.x = intakePivot[0] - deploy*.25;
-        intake.rotation.z = -deploy*2.1;
+        // The lower 0409 shaft is the intake hinge; 1507 is an upper roller shaft.
+        // Deploy toward the floor around the fixed hinge, independently of the hopper slide.
+        intake.rotation.z = deploy*2.4;
       } else {
         intake.position.x = (1-deploy)*.22;
       }
@@ -132,4 +119,27 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
       flywheel.rotation[isToploader ? 'x' : 'z'] += (s.enabled && (s.aiming || s.firing > 0) ? 45 : 0)*s.dt;
     },
   };
+}
+
+function ownedClone<T extends THREE.Object3D>(source:T):T {
+  const clone=source.clone(true) as T;
+  clone.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    // Each robot owns geometry; preview disposal and visual merging cannot alter the cached asset.
+    m.geometry = m.geometry.clone();
+    const materialCopies = (Array.isArray(m.material) ? m.material : [m.material]).map(material => {
+      const copy = material.clone() as THREE.MeshStandardMaterial;
+      if (copy.isMeshStandardMaterial) {
+        // Onshape's exported CAD swatches need a darker, matte finish under the game's bright field lighting.
+        if (copy.name !== 'rubber') copy.color.convertSRGBToLinear();
+        if (copy.userData.cadSheet) copy.flatShading = true;
+        copy.envMap = getRobotEnvironment(); copy.envMapIntensity = .25;
+      }
+      return copy;
+    });
+    m.material = Array.isArray(m.material) ? materialCopies : materialCopies[0];
+    m.castShadow = m.receiveShadow = true;
+  });
+  return clone;
 }

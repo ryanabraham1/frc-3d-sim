@@ -1,3 +1,4 @@
+import { cadRebuiltTeamRobots } from './cadTeamRobots';
 import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import { moreRebuiltTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
@@ -622,6 +623,7 @@ export function rebuiltTeamRobots(): TeamRobot[] {
   return withIntakeRates([
     ...additionalRebuiltTeamRobots(),
     ...moreRebuiltTeamRobots(),
+    ...cadRebuiltTeamRobots(),
     {
       id: 'ripcurrent-4414', team: 4414, name: 'RIPCURRENT',
       description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake to hold 85 FUEL; net bulges above 70 FUEL and loses TRENCH clearance. No climber.',

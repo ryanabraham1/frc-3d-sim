@@ -2,9 +2,9 @@
   "id": "limestone-1678",
   "sourceFile": "1678-26c-0000.glb",
   "inputBytes": 100129376,
-  "outputBytes": 2540688,
+  "outputBytes": 2542080,
   "inputTriangles": 2415782,
-  "outputTriangles": 409769,
+  "outputTriangles": 409808,
   "omittedOccurrences": 205,
   "bounds": {
     "min": [

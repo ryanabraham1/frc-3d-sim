@@ -1,0 +1,24 @@
+{
+  "id": "intake-581-donor",
+  "sourceFile": "2026 Dumper Champs Bot581.glb",
+  "inputBytes": 171637844,
+  "outputBytes": 542000,
+  "inputTriangles": 10240481,
+  "outputTriangles": 97271,
+  "omittedOccurrences": 1343,
+  "bounds": {
+    "min": [
+      -0.6445735588313255,
+      0.015870992094278263,
+      -0.3619500398635864
+    ],
+    "max": [
+      -0.020860560947767226,
+      0.3959274366497993,
+      0.3619500147178769
+    ]
+  },
+  "groups": [
+    "intake"
+  ]
+}

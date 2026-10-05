@@ -1,0 +1,31 @@
+{
+  "id": "mixtape-971",
+  "sourceFile": "971 Final Championship Robot.glb",
+  "inputBytes": 168746132,
+  "outputBytes": 3666612,
+  "inputTriangles": 4516612,
+  "outputTriangles": 601398,
+  "omittedOccurrences": 1078,
+  "bounds": {
+    "min": [
+      -0.6201640963554443,
+      1.639842944767267e-7,
+      -0.393559992313385
+    ],
+    "max": [
+      0.33774998784065247,
+      0.6383522030583098,
+      0.393559992313385
+    ]
+  },
+  "groups": [
+    "frame",
+    "turret-left",
+    "hood-left",
+    "flywheel-left",
+    "turret-right",
+    "hood-right",
+    "flywheel-right",
+    "intake"
+  ]
+}

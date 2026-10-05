@@ -1,0 +1,26 @@
+{
+  "id": "ctrl-alt-defeat-9470",
+  "sourceFile": "9470-2026-MAIN.glb",
+  "inputBytes": 93016748,
+  "outputBytes": 1791884,
+  "inputTriangles": 4224968,
+  "outputTriangles": 313024,
+  "omittedOccurrences": 819,
+  "bounds": {
+    "min": [
+      -0.35401248931884766,
+      0,
+      -0.3540124893188477
+    ],
+    "max": [
+      0.35401248931884766,
+      0.5472423502335291,
+      0.3540124893188476
+    ]
+  },
+  "groups": [
+    "frame",
+    "hood",
+    "flywheel"
+  ]
+}

@@ -39,3 +39,21 @@ Fuel now occupies each robot's hopper rather than a shared small cube. Limestone
 Hood reference angles are calibrated from the CAD roller/drum geometry rather than assuming the export is the middle-shot pose. Rubble's hood bearing and concentric plate faces fit the drum center at `(0.28575, 0.47625)` in simulator X/Y. The gallery's shot selector switches to the aiming pose so the chosen angle is actually applied. Low/mid/high targets are 29/52/72 degrees; the linkage remains a visual approximation, not a physical launch calibration.
 
 Toploader’s dye rotor and turret share the CAD centerline at X=0.0254 m, Z=0; the earlier serializer pivot was offset by ~79 mm and made the rotor orbit.
+
+## Additional user-supplied 2026 CAD
+
+| Team / model | Supplied original | Optimized asset | Triangles |
+| --- | --- | ---: | ---: |
+| 9470 Ctrl-Alt-Defeat | `9470-2026-MAIN.glb` | 1.79 MB | 313,024 |
+| 6800 Downpour | `VR26A-0000 Main.glb` | 3.28 MB | 584,277 |
+| 971 Mixtape (Championship) | `971 Final Championship Robot.glb` | 3.67 MB | 601,398 |
+
+All originals remain untouched in Downloads. Asset reports record the exact source/retained counts. 9470 additionally loads a 0.54 MB / 97,271-triangle intake extracted from the original 581 CAD; it has its own asset so preview disposal and adaptation cannot change 581. The donor's hopper panels, upper corner pieces and energy chain are omitted. Its width is fitted to 9470 and its rack translates 0.22 m. This is an explicitly adapted mechanism, not 9470's original intake CAD. 9470's clear hopper walls and white roof are photo-fitted additions because that geometry is absent from the supplied file.
+
+Sources: the user-supplied CAD is authoritative for these specific variants; TBA 2026 photo sheets for 9470, 6800 and 971 establish finishes and containment. Valor's [CAD release](https://www.chiefdelphi.com/t/frc-6800-valor-2026-robot-cad-release/520715) identifies Downpour; its [early technical binder](https://www.chiefdelphi.com/uploads/short-url/aiIYU0Pv6kleLK5yW5mDDAaE2n9.pdf) describes a different turret version. The supplied VR26A model is the wide drum version, which the simulator follows. Its original intake and horizontal hopper translate together through the 7.5 in travel described by the binder. Its fabric net is added from the photos. Capacities/rates/speeds for the two new roster entries are explicitly simulator estimates. 971 retains its previous capacity/rate/speed tuning while its frame envelope follows the supplied Championship CAD.
+
+Hood pivots are measured from concentric CAD faces: 6800 at `(0.260350, 0.474486)`, 9470 at `(0.247650, 0.492823)`, and 971's left drum at `(0.205334, 0.477139)` after its 44.45 mm floor offset. 971's right turret is exported approximately 60 degrees in yaw and 0.647268 rad below the left hood pose; animation removes those configuration differences before applying their common aim. Each hood/flywheel stays parented to its own turret and fuel feed alternates between heads. Full linkage behavior, swerve modules, fabric tension and shot ballistics remain approximations.
+
+Limestone follow-up: the lower 0409 shaft is its intake hinge. The former 1507 pivot was an upper roller shaft, and its rotation sign sent the assembly upright outside the frame. The intake now swings outward/down around the fixed lower hinge, independently of the horizontal hopper slide. Hopper containment stays upright.
+
+Final validation: 76 focused CAD/roster/piece-path tests pass and production build/typecheck pass. The full suite has 559 passes and one unrelated CRESCENDO opponent-difficulty failure (Hard score 500 vs Normal 642). The same failure reproduces on an untouched HEAD checkout (2265f9b), independently of the CAD changes. Gallery checks cover both sides, low/high hoods, intake and full hopper poses.

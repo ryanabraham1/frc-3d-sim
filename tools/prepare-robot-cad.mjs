@@ -8,6 +8,21 @@ import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer
 import { Matrix4 } from 'three';
 
 const specs = {
+  'intake-581-donor': { file:'2026 Dumper Champs Bot581.glb',axes:'xzy',groups:[['intake',/Champs Intake Assembly/]] },
+  'ctrl-alt-defeat-9470': { file: '9470-2026-MAIN.glb', axes:'yzx', groups:[
+    ['flywheel', /9470-2026-DRUMROLLER/], ['hood', /9470-2026-HOODROLLER|SHO-ALU25-HOOD/],
+  ] },
+  'downpour-6800': { file: 'VR26A-0000 Main.glb', axes:'yzx', groups:[
+    ['hopper-slide', /7200F Horizontal/], ['intake', /5000M Intake/],
+    ['hood', /Hood Plate|Hood Backing|Hood Reverser/], ['flywheel', /(?:^|\/)Flywheel\//],
+  ] },
+  'mixtape-971': { file: '971 Final Championship Robot.glb', axes:'negative-y', offsetY:.04445, groups:[
+    ['hood-left', /(?:hood plate|hood backing print|hood standoff).*shooter assembly <1>/i], ['hood-right', /(?:hood plate|hood backing print|hood standoff).*shooter assembly <2>/i],
+    ['flywheel-left', /(?:flywheel shaft|fairlane wheels(?: hub)?).*shooter assembly <1>/i],
+    ['flywheel-right', /(?:flywheel shaft|fairlane wheels(?: hub)?).*shooter assembly <2>/i],
+    ['turret-left', /shooter assembly <1>/], ['turret-right', /shooter assembly <2>/],
+    ['intake', /Ground Intake/],
+  ] },
   'toploader-604': { file: 'Toploader Assembly.glb', axes: 'yzx', groups: [
     ['flywheel', /Main Roller Assembly/], ['hood', /Turret Hood Assembly/],
     ['turret', /Turret Assembly/], ['intake', /Intake Arm Assembly/],
@@ -45,7 +60,7 @@ for (const id of ids) {
   };
   const inputTriangles = triangleCount();
   // CAD exports use Z up. Preserve meters; turn the real intake toward robot -X.
-  const axes = spec.axes === 'yzx' ? new Matrix4().set(0,1,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,1)
+  const axes = spec.axes === 'negative-y' ? new Matrix4().set(0,-1,0,0, 0,0,1,spec.offsetY??0, -1,0,0,0, 0,0,0,1) : spec.axes === 'yzx' ? new Matrix4().set(0,1,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,1)
     : new Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);
   const nodes = root.listNodes();
   const retained = [];
@@ -62,9 +77,13 @@ for (const id of ids) {
     const looseReference = id === 'limestone-1678' && !n.getName() && bounds.max[1] > .8;
     const hardware = /screw|washer|blind rivet|locknut|hex nut|nutstrip|nut strip|spacer|bearing|bushing|crush block/i.test(n.getName())
       && !/plate|mount|support|arm|shaft|tube/i.test(n.getName());
-    if (looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
-      || /bumper assembly|26B0000 Bumpers|^Bumpers\//i.test(full)) { n.setMesh(null); omitted++; continue; }
+    if ((id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
+      || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
+    if (id === 'mixtape-971' && group === 'intake' && bounds.max[1] < .31 && !/SplineXL|Torque Converter/i.test(n.getName())) group = 'frame';
+    if (id === 'downpour-6800' && group === 'intake' && bounds.max[1] > -.34 && bounds.max[2] < .18) group = 'frame';
+    // Downpour's upper hood rollers and shafts are flat children of the shooter assembly.
+    if (id === 'downpour-6800' && /2000E Shooter/.test(full) && bounds.min[2] > .535 && bounds.max[1] < .15 && !/belt|motor/i.test(n.getName())) group = 'hood';
     if (id === 'limestone-1678' && group === 'intake') {
       // Fixed gearbox, side containment sheets and rear posts belong to the chassis, not the slapdown arm.
       const centerZ = (bounds.min[2] + bounds.max[2])/2;
@@ -75,7 +94,7 @@ for (const id of ids) {
         if (/1924|^Part 58(?:-Mirrored)?$|^Part 60$/.test(n.getName())) group='hopper-lift';
         else if (/1902|1943|1928|1915|1935/.test(n.getName())) group='hopper-lift';
       }
-      if (/1500 Single Roller Intake/.test(full) && /^part 26$|^Part 41$|^Part 73$/i.test(n.getName())) group='hopper-front';
+      if (/1500 Single Roller Intake/.test(full) && /^part 26$|^Part 41$|^Part 73$|1519/i.test(n.getName())) group='hopper-front';
     }
     // Some exported configurations repeat the same wall in exactly the same place.
     const signature = n.getName() + '/' + [...bounds.min, ...bounds.max].map(v => v.toFixed(6)).join(',');
@@ -87,16 +106,27 @@ for (const id of ids) {
     // Retain CAD colors, with rubber and clear-sheet finishes identified by part names.
     for (const p of n.getMesh().listPrimitives()) {
       if (!p.getMaterial()) continue;
+      if (id === 'ctrl-alt-defeat-9470') {
+        const m=p.getMaterial().clone();const c=m.getBaseColorFactor();
+        if(c[0]>c[1]*1.15 && c[2]>c[1]*1.15) m.setBaseColorFactor([.68,.7,.73,1]).setMetallicFactor(.45);
+        p.setMaterial(m);
+      }
       if (sheet || themed) {
         const m = p.getMaterial().clone().setExtras({ cadSheet: sheet });
         if (themed) {
-          const c = id === 'toploader-604' ? [.91,.68,.04,1] : id === 'limestone-1678' ? [.22,.55,.13,1] : [.88,.25,.035,1];
+          const c = id === 'downpour-6800' ? [.91,.68,.04,1] : id === 'ctrl-alt-defeat-9470' || id === 'mixtape-971' ? [.7,.72,.74,1] : id === 'toploader-604' ? [.91,.68,.04,1] : id === 'limestone-1678' ? [.22,.55,.13,1] : [.88,.25,.035,1];
           m.setBaseColorFactor(c).setMetallicFactor(.18).setName('team-accent');
         } else if (id === 'toploader-604' && /superstructure frame/i.test(full)) m.setBaseColorFactor([.12,.13,.14,1]);
         p.setMaterial(m);
       }
-      if (/silicone|rubber|belt/i.test(n.getName())) {
+      if ((id === 'downpour-6800' && group === 'flywheel') || (id === 'mixtape-971' && /fairlane wheels </.test(full) && !/shaft|hub/i.test(n.getName())) || (id === 'ctrl-alt-defeat-9470' && /SHO-POLY125-(?:HOODROLLER|DRUMROLLER)/.test(n.getName())) || /silicone|rubber|belt/i.test(n.getName()) || (id === 'downpour-6800' && /^(Flywheel|Back Roller|Roller 2|1\" Roller)$/.test(n.getName()))) {
         p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.028,.032,.036,1]).setMetallicFactor(0).setRoughnessFactor(.85).setName('rubber'));
+      } else if (id === 'downpour-6800' && /Side Plate|Back Plate|Crossbar|Hood Backing/.test(n.getName()) && !/Motor|Battery/.test(n.getName())) {
+        p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.09,.10,.12,1]).setMetallicFactor(.2).setRoughnessFactor(.7));
+      } else if ((id === 'downpour-6800' && /7200F Horizontal|7100F Stationary/.test(full) && /polycarb|wall|panel/i.test(n.getName())) || (id === 'mixtape-971' && /Hooper Walls/.test(full))) {
+        const m = p.getMaterial().clone().setName('clear-hopper-sheet').setBaseColorFactor([.8,.86,.91,.25]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.3);
+        if (sheet) m.setExtras({cadSheet:true});
+        p.setMaterial(m);
       } else if (id === 'limestone-1678' && /^(?:Part 60|Part 58(?:-Mirrored)?|1678-26c-1529|part 26|1678-26c-1118)$/i.test(n.getName())) {
         p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.64,.72,.76,.20]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.38).setName('clear-hopper-sheet'));
       } else if (/polycarb|coroplast/i.test(n.getName()) && !/roller|plug|shaft/i.test(n.getName())) {
