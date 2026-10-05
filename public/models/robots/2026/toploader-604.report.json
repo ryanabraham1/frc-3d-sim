@@ -1,0 +1,30 @@
+{
+  "id": "toploader-604",
+  "sourceFile": "Toploader Assembly.glb",
+  "inputBytes": 270004300,
+  "outputBytes": 4497420,
+  "inputTriangles": 15407630,
+  "outputTriangles": 779981,
+  "omittedOccurrences": 519,
+  "bounds": {
+    "min": [
+      -0.6350000202655792,
+      -1.1379786002407855e-14,
+      -0.349250003695488
+    ],
+    "max": [
+      0.3476625084877036,
+      0.749300017952919,
+      0.34925001859664917
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake",
+    "hopper-slide",
+    "serializer",
+    "turret",
+    "hood",
+    "flywheel"
+  ]
+}

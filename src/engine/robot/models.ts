@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Alliance } from '../coords';
 import type { RobotConfig } from './config';
 import { HEADLESS, makeTextTexture } from '../render/text';
+import { cadRobotModelBuilder } from './cadModels';
 
 /**
  * TEAM ROBOT MODELS — simplified, animated 3D recreations of real teams' robots (254's turret, 4414's dye rotor…).
@@ -104,7 +105,7 @@ export function registerRobotModel(id: string, build: RobotModelBuilder): void {
 }
 
 export function robotModelBuilder(id: string | undefined): RobotModelBuilder | undefined {
-  return id ? REGISTRY.get(id) : undefined;
+  return cadRobotModelBuilder(id) ?? (id ? REGISTRY.get(id) : undefined);
 }
 
 export function hasRobotModel(id: string): boolean {
@@ -118,6 +119,7 @@ let ENV: THREE.Texture | null = null;
 export function setRobotEnvironment(t: THREE.Texture | null): void {
   ENV = t;
 }
+export function getRobotEnvironment(): THREE.Texture | null { return ENV; }
 
 export function mat(color: number, o: { metal?: number; rough?: number; opacity?: number; emissive?: number } = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
@@ -273,7 +275,7 @@ export function seededRandom(seed: number): () => number {
  * packed (offset layers, jitter, slightly squashed foam), fill in an uneven pile rather than row by row, and new ones
  * drop in and settle instead of popping into place.
  */
-export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean }): { set(f: number): void } {
+export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
   type Slot = { x: number; y: number; z: number; s: number; key: number; sy?: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
   // Pour `n` balls of radius r into the bin the way they really settle: foam FUEL rolls off whatever it lands on and
@@ -319,6 +321,7 @@ export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; le
   } else {
     slots = pour(r, Math.floor(o.length / (r * 2)) * Math.floor(o.width / (r * 2)) * Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75))));
   }
+  if (o.ceiling) slots = slots.filter(q => q.y + r * q.s <= o.ceiling!(q.x,q.z));
   slots.sort((a, b) => a.key - b.key);
   const count = slots.length;
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 10, 7), mat(o.color, { rough: 0.8, metal: 0 }), count);

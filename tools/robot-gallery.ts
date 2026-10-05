@@ -9,6 +9,8 @@ import { handoffPoint } from '../src/engine/robot/handoff';
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
+import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS } from '../src/engine/robot/cadModels';
+await prepareCadModels();
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -50,13 +52,15 @@ function pieceToken(s: typeof SEASONS[number]): (() => THREE.Object3D) | null {
   return () => new THREE.Mesh(geo, m);
 }
 function build() {
+  setCadModelsEnabled(document.querySelector<HTMLSelectElement>('#geometry')!.value === 'cad');
+  setCadAnimationEnabled(pose.value !== 'cad');
   for (const i of items) { i.physics.world.free(); i.scene.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); }); }
   items = [];
   focus = -1;
   const grid = document.querySelector('#grid')!;
   grid.innerHTML = '';
   const s = SEASONS.find(s => s.id === seasonSelect.value)!;
-  const configs = [...(s.teamRobots ?? []).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
+  const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || CAD_MODEL_IDS.includes(t.config.model as typeof CAD_MODEL_IDS[number])).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
   for (const [index, entry] of configs.entries()) {
     const el = document.createElement('div'); el.className = 'card';
     const label = document.createElement('div'); label.className = 'label'; label.textContent = entry.name;
@@ -70,6 +74,7 @@ function build() {
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(20,20), new THREE.MeshStandardMaterial({color:0xd7dbe3,roughness:0.95})); floor.rotation.x = -Math.PI/2; floor.position.y=-0.006; scene.add(floor);
     const physics = new PhysicsWorld(R);
     const robot = new Robot(physics, scene, new FieldFrame(0,0), cloneConfig(entry.config), red ? 'red' : 'blue', index, 1, {x:0,y:0,yaw:0});
+    el.dataset.geometry = robot.visual.getObjectByName(`cad-${entry.config.model}`) ? 'cad' : 'procedural';
     robot.projectile = { radius: s.gamePiece.radius, airDamping: s.gamePiece.airDamping ?? 0.02 };
     s.configureRobot?.(robot);
     const token = pieceToken(s);
@@ -83,6 +88,9 @@ function build() {
   }
 }
 seasonSelect.onchange = build;
+pose.onchange = build;
+hood.onchange = () => { if (pose.value !== 'aim') { pose.value = 'aim'; build(); } };
+document.querySelector<HTMLSelectElement>('#geometry')!.onchange = event => { setCadModelsEnabled((event.target as HTMLSelectElement).value === 'cad'); build(); };
 document.querySelector<HTMLButtonElement>('#view')!.onclick = () => { reverse = !reverse; };
 document.querySelector<HTMLButtonElement>('#alliance')!.onclick = () => { red = !red; build(); };
 build();
@@ -92,7 +100,7 @@ function frame(now: number) {
   renderer.setSize(innerWidth,innerHeight,false);
   for (const i of items) {
     const rect=i.el.getBoundingClientRect(); if(rect.bottom<0||rect.top>innerHeight||!rect.width) continue;
-    const r=i.robot; r.enabled=pose.value !== 'idle';
+    const r=i.robot; r.enabled=pose.value !== 'idle' && pose.value !== 'cad';
     r.climbPhase=pose.value==='climb'?'align':'none';
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
     r.lastShotAngle = Number(hood.value);

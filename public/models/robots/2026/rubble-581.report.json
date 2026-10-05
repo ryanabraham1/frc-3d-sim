@@ -1,0 +1,27 @@
+{
+  "id": "rubble-581",
+  "sourceFile": "2026 Dumper Champs Bot581.glb",
+  "inputBytes": 171637844,
+  "outputBytes": 2623904,
+  "inputTriangles": 10240481,
+  "outputTriangles": 454693,
+  "omittedOccurrences": 899,
+  "bounds": {
+    "min": [
+      -0.6461610689402733,
+      -0.008890000171959405,
+      -0.3730624914169308
+    ],
+    "max": [
+      0.3460712395608425,
+      0.5481826472096146,
+      0.37306249141693154
+    ]
+  },
+  "groups": [
+    "frame",
+    "flywheel",
+    "hood",
+    "intake"
+  ]
+}

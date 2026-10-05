@@ -4,6 +4,7 @@ import type { GameSettings } from '@engine/core/season';
 import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
+import { prepareCadModels } from '@engine/robot/cadModels';
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
@@ -26,7 +27,8 @@ async function loadEngine() {
     import('@engine/core/game'),
     import('@seasons/index'),
   ]);
-  return { R: await loadRapier(), Game, getSeason };
+  const [R] = await Promise.all([loadRapier(), prepareCadModels()]);
+  return { R, Game, getSeason };
 }
 
 function mountStage(): HTMLElement {

@@ -1,0 +1,30 @@
+{
+  "id": "limestone-1678",
+  "sourceFile": "1678-26c-0000.glb",
+  "inputBytes": 100129376,
+  "outputBytes": 2540688,
+  "inputTriangles": 2415782,
+  "outputTriangles": 409769,
+  "omittedOccurrences": 205,
+  "bounds": {
+    "min": [
+      -0.3509470294229687,
+      -0.02539999969303608,
+      -0.35524708032608054
+    ],
+    "max": [
+      0.35390296578407304,
+      0.5563720427453515,
+      0.3559530079364776
+    ]
+  },
+  "groups": [
+    "frame",
+    "climber",
+    "hopper-lift",
+    "intake",
+    "hopper-front",
+    "hood",
+    "flywheel"
+  ]
+}

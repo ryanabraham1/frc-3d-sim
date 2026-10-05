@@ -6,6 +6,7 @@ import { PhysicsWorld, loadRapier } from '@engine/physics/world';
 import { cloneConfig, type RobotConfig } from '@engine/robot/config';
 import { IDLE_COMMAND, Robot } from '@engine/robot/robot';
 import { setRobotEnvironment } from '@engine/robot/models';
+import { prepareCadModels } from '@engine/robot/cadModels';
 
 /**
  * 3D robot previews for the menu: the exact model the match draws, on a clean transparent background.
@@ -89,6 +90,7 @@ export function robotThumb(season: SeasonDefinition, config: RobotConfig, allian
   if (hit) return hit;
   const p: Promise<string> = (queue = queue.then(async () => {
       await init();
+      await prepareCadModels([config.model]);
       const b = build(season, config, alliance);
       const r = thumbRenderer!;
       r.setPixelRatio(Math.min(2, devicePixelRatio || 1));
@@ -124,6 +126,7 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
 
   const start = async () => {
     await init();
+    await prepareCadModels();
     if (disposed) return;
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
