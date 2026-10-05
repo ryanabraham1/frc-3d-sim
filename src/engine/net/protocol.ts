@@ -46,6 +46,8 @@ export interface LobbyState {
   players: LobbyPlayer[];
   /** Human players act automatically for every alliance (otherwise drivers press H). */
   autoHumanPlayer: boolean;
+  /** Host selects whether all human drivers control their robots during AUTO. */
+  manualAuto?: boolean;
   fillBots?: boolean;
   botDifficulty?: AiSkill;
   inMatch: boolean;

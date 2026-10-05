@@ -3,7 +3,7 @@ import { LobbyController } from '../src/app/lobby';
 import { defaultSettings } from '../src/app/menu';
 import { multiplayerPage } from '../src/app/multiplayer';
 import { SEASONS } from '../src/seasons';
-import type { MatchSetup } from '../src/engine/net/protocol';
+import type { HostMsg, MatchSetup } from '../src/engine/net/protocol';
 import { footprint } from '../src/engine/robot/config';
 import { footprintPoly, polysOverlap } from '../src/engine/startPose';
 
@@ -59,6 +59,42 @@ describe.each(SEASONS)('$name multiplayer bots', season => {
     vi.spyOn(lobby, 'isHost', 'get').mockReturnValue(false);
     lobby.setBots(true, 'elite');
     expect(lobby.lobby!.fillBots).toBe(false);
+  });
+  it.each([true, false])('applies the host AUTO mode (%s) to every human and broadcasts it', manual => {
+    const lobby = room();
+    const send = vi.mocked(lobby.client.send);
+    lobby.setManualAuto(manual);
+    expect(send.mock.calls.map(([msg]) => msg as HostMsg).some(msg => msg.t === 'lobby' && msg.lobby.manualAuto === manual)).toBe(true);
+    let setup!: MatchSetup;
+    lobby.onStart = s => { setup = s; };
+    lobby.startMatch();
+    expect(setup.robots.filter(r => !r.bot).every(r => r.manualAuto === manual)).toBe(true);
+    expect(setup.robots.filter(r => r.bot).every(r => !r.manualAuto)).toBe(true);
+    const start = send.mock.calls.map(([msg]) => msg as HostMsg).find(msg => msg.t === 'start');
+    expect(start && start.setup.robots.filter(r => !r.bot).every(r => r.manualAuto === manual)).toBe(true);
+    lobby.setManualAuto(!manual);
+    expect(lobby.lobby!.manualAuto).toBe(manual);
+  });
+  it('restricts AUTO control to the host before placement and hides the planner in manual mode', () => {
+    const lobby = room();
+    lobby.setManualAuto(true);
+    vi.spyOn(lobby, 'isHost', 'get').mockReturnValue(false);
+    lobby.setManualAuto(false);
+    expect(lobby.lobby!.manualAuto).toBe(true);
+    const ctx = { s: lobby.settings!, season, rerender() {}, goto() {} };
+    expect(multiplayerPage(lobby, ctx).body).toContain('data-auto-control="manual" disabled');
+    vi.spyOn(lobby, 'isHost', 'get').mockReturnValue(true);
+    lobby.lobby!.placing = true;
+    lobby.setManualAuto(false);
+    expect(lobby.lobby!.manualAuto).toBe(true);
+    const page = multiplayerPage(lobby, ctx);
+    expect(page.body).toContain('Drivers control their robots during AUTO');
+    expect(page.body).not.toContain('AUTO runs without driver control');
+    expect(page.body).not.toContain('data-auto=');
+    lobby.lobby!.placing = false;
+    lobby.setManualAuto(false);
+    lobby.lobby!.placing = true;
+    expect(multiplayerPage(lobby, ctx).body).toContain('AUTO runs without driver control');
   });
   it('shows bot stations as available for friends to take over', () => {
     const lobby = room();

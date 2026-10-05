@@ -131,13 +131,20 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
             <div class="mp-team">${r.teamNumber}</div>
             <div>
               <div>${ctx.season.robotSummary ? esc(ctx.season.robotSummary(r)) : `${(r.maxSpeed / 0.3048).toFixed(1)} ft/s · ${r.hopperCapacity} ${esc(ctx.season.gamePiece.name)} · ${r.launcher.rate}/s · ${ctx.season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel ? `climbs L${r.climber.maxLevel}` : 'no climber')}`}</div>
-              <div class="dim">AUTO: ${ctx.s.autoRoutine === 'custom' ? 'Your planned auto' : esc(routine?.label ?? ctx.s.autoRoutine)}</div>
+              <div class="dim">AUTO: ${L.manualAuto ? 'Drivers control robots' : ctx.s.autoRoutine === 'custom' ? 'Your planned auto' : esc(routine?.label ?? ctx.s.autoRoutine)}</div>
             </div>
           </div>
         </section>
         <section class="panel">
           <div class="panel-head"><span>Match options</span>${lobby.isHost ? '' : '<span class="dim" style="margin-left:auto">set by host</span>'}</div>
           <div class="mp-pad">
+            <div class="group"><div class="label">AUTO control</div>
+              <div class="seg">
+                <button class="opt ${L.manualAuto ? 'on' : ''}" data-auto-control="manual" ${lobby.isHost && !L.inMatch ? '' : 'disabled'}>Drive in AUTO</button>
+                <button class="opt ${!L.manualAuto ? 'on' : ''}" data-auto-control="planned" ${lobby.isHost && !L.inMatch ? '' : 'disabled'}>Preplanned trajectories</button>
+              </div>
+              <div class="mp-hint">${L.manualAuto ? 'All drivers control their robots during AUTO. Bots still run their routines.' : 'Each driver chooses an auto routine or plans a trajectory with their alliance. Driver control starts in TELEOP.'}</div>
+            </div>
             <div class="group"><div class="label">Open driver stations</div>
               <div class="seg">
                 <button class="opt ${L.fillBots ? 'on' : ''}" data-bots="1" ${lobby.isHost ? '' : 'disabled'}>Fill with bots</button>
@@ -160,7 +167,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   const footer =
     `<button class="bbtn" data-mp="leave">${lobby.isHost ? 'Close room' : 'Leave room'}</button><span class="spacer"></span>` +
     (lobby.isHost
-      ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>Plan autos &amp; positions</button>`
+      ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>${L.manualAuto ? 'Set starting positions' : 'Plan autos &amp; positions'}</button>`
       : `<span class="mp-hint">${L.inMatch ? 'Match in progress — you’ll join the next one' : 'Waiting for the host to start…'}</span>`);
   return { body, footer };
 }
@@ -223,14 +230,14 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
   }).join('');
   const myProblem = me && problems.get(me.peerId);
   const lock = mine
-    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to edit' : 'Lock in position & auto'}</button>`
+    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to edit' : L.manualAuto ? 'Lock in position' : 'Lock in position & auto'}</button>`
     : '<div class="mp-hint">You\'re spectating — watch the others place their robots.</div>';
-  const planner = me?.slot ? autoPlanner(ctx.season, ctx.s, { startSpot: me.spot, alliance: slotAlliance(me.slot), station: slotStation(me.slot), disabled: !!me.ready, teammates: L.players.filter(p => p.peerId !== me.peerId && p.slot && slotAlliance(p.slot) === slotAlliance(me.slot!) && p.autoPlan).map(p => ({ name: p.name, station: slotStation(p.slot!), plan: p.autoPlan! })) }) : '';
+  const planner = !L.manualAuto && me?.slot ? autoPlanner(ctx.season, ctx.s, { startSpot: me.spot, alliance: slotAlliance(me.slot), station: slotStation(me.slot), disabled: !!me.ready, teammates: L.players.filter(p => p.peerId !== me.peerId && p.slot && slotAlliance(p.slot) === slotAlliance(me.slot!) && p.autoPlan).map(p => ({ name: p.name, station: slotStation(p.slot!), plan: p.autoPlan! })) }) : '';
   const body = `
     ${err}
     <div class="mp-grid place-grid">
       <section class="panel map-panel">
-        <div class="panel-head"><span>Positions &amp; private alliance autos</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
+        <div class="panel-head"><span>${L.manualAuto ? 'Starting positions' : 'Positions &amp; private alliance autos'}</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
         <div class="map-wrap">${placementMapHtml(lobby, ctx)}</div>
         ${mine ? `<div class="place-wrap">${headingControls(mine.spot.yaw, '<button class="link" data-mp="preset">Station preset</button>')}</div>` : ''}
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw zone"></i>Legal start zone</span><span class="sp">${mine ? 'Drag your robot anywhere in the green zone, drag the knob on its nose to rotate (Shift = 15° steps).' : 'Drivers are choosing their starting positions.'}</span></div>
@@ -239,7 +246,7 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
         <section class="panel">
           <div class="panel-head"><span>Drivers</span></div>
           <div class="pl-list">${rows}</div>
-          <div class="mp-pad">${lock}<div class="mp-hint">Plan with your alliance below. Opponents cannot see your routes. AUTO runs without driver control.</div>${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
+          <div class="mp-pad">${lock}<div class="mp-hint">${L.manualAuto ? 'Drivers control their robots during AUTO. Lock in your starting position to begin.' : 'Plan with your alliance below. Opponents cannot see your routes. AUTO runs without driver control.'}</div>${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
         </section>
       </div>
     </div>${planner}`;
@@ -313,6 +320,7 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   }
   el.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) => (b.onclick = () => lobby.pickSlot((b.dataset.slot || null) as SlotId | null)));
   el.querySelectorAll<HTMLElement>('[data-hp]').forEach((b) => (b.onclick = () => lobby.setAutoHumanPlayer(b.dataset.hp === '1')));
+  el.querySelectorAll<HTMLElement>('[data-auto-control]').forEach(b => b.onclick = () => lobby.setManualAuto(b.dataset.autoControl === 'manual'));
   el.querySelectorAll<HTMLElement>('[data-bots]').forEach(b => b.onclick = () => lobby.setBots(b.dataset.bots === '1'));
   el.querySelectorAll<HTMLElement>('[data-bot-skill]').forEach(b => b.onclick = () => lobby.setBots(true, b.dataset.botSkill as AiSkill));
   const copy = q('copy');
@@ -334,6 +342,6 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   if (lobby.lobby?.placing) {
     bindPlacement(el, lobby, ctx);
     const me = lobby.me;
-    if (me?.slot) bindAutoPlanner(el, ctx.season, ctx.s, ctx.rerender, { alliance: slotAlliance(me.slot), startSpot: me.spot, station: slotStation(me.slot), disabled: !!me.ready, changed: () => lobby.syncMine(true), setStartYaw: yaw => { const m = mineState(lobby, ctx); if (m) lobby.place(rotateSpot(ctx.season, m, yaw), false); } });
+    if (!lobby.lobby.manualAuto && me?.slot) bindAutoPlanner(el, ctx.season, ctx.s, ctx.rerender, { alliance: slotAlliance(me.slot), startSpot: me.spot, station: slotStation(me.slot), disabled: !!me.ready, changed: () => lobby.syncMine(true), setStartYaw: yaw => { const m = mineState(lobby, ctx); if (m) lobby.place(rotateSpot(ctx.season, m, yaw), false); } });
   }
 }

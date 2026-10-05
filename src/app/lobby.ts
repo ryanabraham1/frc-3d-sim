@@ -105,6 +105,7 @@ export class LobbyController {
         seasonId: s?.seasonId ?? '',
         players: [{ peerId: this.client.peerId, name: cleanName(name), slot: null, team: s?.robot.teamNumber ?? 0, host: true }],
         autoHumanPlayer: true,
+        manualAuto: false,
         fillBots: true,
         botDifficulty: 'normal',
         inMatch: false,
@@ -210,6 +211,12 @@ export class LobbyController {
   setAutoHumanPlayer(v: boolean): void {
     if (!this.isHost || !this.lobby) return;
     this.lobby.autoHumanPlayer = v;
+    this.broadcastLobby();
+  }
+
+  setManualAuto(v: boolean): void {
+    if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.placing) return;
+    this.lobby.manualAuto = v;
     this.broadcastLobby();
   }
 
@@ -365,7 +372,7 @@ export class LobbyController {
         start,
         autoRoutine: c.seasonId === lobby.seasonId ? c.autoRoutine : getSeason(lobby.seasonId).autoRoutines[0].id,
         autoPlan: c.seasonId === lobby.seasonId && c.autoRoutine === 'custom' ? cleanAutoPlan(c.autoPlan, season) : undefined,
-        manualAuto: false,
+        manualAuto: lobby.manualAuto ?? false,
         peerId: p.peerId,
         name: p.name,
       });
