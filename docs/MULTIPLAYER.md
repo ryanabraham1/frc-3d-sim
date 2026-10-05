@@ -1,3 +1,7 @@
+## Playing duos against bots
+
+Create a room and share its code with your friend. Choose two driver stations on the same alliance. Leave **Fill with bots** enabled and choose the bot difficulty. When both drivers lock in their positions and autos, the host starts a full 3 vs 3 match: you, your friend, and one bot teammate against three bots. Humans can take any bot-marked station before the match starts. Choose **Leave empty** for a match with only human drivers. Bots run on the host and use the same season physics and rules as singleplayer; they do not join the room or count toward network readiness.
+
 # Multiplayer — Implementation Plan & Hand-off Log
 
 > **Hand-off doc.** If you are an agent picking this up: read §1–§4 for the design, then go to

@@ -1,5 +1,5 @@
 import { autoPlanner, bindAutoPlanner } from './autoPlanner';
-import type { GameSettings, SeasonDefinition } from '@engine/core/season';
+import type { AiSkill, GameSettings, SeasonDefinition } from '@engine/core/season';
 import { SLOTS, slotAlliance, slotLabel, slotStation, type SlotId } from '@engine/net/protocol';
 import { footprint } from '@engine/robot/config';
 import { footprintPoly } from '@engine/startPose';
@@ -98,7 +98,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     const a = slotAlliance(slot);
     if (p)
       return `<div class="mp-slot ${a} taken ${mine ? 'mine' : ''}"><span class="st">${slotStation(slot)}</span><div class="who"><b>${esc(p.name)}${p.host ? ' <i>host</i>' : ''}</b><span>Team ${p.team || '—'}</span></div>${mine ? '<span class="you">You</span>' : ''}</div>`;
-    return `<button class="mp-slot ${a} open" data-slot="${slot}"><span class="st">${slotStation(slot)}</span><div class="who"><b>Open</b><span>Take ${slotLabel(slot)}</span></div></button>`;
+    return `<button class="mp-slot ${a} open" data-slot="${slot}"><span class="st">${slotStation(slot)}</span><div class="who"><b>${L.fillBots ? 'Bot' : 'Open'}</b><span>${L.fillBots ? 'Take over' : 'Take'} ${slotLabel(slot)}</span></div></button>`;
   };
   const spectators = L.players.filter((p) => !p.slot);
   const r = ctx.s.robot;
@@ -138,6 +138,14 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
         <section class="panel">
           <div class="panel-head"><span>Match options</span>${lobby.isHost ? '' : '<span class="dim" style="margin-left:auto">set by host</span>'}</div>
           <div class="mp-pad">
+            <div class="group"><div class="label">Open driver stations</div>
+              <div class="seg">
+                <button class="opt ${L.fillBots ? 'on' : ''}" data-bots="1" ${lobby.isHost ? '' : 'disabled'}>Fill with bots</button>
+                <button class="opt ${!L.fillBots ? 'on' : ''}" data-bots="0" ${lobby.isHost ? '' : 'disabled'}>Leave empty</button>
+              </div>
+              <div class="mp-hint">For duos against bots, choose two stations on the same alliance. Bots fill the other stations when the match starts.</div>
+            </div>
+            ${L.fillBots ? `<div class="group"><div class="label">Bot difficulty</div><div class="seg">${(['easy', 'normal', 'hard', 'elite', 'einstein'] as const).map(skill => `<button class="opt ${(L.botDifficulty ?? 'normal') === skill ? 'on' : ''}" data-bot-skill="${skill}" ${lobby.isHost ? '' : 'disabled'}>${skill[0].toUpperCase() + skill.slice(1)}</button>`).join('')}</div></div>` : ''}
             <div class="group"><div class="label">Human players</div>
               <div class="seg">
                 <button class="opt ${L.autoHumanPlayer ? 'on' : ''}" data-hp="1" ${lobby.isHost ? '' : 'disabled'}>Automatic</button>
@@ -305,6 +313,8 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   }
   el.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) => (b.onclick = () => lobby.pickSlot((b.dataset.slot || null) as SlotId | null)));
   el.querySelectorAll<HTMLElement>('[data-hp]').forEach((b) => (b.onclick = () => lobby.setAutoHumanPlayer(b.dataset.hp === '1')));
+  el.querySelectorAll<HTMLElement>('[data-bots]').forEach(b => b.onclick = () => lobby.setBots(b.dataset.bots === '1'));
+  el.querySelectorAll<HTMLElement>('[data-bot-skill]').forEach(b => b.onclick = () => lobby.setBots(true, b.dataset.botSkill as AiSkill));
   const copy = q('copy');
   if (copy)
     copy.onclick = () => {

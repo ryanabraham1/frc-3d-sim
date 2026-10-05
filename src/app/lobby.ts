@@ -1,5 +1,6 @@
 import { cleanAutoPlan, type AutoPlan } from '@engine/ai/autoPlan';
-import type { GameSettings } from '@engine/core/season';
+import { fillBotStations } from '@engine/ai/matchSetup';
+import type { AiSkill, GameSettings } from '@engine/core/season';
 import { NetClient } from '@engine/net/netClient';
 import {
   SLOTS,
@@ -104,6 +105,8 @@ export class LobbyController {
         seasonId: s?.seasonId ?? '',
         players: [{ peerId: this.client.peerId, name: cleanName(name), slot: null, team: s?.robot.teamNumber ?? 0, host: true }],
         autoHumanPlayer: true,
+        fillBots: true,
+        botDifficulty: 'normal',
         inMatch: false,
       };
       if (s) this.applyChoice(this.client.peerId, { seasonId: s.seasonId, slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto });
@@ -207,6 +210,14 @@ export class LobbyController {
   setAutoHumanPlayer(v: boolean): void {
     if (!this.isHost || !this.lobby) return;
     this.lobby.autoHumanPlayer = v;
+    this.broadcastLobby();
+  }
+
+  setBots(fill: boolean, difficulty: AiSkill = this.lobby?.botDifficulty ?? 'normal'): void {
+    if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.placing) return;
+    if (!['easy', 'normal', 'hard', 'elite', 'einstein'].includes(difficulty)) return;
+    this.lobby.fillBots = fill;
+    this.lobby.botDifficulty = difficulty;
     this.broadcastLobby();
   }
 
@@ -366,6 +377,11 @@ export class LobbyController {
       robots,
       peers: lobby.players.map((p) => p.peerId),
     };
+    if (lobby.fillBots && this.settings) {
+      const skill = lobby.botDifficulty ?? 'normal';
+      setup.botDifficulty = skill;
+      fillBotStations(setup, { ...this.settings, aiOpponents: true, aiDifficulty: skill, aiAlly: { skill }, aiOpponent: { skill } }, season);
+    }
     lobby.inMatch = true;
     lobby.placing = false;
     this.clearAutoStart();

@@ -22,14 +22,14 @@ import { PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { OcclusionFader } from '../render/occlusionFader';
 import { Renderer } from '../render/renderer';
-import { cloneConfig, footprint, sanitizeConfig } from '../robot/config';
+import { footprint, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
-import { checkStartSpot, fieldToSpot, footprintPoly, polysOverlap, resolveStartPose, spotToField } from '../startPose';
+import { resolveStartPose } from '../startPose';
 import { clamp, formatClock } from '../units';
 import { turnToward } from '../ai/steering';
-import { aiOrders, radioFor } from '../ai/team';
-import { aiRobotChoices } from '../ai/robots';
-import type { AiSkill, AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
+import { radioFor } from '../ai/team';
+import { fillBotStations } from '../ai/matchSetup';
+import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
 type GameState = NetGameState;
 
@@ -58,12 +58,7 @@ export interface GameCallbacks {
 }
 
 const PRE_MATCH_COUNTDOWN = 3;
-/**
- * AI robots drive the same robots players get: no skill-based speed or accuracy edge. Skill is how they play
- * (pace, planning, defense on the driver), not better hardware. Kept as tables so tests and benchmarks share them.
- */
-export const AI_SPEED: Record<AiSkill, number> = { easy: 1, normal: 1, hard: 1, elite: 1, einstein: 1 };
-export const AI_AIM: Record<AiSkill, number> = { easy: 1, normal: 1, hard: 1, elite: 1, einstein: 1 };
+export { AI_SPEED, AI_AIM } from '../ai/matchSetup';
 /** Minimum ms between rendered frames (~60 fps; the 2 ms slack keeps a 60 Hz display drawing every refresh). */
 const MIN_FRAME_MS = 1000 / 60 - 2;
 /** Host streams a snapshot every N physics steps (90 Hz / 3 = 30 Hz). */
@@ -101,55 +96,7 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
       },
     ],
   };
-  if (s.aiOpponents !== false && season.createBotPilot) {
-    for (const alliance of ['blue', 'red'] as const) {
-      for (let station = 1; station <= 3; station++) {
-        if (alliance === s.alliance && station === s.station) continue;
-        const orders = aiOrders(s, alliance);
-        const difficulty = orders.skill;
-        // A real team's robot or a generic archetype: the player's pick for that station, else the season's lineup.
-        const choices = aiRobotChoices(season);
-        const wanted = orders.archetypes[station];
-        const archetype = choices.find((p) => p.id === wanted) ?? choices.find((p) => p.id === season.botArchetype?.(difficulty, station, orders.roles[station], alliance === s.alliance));
-        const config = cloneConfig(archetype?.config ?? season.botRobotConfig?.(difficulty, orders.roles[station]) ?? season.robotDefaults);
-        config.maxSpeed *= AI_SPEED[difficulty];
-        config.launcher.spread *= AI_AIM[difficulty];
-        config.launcher.speedError *= AI_AIM[difficulty];
-        // Real robots keep their team number unless it's already on the field.
-        const real = archetype?.team;
-        config.teamNumber = real && !setup.robots.some((o) => o.config.teamNumber === real) ? real : 9000 + setup.robots.length;
-        const dims = { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry };
-        const botFootprint = footprint(config);
-        let start = season.startPose(alliance, station);
-        const overlaps = (pose: typeof start) => setup.robots.some((other) => {
-          const otherFootprint = footprint(other.config);
-          return polysOverlap(footprintPoly(pose, botFootprint.length + 0.1, botFootprint.width + 0.1),
-            footprintPoly(other.start ?? season.startPose(other.alliance, other.station), otherFootprint.length, otherFootprint.width));
-        });
-        if (overlaps(start) && season.startArea) {
-          const spot = fieldToSpot(dims, alliance, start);
-          for (let y = season.startArea.rect.y0; y <= season.startArea.rect.y1; y += 0.15) {
-            const candidate = { ...spot, y };
-            const pose = spotToField(dims, alliance, candidate);
-            if (checkStartSpot(season.startArea, candidate, botFootprint.length, botFootprint.width).ok && !overlaps(pose)) { start = pose; break; }
-          }
-        }
-        setup.robots.push({
-          id: setup.robots.length, slot: slotId(alliance, station), alliance, station, config,
-          autoRoutine: season.botAutoRoutine?.(station, config) ?? season.autoRoutines[0]?.id ?? 'none', manualAuto: false,
-          start, peerId: '', name: `AI ${alliance === 'blue' ? 'Blue' : 'Red'} ${station}`,
-        });
-      }
-    }
-    // AUTO routines are planned per alliance once every robot is known: who climbs depends on who CAN climb.
-    if (season.botAutoRoutine) {
-      for (const rs of setup.robots) {
-        if (rs.id === 0) continue;
-        const bots = setup.robots.filter((o) => o.alliance === rs.alliance && o.id !== 0).map((o) => ({ station: o.station, config: o.config }));
-        rs.autoRoutine = season.botAutoRoutine(rs.station, rs.config, bots);
-      }
-    }
-  }
+  fillBotStations(setup, s, season);
   return setup;
 }
 
@@ -268,7 +215,7 @@ export class Game {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
-      robot.controller = this.role === 'local' && rs.id !== 0 ? 'bot' : 'player';
+      robot.controller = rs.bot ? 'bot' : 'player';
       season.configureRobot?.(robot);
       if (season.pieceFlow !== false) {
         const piece = this.pool.mesh;
@@ -302,7 +249,7 @@ export class Game {
       score: this.score,
       rng: this.rng,
       hud: this.hud,
-      settings,
+      settings: this.setup.botDifficulty ? { ...settings, aiDifficulty: this.setup.botDifficulty, aiAlly: { skill: this.setup.botDifficulty }, aiOpponent: { skill: this.setup.botDifficulty } } : settings,
       playerRobot: this.player,
       toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance, robot?: Robot) {
         self.toast(msg, kind, alliance, robot);
@@ -312,7 +259,7 @@ export class Game {
       },
       humanPlayerIsAuto(a: Alliance) {
         if (self.role === 'local') return !self.player || a !== self.player.alliance || self.settings.autoHumanPlayer;
-        return self.setup.autoHumanPlayer || !self.setup.robots.some((r) => r.alliance === a);
+        return self.setup.autoHumanPlayer || !self.setup.robots.some((r) => r.alliance === a && !r.bot);
       },
     };
 

@@ -1,6 +1,6 @@
 import type { AutoPlan } from '../ai/autoPlan';
 import type { Alliance, FieldPose } from '../coords';
-import type { MatchResults, ToastKind } from '../core/season';
+import type { AiSkill, MatchResults, ToastKind } from '../core/season';
 import type { ClockState } from '../match/clock';
 import type { ScoreState } from '../match/scoreboard';
 import type { RobotConfig } from '../robot/config';
@@ -46,6 +46,8 @@ export interface LobbyState {
   players: LobbyPlayer[];
   /** Human players act automatically for every alliance (otherwise drivers press H). */
   autoHumanPlayer: boolean;
+  fillBots?: boolean;
+  botDifficulty?: AiSkill;
   inMatch: boolean;
   /** Starting-position phase: drivers place their robots, then lock in; the match starts when everyone is ready. */
   placing?: boolean;
@@ -58,6 +60,8 @@ export interface RobotSetup {
   alliance: Alliance;
   station: number;
   config: RobotConfig;
+  /** Host drives this robot with the season AI; it has no network peer. */
+  bot?: boolean;
   autoRoutine: string;
   autoPlan?: AutoPlan;
   manualAuto: boolean;
@@ -71,6 +75,7 @@ export interface RobotSetup {
 export interface MatchSetup {
   seasonId: string;
   seed: number;
+  botDifficulty?: AiSkill;
   autoHumanPlayer: boolean;
   robots: RobotSetup[];
   /** Every peer taking part (drivers + spectators, incl. host). The host waits for each one's `ready`. */
