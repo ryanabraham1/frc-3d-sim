@@ -46,6 +46,24 @@ export class TouchControls {
     this.root.className = 'touch';
     container.appendChild(this.root);
     document.body.classList.add('touch-ui');
+    // iOS Safari ignores user-scalable=no: block its pinch-zoom (gesture events and two-finger moves)
+    // and double-tap zoom so a stray second finger can't zoom the page into the controls.
+    const stop = (e: Event) => e.preventDefault();
+    const multi = (e: TouchEvent) => e.touches.length > 1 && e.preventDefault();
+    let lastTap = 0;
+    const dbl = (e: TouchEvent) => {
+      const now = e.timeStamp;
+      if (now - lastTap < 350) e.preventDefault();
+      lastTap = now;
+    };
+    for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(t, stop);
+    document.addEventListener('touchmove', multi, { passive: false });
+    document.addEventListener('touchstart', dbl, { passive: false });
+    this.cleanups.push(() => {
+      for (const t of ['gesturestart', 'gesturechange', 'gestureend']) document.removeEventListener(t, stop);
+      document.removeEventListener('touchmove', multi);
+      document.removeEventListener('touchstart', dbl);
+    });
     this.buildStick();
 
     const defs: ButtonDef[] = [
@@ -123,7 +141,7 @@ export class TouchControls {
       if (id !== -1) return;
       e.preventDefault();
       id = e.pointerId;
-      zone.setPointerCapture(id);
+      try { zone.setPointerCapture(id); } catch { /* synthetic or already-ended pointer */ }
       const r = zone.getBoundingClientRect();
       ox = e.clientX;
       oy = e.clientY;
@@ -157,7 +175,7 @@ export class TouchControls {
       if (id !== -1) return;
       e.preventDefault();
       id = e.pointerId;
-      el.setPointerCapture(id);
+      try { el.setPointerCapture(id); } catch { /* synthetic or already-ended pointer */ }
       el.classList.add('on');
       if (d.mode === 'hold') v.held.add(d.action);
       else v.pressed.add(d.action);

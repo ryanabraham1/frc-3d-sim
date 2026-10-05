@@ -26,6 +26,7 @@ import { cloneConfig, footprint, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
 import { checkStartSpot, fieldToSpot, footprintPoly, polysOverlap, resolveStartPose, spotToField } from '../startPose';
 import { clamp, formatClock } from '../units';
+import { turnToward } from '../ai/steering';
 import { aiOrders, radioFor } from '../ai/team';
 import { aiRobotChoices } from '../ai/robots';
 import type { AiSkill, AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
@@ -158,6 +159,9 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
  */
 /** How long a live driver cue stays up without being refreshed. */
 const CUE_SECONDS = 0.6;
+
+/** Touch intake assist: how far (m) to look for a loose piece. */
+const TOUCH_CHASE_RANGE = 4;
 
 export class Game {
   readonly role: GameRole;
@@ -587,10 +591,18 @@ export class Game {
       l /= m;
     }
     const sp = robot.config.maxSpeed * scale;
+    let vx = (f * Math.cos(ref) - l * Math.sin(ref)) * sp;
+    let vy = (f * Math.sin(ref) + l * Math.cos(ref)) * sp;
+    let omega = inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : 0.75);
+    // Touch screens: holding INTAKE with hands off the stick chases the nearest floor piece, intake side first.
+    if (this.touch && inp.intake && !m && !inp.rotate) {
+      const chase = this.touchChase(robot);
+      if (chase) ({ vx, vy, omega } = chase);
+    }
     return {
-      vx: (f * Math.cos(ref) - l * Math.sin(ref)) * sp,
-      vy: (f * Math.sin(ref) + l * Math.cos(ref)) * sp,
-      omega: inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : 0.75),
+      vx,
+      vy,
+      omega,
       // Shot blocker up (F) wins over the intake: they share the intake side and can't run together.
       intake: (this.autoIntake || inp.intake) && !(this.blockerUp && robot.config.shotBlocker),
       shoot: inp.shoot,
@@ -600,6 +612,35 @@ export class Game {
       ...(this.blockerUp && robot.config.shotBlocker ? { block: true } : {}),
       ...(this.season.maxScoringLevel ? { scoringLevel: this.scoringLevel } : {}),
     };
+  }
+
+  /** Velocity toward the nearest loose piece within reach of the intake (touch intake assist), or null. */
+  private touchChase(robot: Robot): { vx: number; vy: number; omega: number } | null {
+    if (robot.config.intake.ground === false || robot.intakeRoom <= 0) return null;
+    const pool = this.pool;
+    const frame = this.frame;
+    const p = robot.pose;
+    let best = -1;
+    let bestD = TOUCH_CHASE_RANGE;
+    for (let i = 0; i < pool.count; i++) {
+      if (pool.state[i] !== 'field' || robot.justLaunched(i)) continue;
+      const q = frame.toField(pool.position(i));
+      if (q.z > 0.3 || q.x < 0 || q.x > frame.length || q.y < 0 || q.y > frame.width) continue;
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best < 0) return null;
+    const q = frame.toField(pool.position(best));
+    const yaw = Math.atan2(q.y - p.y, q.x - p.x) + robot.intakeYawOffset;
+    const speed = robot.config.maxSpeed * 0.7;
+    // Face the piece first; drive in only once roughly lined up, then straight through it.
+    const err = Math.abs(Math.atan2(Math.sin(yaw - p.yaw), Math.cos(yaw - p.yaw)));
+    const go = err < 0.6 ? speed : 0;
+    const dir = Math.atan2(q.y - p.y, q.x - p.x);
+    return { vx: Math.cos(dir) * go, vy: Math.sin(dir) * go, omega: turnToward(p.yaw, yaw, robot.config.maxOmega * 0.75) };
   }
 
   /** Is robot `r` under driver control right now (vs. its AUTO routine)? */

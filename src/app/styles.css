@@ -1006,3 +1006,7 @@ body {
   font-size: 11px;
 }
 .touch-ui .hud-hint { display: none !important; }
+body.touch-ui,
+body.touch-ui .stage {
+  touch-action: none;
+}
