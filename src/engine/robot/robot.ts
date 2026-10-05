@@ -101,8 +101,6 @@ export class Robot {
   /** Indices into the game piece pool. */
   readonly held: number[] = [];
   enabled = false;
-  /** Shown a red card (or disabled by the referee): stays disabled for the rest of the match. */
-  sidelined = false;
   /** Field yaw of the turret/launcher. */
   turretYaw = 0;
   fireCooldown = 0;

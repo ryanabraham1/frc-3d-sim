@@ -8,7 +8,7 @@ import { robotContacts, robotsTouching } from './pinning';
  * THE REFEREE. Everything a head referee would call from what the robots physically did, in one place so every
  * season gets the same calls (a season only supplies its rule numbers and its season-specific rules):
  *
- *  - `call` writes the foul (and card) to the scoreboard, tells the players, and sidelines a red-carded robot;
+ *  - `call` writes the foul (and card) to the scoreboard, tells the players; cards never disable robots;
  *  - `ContactTracker` finds robot-to-robot hits through the real Rapier contacts, with the closing speed and who
  *    drove into whom;
  *  - "This isn't combat robotics": a hard hit on an opponent who is braced against a FIELD element, or the same
@@ -184,12 +184,11 @@ export class Referee {
     readonly rules: RefereeRules,
   ) {}
 
-  /** A fresh match: forget everything and put any sidelined robot back on the field. */
+  /** A fresh match: forget all tracked violations. */
   reset(): void {
     this.contacts.reset();
     for (const m of [this.cooldown, this.smashes, this.tilt, this.tips, this.pushing, this.blockades, this.flights, this.ejections, this.shotCooldown] as Map<unknown, unknown>[]) m.clear();
     this.pushCalled.clear();
-    for (const r of this.ctx.robots) r.sidelined = false;
   }
 
   // ─────────────────────────────── calls ───────────────────────────────
@@ -202,7 +201,6 @@ export class Referee {
     if (card === 'yellow' && score.cardsFor(c.robot.id, 'yellow') >= 1) card = 'red';
     const rec: FoulRecord = { t: clock.elapsed, alliance: c.robot.alliance, kind: c.kind, rule: c.rule, robotId: c.robot.id, note: c.note, ...(card ? { card } : {}) };
     score.foul(rec);
-    if (card === 'red') c.robot.sidelined = true;
     const pts = score.foulValues[c.kind];
     const second = c.card === 'yellow' && card === 'red' ? ' (2nd yellow)' : '';
     toast(

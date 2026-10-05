@@ -106,7 +106,7 @@ export class HeadlessSim {
   step(cmd: RobotCommand = IDLE_COMMAND): void {
     const { robot, pool, rules, physics } = this;
     const dt = physics.dt;
-    robot.enabled = !robot.sidelined;
+    robot.enabled = true;
     if (rules.adjustCommand) cmd = rules.adjustCommand(robot, cmd, dt);
     const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
     cmd = robot.autoAlign(cmd, target);

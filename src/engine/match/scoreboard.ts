@@ -1,7 +1,7 @@
 import { Alliance, opponent } from '../coords';
 
 export type FoulKind = 'minor' | 'major';
-/** A card shown with a foul. A red card disables the robot for the rest of the match. */
+/** A card shown with a foul. Cards are recorded without disabling robots. */
 export type CardKind = 'yellow' | 'red';
 
 export interface FoulRecord {

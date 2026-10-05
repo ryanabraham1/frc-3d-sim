@@ -36,7 +36,7 @@ function scene(period: string, blue: { x: number; y: number; yaw: number }, red:
   const run = (seconds: number, redCmd: RobotCommand, blueCmd: RobotCommand = IDLE_COMMAND) => {
     for (let i = 0; i < Math.round(seconds / dt); i++) {
       for (const ch of sim.ctx.clock.advance(dt)) sim.rules.onPeriodChange(ch);
-      r.enabled = !r.sidelined;
+      r.enabled = true;
       r.lastCommand = redCmd;
       r.drive(redCmd, dt);
       r.tick(dt);
@@ -94,16 +94,26 @@ describe('2026 G420 TOWER protection', () => {
 });
 
 describe('cards', () => {
-  it('a second yellow card is a red card and sidelines the robot', () => {
+  it('a second yellow card is recorded as red and the robot keeps driving', () => {
     const s = scene('shift2', { x: 8.27, y: 3.5, yaw: -Math.PI / 2 }, { x: 8.27, y: 0.5, yaw: Math.PI / 2 });
     const ref = s.rules.ref;
     ref.call({ rule: 'G417', kind: 'major', card: 'yellow', robot: s.blue, note: 'x' });
-    expect(s.blue.sidelined).toBe(false);
     ref.call({ rule: 'G417', kind: 'major', card: 'yellow', robot: s.blue, note: 'y' });
     expect(s.sim.ctx.score.fouls.map((f) => f.card)).toEqual(['yellow', 'red']);
-    expect(s.blue.sidelined).toBe(true);
-    s.run(0.1, IDLE_COMMAND, { ...IDLE_COMMAND, vx: 3 });
-    expect(s.blue.enabled).toBe(false);
+    const startX = s.blue.pose.x;
+    s.run(0.5, IDLE_COMMAND, { ...IDLE_COMMAND, vx: 3 });
+    expect(s.blue.enabled).toBe(true);
+    expect(s.blue.pose.x).toBeGreaterThan(startX + 0.1);
+  });
+  it('a direct red card keeps foul points and allows the robot to keep driving', () => {
+    const s = scene('shift2', { x: 8.27, y: 3.5, yaw: -Math.PI / 2 }, { x: 8.27, y: 0.5, yaw: Math.PI / 2 });
+    s.rules.ref.call({ rule: 'G417', kind: 'major', card: 'red', robot: s.blue, note: 'continued pushing' });
+    expect(s.sim.ctx.score.cardsFor(s.blue.id, 'red')).toBe(1);
+    expect(s.sim.ctx.score.foulPointsFor('red')).toBe(rebuilt2026.foulValues.major);
+    const startX = s.blue.pose.x;
+    s.run(0.5, IDLE_COMMAND, { ...IDLE_COMMAND, vx: 3 });
+    expect(s.blue.enabled).toBe(true);
+    expect(s.blue.pose.x).toBeGreaterThan(startX + 0.1);
   });
   it('2026 does not call ramming (G416)', () => {
     const s = scene('shift2', { x: 8.27, y: 3.5, yaw: -Math.PI / 2 }, { x: 8.27, y: 0.5, yaw: Math.PI / 2 });

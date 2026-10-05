@@ -617,7 +617,7 @@ export class Game {
     if (inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1) && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance, inp.humanPlayerAlt);
 
     for (const r of this.robots) {
-      const on = enabled && !r.sidelined; // a red-carded robot sits out the rest of the match
+      const on = enabled;
       r.enabled = on;
       let cmd: RobotCommand = IDLE_COMMAND;
       if (on) {
