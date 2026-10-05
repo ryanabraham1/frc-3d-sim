@@ -45,6 +45,13 @@ export class InputManager {
   private prevPad = new Map<number, boolean>();
   private padEdges = new Set<number>();
   enabled = true;
+  /** On-screen controls (touch devices) feed these: held actions, one-shot presses, and analog drive. */
+  readonly virtual = {
+    held: new Set<ActionId>(),
+    pressed: new Set<ActionId>(),
+    forward: 0,
+    left: 0,
+  };
 
   private readonly down = (e: KeyboardEvent) => {
     if (!this.enabled) return;
@@ -73,10 +80,10 @@ export class InputManager {
 
   /** Is any key bound to this action held? Bindings are read live, so menu changes apply immediately. */
   private k(action: ActionId): boolean {
-    return keybinds.codes(action).some((c) => this.keys.has(c));
+    return this.virtual.held.has(action) || keybinds.codes(action).some((c) => this.keys.has(c));
   }
   private edge(action: ActionId): boolean {
-    return keybinds.codes(action).some((c) => this.pressed.has(c));
+    return this.virtual.pressed.has(action) || keybinds.codes(action).some((c) => this.pressed.has(c));
   }
 
   /** Read and consume edge events. Call once per rendered frame. */
@@ -102,6 +109,11 @@ export class InputManager {
     const toggleIntake = this.edge('toggleIntake');
     let toggleBlocker = this.edge('toggleBlocker');
     const toggleHelp = this.edge('toggleHelp');
+
+    if (this.virtual.forward || this.virtual.left) {
+      forward = this.virtual.forward;
+      left = this.virtual.left;
+    }
 
     // Gamepad (standard mapping): LS move, RS-x rotate, RT shoot, LT intake, A climb, B descend,
     // X human player, Y camera, D-pad up/down level, Start pause, L3 shot blocker.
@@ -139,6 +151,7 @@ export class InputManager {
       if (e(15)) setLevel = 3;
     }
     this.pressed.clear();
+    this.virtual.pressed.clear();
     return {
       forward,
       left,

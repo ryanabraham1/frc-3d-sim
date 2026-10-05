@@ -6,6 +6,7 @@ import { FieldBuilder } from '../field/builder';
 import { GamePiecePool } from '../gamepiece/pool';
 import { Hud } from '../hud/hud';
 import { cueFor, Sfx } from '../audio/sfx';
+import { TouchControls, isTouchDevice } from '../input/touchControls';
 import { DEFAULT_CONTROLS_HELP, DriverInput, InputManager } from '../input/input';
 import { MatchClock, PeriodChange } from '../match/clock';
 import { buildPlayerResults } from '../match/playerResults';
@@ -192,6 +193,7 @@ export class Game {
   private readonly net: GameNet | null;
   private readonly offs: (() => void)[] = [];
   private ticker: Ticker | null = null;
+  private touch: TouchControls | null = null;
 
   private state: GameState = 'countdown';
   private countdown = PRE_MATCH_COUNTDOWN;
@@ -247,6 +249,14 @@ export class Game {
     this.hud = new Hud(container, season.controlsHelp ?? DEFAULT_CONTROLS_HELP);
     this.pool = new GamePiecePool(this.physics, this.renderer.scene, this.frame, season.gamePiece);
     this.autoIntake = settings.autoIntake;
+    if (isTouchDevice()) {
+      this.touch = new TouchControls(container, this.input, {
+        humanPlayerButtons: season.humanPlayerButtons ?? 1,
+        levels: season.maxScoringLevel ?? season.maxClimbLevel,
+        blocker: () => !!this.player?.config.shotBlocker,
+        climber: () => (this.player?.config.climber.maxLevel ?? 0) > 0,
+      });
+    }
 
     // Local AI fills the other stations; network matches retain their human drivers.
     for (const rs of this.setup.robots) {
@@ -933,6 +943,7 @@ export class Game {
     for (const off of this.offs) off();
     this.hostSync?.dispose();
     this.input.dispose();
+    this.touch?.dispose();
     this.camera.dispose();
     this.fader.clear();
     this.hud.dispose();
