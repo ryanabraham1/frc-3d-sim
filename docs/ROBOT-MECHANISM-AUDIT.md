@@ -29,3 +29,5 @@ Piece handling and storage are separate settings:
 Generic custom robots retain their previous separate storage by default and offer a shared holder, buffered CORAL, or separate storage setting. Named profiles set their storage explicitly. Tests exercise intake with an occupied holder, actual collection into a buffer, ALGAE-first release/handoff/scoring, sustained G safety, 111's independent holders and CORAL-first scoring, and intake/scoring animation conflicts. The workshop also exposes an ALGAE scoring pose for inspecting the opposite arm end.
 
 Held ALGAE now eases into a visual compression shape in the gripper’s local axes. 111’s roller spacing and squash profile match one another; vacuum-held WHISPER stays nearly spherical. Released/field balls retain their normal geometry and collision radius.
+
+111’s shared arm pivots about a fore/aft axle and swings sideways, with its sweep offset in front of the elevator rails. Both independent holders reach either side of the robot; match alignment uses side scoring. Clearance checks cover the full arm sweep and the compressed held ALGAE envelope, along with both holders' scoring targets and stowed carpet clearance.

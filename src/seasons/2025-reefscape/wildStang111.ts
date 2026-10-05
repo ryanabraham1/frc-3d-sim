@@ -27,13 +27,17 @@ registerRobotModel('wildstang-111', k => {
   const middleStage=stage.clone(); middleStage.name='wildstang-middle-stage'; k.visual.add(middleStage);
   const carriage = pivot(stage,0,0);
   box(carriage,.05,.18,.25,black,ex+.07,0,0);
-  const px = ex+.15, arm = pivot(carriage,px,0); arm.name='wildstang-shared-arm';
+  // The axle runs fore/aft: the arm swings across the robot's sides,
+  // in front of the elevator rails rather than through their plane.
+  const px = ex+.27, arm = pivot(carriage,px,0); arm.name='wildstang-shared-arm';
+  bar(carriage,[ex+.07,0,0],[px,0,0],.04,silver);
+  const armGeometry = new THREE.Group(); armGeometry.rotation.y=Math.PI/2; arm.add(armGeometry);
   for (const z of [-.07,.07]) {
-    bar(arm,[-.46,0,z],[.66,0,z],.025,silver);
-    bar(arm,[-.46,0,z],[0,.09,z],.02,silver);
-    bar(arm,[0,.09,z],[.66,0,z],.02,silver);
+    bar(armGeometry,[-.46,0,z],[.66,0,z],.025,silver);
+    bar(armGeometry,[-.46,0,z],[0,.09,z],.02,silver);
+    bar(armGeometry,[0,.09,z],[.66,0,z],.02,silver);
   }
-  const coralHead = pivot(arm,.66,0), algaeHead = pivot(arm,-.46,0);
+  const coralHead = pivot(armGeometry,.66,0), algaeHead = pivot(armGeometry,-.46,0);
   sidePlates(coralHead,[[-.08,-.08],[.14,-.08],[.14,.09],[-.08,.09]],.11,black);
   const coralRollers=[wheelShaft(coralHead,0,.065,{n:3,r:.035,w:.04,span:.18,colors:[0x6dc338]}),wheelShaft(coralHead,0,-.065,{n:3,r:.035,w:.04,span:.18,colors:[0x6dc338]})];
   const algaeRollers: THREE.Group[]=[];
@@ -50,17 +54,17 @@ registerRobotModel('wildstang-111', k => {
     replaces:['chassis','mast','hopper','intakeRollers','climber','funnel'], heldAnchor:held, algaeAnchor:algaeHeld, algaeGripScale:[.70,1.04,1.07], intakeAnchor:held,
     update(s) {
       const p=place(s), algae=!!p.algae, length=algae?.46:.66;
-      const dx=Math.min(length,Math.max(0,p.forward-px));
+      const reach=Math.min(length,Math.max(0,p.forward)), side=p.side===-1?-1:1;
       let height=p.height, angle=0;
       if (p.handoff) { height=bt+.12; angle=-1.2; }
       else if (stowed(p)) { height=bt+.52; angle=s.intaking?Math.PI-1.1:1.1; } // lower ALGAE holder clears the carpet
       else {
-        height=Math.max(bt+.12,p.height-Math.sqrt(Math.max(0,length*length-dx*dx)));
-        angle=Math.atan2(p.height-height,dx)+(algae?Math.PI:0);
+        height=Math.max(bt+.12,p.height-Math.sqrt(Math.max(0,length*length-reach*reach)));
+        angle=Math.atan2(p.height-height,side*reach)+(algae?Math.PI:0);
       }
       yc=approach(yc,height,10,s.dt); phi=approach(phi,angle,9,s.dt);
       const ext=Math.max(0,yc-(H-.16)); middleStage.position.y=ext*.5; stage.position.y=ext; carriage.position.y=yc-ext;
-      arm.rotation.z=phi;
+      arm.rotation.x=phi;
       for (const r of coralRollers) spin(r,s.intaking?20:s.firing>0?-25:0,s.dt);
       for (const r of algaeRollers) spin(r,s.intaking?18:s.passing?-24:0,s.dt);
       climb.rotation.z=approach(climb.rotation.z,s.climb>.1?-1.1:0,5,s.dt); db.update(s);
@@ -72,6 +76,7 @@ export function wildStang111(): TeamRobot {
   const c=build({coral:'l4',intake:'funnel',algae:'reef',algaeScore:'both',climb:2,align:true,speed:4.7});
   c.teamNumber=111; c.model='wildstang-111'; c.height=inch(42);
   c.options={...c.options,dualPieceStorage:true};
+  c.placement!.scoreSide='sides';
   c.placement!.handoffSeconds=0; c.placement!.liftSpeed=1.8; c.placement!.cycleSeconds=.45; c.climber.secondsToClimb=3;
   return {id:'wildstang-111',team:111,name:'WildStang',description:'111 WildStang. Elevator with a shared rotating arm carrying independent CORAL and ALGAE heads on opposite ends, green rollers, station-fed CORAL and a deep climber. No ground intake. Can hold one of each. Dimensions, speeds and timings are simulator estimates.',source:'Team reveal https://www.chiefdelphi.com/t/492790; team code https://github.com/wildstang/2025_111_robot_software',config:normalizeReefscapeConfig(c)};
 }

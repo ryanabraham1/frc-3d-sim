@@ -97,7 +97,7 @@ function frame(now: number) {
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
     r.lastShotAngle = Number(hood.value);
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
-    r.placeAnim = {algae:pose.value==='algae',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:pose.value==='score'&&r.config.placement?.scoreSide==='sides'?1:0};
+    r.placeAnim = {algae:pose.value==='algae',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:(pose.value==='score'||pose.value==='algae')&&r.config.placement?.scoreSide==='sides'?1:0};
     if (pose.value === 'flow' && i.coral) {
       // CORAL: collect → conveyor handoff → extend to L4 → retract, using the match's model path.
       i.t = (i.t + dt) % 6;

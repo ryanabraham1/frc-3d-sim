@@ -111,13 +111,26 @@ describe('CAD mechanism paths', () => {
     });
   }
 
-  it('WildStang flips its shared arm to reach with either independent holder', () => {
+  it('WildStang swings sideways to reach with either independent holder on both sides', () => {
     const k=kit(2025,'wildstang-111'), model=robotModelBuilder('wildstang-111')!(k);
-    for (const algae of [false,true]) {
-      settle(model,state({place:{height:1.8,forward:.45,level:4,algae}}));
+    expect(k.config.placement!.scoreSide).toBe('sides');
+    for (const side of [-1,1]) for (const algae of [false,true]) {
+      settle(model,state({place:{height:1.8,forward:.45,level:4,algae,side}}));
       const active=local(k,algae?model.algaeAnchor!:model.heldAnchor!);
-      expect(active.distanceTo(new THREE.Vector3(.45,1.8,0))).toBeLessThan(.04);
+      expect(active.distanceTo(new THREE.Vector3(.15,1.8,-side*.45))).toBeLessThan(.04);
       expect(local(k,model.heldAnchor!).distanceTo(local(k,model.algaeAnchor!))).toBeGreaterThan(1);
+    }
+  });
+
+  it('WildStang arm and compressed held algae clear the elevator throughout the swing', () => {
+    const k=kit(2025,'wildstang-111'), model=robotModelBuilder('wildstang-111')!(k);
+    const arm=k.visual.getObjectByName('wildstang-shared-arm')!;
+    for (let angle=-Math.PI;angle<=Math.PI;angle+=Math.PI/16) {
+      arm.rotation.x=angle; k.visual.updateMatrixWorld(true);
+      const bounds=new THREE.Box3().setFromObject(arm);
+      const mastFront=-.12+.035/2;
+      expect(bounds.min.x).toBeGreaterThan(mastFront+.02);
+      expect(local(k,model.algaeAnchor!).x-.206*model.algaeGripScale![2]).toBeGreaterThan(mastFront+.02);
     }
   });
 
