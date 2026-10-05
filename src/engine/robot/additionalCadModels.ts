@@ -86,7 +86,9 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       // Source is extended. 7.5 in travel matches the binder's 13.5 → 21 in hopper.
       intake.position.x=(1-deploy)*.1905;if(slide)slide.position.x=intake.position.x;
       roof.position.x=-.63+intake.position.x;roof.scale.x=.025-roof.position.x;
-      angle=ease(angle,s.aiming?THREE.MathUtils.clamp(s.hood,.5,1.25)-.925:0,s.dt);hood.rotation.z=angle;
+      // Park the hood forward/down during travel, rather than retaining the raised export.
+      const target=s.aiming||s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.5;
+      angle=ease(angle,target-.925,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};
 }
@@ -111,7 +113,11 @@ export function build971Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):
       heads.forEach((head,i)=>{
         head.rotation.y=k.turret.rotation.y-(i===1?Math.PI/3:0);
         // Same hood CAD part: right export is pitched 0.647268 rad below the left.
-        angles[i]=ease(angles[i],s.aiming?THREE.MathUtils.clamp(s.hood,.5,1.25)-(i===0?1.28:.632732):0,s.dt);
+        const shot = s.aiming || s.firing > 0;
+        // Left export is already compact. Park both hoods there during travel;
+        // the right export alone is 0.647268 rad higher and must fold down.
+        const target = shot ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.28;
+        angles[i]=ease(angles[i],target-(i===0?1.28:.632732),s.dt);
         hoods[i].rotation.z=angles[i];wheels[i].rotation.z+=(s.enabled&&s.aiming?50:0)*s.dt;
       });
     }};

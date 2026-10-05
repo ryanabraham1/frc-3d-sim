@@ -100,6 +100,9 @@ export function rebuiltRobotDefaults(): RobotConfig {
 /** R104/R107 size limits plus defaults for mechanism options added after configs were first saved. */
 export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   const c = sanitizeConfig(config, C.MAX_ROBOT_HEIGHT, C.MAX_ROBOT_PERIMETER);
+  // These former defaults measured the raised CAD hood, rather than the compact travel pose.
+  if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
+    || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
   c.intake.station ??= true;
   c.intake.groundSide ??= 'back';

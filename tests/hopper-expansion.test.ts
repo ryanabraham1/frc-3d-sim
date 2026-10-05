@@ -103,3 +103,21 @@ it('a net robot under the trench may keep intaking below the trench-safe load, a
   const plain = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
   expect(plain.rules.overheadClearance!(plain.robot)).toBe(Infinity);
 });
+
+for (const [team, oldHeight] of [[971, 0.638352], [6800, 0.63]]) it(`${team} migrates its saved raised-hood height without changing custom heights`, () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
+  c.height = oldHeight;
+  expect(season.normalizeRobotConfig!(c).height).toBe(0.55);
+  c.height = 0.762;
+  expect(season.normalizeRobotConfig!(c).height).toBe(0.762);
+});
+
+for(const team of [971,6800]) it(`${team} uses its compact travel height and physically clears the trench with a full hopper`,()=>{
+  const c=cloneConfig(season.teamRobots!.find(t=>t.team===team)!.config);
+  expect(c.height).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
+  const sim=new HeadlessSim(season,RAPIER,{robot:c,alliance:'blue',pose:{x:C.HUB_CENTER.x-2,y:C.TRENCH_OPENING_CENTER_Y,yaw:0}});sims.push(sim);
+  sim.load(c.hopperCapacity);
+  expect(sim.robot.clearanceHeight).toBeLessThan(C.TRENCH_CLEARANCE);
+  sim.run(4,{...IDLE_COMMAND,vx:2});
+  expect(sim.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x+C.TRENCH_DEPTH/2+.5);
+});

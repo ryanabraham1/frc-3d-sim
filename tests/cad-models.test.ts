@@ -124,6 +124,16 @@ describe('additional supplied CAD',()=>{
     const hood=root.getObjectByName(id==='mixtape-971'?'cad-hood-left-pivot':'cad-hood-pivot')!;
     const low=hood.quaternion.clone();model.update({...idle,enabled:true,fill:1,aiming:true,hood:1.25});
     expect(hood.quaternion.angleTo(low)).toBeGreaterThan(.5);
+    if(id==='mixtape-971'||id==='downpour-6800') {
+      // Release aim after the tallest shot pose: both CAD hoods return below the trench.
+      for(let step=0;step<100;step++) model.update({...idle,enabled:true,fill:1,dt:.02});
+      visual.updateMatrixWorld(true);
+      for(const name of id==='mixtape-971'?['cad-hood-left-pivot','cad-hood-right-pivot']:['cad-hood-pivot']) {
+        const hood=root.getObjectByName(name)!;
+        expect(new THREE.Box3().setFromObject(hood,true).max.y).toBeLessThan(.55);
+      }
+      expect(new THREE.Box3().setFromObject(root,true).max.y).toBeLessThan(.55);
+    }
     const pile=visual.getObjectByName('cad-hopper-fuel')!;
     expect(pile.children.some(o=>o instanceof THREE.InstancedMesh&&o.count>10)).toBe(true);
   });

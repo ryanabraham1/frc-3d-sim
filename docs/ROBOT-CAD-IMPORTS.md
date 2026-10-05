@@ -45,7 +45,7 @@ Toploader’s dye rotor and turret share the CAD centerline at X=0.0254 m, Z=0; 
 | Team / model | Supplied original | Optimized asset | Triangles |
 | --- | --- | ---: | ---: |
 | 9470 Ctrl-Alt-Defeat | `9470-2026-MAIN.glb` | 1.79 MB | 313,024 |
-| 6800 Downpour | `VR26A-0000 Main.glb` | 3.28 MB | 584,277 |
+| 6800 Downpour | `VR26A-0000 Main.glb` | 3.28 MB | 584,268 |
 | 971 Mixtape (Championship) | `971 Final Championship Robot.glb` | 3.67 MB | 601,398 |
 
 All originals remain untouched in Downloads. Asset reports record the exact source/retained counts. 9470 additionally loads a 0.54 MB / 97,271-triangle intake extracted from the original 581 CAD; it has its own asset so preview disposal and adaptation cannot change 581. The donor's hopper panels, upper corner pieces and energy chain are omitted. Its width is fitted to 9470 and its rack translates 0.22 m. This is an explicitly adapted mechanism, not 9470's original intake CAD. 9470's clear hopper walls and white roof are photo-fitted additions because that geometry is absent from the supplied file.
@@ -57,3 +57,5 @@ Hood pivots are measured from concentric CAD faces: 6800 at `(0.260350, 0.474486
 Limestone follow-up: the lower 0409 shaft is its intake hinge. The former 1507 pivot was an upper roller shaft, and its rotation sign sent the assembly upright outside the frame. The intake now swings outward/down around the fixed lower hinge, independently of the horizontal hopper slide. Hopper containment stays upright.
 
 Final validation: 76 focused CAD/roster/piece-path tests pass and production build/typecheck pass. The full suite has 559 passes and one unrelated CRESCENDO opponent-difficulty failure (Hard score 500 vs Normal 642). The same failure reproduces on an untouched HEAD checkout (2265f9b), independently of the CAD changes. Gallery checks cover both sides, low/high hoods, intake and full hopper poses.
+
+Travel-hood correction: 971's two hoods return to a common compact 1.28 rad reference when aim/fire is released; 6800 parks at 1.50 rad. Its 100T hood belt moves with the hood around the drum center. Both compact CAD envelopes stay below 0.55 m. Their collision height defaults are 0.55 m, replacing raised export measurements; saved configurations with those exact former defaults migrate, while custom heights remain unchanged. The static collision envelope describes travel, not the raised shooting pose. Validation covers CAD return from shooting, saved settings, and physical trench crossing with full hoppers (66 focused tests), plus the production build.

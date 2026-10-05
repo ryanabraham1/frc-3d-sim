@@ -38,5 +38,5 @@ function config(team:number,id:string,capacity:number,rate:number,height:number)
 }
 export function cadRebuiltTeamRobots():TeamRobot[] {return [
   {id:'ctrl-alt-defeat-9470',team:9470,name:'Ctrl-Alt-Defeat',description:'9470. Supplied CAD chassis and wide drum shooter with photo-fitted clear hopper and an adapted 581 CAD intake. Capacity, rate and drive speed are simulator estimates.',source:'User supplied 9470-2026-MAIN.glb; https://www.thebluealliance.com/team/9470/2026',config:config(9470,'ctrl-alt-defeat-9470',40,16,.55)},
-  {id:'downpour-6800',team:6800,name:'Downpour',description:'6800 Valor. Supplied wide drum variant with an adjustable roller hood, translating intake and horizontally expanding hopper. Capacity, rate and drive speed are simulator estimates.',source:'User supplied VR26A-0000 Main.glb; https://www.chiefdelphi.com/t/frc-6800-valor-2026-robot-cad-release/520715',config:config(6800,'downpour-6800',50,18,.63)},
+  {id:'downpour-6800',team:6800,name:'Downpour',description:'6800 Valor. Supplied wide drum variant with an adjustable roller hood, translating intake and horizontally expanding hopper. Capacity, rate and drive speed are simulator estimates.',source:'User supplied VR26A-0000 Main.glb; https://www.chiefdelphi.com/t/frc-6800-valor-2026-robot-cad-release/520715',config:config(6800,'downpour-6800',50,18,.55)},
 ];}

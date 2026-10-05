@@ -14,7 +14,7 @@ const specs = {
   ] },
   'downpour-6800': { file: 'VR26A-0000 Main.glb', axes:'yzx', groups:[
     ['hopper-slide', /7200F Horizontal/], ['intake', /5000M Intake/],
-    ['hood', /Hood Plate|Hood Backing|Hood Reverser/], ['flywheel', /(?:^|\/)Flywheel\//],
+    ['hood', /Hood Plate|Hood Backing|Hood Reverser|100T HTD Belt/], ['flywheel', /(?:^|\/)Flywheel\//],
   ] },
   'mixtape-971': { file: '971 Final Championship Robot.glb', axes:'negative-y', offsetY:.04445, groups:[
     ['hood-left', /(?:hood plate|hood backing print|hood standoff).*shooter assembly <1>/i], ['hood-right', /(?:hood plate|hood backing print|hood standoff).*shooter assembly <2>/i],
