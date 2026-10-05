@@ -126,7 +126,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   let yc = yMin, phi = Math.PI / 2, deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
+    heldAnchor: held, algaeGripScale: [.98, .98, .98],
     intakeAnchor: intake.tip,
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, .09), new THREE.Vector3(0, bt + .09, .09)] },
     lightAt: [0, top + 0.02, 0],
@@ -228,19 +228,24 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held,
     intakeAnchor: intake.tip,
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .1, 0), new THREE.Vector3(ex - side * .02, bt + .1, 0)] },
     lightAt: [ex, top + 0.01, 0],
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
       // Handoff / stow: the arm reaches down into the cradle under the elevator.
-      if (p.handoff || stowed(p)) goal = { yc: bt + 0.05 + la * 0.9, phi: dir > 0 ? -1.35 : Math.PI + 1.35 };
+      if (p.handoff) {
+        const dx = side * .09 - .06, length = la - .03;
+        const angle = Math.atan2(-Math.sqrt(length * length - dx * dx), dx);
+        goal = { yc: bt + .1 - .05 - length * Math.sin(angle), phi: angle };
+      } else if (stowed(p)) goal = { yc: bt + (p.algae ? .2 : .05) + la * .9, phi: dir > 0 ? -1.35 : Math.PI + 1.35 };
       else goal = reachWith(p, dir, ex, la, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt);
       phi = approach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      grip.rotation.z = -phi + (p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
+      grip.rotation.z = -phi + (p.handoff ? 0 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
       for (const w of gripWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
@@ -365,7 +370,9 @@ export function additionalReefscapeTeamRobots(): TeamRobot[] {
 // Unpublished timings/dimensions are [EST]; 2056 drive speed and frame, 118 frame are from the teams' binders.
 function config(team: number, model: string, lift: number, release: number, harvest: number, speed: number, climb: number, height: number, frame?: [number, number]) {
   const c = build({ coral: 'l4', intake: 'ground', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true });
-  c.teamNumber = team; c.model = model; c.height = inch(height); c.maxSpeed = speed;
+  c.teamNumber = team; c.model = model;
+  c.options = { ...c.options, dualPieceStorage: false, coralBuffer: team === 118 || team === 2056, ...(team === 118 ? { coralBufferLocation: 'intake' } : {}) };
+  c.height = inch(height); c.maxSpeed = speed;
   if (frame) { c.frameLength = inch(frame[0]); c.frameWidth = inch(frame[1]); }
   c.placement!.liftSpeed = lift; c.placement!.cycleSeconds = release; c.placement!.harvestSeconds = harvest;
   c.climber.secondsToClimb = climb;
@@ -376,5 +383,6 @@ function config(team: number, model: string, lift: number, release: number, harv
 function whisper() {
   const c = config(1690, 'whisper-1690', 2.2, 0.30, 0.35, 5.4, 2.5, 36);
   c.placement!.scoreSide = 'ends';
+  c.options = { ...c.options, coralBuffer: true, dualPieceStorage: true };
   return normalizeReefscapeConfig(c);
 }

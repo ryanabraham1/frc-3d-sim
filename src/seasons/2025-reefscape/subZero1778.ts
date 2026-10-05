@@ -9,7 +9,7 @@ import { build, normalizeReefscapeConfig } from './config';
  * side to side (290° each way from straight down). The arm hangs straight down to take CORAL from the floor intake,
  * which folds up underneath it, then swings up to either side so the robot scores parallel to the REEF face — bumpers
  * resting on the REEF while the arm and elevator move down onto the BRANCH. No climber (the robot was at the weight
- * limit), no ALGAE mechanism beyond knocking it off with the arm.
+ * limit), CORAL waits in the intake while ALGAE occupies the arm (user-specified buffered variant).
  *
  * Sources: Chief Delphi "1778 Chill Out | REEFSCAPE Robot Reveal" and "1778 2025 CAD & Code Release" (CAD renders,
  * team Q&A on the arm range, handoff linebreak, belt elevator, A-frame and weight).
@@ -119,9 +119,10 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
 });
 
 export function subZero1778(): TeamRobot {
-  const config = build({ coral: 'l4', intake: 'ground', algae: 'none', algaeScore: 'none', climb: 0, align: true });
+  const config = build({ coral: 'l4', intake: 'ground', algae: 'reef', algaeScore: 'both', climb: 0, align: true });
   config.teamNumber = 1778;
   config.model = 'subzero-1778';
+  config.options = { ...config.options, coralBuffer: true, coralBufferLocation: 'intake', dualPieceStorage: true };
   config.placement!.scoreSide = 'sides';
   config.placement!.handoffSeconds = 0.35; // [EST] linebreak-triggered: the CORAL is centered by the time the intake is up
   config.placement!.cycleSeconds = 0.4; // [EST] "some of the fastest CORAL scoring in the world"
@@ -131,7 +132,7 @@ export function subZero1778(): TeamRobot {
   config.mass = lb(115); // at the weight limit
   return {
     id: 'subzero-1778', team: 1778, name: 'SubZero',
-    description: '1778 Chill Out (46-7, 14th worldwide). Belt elevator with an arm that swings 290° to either side: scores L1–L4 out of whichever side faces the REEF while parked parallel to it. Floor intake folds up and hands CORAL to the arm hanging straight down. Knocks ALGAE off with the arm; no climber (at the weight limit).',
+    description: '1778 Chill Out (46-7, 14th worldwide). Belt elevator with an arm that swings 290° to either side: scores L1–L4 out of whichever side faces the REEF while parked parallel to it. Floor intake folds up and hands CORAL to the arm hanging straight down. Holds CORAL in its intake while the arm handles ALGAE; ALGAE must leave before the CORAL handoff. No climber (at the weight limit).',
     source: 'Chief Delphi "1778 Chill Out | REEFSCAPE Robot Reveal" and "1778 2025 CAD & Code Release"',
     config: normalizeReefscapeConfig(config),
   };

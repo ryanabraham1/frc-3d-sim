@@ -79,7 +79,7 @@ describe('CAD mechanism paths', () => {
     });
   }
 
-  for (const id of ['whisper-1690','sublime-1678','miss-daisy-341','zuma-581']) {
+  for (const id of ['whisper-1690','lightning-2056','sublime-1678','miss-daisy-341','zuma-581']) {
     it(`${id}: floor transfer follows the conveyor into a low gripper`, () => {
       const k = kit(2025,id), model = robotModelBuilder(id)!(k);
       settle(model,state({ place:{ height:.3, forward:.3, level:4, handoff:.5 } }));
@@ -100,6 +100,33 @@ describe('CAD mechanism paths', () => {
       expect(p.y).toBeGreaterThan(.05); expect(p.y).toBeLessThan(.18);
     });
   }
+
+  for (const id of ['fiddler-971', 'spectre-2910']) {
+    it(`${id}: scoring wins over a still-active intake command`, () => {
+      const k=kit(2025,id), model=robotModelBuilder(id)!(k);
+      settle(model,state({intaking:true,place:{height:1.8,forward:.65,level:4}}));
+      const end=local(k,model.heldAnchor!);
+      expect(end.distanceTo(new THREE.Vector3(.65,1.8,0))).toBeLessThan(.08);
+      if (id==='fiddler-971') expect(k.visual.getObjectByName('fiddler-moving-stage')!.position.y).toBeGreaterThan(.5);
+    });
+  }
+
+  it('WildStang flips its shared arm to reach with either independent holder', () => {
+    const k=kit(2025,'wildstang-111'), model=robotModelBuilder('wildstang-111')!(k);
+    for (const algae of [false,true]) {
+      settle(model,state({place:{height:1.8,forward:.45,level:4,algae}}));
+      const active=local(k,algae?model.algaeAnchor!:model.heldAnchor!);
+      expect(active.distanceTo(new THREE.Vector3(.45,1.8,0))).toBeLessThan(.04);
+      expect(local(k,model.heldAnchor!).distanceTo(local(k,model.algaeAnchor!))).toBeGreaterThan(1);
+    }
+  });
+
+  it('WildStang keeps both holders above the carpet while stowed', () => {
+    const k=kit(2025,'wildstang-111'), model=robotModelBuilder('wildstang-111')!(k);
+    settle(model,state({place:{height:.45,forward:.3,level:4,algae:true}}));
+    expect(local(k,model.algaeAnchor!).y).toBeGreaterThan(.206);
+    expect(local(k,model.heldAnchor!).y).toBeGreaterThan(.2);
+  });
 
   for (const id of ['mixtape-971','croquembouche-5940']) {
     it(`${id}: feed and physical shots alternate between the same two turret lanes`, () => {

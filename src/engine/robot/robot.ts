@@ -655,6 +655,10 @@ export class Robot {
   }
 
   /** Where the team model holds a game piece (seasons parent their held-piece mesh here), if it has one. */
+  get modelAlgaeGripScale(): [number, number, number] { return this.model?.algaeGripScale ?? [.94, 1.04, .68]; }
+
+  get modelAlgaeAnchor(): THREE.Object3D | undefined { return this.model?.algaeAnchor; }
+
   get modelHeldAnchor(): THREE.Object3D | undefined {
     return this.model?.heldAnchor;
   }

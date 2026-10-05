@@ -72,7 +72,15 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   c.processor = { ...d.processor!, ...c.processor };
   // A CORAL intake needs a way in: floor or funnel.
   if (c.intake.primary && !c.intake.ground && !c.intake.station) c.intake.primary = false;
-  c.hopperCapacity = Number(c.intake.primary) + Number(c.intake.secondary);
+  // Handling both types does not imply two independent holding mechanisms. Named team
+  // models use one shared scoring gripper; generic builds retain their separate storage.
+  const buffered = c.options.coralBuffer === true || (c.options.coralBuffer === undefined && ['whisper-1690', 'subzero-1778', 'firefly-118', 'lightning-2056'].includes(c.model ?? ''));
+  c.options.coralBuffer = buffered;
+  if (['subzero-1778', 'firefly-118'].includes(c.model ?? '')) c.options.coralBufferLocation = 'intake';
+  const dualStorage = buffered || (c.options.dualPieceStorage ?? !c.model);
+  c.options.dualPieceStorage = dualStorage === true;
+  const types = Number(c.intake.primary) + Number(c.intake.secondary);
+  c.hopperCapacity = c.options.dualPieceStorage ? types : Math.min(1, types);
   c.preload = c.intake.primary ? Math.min(1, c.preload) : 0;
   c.intake.enabled = c.hopperCapacity > 0;
   c.intake.reach = Math.min(d.intake.reach, Math.max(0, p.reach - c.bumperThickness));
@@ -135,6 +143,9 @@ export const reefscapeRobotOptions: RobotOption[] = [
   opt('algae', 'ALGAE handling', [['none', 'Knock off only', 'The elevator can still knock reef ALGAE onto the carpet'], ['reef', 'Grab from REEF'], ['reefGround', 'REEF + ground']],
     (c) => !c.intake.secondary ? 'none' : c.options?.algaeGround ? 'reefGround' : 'reef',
     (c, v) => { c.intake.secondary = v !== 'none'; c.options = { ...c.options, algaeGround: v === 'reefGround' }; }),
+  opt('pieceStorage', 'Piece storage', [['buffered', 'CORAL buffer + gripper', 'Stages CORAL in the intake or indexer; score ALGAE before transferring CORAL'], ['shared', 'One shared gripper', 'Holds one CORAL or one ALGAE at a time'], ['separate', 'Separate storage', 'Holds one CORAL and one ALGAE in independent mechanisms']],
+    (c) => c.options?.coralBuffer ? 'buffered' : c.options?.dualPieceStorage ? 'separate' : 'shared',
+    (c, v) => { c.options = { ...c.options, dualPieceStorage: v !== 'shared', coralBuffer: v === 'buffered' }; }),
   opt('algaeScore', 'ALGAE scoring', [['none', 'None'], ['processor', 'PROCESSOR'], ['net', 'NET (elevator)', 'Raise the elevator at the BARGE and outtake the ALGAE over the NET lip'], ['both', 'Both']],
     (c) => (c.processor!.enabled && c.options?.net ? 'both' : c.processor!.enabled ? 'processor' : c.options?.net ? 'net' : 'none'),
     (c, v) => { c.processor!.enabled = v === 'processor' || v === 'both'; c.options = { ...c.options, net: v === 'net' || v === 'both' }; },
@@ -176,7 +187,7 @@ export function reefscapeRobotSummary(config: RobotConfig): string {
   const intake = !c.intake.primary ? '' : c.intake.ground && c.intake.station ? ' (ground + funnel)' : c.intake.ground ? ' (ground)' : ' (funnel)';
   const coral = c.placement!.enabled && c.intake.primary ? `CORAL L1–L${c.placement!.maxLevel}${intake}` : 'CORAL off';
   const algae = c.intake.secondary ? [c.processor!.enabled ? 'PROCESSOR' : '', c.options?.net ? 'NET' : ''].filter(Boolean).join(' + ') || 'ALGAE pickup only' : 'ALGAE knock-off';
-  return `${coral}${c.placement!.scoreSide === 'sides' ? ' (side scoring)' : c.placement!.scoreSide === 'ends' ? ' (front + back scoring)' : ''} · ${algae} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
+  return `${coral}${c.placement!.scoreSide === 'sides' ? ' (side scoring)' : c.placement!.scoreSide === 'ends' ? ' (front + back scoring)' : ''} · ${algae}${c.intake.primary && c.intake.secondary ? c.options?.coralBuffer ? ' · CORAL buffer; ALGAE first' : c.options?.dualPieceStorage ? ' · separate storage' : ' · one piece at a time' : ''} · ${['park only', 'shallow cage', 'deep cage'][c.climber.maxLevel]}${c.autoAlign ? ' · auto-align' : ''}`;
 }
 
 export function startPose(a: Alliance, station: number) {

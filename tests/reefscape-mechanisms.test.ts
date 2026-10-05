@@ -247,3 +247,104 @@ describe('2025 ALGAE NET from a raised elevator', () => {
     expect(sim.ctx.score.counter('blue', 'net')).toBe(1);
   });
 });
+
+
+describe('2025 physical piece storage', () => {
+  const team = (id: string) => cloneConfig(season.teamRobots!.find(t => t.id === id)!.config);
+  for (const id of ['fiddler-971','spectre-2910','undertow-254','madtown-1323','sublime-1678','miss-daisy-341','zuma-581']) {
+    it(`${id}: one shared holder rejects CORAL while carrying ALGAE`, () => {
+      const config=team(id);
+      expect(config.intake.primary && config.intake.secondary).toBe(true);
+      expect(config.hopperCapacity).toBe(1);
+      const sim=make('blue',{x:2,y:2,yaw:0},config); teleop(sim);
+      for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      load(sim,126);
+      const sign=config.intake.groundSide==='front'?1:-1;
+      sim.pool.placeField(0,2+sign*.63,2,C.CORAL_RADIUS);
+      run(sim,.5,{...IDLE_COMMAND,intake:true});
+      expect(sim.robot.held).toEqual([126]);
+      sim.robot.held.length=0; sim.pool.reserve(126);
+      run(sim,.5,{...IDLE_COMMAND,intake:true});
+      expect(sim.robot.held).toEqual([0]); // same CORAL really was in the capture zone
+      const atReef=make('blue',season.testing!.scoringSpots('blue')[0],config); teleop(atReef);
+      for (const i of atReef.robot.held.splice(0)) atReef.pool.reserve(i);
+      load(atReef,0); run(atReef,3,{...IDLE_COMMAND,intake:true});
+      expect(atReef.robot.held).toEqual([0]); // reef removal cannot add ALGAE to the occupied claw
+
+    });
+  }
+
+  it('custom storage settings distinguish shared, buffered and independent holders', () => {
+    const option=reefscapeRobotOptions.find(o=>o.id==='pieceStorage')!;
+    let c=team('whisper-1690');
+    for (const mode of ['shared','buffered','separate']) {
+      option.set(c,mode); c=normalizeReefscapeConfig(c);
+      expect(option.get(c)).toBe(mode);
+      expect(c.hopperCapacity).toBe(mode==='shared'?1:2);
+    }
+  });
+
+  it('WildStang rejects floor CORAL and accepts CORAL at its station mouth', () => {
+    const config=team('wildstang-111');
+    expect(config.intake.ground).toBe(false); expect(config.intake.station).toBe(true);
+    const sim=make('blue',{x:2,y:2,yaw:0},config); teleop(sim);
+    for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+    load(sim,126); sim.pool.placeField(0,1.37,2,C.CORAL_RADIUS);
+    run(sim,.5,{...IDLE_COMMAND,intake:true}); expect(sim.robot.held).toEqual([126]);
+    sim.pool.placeField(0,1.55,2,config.height+.1);
+    run(sim,.15,{...IDLE_COMMAND,intake:true}); expect(sim.robot.held).toEqual([126,0]);
+  });
+
+  it('WildStang carries both pieces in independent heads and can place CORAL first', () => {
+    const config=team('wildstang-111'); expect(config.hopperCapacity).toBe(2);
+    const sim=make('blue',season.testing!.scoringSpots('blue')[0],config); teleop(sim);
+    for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+    load(sim,0); load(sim,126);
+    run(sim,4,()=>({...IDLE_COMMAND,shoot:holdingCoral(sim),scoringLevel:4}));
+    expect(sim.robot.held).toEqual([126]); expect(sim.ctx.score.counter('blue','coralL4')).toBe(1);
+    sim.robot.syncVisual(1/60); rulesOf(sim).updateVisuals(1/60,0);
+    const visuals=(rulesOf(sim) as unknown as {heldVisuals:Map<number,{algae:THREE.Mesh}>}).heldVisuals.get(sim.robot.id)!;
+    expect(visuals.algae.parent).toBe(sim.robot.modelAlgaeAnchor);
+  });
+
+  for (const id of ['whisper-1690','subzero-1778','firefly-118','lightning-2056']) {
+    it(`${id}: can actually collect CORAL with ALGAE already aboard`, () => {
+      const sim=make('blue',{x:2,y:2,yaw:0},team(id)); teleop(sim);
+      for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      load(sim,126); sim.pool.placeField(0,1.37,2,C.CORAL_RADIUS);
+      run(sim,.5,{...IDLE_COMMAND,intake:true});
+      expect(sim.robot.held).toEqual([126,0]);
+    });
+  }
+
+  for (const id of ['whisper-1690','subzero-1778','firefly-118','lightning-2056']) {
+    it(`${id}: buffered CORAL waits for ALGAE, then transfers and scores`, () => {
+      const config=team(id); expect(config.hopperCapacity).toBe(2);
+      const sim=make('blue',season.testing!.scoringSpots('blue')[0],config); teleop(sim);
+      for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      load(sim,0); load(sim,126);
+      const rules=rulesOf(sim), m=rules.mechanisms.get(sim.robot.id)!;
+      run(sim,3,{...IDLE_COMMAND,shoot:true,scoringLevel:4});
+      expect(sim.robot.held).toEqual([0,126]); expect(m.handoff).toBe(0);
+      sim.robot.syncVisual(1/60); rules.updateVisuals(1/60,0); sim.robot.visual.updateMatrixWorld(true);
+      const mesh=(rules as unknown as {heldVisuals:Map<number,{coral:THREE.Mesh}>}).heldVisuals.get(sim.robot.id)!.coral;
+      const buffered=sim.robot.visual.worldToLocal(mesh.getWorldPosition(new THREE.Vector3()));
+      const held=sim.robot.visual.worldToLocal(sim.robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3()));
+      if (id==='whisper-1690' || id==='lightning-2056') expect(buffered.distanceTo(held)).toBeGreaterThan(.12);
+      else expect(buffered.distanceTo(sim.robot.visual.worldToLocal(sim.robot.modelIntakeAnchor!.getWorldPosition(new THREE.Vector3())))).toBeLessThan(1e-6);
+      // Move to a legal NET pose and release ALGAE with G.
+      const net=rules.netPose(sim.robot)!; const inventory=[...sim.robot.held]; sim.robot.resetTo(net); sim.robot.held.push(...inventory);
+      let transferred=false;
+      for(let n=0;n<600 && sim.robot.held.includes(126);n++) {
+        run(sim,sim.physics.dt,{...IDLE_COMMAND,pass:true});
+        transferred ||= !sim.robot.held.includes(126) && m.handoff>0;
+      }
+      expect(sim.robot.held).toEqual([0]); expect(transferred).toBe(true);
+      run(sim,1.5,{...IDLE_COMMAND,pass:true}); // holding G must not eject the waiting CORAL
+      expect(sim.robot.held).toEqual([0]);
+      const target=rules.alignPose(sim.robot,4)!; const coralInventory=[...sim.robot.held]; sim.robot.resetTo(target); sim.robot.held.push(...coralInventory);
+      run(sim,4,()=>({...IDLE_COMMAND,shoot:holdingCoral(sim),scoringLevel:4}));
+      expect(holdingCoral(sim)).toBe(false); expect(sim.ctx.score.counter('blue','coralL4')).toBe(1);
+    });
+  }
+});

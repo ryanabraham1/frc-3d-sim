@@ -1,3 +1,4 @@
+import { wildStang111 } from './wildStang111';
 import { additionalReefscapeTeamRobots } from './additionalTeamRobots';
 import { moreReefscapeTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
@@ -207,7 +208,7 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
     lightAt: [-L * 0.42, bt + 0.03, W * 0.3],
     update(s) {
       const p = place(s);
-      const collecting = s.enabled && s.intaking || !!p.handoff;
+      const collecting = !!p.handoff || (s.enabled && s.intaking && p.height <= .46);
       const pitch = collecting ? 0 : wristFor(p.level);
       const forward = collecting ? k.fp.length / 2 + c.intake.reach * .6 : p.forward;
       const height = collecting ? .11 : p.height;
@@ -334,12 +335,14 @@ function teamConfig(team: number, model: string, base: Parameters<typeof build>[
   const c = build(base);
   c.teamNumber = team;
   c.model = model;
+  c.options = { ...c.options, dualPieceStorage: false };
   tweak(c);
   return normalizeReefscapeConfig(c);
 }
 
 export function reefscapeTeamRobots(): TeamRobot[] {
   return [
+    wildStang111(),
     ...additionalReefscapeTeamRobots(),
     ...moreReefscapeTeamRobots(),
     {

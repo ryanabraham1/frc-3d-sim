@@ -21,7 +21,7 @@ export type ModelPart = 'bumpers' | 'chassis' | 'hopper' | 'launcher' | 'climber
  * direction: the front (+x), or the robot's left / right when `side` is +1 / -1 (side-scoring arms). `handoff` runs
  * 0→1 while a floor-intaken piece is passed from the ground intake to the end effector (0 = no handoff).
  */
-export interface PlaceAnim { height: number; forward: number; level: number; side?: number; handoff?: number }
+export interface PlaceAnim { height: number; forward: number; level: number; side?: number; handoff?: number; algae?: boolean }
 
 /** What a model sees each frame. */
 export interface RobotAnimState {
@@ -73,6 +73,10 @@ export interface RobotModel {
   update(s: RobotAnimState): void;
   /** Where the robot's held game piece is drawn (seasons parent their held-piece mesh here). */
   heldAnchor?: THREE.Object3D;
+  /** Separate ALGAE holder when it is mounted on the opposite end of a shared arm. */
+  algaeAnchor?: THREE.Object3D;
+  /** Visual ALGAE compression in the local axes of its holder. */
+  algaeGripScale?: [number, number, number];
   /** Where a piece rides on the ground intake (its roller), so seasons can animate the handoff to `heldAnchor`. */
   intakeAnchor?: THREE.Object3D;
   /** Status light position (robot frame), on top of the model's structure. */

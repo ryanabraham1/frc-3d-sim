@@ -6,6 +6,7 @@ import { Robot, IDLE_COMMAND } from '../src/engine/robot/robot';
 import { cloneConfig } from '../src/engine/robot/config';
 import { FieldFrame } from '../src/engine/coords';
 import { handoffPoint } from '../src/engine/robot/handoff';
+import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
 const R = await loadRapier();
@@ -34,7 +35,7 @@ addEventListener('pointerup', () => { dragging = false; });
 addEventListener('pointermove', e => { if (!dragging) return; orbit -= e.movementX * 0.01; tiltView = THREE.MathUtils.clamp(tiltView + e.movementY * 0.01, 0.05, 1.45); });
 (window as unknown as { view(o: number, t: number, z: number): void }).view = (o, t, z) => { orbit = o; tiltView = t; zoom = z; };
 addEventListener('wheel', e => { if (focus < 0) return; zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.25, 2); }, { passive: true });
-let items: { scene: THREE.Scene; robot: Robot; physics: PhysicsWorld; el: HTMLElement; camera: THREE.PerspectiveCamera; t: number; next: number; coral?: THREE.Mesh }[] = [];
+let items: { scene: THREE.Scene; robot: Robot; physics: PhysicsWorld; el: HTMLElement; camera: THREE.PerspectiveCamera; t: number; next: number; coral?: THREE.Mesh; algae?: THREE.Mesh }[] = [];
 /** One game piece as it rests on the carpet (the token the robot's piece flow animates). */
 function pieceToken(s: typeof SEASONS[number]): (() => THREE.Object3D) | null {
   const gp = s.gamePiece;
@@ -76,7 +77,9 @@ function build() {
     const camera = new THREE.PerspectiveCamera(35,1,0.01,40);
     const coral = s.gamePiece.shape === 'tube' ? new THREE.Mesh(coralGeometry(),new THREE.MeshStandardMaterial({ color:s.gamePiece.color,roughness:.6 })) : undefined;
     if (coral) { coral.visible=false; robot.visual.add(coral); }
-    items.push({scene,robot,physics,el,camera,t:0,next:0,coral});
+    const algae = coral ? new THREE.Mesh(new THREE.SphereGeometry(.206,20,16),new THREE.MeshStandardMaterial({color:0x54cbbb,roughness:.7})) : undefined;
+    if (algae) { algae.visible=false; robot.visual.add(algae); }
+    items.push({scene,robot,physics,el,camera,t:0,next:0,coral,algae});
   }
 }
 seasonSelect.onchange = build;
@@ -94,7 +97,7 @@ function frame(now: number) {
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
     r.lastShotAngle = Number(hood.value);
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
-    r.placeAnim = {height:pose.value==='score'?1.75:0.45,forward:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:pose.value==='score'&&r.config.placement?.scoreSide==='sides'?1:0};
+    r.placeAnim = {algae:pose.value==='algae',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:pose.value==='score'&&r.config.placement?.scoreSide==='sides'?1:0};
     if (pose.value === 'flow' && i.coral) {
       // CORAL: collect → conveyor handoff → extend to L4 → retract, using the match's model path.
       i.t = (i.t + dt) % 6;
@@ -141,8 +144,17 @@ function frame(now: number) {
         }
       }
     }
+    if (i.algae) {
+      i.algae.visible=pose.value==='algae' && !!r.config.intake.secondary;
+      animateAlgaeGrip(i.algae,i.algae.visible,r.modelAlgaeGripScale,dt);
+      if (i.algae.visible) {
+        r.visual.updateMatrixWorld(true);
+        const anchor=r.modelAlgaeAnchor ?? r.modelHeldAnchor;
+        if (anchor) { if (i.algae.parent!==anchor) anchor.add(i.algae); i.algae.position.set(0,0,0); }
+      }
+    }
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
-    const scale=Math.max(1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
+    const scale=Math.max(pose.value==='algae'?2.6:1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='algae' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
     if (focus >= 0) {
       const d=scale*3.0*zoom, a=Math.atan2(2,1.8)+orbit+(reverse?Math.PI:0);
       i.camera.position.set(Math.cos(a)*Math.cos(tiltView)*d,Math.sin(tiltView)*d+scale*0.3,Math.sin(a)*Math.cos(tiltView)*d);

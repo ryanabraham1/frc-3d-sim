@@ -6,6 +6,7 @@ import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
 import { groundSideSign, stationSideSign } from '@engine/robot/config';
+import { animateAlgaeGrip } from './algaeVisual';
 import { handoffPoint } from '@engine/robot/handoff';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
@@ -21,7 +22,7 @@ export interface CoralPlacement { i: number; alliance: Alliance; level: number; 
  * 2 = back (end scorers that flip the arm over the top).
  * `handoff` runs 0→1 while a floor-intaken CORAL travels from the ground intake into the end effector (0 = none).
  */
-interface MechanismState { height: number; level: number; harvest: number; forward: number; aligned: boolean; side: number; handoff: number }
+interface MechanismState { height: number; level: number; harvest: number; forward: number; aligned: boolean; side: number; handoff: number; algae?: boolean }
 
 /** Held CORAL center height where the end effector meets the stowed ground intake. [EST] */
 const HANDOFF_HEIGHT = 0.42;
@@ -113,7 +114,7 @@ export class ReefscapeRules implements SeasonRules {
 
   stage(): void {
     const { pool, robots } = this.ctx;
-    this.placements.length = 0; this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear(); this.pins.reset(); this.ref.reset();
+    this.placements.length = 0; this.bufferPassLatch.clear(); this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear(); this.pins.reset(); this.ref.reset();
     this.autoTrough = { blue: 0, red: 0 };
     this.autoAssessed = this.bargeAssessed = false;
     this.grips.length = 0;
@@ -144,6 +145,11 @@ export class ReefscapeRules implements SeasonRules {
   private isAuto(): boolean { return ['auto', 'auto-pause'].includes(this.ctx.clock.current.id); }
   private activeScoring(): boolean { return this.ctx.clock.started && !this.ctx.clock.finished; }
   private held(robot: Robot, algae: boolean): number | undefined { return robot.held.find((i) => (i >= C.CORAL_COUNT) === algae); }
+  private readonly bufferPassLatch = new Set<number>();
+
+  private coralBuffered(robot: Robot): boolean {
+    return robot.config.options?.coralBuffer === true && this.held(robot, true) !== undefined && this.held(robot, false) !== undefined;
+  }
   private algaeIndex(a: Alliance, f: number): number { return C.CORAL_COUNT + (a === 'red' ? 0 : 6) + f; }
   reefAlgae(a: Alliance, f: number): boolean { return this.ctx.pool.tag[this.algaeIndex(a, f)] === `reef:${a}:${f}` && this.ctx.pool.state[this.algaeIndex(a, f)] === 'reserve'; }
   private tell(robot: Robot, message: string): void {
@@ -283,7 +289,7 @@ export class ReefscapeRules implements SeasonRules {
     const near = Math.hypot(robot.pose.x - reef.x, robot.pose.y - reef.y) < C.REEF_APOTHEM + 2.2;
     // Near the BARGE, the same assist lines up the NET outtake (ALGAE button, or Space holding only ALGAE).
     const algaeNet = this.wantsNet(robot, cmd);
-    const coralPlace = cmd.shoot && coral !== undefined;
+    const coralPlace = cmd.shoot && coral !== undefined && !this.coralBuffered(robot);
     const net = algaeNet ? this.netPose(robot) : null;
     const nearNet = !!net && Math.hypot(net.x - robot.pose.x, net.y - robot.pose.y) < 2.5;
     if (!robot.config.autoAlign || !(coralPlace || algaeNet) || robot.isClimbing || !(coralPlace ? near : nearNet)) {
@@ -305,20 +311,24 @@ export class ReefscapeRules implements SeasonRules {
   handleMechanisms(robot: Robot, cmd: RobotCommand, dt: number): boolean {
     const m = this.mechanisms.get(robot.id)!;
     const mechanism = robot.config.placement!;
+    if (!cmd.pass) this.bufferPassLatch.delete(robot.id);
     m.level = Math.round(clamp(cmd.scoringLevel ?? m.level, 1, mechanism.maxLevel));
     const coral = this.held(robot, false), algae = this.held(robot, true);
+    const buffered = this.coralBuffered(robot);
+    if (buffered) m.handoff = 0; // CORAL waits in its buffer until the ALGAE leaves.
     // A floor-intaken CORAL is still on its way from the ground intake into the end effector.
     if (m.handoff > 0) {
       m.handoff += dt / Math.max(0.05, mechanism.handoffSeconds ?? 0.5);
       if (m.handoff >= 1 || coral === undefined) m.handoff = 0;
     }
     const handingOff = m.handoff > 0;
-    const target = coral !== undefined && !handingOff ? this.placementTarget(robot, m.level) : null;
+    const target = coral !== undefined && !handingOff && !buffered ? this.placementTarget(robot, m.level) : null;
     const algaeNet = this.wantsNet(robot, cmd);
     const net = algaeNet ? this.atNet(robot) : null;
     // The elevator / arm only move into scoring position while the driver holds Space (CORAL) or G (ALGAE, the same
     // buttons that start auto-align); otherwise they stay stowed low for driving. A tipped-over robot is helpless.
-    const placing = cmd.shoot && coral !== undefined;
+    m.algae = algae !== undefined && (buffered || cmd.pass || coral === undefined);
+    const placing = cmd.shoot && coral !== undefined && !buffered;
     const netDeploy = !!net && !placing;
     const deploy = (cmd.shoot || netDeploy) && !robot.tippedOver;
     // Holding CORAL: the elevator rides at the selected level and the end effector reaches toward the BRANCH.
@@ -352,6 +362,7 @@ export class ReefscapeRules implements SeasonRules {
     const canHold = robot.config.intake.secondary && robot.config.intake.enabled && algae === undefined && robot.capacityLeft > 0;
     const hasTool = robot.config.intake.secondary || mechanism.enabled;
     const harvest = cmd.intake && !cmd.shoot && hasTool && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && nearReef && this.reefAlgae(harvestAlliance, face);
+    if (harvest && canHold) m.algae = true;
     if (harvest) desiredHeight = C.LEVEL_HEIGHTS[face % 2 === 0 ? 3 : 2] + 0.08;
     m.height += clamp(desiredHeight - m.height, -mechanism.liftSpeed * dt, mechanism.liftSpeed * dt);
     m.forward += clamp(desiredForward - m.forward, -1.2 * dt, 1.2 * dt);
@@ -373,6 +384,7 @@ export class ReefscapeRules implements SeasonRules {
     } else m.harvest = 0;
     if (cmd.intake && robot.config.intake.enabled) this.intake(robot);
     if (cmd.shoot && coral !== undefined && robot.fireCooldown <= 0) {
+      if (buffered) { this.tell(robot, 'Score ALGAE with G first · CORAL is waiting in its buffer'); return true; }
       if (!mechanism.enabled) { this.tell(robot, 'No CORAL scorer on this robot · G ejects held CORAL'); return true; }
       if (handingOff || !target) return true;
       if (need > fMax + 0.03) { this.tell(robot, robot.config.autoAlign ? 'Too far from the REEF · hold Space closer to auto-align' : 'Out of reach · drive closer to the REEF'); return true; }
@@ -387,7 +399,7 @@ export class ReefscapeRules implements SeasonRules {
         if (!net) this.tell(robot, 'Drive up to the BARGE facing your NET · the elevator rises and outtakes the ALGAE');
         else if ((!robot.config.autoAlign || m.aligned) && Math.abs(m.height - desiredHeight) < 0.03 && Math.abs(m.forward - desiredForward) < 0.03) this.outtakeNet(robot, algae);
       } else this.tell(robot, cmd.pass ? 'No ALGAE scoring mechanism on this robot' : 'No ALGAE NET mechanism on this robot');
-    } else if (cmd.pass && coral !== undefined && robot.fireCooldown <= 0) {
+    } else if (cmd.pass && coral !== undefined && !this.bufferPassLatch.has(robot.id) && robot.fireCooldown <= 0) {
       // Short reverse-intake ejection is the explicit G412 exception (about 3 ft).
       const p = robot.pose;
       this.release(robot, coral);
@@ -445,7 +457,11 @@ export class ReefscapeRules implements SeasonRules {
     collider.setEnabled(!robot.isClimbing);
   }
 
-  private release(robot: Robot, i: number): void { robot.held.splice(robot.held.indexOf(i), 1); }
+  private release(robot: Robot, i: number): void {
+    const transferring = i >= C.CORAL_COUNT && this.coralBuffered(robot);
+    robot.held.splice(robot.held.indexOf(i), 1);
+    if (transferring) { this.mechanisms.get(robot.id)!.handoff = 1e-6; this.bufferPassLatch.add(robot.id); }
+  }
 
 
   private intake(robot: Robot): void {
@@ -1041,7 +1057,7 @@ export class ReefscapeRules implements SeasonRules {
       }
       // Team models (254's elevator, 2910's telescoping arm…) draw their own mast and follow the end effector.
       arm.visible = !robot.modelReplaces('mast');
-      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level, side: m.side, handoff: m.handoff };
+      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level, side: m.side, handoff: m.handoff, algae: m.algae };
       const held = this.heldVisuals.get(robot.id)!;
       held.coral.visible = pool.owner.some((owner, i) => owner === robot.id && pool.state[i] === 'held' && i < C.CORAL_COUNT);
       held.algae.visible = pool.owner.some((owner, i) => owner === robot.id && pool.state[i] === 'held' && i >= C.CORAL_COUNT);
@@ -1053,13 +1069,25 @@ export class ReefscapeRules implements SeasonRules {
       // A team model with its own end effector holds the pieces there (same orientation relative to the robot).
       const anchor = robot.modelHeldAnchor;
       if (anchor) {
-        if (held.coral.parent !== anchor) anchor.add(held.coral, held.algae);
+        if (held.coral.parent !== anchor) anchor.add(held.coral);
         robot.visual.updateMatrixWorld(true);
         const inv = anchor.getWorldQuaternion(this.tmpQ).invert().multiply(robot.visual.quaternion);
         held.coral.position.set(0, 0, 0);
         held.coral.quaternion.premultiply(this.tmpQ2.setFromAxisAngle(up, m.side * Math.PI / 2)).premultiply(inv);
-        held.algae.position.set(0.05, -0.14, 0);
+        const algaeAnchor = robot.modelAlgaeAnchor ?? anchor;
+        if (held.algae.parent !== algaeAnchor) algaeAnchor.add(held.algae);
+        held.algae.position.set(robot.modelAlgaeAnchor ? 0 : .05, robot.modelAlgaeAnchor ? 0 : -.14, 0);
       } else if (held.coral.parent !== carriage) carriage.add(held.coral);
+      if (anchor && this.coralBuffered(robot)) {
+        const path = robot.modelHandoffPath;
+        const intakeBuffer = robot.config.options?.coralBufferLocation === 'intake';
+        const buffer = intakeBuffer && robot.modelIntakeAnchor ? robot.visual.worldToLocal(robot.modelIntakeAnchor.getWorldPosition(new THREE.Vector3())) : path?.at(-1) ?? new THREE.Vector3(-robot.footprint.length * .25, robot.config.bumperTop + .09, 0);
+        held.coral.position.copy(anchor.worldToLocal(robot.visual.localToWorld(buffer.clone())));
+        // Horizontal CORAL in the conveyor, independent of the arm carrying ALGAE.
+        const orientation = new THREE.Quaternion().setFromUnitVectors(up, new THREE.Vector3(0, 0, 1));
+        held.coral.quaternion.copy(anchor.getWorldQuaternion(this.tmpQ).invert().multiply(robot.visual.quaternion).multiply(orientation));
+      }
+      animateAlgaeGrip(held.algae, held.algae.visible, robot.modelAlgaeGripScale, dt);
       if (m.handoff > 0 && held.coral.visible) this.animateHandoff(robot, held.coral, m.handoff);
     }
     for (const mesh of this.scoredVisuals.values()) mesh.visible = false;

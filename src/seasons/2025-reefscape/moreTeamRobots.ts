@@ -121,13 +121,14 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
     plate(k.visual, [[ex - 0.06, bt - 0.02], [ex + 0.22, bt - 0.02], [ex + 0.02, bt + 0.3]], 0.006, gray, sz * 0.1);
   }
   box(k.visual, 0.1, 0.04, 0.2, silver, ex, top, 0);
-  const stage = new THREE.Group(); k.visual.add(stage);
+  const stage = new THREE.Group(); stage.name = 'fiddler-moving-stage'; k.visual.add(stage);
   for (const sign of [-1,1]) bar(stage,[ex+.06,bt+.15,sign*.1],[ex+.06,top-.05,sign*.1],.026,silverTube);
   bar(stage,[ex+.06,top-.05,-.1],[ex+.06,top-.05,.1],.024,silverTube);
-  const carriage = new THREE.Group(); stage.add(carriage);
+  const middleStage = stage.clone(); middleStage.name = 'fiddler-middle-stage'; k.visual.add(middleStage);
+  const carriage = new THREE.Group(); carriage.name = 'fiddler-carriage'; stage.add(carriage);
   box(carriage, 0.03, 0.14, 0.18, gray, ex + 0.1, 0, 0);
   // Arm and V-shaped claw: each side arm carries three orange wheels.
-  const la = 0.62, ax = ex + 0.14, arm = pivot(carriage, ax, 0.03);
+  const la = 0.78, ax = ex + 0.14, arm = pivot(carriage, ax, 0.03);
   bar(arm, [0, 0, 0], [la - 0.12, 0, 0], 0.03, silverTube);
   box(arm, 0.06, 0.07, 0.1, black, la - 0.12, 0, 0);
   const eff = pivot(arm, la - 0.1, 0);
@@ -151,7 +152,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
   battery(k.visual, -0.02, bt - 0.02, 0.2, Math.PI / 2);
   for (let i = 0; i < 3; i++) controller(k.visual, 0.06 + i * 0.065, bt, -0.2, 0x46ca79);
   let yc = bt + 0.2, phi = 1.2;
-  const yMin = bt + 0.1, yMax = top + 0.6;
+  const yMin = bt + 0.1, yMax = top + 1.2;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held, intakeAnchor: tip, lightAt: [ex, top + 0.02, 0],
@@ -159,14 +160,17 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       const p = place(s);
       let goal: { yc: number; phi: number };
       // Handoff / intake: the claw dips to the floor at the front. Stowed: arm up over the elevator.
-      if (p.handoff || s.intaking) goal = { yc: .11 - .03 + Math.sin(.75) * (la - .1) + Math.sin(.1) * .13, phi: -.75 };
+      const collecting = !!p.handoff || (s.enabled && s.intaking && stowed(p));
+      const pitch = collecting ? -.1 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -.5;
+      if (collecting) goal = { yc: .11 - .03 + Math.sin(.75) * (la - .1) + Math.sin(.1) * .13, phi: -.75 };
       else if (stowed(p)) goal = { yc: yMin, phi: 1.25 };
-      else goal = reachWith(p, dir, ax, la, yMin, yMax);
+      else goal = reachWith({ ...p, forward: p.forward - .13 * Math.cos(pitch), height: p.height - .03 - .13 * Math.sin(pitch) }, dir, ax, la - .1, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
-      const ext = Math.min(top - bt - 0.25, Math.max(0, yc - (top - 0.14)));
+      const ext = Math.max(0, yc - (top - 0.14));
+      middleStage.position.y = ext * .5;
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      eff.rotation.z = -phi + (p.handoff || s.intaking ? -0.1 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
+      eff.rotation.z = -phi + pitch;
       for (const w of wheels) w.rotation.z += (s.intaking ? 22 : s.firing > 0 ? -30 : 0) * s.dt;
       hook.rotation.x = approach(hook.rotation.x, s.climb > 0.1 ? -1.2 : 0, 5, s.dt);
       db.update(s);
@@ -311,9 +315,12 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
 
 const cfg = (team: number, model: string, o: { lift: number; release: number; harvest: number; speed: number; climb: number; height: number; weight: number; cycle: number; frame?: [number, number]; frontIntake?: boolean; algae?: 'reef' | 'reefGround'; algaeScore?: 'processor' | 'both' }) => {
   const c = build({ coral: 'l4', intake: 'ground', algae: o.algae ?? 'reefGround', algaeScore: o.algaeScore ?? 'both', climb: 2, align: true, speed: o.speed, weight: o.weight, cycle: o.cycle });
-  c.teamNumber = team; c.model = model; c.height = inch(o.height); c.mass = lb(o.weight);
+  c.teamNumber = team; c.model = model;
+  c.options = { ...c.options, dualPieceStorage: false };
+  c.height = inch(o.height); c.mass = lb(o.weight);
   if (o.frame) { c.frameLength = inch(o.frame[0]); c.frameWidth = inch(o.frame[1]); }
   if (o.frontIntake) { c.intake.groundSide = 'front'; c.intake.stationSide = 'front'; }
+  if (model === 'fiddler-971') c.placement!.handoffSeconds = 0; // claw picks directly from the floor
   c.placement!.liftSpeed = o.lift; c.placement!.cycleSeconds = o.release; c.placement!.harvestSeconds = o.harvest;
   c.climber.secondsToClimb = o.climb;
   return normalizeReefscapeConfig(c);

@@ -31,11 +31,12 @@ export class ReefscapeHud implements SeasonHud {
     const intakeHint = !r.config.intake.primary ? 'ALGAE: intake on carpet or J at reef'
       : r.config.intake.ground && r.config.intake.station ? 'CORAL: back the orange INTAKE over it, or back up to a CORAL STATION (H drops one)'
       : r.config.intake.ground ? 'CORAL: back the orange INTAKE over it (no funnel — H drops one onto the floor)' : 'CORAL: back your funnel up to a CORAL STATION (H drops one)';
-    const reef = coral ? !r.config.placement!.enabled ? 'No CORAL scorer · G ejects CORAL' : blocked ? `<span class="bad">L${m?.level} blocked by ALGAE${knock}</span>` : near ? `<span class="ok">L${m?.level ?? 4} · ${align}</span>` : 'Drive to your REEF · 1–4 selects the level' : intakeHint;
+    const buffered = coral && algae && r.config.options?.coralBuffer;
+    const reef = buffered ? '<span class="bad">CORAL waiting in buffer · score ALGAE with G first</span>' : coral ? !r.config.placement!.enabled ? 'No CORAL scorer · G ejects CORAL' : blocked ? `<span class="bad">L${m?.level} blocked by ALGAE${knock}</span>` : near ? `<span class="ok">L${m?.level ?? 4} · ${align}</span>` : 'Drive to your REEF · 1–4 selects the level' : intakeHint;
     const depth = this.rules.climberDepth(r)?.toUpperCase();
     const slot = r.climbSlot ?? -1;
     const climb = r.isClimbing ? `${r.climbPhase === 'hanging' ? 'Hanging' : 'Climbing'} · ${(this.rules.refs.cageDepth[r.alliance][slot] ?? depth ?? 'DEEP').toUpperCase()} CAGE · X to descend` : depth ? `C: climb any of your ${depth} cages (${this.rules.refs.cageDepth[r.alliance].filter((d) => d.toUpperCase() === depth).length}) · park in your BARGE ZONE for 2` : 'No cage climber · park in your BARGE ZONE for 2';
     const algaeHint = algae ? `<div class="ok">${r.config.options?.net ? `G: ALGAE → NET at the BARGE${coral ? '' : ' (or Space)'}` : 'NET shooter disabled'} · ${r.config.processor!.enabled ? 'G: feed PROCESSOR nearby' : 'PROCESSOR feeder disabled'}</div>` : '';
-    ctx.hud.setHtml(slots.player, `<div class="hopper-label">CORAL ${r.config.intake.primary ? `${coral ? 1 : 0}/1` : 'off'} · ALGAE ${r.config.intake.secondary ? `${algae ? 1 : 0}/1` : 'off'}</div><div>Elevator L${m?.level ?? 4} / L${r.config.placement!.maxLevel} · ${(m?.height ?? 0.45).toFixed(2)} m</div><div>${reef}</div>${algaeHint}<div class="dim">${climb}</div>`);
+    ctx.hud.setHtml(slots.player, `<div class="hopper-label">CORAL ${r.config.intake.primary ? `${coral ? 1 : 0}/1` : 'off'} · ALGAE ${r.config.intake.secondary ? `${algae ? 1 : 0}/1` : 'off'}${r.config.intake.primary && r.config.intake.secondary && !r.config.options?.dualPieceStorage ? ' · one piece at a time' : ''}</div><div>Elevator L${m?.level ?? 4} / L${r.config.placement!.maxLevel} · ${(m?.height ?? 0.45).toFixed(2)} m</div><div>${reef}</div>${algaeHint}<div class="dim">${climb}</div>`);
   }
 }
