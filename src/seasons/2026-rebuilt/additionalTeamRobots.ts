@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, type ModelKit, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
+import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, lattice, mat, overBumperIntake, type ModelKit, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
 import { hoodFor } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
+import { launcherExitOffsets } from '@engine/robot/config';
 import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
@@ -68,10 +69,10 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
       intake: overBumperIntake(k, intake.tip, r),
       stow: pile.stow,
       // Along Limestone's floor to the front drum.
-      feed: () => {
-        const z = jitter(W * 0.5);
+      feed: (shot = 0) => {
+        const exits = launcherExitOffsets(c), z = -exits[shot % exits.length];
         const head = wheels[0];
-        return [new THREE.Vector3(-L * 0.35, bt + 0.04 + r, z), new THREE.Vector3(L * 0.22, bt + 0.05 + r, z * 0.4), flowAt(k, head, -0.09, -0.02, 0), flowAt(k, head, 0.02, 0.04, 0)];
+        return [new THREE.Vector3(-L * 0.35, bt + 0.04 + r, z), new THREE.Vector3(L * 0.22, bt + 0.05 + r, z * 0.4), flowAt(k, head, -0.09, -0.02, z), flowAt(k, head, 0.02, 0.04, z)];
       },
     },
     update(s) {
@@ -148,7 +149,7 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
   let deploy=0,angle=0;
   return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
-      feed:()=>[new THREE.Vector3(-L*.35,bt+.04+r,0),new THREE.Vector3(L*.22,bt+.12+r,0),flowAt(k,fly,-.09,-.02,0),flowAt(k,fly,.02,.04,0)]},
+      feed:(shot=0)=>{const exits=launcherExitOffsets(c),z=-exits[shot%exits.length];return [new THREE.Vector3(-L*.35,bt+.04+r,z),new THREE.Vector3(L*.22,bt+.12+r,z),flowAt(k,fly,-.09,-.02,z),flowAt(k,fly,.02,.04,z)];}},
     update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
       deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
@@ -228,6 +229,7 @@ function config(team: number, model: string, turret: boolean, capacity: number, 
     c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .23, side: sign * c.frameWidth * .24 }));
     c.launcher.muzzleForward = .05;
   }
+  if (!turret) c.launcher.exitSpan = .6; // FUEL centers clear the drum cheek plates.
   setRebuiltAccuracy(c,accuracy);
   return normalizeRebuiltConfig(c);
 }

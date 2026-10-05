@@ -329,7 +329,7 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
     flow: {
       intake: () => { const z = jitter(W * 0.6); return [flowAt(k, rollers[0], -side * 0.02, 0.03, z), flowAt(k, rollers[1], -side * 0.03, 0.04, z), new THREE.Vector3(side * (L / 2 - 0.12), bt + 0.05 + FUEL_R, z * 0.8)]; },
       stow: pile.stow,
-      feed: () => { const z = jitter(W * 0.8); return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx - 0.03, H - 0.14, z), new THREE.Vector3(sx + 0.055, H - .1 + .051 + FUEL_R, z)]; },
+      feed: (shot = 0) => { const exits=launcherExitOffsets(c), z=-exits[shot%exits.length]; return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx - 0.03, H - 0.14, z), new THREE.Vector3(sx + 0.055, H - .1 + .051 + FUEL_R, z)]; },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
@@ -587,11 +587,11 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'simbot-tim-1114', team: 1114, name: 'Simbot Tim',
       description: '1114 Simbotics. Tall clear hopper with an orange fabric cover, active roller wall, passive side rollers and a wide drum shooter. Chassis aims; competition climber was removed. Capacity, rate, dimensions and speed are simulator estimates.',
       source: 'Spectrum CAD Collection row 17; Team 1114 Simbot Tim CAD release https://www.chiefdelphi.com/t/522887',
-      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 70, tall: true, rate: 18, climb: 0 }, c => { c.maxSpeed = 4.7; setRebuiltAccuracy(c, 90); }) },
+      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 70, tall: true, rate: 18, climb: 0 }, c => { c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
     { id: 'rubble-581', team: 581, name: 'Rubble',
       description: '581 Blazing Bulldogs. Champs rebuild: full-width drum and adjustable roller hood, translating rack intake, rising roller floor and smoked hopper with a net roof. Capacity, rate and speed are simulator estimates.',
       source: 'Spectrum CAD Collection row 10; Team 581 CAD and code release https://www.chiefdelphi.com/t/521762',
-      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; setRebuiltAccuracy(c, 86); }) },
+      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 86); }) },
     { id: 'roman-6329', team: 6329, name: 'ROMAN',
       description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056). Turret over a 20.75 in spindexer drum fed by a wide, uninterrupted roller floor, an \"upkicker\" lifting FUEL into the shooter, and a long-armed four-bar intake that folds out of the way on impacts. Capacity, rate and speed are simulator estimates.",
       source: 'Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN" (reveal Q&A and Roman II CAD release)',
@@ -607,7 +607,7 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
       description: '7769 The CREW (5 blue banners). Wide static-hood shooter on 4 in stealth wheels, black sponsor-plated polycarb hopper, intake on independently driven racks that slides out and shuffles while firing to prevent jams. Under-trench box, so it holds about 45 FUEL [EST; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Shoots from the TRENCH without being pushed under. Rate and speed are estimates.',
       source: 'Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. Compact trench-height box, so about 40 FUEL [EST: the quoted ~80 does not fit; a non-expanding trench-height box holds roughly 40]; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
