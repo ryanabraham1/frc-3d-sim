@@ -258,6 +258,7 @@ export class Game {
         humanPlayerButtons: season.humanPlayerButtons ?? 1,
         levels: season.maxScoringLevel ?? season.maxClimbLevel,
         blocker: () => !!this.player?.config.shotBlocker,
+        labels: season.touchLabels,
         climber: () => (this.player?.config.climber.maxLevel ?? 0) > 0,
       });
     }

@@ -104,6 +104,7 @@ export const reefscape2025: SeasonDefinition = {
   botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' || difficulty === 'einstein' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
   createBotPilot(ctx, rules, robot) { return createReefscapeBot(ctx, rules as ReefscapeRules, robot); },
   createHud(ctx, rules, slots) { return new ReefscapeHud(ctx, rules as ReefscapeRules, slots); },
+  touchLabels: { shoot: 'CORAL', pass: 'ALGAE' },
   controlsHelp: [
     ...DEFAULT_CONTROLS_HELP.filter(([key]) => !['Space', 'G', 'I', 'C / X', '1 2 3  or  [ ]', 'H', 'Gamepad'].includes(key)),
     ['1 / 2 / 3 / 4 · [ / ]', 'Select reef L1–L4 (gamepad D-pad changes level)'],

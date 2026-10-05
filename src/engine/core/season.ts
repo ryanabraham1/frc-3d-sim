@@ -327,6 +327,8 @@ export interface SeasonDefinition {
   createBotPilot?(ctx: SeasonContext, rules: SeasonRules, robot: Robot): AutoPilot;
   createHud(ctx: SeasonContext, rules: SeasonRules, slots: HudSlots): SeasonHud;
   controlsHelp?: [string, string][];
+  /** On-screen (touch) button names where the season's SHOOT / PASS actions mean something else (e.g. ALGAE). */
+  touchLabels?: { shoot?: string; pass?: string };
   /** Key rules/points shown on the menu's "Game rules" page. */
   rulesSummary?: { title: string; detail: string; value?: string; tag?: string }[];
   /**
