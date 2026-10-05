@@ -58,12 +58,12 @@ export class TouchControls {
       { label: 'LVL+', mode: 'tap', action: 'levelUp', size: 'small', pos: `right:${R(68)};bottom:${B(176)}`, show: () => opts.levels > 1 },
       { label: 'LVL−', mode: 'tap', action: 'levelDown', size: 'small', pos: `right:${R(116)};bottom:${B(176)}`, show: () => opts.levels > 1 },
       { label: 'BLOCK', mode: 'tap', action: 'toggleBlocker', size: 'small', pos: `right:${R(164)};bottom:${B(176)}`, show: opts.blocker },
-      { label: '⟲', mode: 'hold', action: 'rotateLeft', pos: `left:calc(50% - 64px);bottom:${B(24)}` },
-      { label: '⟳', mode: 'hold', action: 'rotateRight', pos: `left:calc(50% + 12px);bottom:${B(24)}` },
-      { label: 'SLOW', mode: 'hold', action: 'precision', size: 'small', pos: `left:calc(50% - 21px);bottom:${B(84)}` },
-      { label: 'PAUSE', mode: 'tap', action: 'pause', size: 'small', pos: `right:${R(110)};top:${T(10)}` },
-      { label: 'CAM', mode: 'tap', action: 'cameraNext', size: 'small', pos: `right:${R(60)};top:${T(10)}` },
-      { label: 'FLIP', mode: 'tap', action: 'cameraFlip', size: 'small', pos: `right:${R(10)};top:${T(10)}` },
+      { label: '⟲', mode: 'hold', action: 'rotateLeft', pos: `right:${R(274)};bottom:${B(24)}` },
+      { label: '⟳', mode: 'hold', action: 'rotateRight', pos: `right:${R(214)};bottom:${B(24)}` },
+      { label: 'SLOW', mode: 'hold', action: 'precision', size: 'small', pos: `right:${R(214)};bottom:${B(84)}` },
+      { label: 'PAUSE', mode: 'tap', action: 'pause', size: 'small', pos: `right:${R(110)};top:${T(58)}` },
+      { label: 'CAM', mode: 'tap', action: 'cameraNext', size: 'small', pos: `right:${R(60)};top:${T(58)}` },
+      { label: 'FLIP', mode: 'tap', action: 'cameraFlip', size: 'small', pos: `right:${R(10)};top:${T(58)}` },
     ];
     const hpActions: ActionId[] = ['humanPlayer', 'humanPlayerB', 'humanPlayerN', 'humanPlayerM'];
     for (let i = 0; i < Math.min(opts.humanPlayerButtons, 4); i++) {
