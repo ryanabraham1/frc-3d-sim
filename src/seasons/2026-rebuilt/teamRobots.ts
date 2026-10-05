@@ -6,7 +6,7 @@ import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, f
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { slidingHopper } from '@engine/robot/slidingHopper';
-import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
+import { build, INTAKE_RATE_BOOST, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
 /**
  * Real 2026 REBUILT robots (docs/ROBOT-ARCHETYPES.md "Real team robots"). Capabilities come from each team's tech
@@ -702,6 +702,6 @@ export function rebuiltTeamRobots(): TeamRobot[] {
 }
 
 function withIntakeRates(robots: TeamRobot[]): TeamRobot[] {
-  for (const r of robots) r.config.intake.rate = INTAKE_RATE[r.team] ?? r.config.intake.rate;
+  for (const r of robots) r.config.intake.rate = (INTAKE_RATE[r.team] !== undefined ? Math.round(INTAKE_RATE[r.team] * INTAKE_RATE_BOOST) : r.config.intake.rate);
   return robots;
 }
