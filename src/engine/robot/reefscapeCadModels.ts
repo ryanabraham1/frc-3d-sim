@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildSpectreCad } from './spectreCadModel';
 import { bar, tubeMat } from './models';
 import type { ModelKit, RobotModel } from './models';
 
@@ -29,6 +30,7 @@ const fits:Record<string,Fit> = {
 };
 
 export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):RobotModel {
+  if(id==='spectre-2910')return buildSpectreCad(root,k,animated);
   if(id==='wildstang-111')return wildstang(root,k,animated);
   if(id==='zuma-581'||id==='subzero-1778')return sideScorer(id,root,k,animated);
   const f=fits[id], carriage=pivot(root,'carriage',[0,0,0]), stage=root.getObjectByName('elevator-stage');
@@ -114,8 +116,12 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
   const intake=pivot(root,'intake',[-.27,.18,0]),tip=anchor(root,intake,[-.58,.08,0]);
   const climb=pivot(root,'climber',[0,.444,.343]),stage=root.getObjectByName('elevator-stage');
   const climbHeld=anchor(root,climb,[0,.54,.49]);
-  const r=radial.length(),bindAngle=Math.atan2(radial.y,radial.z);let yc=.42,phi=Math.PI/2,deploy=0;
-  return {replaces:hasClimber?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:hasClimber?climbHeld:undefined,heldAnchor:held,coralAxis:zuma?[1,0,0]:[0,0,1],algaeAnchor:algae,algaeGripScale:zuma?[1,1,.96]:[.78,.94,.72],algaeGripThroat:zuma,intakeAnchor:tip,lightAt:[.17,1.07,.15],
+  const r=radial.length(),bindAngle=Math.atan2(radial.y,radial.z);
+  // Zuma's tube crosses its rigid arm in the source Y/Z plane, not along
+  // the wheel shafts or the uncorrected source Z axis.
+  const coralAxis:[number,number,number]=zuma?[0,-radial.z/r,radial.y/r]:[0,0,1];
+  let yc=.42,phi=Math.PI/2,deploy=0;
+  return {replaces:hasClimber?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:hasClimber?climbHeld:undefined,heldAnchor:held,coralAxis,algaeAnchor:algae,algaeGripScale:zuma?[1,1,.96]:[.78,.94,.72],algaeGripThroat:zuma,intakeAnchor:tip,lightAt:[.17,1.07,.15],
     flow:{handoff:()=>[point(k,tip),new THREE.Vector3(-.27,.25,0),point(k,held)]},
     update(s){if(!animated())return;const p=s.place??{height:.45,forward:.3,level:1},parked=p.height<=.46&&!p.handoff;
       let y=.42,angle=Math.PI/2;
@@ -124,8 +130,8 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
       yc=ease(yc,y,s.dt);phi=ease(phi,angle,s.dt);carriage.position.y=yc-shaft[1];
       if(stage)stage.position.y=zuma?Math.max(0,yc-.92)-.7874:Math.max(0,yc-shaft[1])*.5;
       arm.rotation.x=bindAngle-phi;
-      // The tube keeps the claw's roll from the source; CORAL is carried across
-      // the rollers and ALGAE enters the U-shaped throat along the tube axis.
+      // The head is rigidly mounted: preserve its CAD transform relative
+      // to the arm. CORAL follows that same rotation through its local axis.
       deploy=ease(deploy,s.intaking||p.handoff?1:0,s.dt);intake.rotation.z=-(1-deploy)*1.2;
       climb.rotation.x=ease(climb.rotation.x,-1.1*(1-s.climb),s.dt);
     }};

@@ -8,6 +8,11 @@ import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer
 import { Matrix4 } from 'three';
 
 const specs = {
+  'spectre-2910': {file:'2025 2910glb',year:2025,axes:'negative-y',groups:[
+    ['effector',/53 - 2025 Intake & Wrist V3/], ['climber',/41 - 2025 Climber/],
+    ['carriage',/Phantom Arm V2, Stage 2/], ['elevator-stage',/Phantom Arm V2, Stage 1/],
+    ['arm',/Phantom Arm V2, Stage 0/],
+  ]},
   'domotron-604': {file:'2024 FRC604.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/Intake Assembly/], ['shooter',/Arm Assembly/], ['carriage',/Carriage/], ['climber',/Climber </],
   ]},
@@ -73,6 +78,12 @@ const specs = {
   'simbot-tim-1114': { file: 'S26-A000.glb', axes: 'yzx', offsetX: .3048, groups: [
     ['intake', /^(?:S26-IN-P(?:303|311|326)|Part (?:42|43|44|46|52))\//],
   ] },
+  'rotor-604-donor': { file:'Toploader Assembly.glb', axes:'yzx', groups:[
+    ['rotor',/Chefs Hat/], ['infeed',/Infeed Roller Assembly/], ['upfeed',/Upfeed Roller Assembly/],
+  ] },
+  'shooter-581-donor': { file:'2026 Dumper Champs Bot581.glb',axes:'xzy',groups:[
+    ['hood',/Hood Assem/], ['flywheel',/#1: 4.*Roller Shaft/], ['frame',/Shooter Assem/],
+  ] },
   'intake-581-donor': { file:'2026 Dumper Champs Bot581.glb',axes:'xzy',groups:[['intake',/Champs Intake Assembly/]] },
   'ctrl-alt-defeat-9470': { file: '9470-2026-MAIN.glb', axes:'yzx', groups:[
     ['flywheel', /9470-2026-DRUMROLLER/], ['hood', /9470-2026-HOODROLLER|SHO-ALU25-HOOD/],
@@ -137,6 +148,7 @@ for (const id of ids) {
     const names = [n.getName()];
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
+    if(id==='spectre-2910' && /Bumper|Origin Cube|Battery|RoboRIO|Power Distribution|Radio Power|Reference/i.test(full)){n.setMesh(null);omitted++;continue;}
     if (id === 'reblitz-2910' && /Bumper Assembly|Battery|RoboRIO|Radio|Power Distribution|PDH|PDP|(?:^|\/)Fuel(?:\/|$)/i.test(full)) {n.setMesh(null);omitted++;continue;}
     if (spec.year===2024 && /Bumper|Battery|RoboRIO|Power Distribution|Radio Power|Brain Box/i.test(full)) {n.setMesh(null);omitted++;continue;}
     if(id==='whisper-1690' && /1690-25-1000-BasePart/.test(full)){n.setMesh(null);omitted++;continue;}
@@ -153,7 +165,7 @@ for (const id of ids) {
     const looseReference = id === 'limestone-1678' && !n.getName() && bounds.max[1] > .8;
     const hardware = /screw|washer|blind rivet|locknut|hex nut|nutstrip|nut strip|spacer|bearing|bushing|crush block/i.test(n.getName())
       && !/plate|mount|support|arm|shaft|tube/i.test(n.getName());
-    if ((id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
+    if ((id === 'rotor-604-donor' && !/DPC Rotor Assembly/.test(full)) || (id === 'shooter-581-donor' && (!/Shooter Assem/.test(full) || /(?:^|\/)Hopper <|^Triad\//.test(full))) || (id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
       || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';

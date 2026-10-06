@@ -9,8 +9,15 @@ import { cadHopper } from './cadHopper';
 import { build9470Cad, build6800Cad, build971Cad, build1114Cad, build2910Cad } from './additionalCadModels';
 
 export const CAD_2024_MODEL_IDS = ['doppler-1690','typhoon-2910','twister-118','gold-rush-27','domotron-604'] as const;
-export const CAD_2025_MODEL_IDS = ['whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
+export const CAD_2025_MODEL_IDS = ['spectre-2910','whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
 export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
+export const ADAPTED_CAD_MODEL_IDS = ['overload-254', 'sandspit-3476', 'ripcurrent-4414', 'madtown-2026-1323', 'kepler-1690', 'croquembouche-5940'] as const;
+export const CAD_DONOR_DEPENDENCIES: Record<string, readonly string[]> = {
+  'overload-254': ['shooter-581-donor'], 'sandspit-3476': ['shooter-581-donor'],
+  'ripcurrent-4414': ['rotor-604-donor','mixtape-971'], 'madtown-2026-1323': ['rotor-604-donor','mixtape-971'],
+  'kepler-1690': ['mixtape-971'], 'croquembouche-5940': ['mixtape-971'],
+  'ctrl-alt-defeat-9470': ['intake-581-donor'],
+};
 const assets = new Map<string, THREE.Group>();
 const pending = new Map<string, Promise<void>>();
 let enabled = true;
@@ -24,11 +31,11 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 }
 
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
-export async function prepareCadModels(ids: readonly (string | undefined)[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS]): Promise<void> {
+export async function prepareCadModels(ids: readonly (string | undefined)[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS]): Promise<void> {
   if (typeof document === 'undefined') return;
-  const requested = ids.includes('ctrl-alt-defeat-9470') ? [...ids,'intake-581-donor'] : ids;
-  const assetIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor'];
-  await Promise.all([...new Set(requested)].filter((id): id is string => typeof id === 'string' && assetIds.includes(id)).map(id => {
+  const requested = ids.flatMap(id => id ? [id,...(CAD_DONOR_DEPENDENCIES[id] ?? [])] : []);
+  const assetIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor'];
+  await Promise.all([...new Set(requested)].filter(id => assetIds.includes(id)).map(id => {
     if (assets.has(id)) return Promise.resolve();
     let request = pending.get(id);
     if (!request) {
@@ -40,6 +47,12 @@ export async function prepareCadModels(ids: readonly (string | undefined)[] = [.
     }
     return request;
   }));
+}
+
+/** Independent geometry/material ownership for photo-fitted donor mechanisms. */
+export function cloneCadPart(id: string, name: string): THREE.Object3D | undefined {
+  const source = enabled && assets.get(id)?.getObjectByName(name);
+  return source ? ownedClone(source) : undefined;
 }
 
 export function cadRobotModelBuilder(id: string | undefined): RobotModelBuilder | undefined {

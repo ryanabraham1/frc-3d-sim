@@ -7,6 +7,7 @@ import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import { packCommand, unpackCommand } from '../src/engine/net/protocol';
 import { inch, lb } from '../src/engine/units';
 import * as C from '../src/seasons/2026-rebuilt/constants';
+import { GROUPS } from '../src/engine/physics/world';
 
 const season = SEASONS.find(s => s.year === 2026)!;
 const team = (n: number) => cloneConfig(season.teamRobots!.find(t => t.team === n)!.config);
@@ -61,6 +62,23 @@ it('stowed, 254 shoots over 1323; with the shot blocker up, its shots hit the pa
   expect(blocked.fired).toBeGreaterThanOrEqual(10);
   expect(open.past).toBeGreaterThanOrEqual(open.fired * 0.8);
   expect(blocked.past).toBeLessThanOrEqual(blocked.fired * 0.2);
+});
+
+it('1323 blocks a horizontal shot through the vertical wall between the lift posts', () => {
+  const c = team(1323), b = c.shotBlocker!;
+  const sim = new HeadlessSim(season,RAPIER,{robot:c,alliance:'blue',pose:{x:2,y:2,yaw:0}});
+  sims.push(sim);
+  sim.run(.6,{...IDLE_COMMAND,block:true});
+  expect(sim.robot.blockerDeploy).toBe(1);
+  const p = sim.robot.body.translation();
+  const wallX = p.x-c.frameLength/2;
+  const ball = sim.physics.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(wallX-.22,p.y+c.height+b.rise*.55,p.z+b.width*.23)
+    .setLinvel(4,0,0).setCcdEnabled(true));
+  sim.physics.world.createCollider(RAPIER.ColliderDesc.ball(.045).setMass(.1)
+    .setRestitution(.3).setCollisionGroups(GROUPS.piece),ball);
+  sim.run(.11,{...IDLE_COMMAND,block:true});
+  expect(ball.translation().x).toBeLessThan(wallX-.04);
 });
 
 it('a raised shot blocker catches the TRENCH arm; lowered, the robot drives through cleanly', () => {

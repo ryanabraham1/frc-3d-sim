@@ -1,0 +1,27 @@
+{
+  "id": "rotor-604-donor",
+  "sourceFile": "Toploader Assembly.glb",
+  "inputBytes": 270004300,
+  "outputBytes": 645980,
+  "inputTriangles": 15407630,
+  "outputTriangles": 100899,
+  "omittedOccurrences": 1261,
+  "bounds": {
+    "min": [
+      -0.08254592933647409,
+      0.15240000723861158,
+      -0.11196634700594522
+    ],
+    "max": [
+      0.29136006029184724,
+      0.5238749980926514,
+      0.11627228212068882
+    ]
+  },
+  "groups": [
+    "frame",
+    "rotor",
+    "infeed",
+    "upfeed"
+  ]
+}

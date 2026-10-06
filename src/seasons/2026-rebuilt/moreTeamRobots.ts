@@ -1,3 +1,4 @@
+import { adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, fourBarIntake, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
@@ -232,19 +233,19 @@ registerRobotModel('croquembouche-5940', (k: ModelKit) => {
   const gun = mat(0x2c3036, { metal: 0.6, rough: 0.4 }), gunTube = tubeMat(0x2c3036), black = mat(0x17181b, { metal: 0.3, rough: 0.5 }), blue = mat(0x2a63d6, { rough: 0.5 }), yellow = mat(0xe0b020, { rough: 0.5 });
   const db = drivebase(k, { tube: gunTube, motorRing: 0xe0b020 });
   const top = H - 0.03;
+  const tz = W * 0.25, tx = L * 0.12;
   // Smoked yellow-tinted walls with a triangulated truss on each long side (the 5940 hallmark), black corner posts.
   const sh0 = shell(k, { wall: mat(0x6b5a14, { opacity: 0.28, rough: 0.3 }), frame: gunTube, top });
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, bt + 0.01, sz * (W * 0.48 + 0.004)], [L * 0.96, 0, 0], [0, sh0.h - 0.02, 0], { cells: 7, w: 0.012, m: gun, zig: true });
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity });
-  netRoof(k.visual, { x: 0, y: top + 0.012, length: L * 0.96, width: W * 0.96, dome: 0.03 });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-tx,z-tz) > .17 && Math.hypot(x-tx,z+tz) > .17 });
+  netRoof(k.visual, { x: -L*.23, y: top + 0.012, length: L * 0.50, width: W * 0.96, dome: 0.03 });
   // Two turrets, one over each half of the robot; both follow the single aim.
-  const tz = W * 0.25, tx = L * 0.12;
   const turrets: { g: THREE.Group; sh: ReturnType<typeof turretShooter> }[] = [];
   for (const sz of [-1, 1]) {
     const g = new THREE.Group();
     g.position.set(tx, H - 0.07, sz * tz);
     k.visual.add(g);
-    const sh = turretShooter(g, { width: 0.19, wheel: black, plate: black, accent: yellow, height: 0.15, topY: 0.06 });
+    const sh = adaptedTurretShooter(g, { width: .19, topY: .06 }) ?? turretShooter(g, { width: 0.19, wheel: black, plate: black, accent: yellow, height: 0.15, topY: 0.06 });
     turrets.push({ g, sh });
     for (const sx of [-1, 1]) bar(k.visual, [tx + sx * 0.1, bt, sz * tz + sx * 0.08], [tx + sx * 0.1, H - 0.12, sz * tz + sx * 0.08], 0.018, gunTube);
   }
@@ -255,7 +256,7 @@ registerRobotModel('croquembouche-5940', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blue, rollerMaterial: mat(0x35b24a, { rough: 0.6 }) });
   const slide = slidingHopper(k);
   const d = { v: 0 };
-  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
+  const pile = hopperStow({ x: -L*.23, y0: bt + 0.03, length: L * 0.50, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-side * L * 0.38, H - 0.01, W * 0.38],

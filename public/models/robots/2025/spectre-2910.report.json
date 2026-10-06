@@ -1,0 +1,29 @@
+{
+  "id": "spectre-2910",
+  "sourceFile": "2025 2910glb",
+  "inputBytes": 234970028,
+  "outputBytes": 8153356,
+  "inputTriangles": 9550984,
+  "outputTriangles": 538010,
+  "omittedOccurrences": 972,
+  "bounds": {
+    "min": [
+      -0.3555999994277954,
+      0.0006558304303323073,
+      -0.3301999866962434
+    ],
+    "max": [
+      0.606402685371209,
+      2.0732932309461645,
+      0.3301999866962433
+    ]
+  },
+  "groups": [
+    "climber",
+    "frame",
+    "carriage",
+    "elevator-stage",
+    "arm",
+    "effector"
+  ]
+}

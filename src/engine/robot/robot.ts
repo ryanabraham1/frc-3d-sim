@@ -125,6 +125,8 @@ export class Robot {
   private readonly fp: { length: number; width: number };
   private expansionCollider?: RAPIER.Collider;
   private blockerCollider?: RAPIER.Collider;
+  private blockerSupports: RAPIER.Collider[] = [];
+  private blockerWall?: RAPIER.Collider;
   /** Shot blocker deployment: 0 = stowed, 1 = fully out (config.shotBlocker). */
   blockerDeploy = 0;
   private expansionHeight = -1;
@@ -271,9 +273,20 @@ export class Robot {
       // arm). Other robots don't touch it: it sits above bumper height, and robots would wedge on a 1 cm plate.
       const b = c.shotBlocker;
       // 4 cm thick so a fast FUEL can't clip through an edge between steps.
-      this.blockerCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(Math.hypot(b.reach, b.rise) / 2, 0.02, b.width / 2)
+      this.blockerCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid((b.mechanism === 'lift' ? b.reach : Math.hypot(b.reach, b.rise)) / 2, 0.02, b.width / 2)
         .setMass(0).setFriction(0.4).setRestitution(0.25).setCollisionGroups(collisionGroups(Group.ROBOT, Group.PIECE | Group.FIELD)), this.body);
       this.blockerCollider.setEnabled(false);
+      if (b.mechanism === 'lift') for (const z of [-b.width*.42,b.width*.42]) {
+        const support = this.physics.world.createCollider(R.ColliderDesc.cuboid(.015,.015,.015)
+          .setTranslation(groundSideSign(c)*(c.frameLength/2-.025),c.height,z)
+          .setMass(0).setFriction(.4).setCollisionGroups(collisionGroups(Group.ROBOT,Group.PIECE|Group.FIELD)),this.body);
+        support.setEnabled(false); this.blockerSupports.push(support);
+      }
+      if (b.mechanism === 'lift') {
+        this.blockerWall = this.physics.world.createCollider(R.ColliderDesc.cuboid(.02,.015,b.width/2)
+          .setMass(0).setFriction(.4).setRestitution(.25).setCollisionGroups(collisionGroups(Group.ROBOT,Group.PIECE|Group.FIELD)),this.body);
+        this.blockerWall.setEnabled(false);
+      }
     }
   }
 
@@ -281,6 +294,7 @@ export class Robot {
   blockerAngle(deploy = this.blockerDeploy): number {
     const b = this.config.shotBlocker;
     if (!b) return Math.PI;
+    if (b.mechanism === 'lift') return 0;
     return Math.PI - deploy * (Math.PI - Math.atan2(b.rise, b.reach));
   }
 
@@ -314,6 +328,24 @@ export class Robot {
     const phi = this.blockerAngle();
     const half = Math.hypot(b.reach, b.rise) / 2;
     const h = this.blockerHinge();
+    if (b.mechanism === 'lift') {
+      const shieldLength = .55+.45*this.blockerDeploy;
+      col.setShape(new this.physics.R.Cuboid(b.reach*shieldLength/2,.02,b.width/2));
+      col.setTranslationWrtParent({x:h.x + side*b.reach*shieldLength*(this.blockerDeploy-.5),y:h.y+b.rise*this.blockerDeploy,z:0});
+      col.setRotationWrtParent({x:0,y:0,z:0,w:1});
+      for (let i=0;i<this.blockerSupports.length;i++) {
+        const support = this.blockerSupports[i];
+        support.setEnabled(this.blockerDeploy>.02);
+        support.setShape(new this.physics.R.Cuboid(.015,(.03+b.rise*this.blockerDeploy)/2,.015));
+        support.setTranslationWrtParent({x:side*(this.config.frameLength/2-.025),y:h.y-.015+b.rise*this.blockerDeploy/2,z:(i===0?-1:1)*b.width*.42});
+      }
+      if (this.blockerWall) {
+        this.blockerWall.setEnabled(this.blockerDeploy>.02);
+        this.blockerWall.setShape(new this.physics.R.Cuboid(.02,Math.max(.005,b.rise*this.blockerDeploy/2),b.width/2));
+        this.blockerWall.setTranslationWrtParent({x:h.x,y:h.y+b.rise*this.blockerDeploy/2,z:0});
+      }
+      return;
+    }
     col.setTranslationWrtParent({ x: h.x + side * Math.cos(phi) * half, y: h.y + Math.sin(phi) * half, z: 0 });
     const ang = Math.atan2(Math.sin(phi), side * Math.cos(phi));
     col.setRotationWrtParent({ x: 0, y: 0, z: Math.sin(ang / 2), w: Math.cos(ang / 2) });
@@ -713,6 +745,30 @@ export class Robot {
         this.fuelPiles.push(o);
       }
     });
+    this.fitCapacityToHopper();
+  }
+
+  /**
+   * Held FUEL is exactly what the hopper model visibly holds: the config's `hopperCapacity` is only an upper bound, and
+   * the real number is how many full-size balls fit in the drawn bin(s). Alternate bins sharing a parent (compact /
+   * extended / raised) are one hopper in different poses, so the biggest counts; separate bins (the sliding extension)
+   * add up. Without it a robot could "hold 50" while 10 balls showed.
+   */
+  private fitCapacityToHopper(): void {
+    const byParent = new Map<THREE.Object3D, number>();
+    for (const pile of this.fuelPiles) {
+      const slots = pile.userData.fuelSlots as number | undefined;
+      if (!slots || !pile.parent) continue;
+      byParent.set(pile.parent, Math.max(byParent.get(pile.parent) ?? 0, slots));
+    }
+    let fits = 0;
+    for (const n of byParent.values()) fits += n;
+    const c = this.config;
+    if (fits <= 0 || fits >= c.hopperCapacity) return;
+    c.hopperCapacity = fits;
+    if (c.hopperExpansion) c.hopperExpansion.startCount = Math.min(c.hopperExpansion.startCount, Math.max(0, fits - 1));
+    c.preload = Math.min(c.preload, fits);
+    while (this.held.length > fits) this.held.pop();
   }
 
   /**
@@ -804,8 +860,8 @@ export class Robot {
     const c = this.config;
     const group = new THREE.Group();
     this.visual.add(group);
-    this.roundHopper = fillBlock(group, { x: -c.frameLength * 0.1, y0: c.bumperTop,
-      length: c.frameLength * 0.68, width: c.frameWidth * 0.83,
+    this.roundHopper = fillBlock(group, { x: -c.frameLength * 0.05, y0: c.bumperTop,
+      length: c.frameLength * 0.84, width: c.frameWidth * 0.92,
       height: Math.max(0.08, c.height - c.bumperTop - 0.08), color: 0xf2c200, capacity: c.hopperCapacity });
     this.hopperFill.visible = false;
     group.traverse(o => {
@@ -814,6 +870,7 @@ export class Robot {
         this.fuelPiles.push(o);
       }
     });
+    this.fitCapacityToHopper();
   }
 
   /** Select the active bin nearest the intake path (including deployed hopper extensions). */

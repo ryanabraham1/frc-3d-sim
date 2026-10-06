@@ -276,13 +276,20 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
+/** Height of a hopper floor above the carpet (m): chassis rails + belly pan. */
+const HOPPER_FLOOR = 0.09;
+
 /**
  * Round FUEL inside the hopper, filled from the floor up with `set(fill)` (0–1).
  * Instancing keeps one draw call per bin. A sleeping visual particle solver lets gravity, ball contacts and chassis
  * impacts form the pile; initial packing is only a starting pose, never a fixed resting target. Intake tokens hand
  * their exact endpoint to the new particle so it rolls into the pile without a second spawn.
  */
-export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
+export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
+  // A real hopper floor rides just above the chassis tubing, not up at bumper-top height: lower the bin to it (same roof) so
+  // the FUEL fills the room under the old floor instead of leaving a dead gap above the frame.
+  const drop = Math.max(0, Math.min(bin.y0 - HOPPER_FLOOR, 0.12));
+  const o = { ...bin, y0: bin.y0 - drop, height: bin.height + drop };
   type Slot = { x: number; y: number; z: number; s: number; key: number; sy?: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
   // Pour `n` balls of radius r into the bin the way they really settle: foam FUEL rolls off whatever it lands on and
@@ -301,13 +308,18 @@ export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; le
       }
       return py;
     };
+    // Candidate pockets sit on a fine jittered grid (not a handful of random spots) so each ball really finds the lowest
+    // nook beside its neighbors and the heap packs close to a real random pile instead of leaving air gaps.
+    const step = r * 0.55, nx = Math.max(1, Math.floor(2 * halfX / step)), nz = Math.max(1, Math.floor(2 * halfZ / step));
     for (let i = 0; i < n; i++) {
-      let bx = 0, bz = 0, by = Infinity;
-      for (let k = 0; k < 48; k++) {
-        const px = (rand() * 2 - 1) * halfX, pz = (rand() * 2 - 1) * halfZ;
+      let bx = 0, bz = 0, by = Infinity, bk = Infinity;
+      for (let a = 0; a <= nx; a++) for (let b = 0; b <= nz; b++) {
+        const px = nx ? -halfX + 2 * halfX * a / nx + (rand() - 0.5) * step * 0.3 : 0;
+        const pz = nz ? -halfZ + 2 * halfZ * b / nz + (rand() - 0.5) * step * 0.3 : 0;
+        if (Math.abs(px) > halfX || Math.abs(pz) > halfZ) continue;
         if (o.inside && !o.inside(o.x + px, pz)) continue;
-        const py = restHeight(px, pz);
-        if (py < by) { by = py; bx = px; bz = pz; }
+        const py = restHeight(px, pz), key = py + rand() * r * 0.06;
+        if (key < bk) { bk = key; by = py; bx = px; bz = pz; }
       }
       if (by === Infinity) { bx = 0; bz = 0; by = restHeight(0, 0); }
       out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4, sy: Math.min(1, 0.95 * k / 1.92) });
@@ -333,6 +345,8 @@ export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; le
   const count = slots.length;
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 12, 8), mat(o.color, { rough: 0.85, metal: 0 }), count);
   mesh.name = 'hopper-fuel-pile';
+  mesh.userData.fuelBin = { x: o.x, y0: o.y0, length: o.length, width: o.width, height: o.height };
+  mesh.userData.fuelSlots = count; // how many real-size FUEL this bin physically holds
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const transform = new THREE.Object3D(), tint = new THREE.Color(o.color);
   // Subtle foam color variation gives the pile depth without textures or extra draw calls.
@@ -955,7 +969,7 @@ export function columnFeed(k: ModelKit, colX: number, wheel: THREE.Object3D, rot
  * `floor` spins about y (positive = the direction FUEL travels along the spiral); `feed(r)` is the path a ball of
  * radius r takes from the rim, along the spiral wall and up the tower.
  */
-export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1 }): { floor: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
+export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1 }): { floor: THREE.Group; tower: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
   const { x, y0, R, wallH } = o;
   const pocketM = o.pocket ?? mat(0x34373d, { metal: 0.3, rough: 0.55 });
   const accent = o.accent ?? mat(0x24272c, { metal: 0.4, rough: 0.45 });
@@ -1077,6 +1091,7 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
   }
   return {
     floor,
+    tower,
     rollers,
     feed(r) {
       const pts: THREE.Vector3[] = [];

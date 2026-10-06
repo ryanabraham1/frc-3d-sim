@@ -124,6 +124,13 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   c.preload = Math.min(c.preload, C.FUEL_MAX_PRELOAD, c.hopperCapacity);
   // 1323's 2026 robot briefly shared the 2025 model id; saved picks would otherwise draw the REEFSCAPE elevator.
   if (c.model === 'madtown-1323') c.model = 'madtown-2026-1323';
+  if (c.model === 'madtown-2026-1323' && c.shotBlocker) c.shotBlocker.mechanism = 'lift';
+  if (c.model === 'madtown-2026-1323' && !c.launcher.mounts?.length) c.launcher.mounts = [{forward:0,side:0}];
+  // Kepler's bearing sits at the right corner opposite its back intake (TBA 2026 photos).
+  // Side is positive left in the launch configuration, opposite the model's +Z axis.
+  if (c.model === 'kepler-1690' && !c.launcher.mounts?.length) {
+    c.launcher.mounts = [{ forward: c.frameLength * .27, side: -c.frameWidth * .27 }];
+  }
   return c;
 }
 

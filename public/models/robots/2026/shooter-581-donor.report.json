@@ -1,0 +1,26 @@
+{
+  "id": "shooter-581-donor",
+  "sourceFile": "2026 Dumper Champs Bot581.glb",
+  "inputBytes": 171637844,
+  "outputBytes": 1506840,
+  "inputTriangles": 10240481,
+  "outputTriangles": 286099,
+  "omittedOccurrences": 1269,
+  "bounds": {
+    "min": [
+      0.011445865035057276,
+      0.031750000547617604,
+      -0.3619500398635863
+    ],
+    "max": [
+      0.34623951929643504,
+      0.5481826472096146,
+      0.3614419996738437
+    ]
+  },
+  "groups": [
+    "frame",
+    "flywheel",
+    "hood"
+  ]
+}

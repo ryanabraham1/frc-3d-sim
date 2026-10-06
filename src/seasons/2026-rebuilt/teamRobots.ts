@@ -4,6 +4,7 @@ import { moreRebuiltTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, climberHooks, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_ORANGE, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
+import { adaptedDumper, adaptedRotorColumn, adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { slidingHopper } from '@engine/robot/slidingHopper';
@@ -54,14 +55,22 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.97, width: W * 0.97, height: hopH, m: smoke });
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.06, sz * W * 0.485], [L * 0.96, 0, 0], [0, 0.05, 0], { cells: 8, w: 0.012, m: teal, zig: true });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.485, bt, sz * W * 0.485], [sx * L * 0.485, H - 0.01, sz * W * 0.485], 0.02, tealTube);
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
+  // TBA 2026 front/rear views: teal triangulated corner strips and black sponsor panels.
+  for (const sz of [-1, 1]) {
+    for (const sx of [-1, 1]) lattice(k.visual, [sx * L * .48 - .022, bt, sz * W * .488], [.044, 0, 0], [0, H - bt - .01, 0], { cells: 7, w: .008, m: teal, zig: true });
+    decal(k.visual, 'fabworks.', { w: L * .42, h: .055, x: -.08, y: H - .15, z: sz * W * .491, rotY: sz > 0 ? 0 : Math.PI });
+    decal(k.visual, 'RIPCURRENT', { w: .18, h: .035, x: .10, y: bt + .06, z: sz * W * .491, rotY: sz > 0 ? 0 : Math.PI });
+  }
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-(L*.05),z) > .15 });
   // Dye rotor: pocketed spinning plate in a fenced tub, spiral guide wall into the open tower under the turret.
   const rr = Math.min(L, W) * 0.44;
   const dye = dyeRotor(k.visual, { x: L * 0.05, y0: bt + 0.02, R: rr, wallH: 0.1, towerX: L * 0.05, towerR: 0.09, towerTop: H - 0.08, plate: black, accent: teal, motors: 2 });
+  const cadColumn = adaptedRotorColumn(k.visual, { x: L * 0.05, y0: bt + .02, top: H - .08, radius: .085, color: 0x17a3b3 });
+  if (cadColumn) dye.tower.visible = false;
   const t = k.turret;
   t.position.set(L * 0.05, H - 0.07, 0);
   // Pancake turret: wide black disc with a teal ring, shooter on top.
-  const sh = turretShooter(t, { width: Math.max(0.19, 0.16 + 0.04), wheel: mat(0xb87333, { metal: 0.8, rough: 0.3 }), plate: black, accent: teal, height: 0.15, topY: 0.06 });
+  const sh = adaptedTurretShooter(t, { width: .20, topY: .06, color: 0x17a3b3 }) ?? turretShooter(t, { width: Math.max(0.19, 0.16 + 0.04), wheel: mat(0xb87333, { metal: 0.8, rough: 0.3 }), plate: black, accent: teal, height: 0.15, topY: 0.06 });
   // Smoked hopper extension that slides out over the deployed intake.
   const tray = new THREE.Group();
   k.visual.add(tray);
@@ -87,6 +96,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
       spin(dye.floor, rotorRate, s.dt, 'y');
       for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
       sh.update(s);
+      cadColumn?.update(s);
     },
   };
 });
@@ -119,25 +129,36 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
     decal(k.visual, 'AT', { w: 0.07, h: 0.05, x: 0, y: H - 0.15, z, rotY });
     decal(k.visual, 'MADTOWN', { w: 0.15, h: 0.035, x: L * 0.22, y: H - 0.16, z, rotY });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
-  // Dye rotor on the floor feeding the turret column; the turret sits forward of center so the folded blocker clears it.
-  const tx = -side * L * 0.2;
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x,z) > .15 });
+  // Concentric floor rotor, feed column and turret bearing at the center of the chassis.
+  const tx = 0;
   const rr = Math.min(L, W) * 0.42;
   const dye = dyeRotor(k.visual, { x: 0, y0: bt + 0.02, R: rr, wallH: 0.09, towerX: tx, towerR: 0.085, towerTop: H - 0.08, plate: black, accent: blue, motors: 2, motorSide: 1 });
+  const cadColumn = adaptedRotorColumn(k.visual, { x: tx, y0: bt + .02, top: H - .08, radius: .085, color: 0x2d6fe0 });
+  if (cadColumn) dye.tower.visible = false;
   const t = k.turret;
   t.position.set(tx, H - 0.07, 0);
-  const sh = turretShooter(t, { width: Math.max(0.19, 0.15 + 0.04), wheel: mat(0x2b2d31, { rough: 0.7 }), plate: black, accent: blue, height: 0.15, topY: 0.06 });
-  // Shot blocker: a slatted panel on a hinge along the top edge of the intake side (local +x of the hinge = outward).
+  const sh = adaptedTurretShooter(t, { width: .20, topY: .06, color: 0x2d6fe0 }) ?? turretShooter(t, { width: Math.max(0.19, 0.15 + 0.04), wheel: mat(0x2b2d31, { rough: 0.7 }), plate: black, accent: blue, height: 0.15, topY: 0.06 });
+  // Photo reference: horizontal slotted shield carried by an upright lifting frame.
   const b = c.shotBlocker!;
-  const len = Math.hypot(b.reach, b.rise);
-  const out = Math.atan2(b.rise, b.reach);
+  const len = b.reach;
   const hinge = pivot(k.visual, side * L / 2, H);
+  hinge.name = 'madtown-blocker-lift';
   const panel = new THREE.Group();
+  panel.name = 'madtown-blocker-shield';
   hinge.add(panel);
   for (const z of [-b.width / 2, b.width / 2]) bar(panel, [0, 0, z], [len, 0, z], 0.02, blackTube);
   for (let i = 0; i <= 4; i++) bar(panel, [(len * i) / 4, 0, -b.width / 2], [(len * i) / 4, 0, b.width / 2], 0.015, black);
   for (let i = 1; i < 8; i++) box(panel, len, 0.006, 0.012, black, len / 2, 0.005, -b.width / 2 + (b.width * i) / 8);
-  roller(hinge, 0.018, b.width + 0.04, blue);
+  const liftPosts: THREE.Mesh[] = [];
+  const blockerWall = box(k.visual,.008,1,b.width,black,side*L/2,H,0);
+  blockerWall.name = 'madtown-blocker-wall';
+  for (const z of [-b.width*.42,b.width*.42]) {
+    bar(k.visual,[side*(L/2-.025),bt,z],[side*(L/2-.025),H-.025,z],.026,blackTube);
+    const post = box(k.visual,.018,1,.018,k.mats.alu,side*(L/2-.025),H,z);
+    liftPosts.push(post);
+    roller(k.visual,.027,.026,black,side*(L/2-.025),H-.05,z);
+  }
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blackTube });
   const slide = slidingHopper(k);
   const deploy = { v: 0 };
@@ -156,9 +177,19 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
       spin(dye.floor, rotorRate, s.dt, 'y');
       for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
       sh.update(s);
-      // Same pose as the collider in Robot.poseBlocker: folded inward (π) → out at atan2(rise, reach).
-      const phi = Math.PI - s.blocker * (Math.PI - out);
-      hinge.rotation.z = Math.atan2(Math.sin(phi), side * Math.cos(phi));
+      cadColumn?.update(s);
+      hinge.position.set(side*L/2,H+b.rise*s.blocker,0);
+      // Pack the slotted shield into the intake-side bay so the centered hood can turn while stowed.
+      const shieldLength = .55+.45*s.blocker;
+      panel.position.x = side*b.reach*(s.blocker-1)*shieldLength;
+      panel.scale.x = side*shieldLength;
+      blockerWall.visible = s.blocker>.02;
+      blockerWall.scale.y = Math.max(.001,b.rise*s.blocker);
+      blockerWall.position.y = H+b.rise*s.blocker/2;
+      for (const post of liftPosts) {
+        post.scale.y = .03+b.rise*s.blocker;
+        post.position.y = H-.015+b.rise*s.blocker/2;
+      }
     },
   };
 });
@@ -195,25 +226,28 @@ registerRobotModel('overload-254', (k: ModelKit) => {
     }
     decal(k.visual, 'NASA', { w: 0.11, h: 0.11, round: true, background: '#1d4fa3', x: hx + hl * 0.36, y: H - 0.13, z, rotY });
   }
+  const legacyShooter = new THREE.Group(); k.visual.add(legacyShooter);
   // Shooter across the full width at the front: a wall of pocketed black plates, long rollers along the top.
   const sx = L / 2 - 0.09;
   const shooterPts: [number, number][] = [[-0.08, bt], [0.08, bt], [0.08, H - 0.12], [0.02, H - 0.02], [-0.08, H - 0.02]];
   const wheels: THREE.Group[] = [];
   for (let i = 0; i < 4; i++) {
     const z = -W * 0.45 + (i * W * 0.9) / 3;
-    const p = plate(k.visual, shooterPts, 0.008, black, z, [[0, bt + 0.08, 0.03], [0, (bt + H) / 2, 0.035], [0.02, H - 0.1, 0.025]]);
+    const p = plate(legacyShooter, shooterPts, 0.008, black, z, [[0, bt + 0.08, 0.03], [0, (bt + H) / 2, 0.035], [0.02, H - 0.1, 0.025]]);
     p.position.x = sx;
   }
-  wheels.push(roller(k.visual, 0.045, W * 0.92, black, sx + 0.02, H - 0.08), roller(k.visual, 0.035, W * 0.92, black, sx - 0.07, H - 0.04));
+  wheels.push(roller(legacyShooter, 0.045, W * 0.92, black, sx + 0.02, H - 0.08), roller(legacyShooter, 0.035, W * 0.92, black, sx - 0.07, H - 0.04));
   const flywheel = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 24), mat(0x8a9099, { metal: 0.8, rough: 0.3 }));
   flywheel.rotation.x = Math.PI / 2;
   flywheel.position.set(sx - 0.01, (bt + H) / 2, W * 0.47);
-  k.visual.add(flywheel);
-  for (const sz of [-1, 1]) bar(k.visual, [sx - 0.08, H - 0.015, sz * W * 0.47], [sx + 0.08, H - 0.015, sz * W * 0.47], 0.02, blueTube);
-  bar(k.visual, [sx - 0.08, H - 0.015, -W * 0.47], [sx - 0.08, H - 0.015, W * 0.47], 0.02, blueTube);
-  box(k.visual, 0.2, 0.015, W * 0.9, black, sx - 0.03, H - 0.14, 0);
-  const hood = pivot(k.visual, sx + 0.04, H - 0.06);
+  legacyShooter.add(flywheel);
+  for (const sz of [-1, 1]) bar(legacyShooter, [sx - 0.08, H - 0.015, sz * W * 0.47], [sx + 0.08, H - 0.015, sz * W * 0.47], 0.02, blueTube);
+  bar(legacyShooter, [sx - 0.08, H - 0.015, -W * 0.47], [sx - 0.08, H - 0.015, W * 0.47], 0.02, blueTube);
+  box(legacyShooter, 0.2, 0.015, W * 0.9, black, sx - 0.03, H - 0.14, 0);
+  const hood = pivot(legacyShooter, sx + 0.04, H - 0.06);
   hoodShell(hood, 0.05, W * 0.9, black);
+  const cadShooter = adaptedDumper(k.visual, { x: sx + .02, y: H - .065, width: W * .92, color: 0x141518 });
+  legacyShooter.visible = !cadShooter;
   // Intake slides out the back on blue truss rails.
   const slide = new THREE.Group();
   k.visual.add(slide);
@@ -257,6 +291,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       // Dumper hood: lies flat until the driver shoots, then lifts to the solved angle (range-dependent).
       hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = hoodAng;
+      cadShooter?.update(s);
       hooks.set(s.climb);
     },
   };
@@ -274,12 +309,30 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const gray = mat(0x3a3e45, { metal: 0.45, rough: 0.45 });
   const db = drivebase(k, { motorRing: 0x3a8dde });
   const top = H - 0.07;
-  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.92, width: W * 0.92, height: top - bt, m: mat(0x69717b, { opacity: 0.28, rough: 0.5, metal: 0 }), frame: gray });
+  const mount = c.launcher.mounts?.[0] ?? { forward: L*.27, side: -W*.27 };
+  const tx = mount.forward, tz = -mount.side;
+  const deckY = H-.315;
+  const lowTop = deckY + .015;
+  const clear = mat(0x69717b, { opacity: 0.28, rough: 0.5, metal: 0 });
+  // The intake/back and far walls are tall; the turret corner has low clear walls.
+  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.92, width: W * 0.92, height: lowTop - bt, m: clear, frame: gray });
+  box(k.visual, L*.92, top-lowTop, .006, clear, 0, (top+lowTop)/2, -W*.46);
+  box(k.visual, .006, top-lowTop, W*.92, clear, -L*.46, (top+lowTop)/2, 0);
+  // Keep the rest of both adjacent faces enclosed: only the turret corner is lowered.
+  const sideEnd = tx-.24, frontEnd = tz-.24;
+  const sideLength = sideEnd+L*.46, frontWidth = frontEnd+W*.46;
+  const upperHopper = new THREE.Group(); upperHopper.name = 'kepler-upper-hopper'; k.visual.add(upperHopper);
+  box(upperHopper,sideLength,top-lowTop,.006,clear,(sideEnd-L*.46)/2,(top+lowTop)/2,W*.46);
+  box(upperHopper,.006,top-lowTop,frontWidth,clear,L*.46,(top+lowTop)/2,(frontEnd-W*.46)/2);
+  for (const z of [-W*.46,W*.46]) bar(upperHopper,[-L*.46,top,z],[sideEnd,top,z],.018,gray);
+  bar(upperHopper,[sideEnd,lowTop,W*.46],[sideEnd,top,W*.46],.018,gray);
+  bar(upperHopper,[L*.46,lowTop,frontEnd],[L*.46,top,frontEnd],.018,gray);
+  bar(upperHopper,[L*.46,top,-W*.46],[L*.46,top,frontEnd],.018,gray);
   // X-lattice walls on all four sides.
-  for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.47, bt, sz * W * 0.47], [L * 0.94, 0, 0], [0, top - bt, 0], { cells: 5, w: 0.014, m: black });
-  for (const sx of [-1, 1]) lattice(k.visual, [sx * L * 0.47, bt, -W * 0.47], [0, 0, W * 0.94], [0, top - bt, 0], { cells: 4, w: 0.014, m: black });
+  for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.47, bt, sz * W * 0.47], [L * 0.94, 0, 0], [0, (sz>0?lowTop:top) - bt, 0], { cells: 5, w: 0.014, m: black });
+  for (const sx of [-1, 1]) lattice(k.visual, [sx * L * 0.47, bt, -W * 0.47], [0, 0, W * 0.94], [0, (sx>0?lowTop:top) - bt, 0], { cells: 4, w: 0.014, m: black });
   box(k.visual, L * 0.92, 0.006, W * 0.92, gray, 0, bt + 0.01, 0);
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-tx,z-tz) > .23 });
   // Curved lattice arch over the front half.
   const arch: [number, number, number][] = [];
   for (let i = 0; i <= 8; i++) {
@@ -287,21 +340,29 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
     arch.push([L * 0.32 + Math.sin(a) * 0.06, top + Math.sin(a) * 0.04, -W * 0.47 * Math.cos(a)]);
   }
   for (let i = 0; i < 8; i++) {
+    // Keep the corner aperture open throughout the turret and hood sweep.
+    if (arch[i][2] > tz-.23 || arch[i+1][2] > tz-.23) continue;
     bar(k.visual, arch[i], arch[i + 1], 0.014, black);
     bar(k.visual, [arch[i][0] - 0.14, arch[i][1] - 0.02, arch[i][2]], [arch[i + 1][0] - 0.14, arch[i + 1][1] - 0.02, arch[i + 1][2]], 0.014, black);
     bar(k.visual, arch[i], [arch[i + 1][0] - 0.14, arch[i + 1][1] - 0.02, arch[i + 1][2]], 0.01, black);
   }
-  // Turret at the front (opposite the back intake), inside the arch, on an 8 in bearing over a deck.
-  const tx = L * 0.17;
+  // Right corner opposite the intake, on an 8 in bearing over a compact deck.
   const t = k.turret;
-  t.position.set(tx, top + 0.01, 0);
+  t.position.set(tx, top + 0.01, tz);
   // Deck under the turret plate, bolted to the lattice walls.
-  box(k.visual, 0.3, 0.008, W * 0.94, gray, tx, top + 0.01 - 0.19 - 0.065, 0);
-  const sh = turretShooter(t, { width: Math.max(0.19, 0.14 + 0.04), wheel: gray, plate: black, accent: gray, height: 0.15, topY: 0.06 });
+  box(k.visual, 0.3, 0.008, .29, gray, tx, deckY, tz);
+  // Carry the imported bearing plate down to the deck; the hopper walls brace the fixed pedestal.
+  for (const z of [tz-.10, tz+.10]) {
+    bar(k.visual, [tx, bt, z], [tx, H-.31, z], .022, gray);
+    bar(k.visual, [tx-.12, bt, z], [tx, H-.31, z], .016, gray);
+  }
+  const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(.102, .11, .124, 32, 1, true), gray);
+  pedestal.position.set(tx, H-.253, tz); k.visual.add(pedestal);
+  const sh = adaptedTurretShooter(t, { width: .20, topY: .06, color: 0x3a3e45 }) ?? turretShooter(t, { width: Math.max(0.19, 0.14 + 0.04), wheel: gray, plate: black, accent: gray, height: 0.15, topY: 0.06 });
   // Exposed spur gear driving the flywheel (Kepler's shooter is gear-driven, no belts).
   const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.012, 18), k.mats.alu);
   gear.rotation.x = Math.PI / 2;
-  gear.position.set(-0.05, 0.09, 0.13);
+  gear.position.copy(sh.flywheel.position).add(new THREE.Vector3(0, 0, .13));
   sh.flywheel.parent!.add(gear);
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black });
   const slide = slidingHopper(k);
@@ -313,11 +374,15 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
     lightAt: [-L * 0.4, top, W * 0.3],
     flow: {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
-      stow: pile.stow,
-      // Floor belts carry FUEL forward under the arch, then the tower lifts it into the turret.
+      stow: () => {
+        const p = pile.stow();
+        if (Math.hypot(p.x-tx,p.z-tz) < .23) p.x = tx-.24;
+        return p;
+      },
+      // Floor belts carry FUEL diagonally toward the corner bearing, then lift it into the turret.
       feed: () => {
         const z = jitter(W * 0.5);
-        return [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, z), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, z * 0.3), new THREE.Vector3(tx, top - 0.06, 0), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)];
+        return [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, z), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, tz + z * 0.15), new THREE.Vector3(tx, top - 0.06, tz), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)];
       },
     },
     update(s) {
@@ -326,7 +391,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
       { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       sh.update(s);
-      spin(gear, flywheelSpeed(s) * 0.6, s.dt, 'y');
+      spin(gear, flywheelSpeed(s) * 0.6, s.dt, 'z');
       hooks.set(s.climb);
     },
   };
@@ -552,20 +617,23 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
     lattice(k.visual, [ax, bt, sz * (W / 2 - 0.03)], [side * 0.1, H - bt - 0.1, -sz * (W / 2 - 0.1)], [side * 0.04, 0, 0], { cells: 4, w: 0.008, m: teal, zig: true, border: false });
   }
   bar(k.visual, [ax + side * 0.12, H, -0.06], [ax + side * 0.12, H, 0.06], 0.025, orangeTube);
+  const legacyShooter = new THREE.Group(); k.visual.add(legacyShooter);
   // Wide multi-lane shooter at the front with a top feeder roller and two big flywheels.
   const sx = -side * (L / 2 - 0.1);
-  for (const sz of [-1, 0, 1]) plate(k.visual, [[sx - 0.08, bt + 0.05], [sx + 0.08, bt + 0.05], [sx + 0.08, H - 0.1], [sx, H - 0.03], [sx - 0.08, H - 0.03]], 0.008, black, sz * W * 0.4, [[sx, (bt + H) / 2, 0.035]]);
-  const wheels = [roller(k.visual, 0.05, W * 0.85, black, sx, H - 0.12), roller(k.visual, 0.03, W * 0.85, mat(0xa9afb7, { metal: 0.6 }), sx + side * 0.08, H - 0.06)];
+  for (const sz of [-1, 0, 1]) plate(legacyShooter, [[sx - 0.08, bt + 0.05], [sx + 0.08, bt + 0.05], [sx + 0.08, H - 0.1], [sx, H - 0.03], [sx - 0.08, H - 0.03]], 0.008, black, sz * W * 0.4, [[sx, (bt + H) / 2, 0.035]]);
+  const wheels = [roller(legacyShooter, 0.05, W * 0.85, black, sx, H - 0.12), roller(legacyShooter, 0.03, W * 0.85, mat(0xa9afb7, { metal: 0.6 }), sx + side * 0.08, H - 0.06)];
   for (const sz of [-1, 1]) {
     const fly = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.025, 24), mat(0xa9afb7, { metal: 0.7, rough: 0.3 }));
     fly.rotation.x = Math.PI / 2;
     fly.position.set(sx, (bt + H) / 2, sz * (W / 2 - 0.02));
-    k.visual.add(fly);
+    legacyShooter.add(fly);
     wheels.push(fly as unknown as THREE.Group);
   }
-  box(k.visual, 0.2, 0.015, W * 0.82, black, sx + side * 0.02, H - 0.18, 0);
-  const hood = pivot(k.visual, sx - side * 0.05, H - 0.1);
+  box(legacyShooter, 0.2, 0.015, W * 0.82, black, sx + side * 0.02, H - 0.18, 0);
+  const hood = pivot(legacyShooter, sx - side * 0.05, H - 0.1);
   hoodShell(hood, 0.05, W * 0.85, black);
+  const cadShooter = adaptedDumper(k.visual, { x: sx, y: H - .065, width: W * .92, color: 0x17181b });
+  legacyShooter.visible = !cadShooter;
   // Intake on the back that retracts while shooting (compacting the FUEL).
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: blackTube });
   const slide = slidingHopper(k);
@@ -597,6 +665,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
       for (const f of wheels.slice(2)) spin(f, fs, s.dt, 'y');
       hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = -side * hoodAng;
+      cadShooter?.update(s);
       hooks.set(s.climb);
     },
   };

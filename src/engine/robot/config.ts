@@ -87,8 +87,9 @@ export interface RobotConfig {
    * Optional defensive SHOT BLOCKER: a panel hinged on the top edge of the intake side (so it extends over the same
    * side as the intake) that swings out and up over an adjacent robot's shooter. `reach` = horizontal extension past
    * the frame perimeter, `rise` = how far its outer edge ends above `height`, `seconds` = deploy/stow time.
+   * `lift` keeps the shield horizontal on upright supports with a solid vertical blocking wall.
    */
-  shotBlocker?: { reach: number; rise: number; width: number; seconds: number };
+  shotBlocker?: { reach: number; rise: number; width: number; seconds: number; mechanism?: 'lift' };
   hopperCapacity: number;
   preload: number;
 

@@ -10,7 +10,7 @@ import { handoffPoint } from '../src/engine/robot/handoff';
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
-import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2024_MODEL_IDS, CAD_2025_MODEL_IDS } from '../src/engine/robot/cadModels';
+import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2024_MODEL_IDS, CAD_2025_MODEL_IDS, ADAPTED_CAD_MODEL_IDS } from '../src/engine/robot/cadModels';
 await prepareCadModels();
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -63,7 +63,7 @@ function build() {
   const grid = document.querySelector('#grid')!;
   grid.innerHTML = '';
   const s = SEASONS.find(s => s.id === seasonSelect.value)!;
-  const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS];
+  const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS];
   const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || detailedIds.includes(t.config.model ?? '')).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
   for (const [index, entry] of configs.entries()) {
     const el = document.createElement('div'); el.className = 'card';
@@ -78,7 +78,8 @@ function build() {
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(20,20), new THREE.MeshStandardMaterial({color:0xd7dbe3,roughness:0.95})); floor.rotation.x = -Math.PI/2; floor.position.y=-0.006; scene.add(floor);
     const physics = new PhysicsWorld(R);
     const robot = new Robot(physics, scene, new FieldFrame(0,0), cloneConfig(entry.config), red ? 'red' : 'blue', index, 1, {x:0,y:0,yaw:0});
-    el.dataset.geometry = robot.visual.getObjectByName(`cad-${entry.config.model}`) ? 'cad' : 'procedural';
+    let adapted = false; robot.visual.traverse(o => { if(o.userData.cadDonor) adapted = true; });
+    el.dataset.geometry = robot.visual.getObjectByName(`cad-${entry.config.model}`) ? 'cad' : adapted ? 'adapted-cad' : 'procedural';
     robot.projectile = { radius: s.gamePiece.radius, airDamping: s.gamePiece.airDamping ?? 0.02 };
     s.configureRobot?.(robot);
     const token = pieceToken(s);

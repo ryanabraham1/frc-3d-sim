@@ -4,8 +4,7 @@ import { fillBlock, hopperWalls, mat, type ModelKit } from './models';
 /**
  * Sliding hopper extension (2026 REBUILT): most real robots had a hopper section that slides out over the deployed
  * intake and is pulled back by surgical tubing when the intake stows. It is part of the hopper, so it holds FUEL too:
- * a small loaded pile rides in it while it is out and the robot is carrying FUEL. Visual only; capacity still comes
- * from the config. Call `set(deploy, fill)` (deploy 0 = stowed, 1 = intake down; fill 0-1) from the model's update.
+ * a small loaded pile rides in it while it is out and the robot is carrying FUEL. Its pile counts toward the robot's real capacity (see Robot.fitCapacityToHopper). Call `set(deploy, fill)` (deploy 0 = stowed, 1 = intake down; fill 0-1) from the model's update.
  */
 export function slidingHopper(k: ModelKit, o: { wall?: THREE.Material; frame?: THREE.Material; length?: number } = {}): { set(deploy: number, fill?: number): void } {
   const c = k.config, side = k.groundSide;
@@ -21,7 +20,7 @@ export function slidingHopper(k: ModelKit, o: { wall?: THREE.Material; frame?: T
     set(d, fill = 0) {
       g.position.x = side * d * 0.2;
       // FUEL rides in the extension once it is out; it drains back into the main hopper as it retracts.
-      pile.set(d > 0.35 ? Math.min(1, fill * 1.4) : 0);
+      pile.set(d > 0.35 ? Math.min(1, fill) : 0);
     },
   };
 }

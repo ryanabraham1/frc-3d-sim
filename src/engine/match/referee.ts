@@ -2,7 +2,7 @@ import { Alliance, opponent } from '../coords';
 import type { SeasonContext } from '../core/season';
 import type { Robot } from '../robot/robot';
 import type { CardKind, FoulKind, FoulRecord } from './scoreboard';
-import { robotContacts, robotsTouching } from './pinning';
+import { robotsTouching } from './pinning';
 
 /**
  * THE REFEREE. Everything a head referee would call from what the robots physically did, in one place so every
@@ -11,8 +11,6 @@ import { robotContacts, robotsTouching } from './pinning';
  *  - `call` writes the foul (and card) to the scoreboard, tells the players; cards never disable robots;
  *  - `ContactTracker` finds robot-to-robot hits through the real Rapier contacts, with the closing speed and who
  *    drove into whom;
- *  - "This isn't combat robotics": a hard hit on an opponent who is braced against a FIELD element, or the same
- *    robot smashing the same opponent again and again;
  *  - "Don't tip or entangle": driving into an opponent that has started to tip, tipping the same robot twice, or
  *    pushing a robot that is lying on its side;
  *  - "Don't collude": two or more partners shutting something down for 3 s (`blockade`);
@@ -21,14 +19,11 @@ import { robotContacts, robotsTouching } from './pinning';
  *  - `touching`: contact between two robots, direct or transitively through a SCORING ELEMENT both are touching, which
  *    is what the manuals' "protection" rules (TOWER, CAGE, ZONES, STAGE ...) are written in terms of.
  *
- * The sim has no damage model, so the rules that need damage ("damage or functionally impair") are judged on what a
- * referee would have seen: how hard the hit was and what the opponent was pressed against.
+ * Ramming penalties are not enforced; physical collisions still use the normal physics model.
  */
 
 /** Rule numbers of the generic calls, season by season. */
 export interface RefereeRules {
-  /** "This isn't combat robotics" (2024 G418 · 2025 G423). Omitted = not called (2026 G416 is too hard to judge). */
-  combat?: string;
   /** "Don't tip or entangle" (2024 G419 · 2025 G424 · 2026 G417). */
   tip: string;
   /** "Don't collude with your partners to shut down major parts of game play" (2024 G421 · 2025 G426 · 2026 G419). */
@@ -67,21 +62,6 @@ export interface Hit {
   nx: number;
   ny: number;
 }
-
-// Hits and what they are worth. Bumper-to-bumper contact at full speed is normal FRC ("driving at high speed makes
-// BUMPER to BUMPER contact with an opponent" is explicitly not reckless); what gets called is a robot that drives into
-// an opponent who cannot give way, or does it over and over.
-/** Closing speed (m/s) of a hit on a robot pressed against a FIELD element that a referee would call. */
-export const RAM_BRACED_SPEED = 3.2;
-/** Closing speed (m/s) of a hit that counts toward a "repeatedly smashing" call. */
-export const RAM_REPEAT_SPEED = 2.6;
-/** The same robot has to hit the same opponent this many times, within RAM_REPEAT_WINDOW seconds. */
-export const RAM_REPEAT_COUNT = 3;
-export const RAM_REPEAT_WINDOW = 10;
-/** The robot that did the driving must have been closing at least this fast (m/s) to have "initiated" the hit. */
-export const RAM_INITIATOR_SPEED = 1.0;
-/** Seconds before the same robot can be called again for ramming the same opponent. */
-export const RAM_COOLDOWN = 8;
 
 /** Chassis tilt (uprightness) at which a robot "starts to tip". */
 export const TIP_STARTS = 0.9;
@@ -168,8 +148,6 @@ interface Flight {
 
 export class Referee {
   readonly contacts = new ContactTracker();
-  private readonly cooldown = new Map<string, number>();
-  private readonly smashes = new Map<string, number[]>();
   private readonly tilt = new Map<number, { since: number | null; tipped: boolean }>();
   private readonly tips = new Map<string, number>();
   private readonly pushing = new Map<string, number>();
@@ -187,7 +165,7 @@ export class Referee {
   /** A fresh match: forget all tracked violations. */
   reset(): void {
     this.contacts.reset();
-    for (const m of [this.cooldown, this.smashes, this.tilt, this.tips, this.pushing, this.blockades, this.flights, this.ejections, this.shotCooldown] as Map<unknown, unknown>[]) m.clear();
+    for (const m of [this.tilt, this.tips, this.pushing, this.blockades, this.flights, this.ejections, this.shotCooldown] as Map<unknown, unknown>[]) m.clear();
     this.pushCalled.clear();
   }
 
@@ -211,25 +189,17 @@ export class Referee {
     return rec;
   }
 
-  /** Is `key` still cooling down? Starts the cooldown when it is not. */
-  private cool(k: string, seconds: number, now: number): boolean {
-    if ((this.cooldown.get(k) ?? -Infinity) > now) return true;
-    this.cooldown.set(k, now + seconds);
-    return false;
-  }
-
   // ─────────────────────────────── per step ───────────────────────────────
 
   /** Call once per physics step, after stepping. */
   update(dt: number): void {
     const { clock, robots, physics } = this.ctx;
     const now = clock.elapsed;
-    const hits = this.contacts.update(robots, physics, now);
+    this.contacts.update(robots, physics, now);
     if (!clock.started || clock.finished || clock.mode === 'disabled') {
       this.flights.clear();
       return;
     }
-    for (const h of hits) this.onHit(h, now);
     this.updateTips(dt, now);
     this.updateShots(dt, now);
   }
@@ -265,38 +235,6 @@ export class Referee {
       if (near(a, p) && near(b, p) && touches(i, a) && touches(i, b)) return true;
     }
     return false;
-  }
-
-  // ─────────────────────────────── "this isn't combat robotics" ───────────────────────────────
-
-  /** Is `victim` pressed against something (a wall, a FIELD element, another robot) in the direction it is being pushed? */
-  private braced(victim: Robot, nx: number, ny: number): boolean {
-    return robotContacts(this.ctx.physics, victim).some((c) => c.nx * nx + c.ny * ny >= 0.6);
-  }
-
-  private onHit(h: Hit, now: number): void {
-    if (h.a.isClimbing || h.b.isClimbing || h.a.tippedOver || h.b.tippedOver) return;
-    const aDrove = h.aToward >= h.bToward;
-    const attacker = aDrove ? h.a : h.b, victim = aDrove ? h.b : h.a;
-    const drove = aDrove ? h.aToward : h.bToward;
-    if (!this.rules.combat || drove < RAM_INITIATOR_SPEED || !attacker.enabled) return;
-    const dirx = aDrove ? h.nx : -h.nx, diry = aDrove ? h.ny : -h.ny;
-    const pair = `${attacker.id}>${victim.id}`;
-
-    if (h.closing >= RAM_BRACED_SPEED && this.braced(victim, dirx, diry)) {
-      if (this.cool(`ram:${pair}`, RAM_COOLDOWN, now)) return;
-      this.call({ rule: this.rules.combat!, kind: 'major', card: 'yellow', robot: attacker, note: `rammed ${victim.config.teamNumber} at ${h.closing.toFixed(1)} m/s while it was pressed against the FIELD` });
-      return;
-    }
-    if (h.closing >= RAM_REPEAT_SPEED) {
-      const times = (this.smashes.get(pair) ?? []).filter((t) => now - t <= RAM_REPEAT_WINDOW);
-      times.push(now);
-      this.smashes.set(pair, times);
-      if (times.length >= RAM_REPEAT_COUNT && !this.cool(`ram:${pair}`, RAM_COOLDOWN, now)) {
-        this.smashes.set(pair, []);
-        this.call({ rule: this.rules.combat!, kind: 'major', card: 'yellow', robot: attacker, note: `repeatedly smashed into ${victim.config.teamNumber}` });
-      }
-    }
   }
 
   // ─────────────────────────────── "don't tip or entangle" ───────────────────────────────

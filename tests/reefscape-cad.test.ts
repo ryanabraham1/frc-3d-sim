@@ -26,13 +26,22 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
   for(const name of ['frame','arm','carriage','elevator-stage',id==='wildstang-111'?'coral-head':'effector'])expect(root.getObjectByName(name)).toBeTruthy();
   setCadAnimationEnabled(true);model.update(idle);visual.updateMatrixWorld(true);
   if(id==='firefly-118'){const latch=root.getObjectByName('climber-latch')!;expect(latch.parent?.name).toBe('cad-climber-pivot');const stowed=new THREE.Box3().setFromObject(latch,true);expect(stowed.max.x).toBeLessThan(config.frameLength/2);}
-  if(['subzero-1778','zuma-581'].includes(id))expect(model.coralAxis).toEqual(id==='zuma-581'?[1,0,0]:[0,0,1]);
+  if(id==='subzero-1778')expect(model.coralAxis).toEqual([0,0,1]);
+  const rigidHead=root.getObjectByName('cad-effector-pivot');
+  const headBind=rigidHead?.quaternion.clone();
   const initial=model.heldAnchor!.getWorldPosition(new THREE.Vector3());
   const fixed=root.getObjectByName('frame')!.matrixWorld.clone();
   const poses=[{height:.45,forward:.3,level:1},{height:1.75,forward:.7,level:4},{height:2.03,forward:.45,level:3,algae:true},{height:.45,forward:.3,level:1,handoff:.5}];
   for(const pose of poses){
     for(let n=0;n<30;n++)model.update({...idle,dt:.03,enabled:true,intaking:true,climb:n/29,place:pose});
     visual.updateMatrixWorld(true);expect(root.getObjectByName('frame')!.matrixWorld.equals(fixed)).toBe(true);
+    if(id==='zuma-581'){
+      expect(Math.abs(rigidHead!.quaternion.dot(headBind!)),'581 has no independent wrist rotation').toBeCloseTo(1,6);
+      const direction=new THREE.Vector3(...model.coralAxis!).applyQuaternion(model.heldAnchor!.getWorldQuaternion(new THREE.Quaternion()));
+      const arm=root.getObjectByName('cad-arm-pivot')!;
+      const armDirection=new THREE.Vector3(0,1.3651-1.828,-.3895-.00035).normalize().applyQuaternion(arm.getWorldQuaternion(new THREE.Quaternion()));
+      expect(direction.dot(armDirection),'CORAL crosses the arm rather than tracking the roller shafts').toBeCloseTo(0,6);
+    }
     root.traverse(o=>expect(o.matrixWorld.elements.every(Number.isFinite)).toBe(true));
     const bound=new THREE.Box3().setFromObject(root,true);
     expect(bound.min.y,'CAD should clear the carpet').toBeGreaterThan(-.04);

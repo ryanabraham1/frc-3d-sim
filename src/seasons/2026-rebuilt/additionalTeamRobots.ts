@@ -1,3 +1,4 @@
+import { adaptedDumper } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, deployableIntake, drivebase, fillBlock, flowAt, hoodShell, hopperStow, hopperWalls, lattice, mat, overBumperIntake, type ModelKit, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat } from '@engine/robot/models';
@@ -137,6 +138,8 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
   const overspeed=roller(drum,.076,.025,mat(0xb7a146,{metal:.8}),-.05,.02,W*.47);
   const hood=pivot(drum,.01,.015);hoodShell(hood,.065,W*.87,black);
   for(const sign of [-1,1]) {motor(drum,-.075,-.015,sign*W*.47);belt(drum,[-.075,-.015],[.01,.015],sign*W*.455);}
+  const cadShooter=adaptedDumper(k.visual,{x:L*.31+.01,y:H-.065,width:W*.90,color:0x8f969e});
+  drum.visible=!cadShooter;
   const conveyor: THREE.Group[]=[];
   for(let i=0;i<7;i++) {
     const x=-L*.4+i*L*.095,y=bt+.035+i*.012;
@@ -149,8 +152,8 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
   let deploy=0,angle=0;
   return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
-      feed:(shot=0)=>{const exits=launcherExitOffsets(c),z=-exits[shot%exits.length];return [new THREE.Vector3(-L*.35,bt+.04+r,z),new THREE.Vector3(L*.22,bt+.12+r,z),flowAt(k,fly,-.09,-.02,z),flowAt(k,fly,.02,.04,z)];}},
-    update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
+      feed:(shot=0)=>{const exits=launcherExitOffsets(c),z=-exits[shot%exits.length];return [new THREE.Vector3(-L*.35,bt+.04+r,z),new THREE.Vector3(L*.22,bt+.12+r,z),flowAt(k,cadShooter?.flywheel ?? fly,-.09,-.02,z),flowAt(k,cadShooter?.flywheel ?? fly,.02,.04,z)];}},
+    update(s){cadShooter?.update(s);db.update(s);fill.set(s.fill);pile.setFill(s.fill);
       deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
       for(const wheel of [fly,overspeed,...conveyor])spin(wheel,s.enabled?40+60*s.firing:0,s.dt);

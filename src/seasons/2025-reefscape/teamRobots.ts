@@ -350,6 +350,10 @@ export function reefscapeTeamRobots(): TeamRobot[] {
       description: '2910 Jack in the Bot (2025 World Champions). Pivot + two-stage telescoping arm + wrist with one end effector for CORAL and ALGAE (L1–L4, NET, PROCESSOR), picks CORAL off the floor, brass ballast up front, 1.5 s deep climb.',
       source: 'Onshape "Spectre: 2025 FIRST World Championship robot"; frcteam2910.org 2025 recap',
       config: teamConfig(2910, 'spectre-2910', { coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, (c) => {
+        c.frameLength=.7112;c.frameWidth=.6604;c.height=.54; // measured source frame, stow height fit
+        c.intake.groundSide='front';c.intake.stationSide='front';
+        c.placement!.scoreSide='ends';
+        c.climber.gripOffset=[-.43,0];
         c.climber.secondsToClimb = 1.5;
         c.placement!.liftSpeed = 1.6; // [EST]
         c.placement!.handoffSeconds = 0; // the end effector itself picks CORAL off the carpet

@@ -8,6 +8,8 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { cloneConfig } from '../src/engine/robot/config';
 import { IDLE_COMMAND, Robot, type RobotCommand } from '../src/engine/robot/robot';
 import { HeadlessSim } from '../src/engine/testing/headless';
+import { crescendo2024 } from '../src/seasons/2024-crescendo';
+import { reefscape2025 } from '../src/seasons/2025-reefscape';
 import { rebuilt2026 } from '../src/seasons/2026-rebuilt';
 import type { RebuiltRules } from '../src/seasons/2026-rebuilt/rules';
 
@@ -90,6 +92,34 @@ describe('2026 G420 TOWER protection', () => {
     s.run(3, rush);
     expect(s.fouls('G420').length).toBeGreaterThanOrEqual(1);
     expect(s.fouls('G420')[0].note).toContain('LEVEL 3');
+  });
+});
+
+describe('ramming', () => {
+  it.each([
+    [crescendo2024, 'G418'], [reefscape2025, 'G423'], [rebuilt2026, 'G416'],
+  ] as const)('%s does not penalize repeated collisions', (season, rule) => {
+    const x = season.fieldLength / 2, y = season.fieldWidth / 2;
+    const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: x - 2, y, yaw: 0 } });
+    sims.push(sim);
+    const red = new Robot(sim.physics, sim.ctx.scene, sim.frame, cloneConfig(season.robotDefaults), 'red', 1, 2, { x, y, yaw: Math.PI });
+    sim.ctx.robots.push(red);
+    sim.rules.onPeriodChange(sim.ctx.clock.start());
+    for (const change of sim.ctx.clock.advance(25)) sim.rules.onPeriodChange(change);
+    const ref = (sim.rules as RebuiltRules).ref;
+    let touched = false;
+    for (let hit = 0; hit < 4; hit++) {
+      sim.robot.resetTo({ x: x - 2, y, yaw: 0 });
+      red.resetTo({ x, y, yaw: Math.PI });
+      for (let step = 0; step < 90; step++) {
+        red.enabled = true;
+        red.drive(IDLE_COMMAND, sim.physics.dt);
+        sim.step({ ...IDLE_COMMAND, vx: 6 });
+        touched ||= ref.contacts.isTouching(sim.robot, red);
+      }
+    }
+    expect(touched).toBe(true);
+    expect(sim.ctx.score.fouls.filter(f => f.rule === rule)).toHaveLength(0);
   });
 });
 

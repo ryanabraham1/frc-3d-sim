@@ -68,6 +68,26 @@ The drivetrain and fixed wide drum shooter are fitted procedural assemblies. The
 
 Reproduce with `npm run cad:prepare -- /path/to/original/downloads simbot-tim-1114`.
 
+## Photo-fitted donor mechanisms for additional teams
+
+The original robot layouts remain individual builders. `adaptedCadParts.ts` clones owned donor geometry, fits it in source meters, and preserves separate hood, drum, turret and rotor pivots. These are adapted mechanisms, not newly obtained CAD for the destination teams. Robot configurations and scoring capacities/rates are unchanged.
+
+| Destination | Donor detail and adaptation |
+| --- | --- |
+| 254 Overload | 581 shooter cheeks, gearboxes, cross shafts, drum and hood; black finish, shortened depth/height, widened to the lane span. Existing blue sliding intake, sponsor hopper and load-dependent net retained. |
+| 2910 Re•Blitz | Same 581 drum module with silver cut plates, fitted to its forward drum and existing conveyor/intake. |
+| 3476 Sandspit | Same drum module inside the orange A-frame; clear enclosure and teal gussets retained. |
+| 4414 RIPCURRENT | 604 ramp/chain/roller feed column shortened to the low turret; stationary support and moving cap/feed rollers separated. Compact 971 head fitted above it, teal plate finish and corner trusses. |
+| 1323 MadTown | Shortened 604 column concentric with the floor rotor and blue turret at the chassis center; physical shot origins follow the central bearing. 971 head with blue cut plates. User photo matched with an upright lift frame, solid vertical blocking wall and horizontal slotted shot shield, replacing the diagonal flap. Shield, wall and upright support colliders follow deployment; its linkage travel remains an estimate from the still photo. |
+| 1690 Kepler | One compact 971 head at the right corner opposite the intake, matching TBA photos; corner pedestal/deck, low adjacent walls and roof aperture clear its hood sweep. Fuel and physical shot origins follow the corner bearing, including saved picks. Existing exposed gear retained. Internal transmission still follows the donor, not an exact reconstruction of Kepler's beltless drive. |
+| 5940 Croquembouche | Two independent cloned 971 left heads, each with a real hood pivot and drum; existing two feed lanes retained. Rear net roof clears the heads; fuel avoids the turret pods. |
+
+Photo comparisons: TBA 2026 team media for [254](https://www.thebluealliance.com/team/254/2026), [2910](https://www.thebluealliance.com/team/2910/2026), [3476](https://www.thebluealliance.com/team/3476/2026), [4414](https://www.thebluealliance.com/team/4414/2026), [1323](https://www.thebluealliance.com/team/1323/2026), [1690](https://www.thebluealliance.com/team/1690/2026), and [5940](https://www.thebluealliance.com/team/5940/2026), saved in `refs/<team>-2026/sheet.jpg`. Mechanism references include [4414's binder](https://2026.team4414.com/), [254's Overload release](https://www.chiefdelphi.com/t/team-254-presents-overload/516252), and [1690's CAD release](https://www.chiefdelphi.com/t/frc-orbit-1690-2026-robot-cad-release/520673). Finish/layout fits are visual estimates from those references. 5940's current TBA sheet includes a later drum variant; this builder continues to depict its named double-turret variant.
+
+Additional optimized donor files: `shooter-581-donor.glb` (shooter only; original hopper and reference triad omitted), and `rotor-604-donor.glb` (604 feed column, separated fixed frame, cap, infeed and upfeed). The loader resolves donor dependencies for single robot previews as well as matches. The detailed gallery includes these seven teams, while “Previous models” provides the lightweight comparison. Source assemblies and cached geometry remain independent of fitted clones.
+
+Validation for this adaptation pass: 97 focused CAD/roster/mechanism-path/trench tests pass after the final changes, production typecheck/build pass, and gallery inspection covers both sides, low/high shots, full hoppers, piece flow, alliance colors and the previous-model comparison. The full suite finishes with 583 passes, 3 skips and the same pre-existing CRESCENDO difficulty failure (Hard 500 vs Normal 642); no new failure was introduced. These adaptations are local and available for gallery inspection.
+
 ## Supplied 2025 REEFSCAPE assemblies
 
 | Team | Source | Optimized size | Triangles |
@@ -139,4 +159,4 @@ RUSH's STEP has a uniform pale manufacturing swatch. Its gold cut structure, bla
 References: user-supplied CAD and photos; local TBA contact sheets under `refs/<team>-2024/`; [Orbit reveal](https://www.chiefdelphi.com/t/orbit-1690-presents-2024-robot-reveal-doppler/455350), [2910's CAD/binder release](https://www.chiefdelphi.com/t/2910-cad-code-and-tech-binder-release-2024/467192), Twister's included `twister24.PNG`, and [604's Domotron identification](https://604robotics.com/wordpress/new604/).
 
 
-Validation for the 2024 batch: 86 affected CAD, roster and CRESCENDO scoring tests pass, including decoded export/report bounds, mechanism sweeps, fixed-frame stability and NOTE paths. The final five CAD tests and production build pass after the finish corrections; `git diff --check` passes. Browser checks cover all five in export, aiming and reverse-side endgame poses. The broader run records 610 passing tests and the known CRESCENDO Hard-versus-Normal failure (499 vs 644); an early CAD test run before assets existed was superseded by the successful focused run. Screenshot: `/tmp/2024-cad-final.jpg`. Deployment was not requested.
+Validation for the 2024 batch: 86 affected CAD, roster and CRESCENDO scoring tests pass, including decoded export/report bounds, mechanism sweeps, fixed-frame stability and NOTE paths. The final five CAD tests and production build pass after the finish corrections; `git diff --check` passes. Browser checks cover all five in export, aiming and reverse-side endgame poses. The broader run records 610 passing tests and the known CRESCENDO Hard-versus-Normal failure (499 vs 644); an early CAD test run before assets existed was superseded by the successful focused run. Screenshot: `/tmp/2024-cad-final.jpg`. Changes are local; no push or deployment was requested.

@@ -3,15 +3,80 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { SEASONS } from '../src/seasons';
 import { cloneConfig } from '../src/engine/robot/config';
-import { CAD_MODEL_IDS, cadRobotModelBuilder, decodeCadModel, setCadAnimationEnabled } from '../src/engine/robot/cadModels';
+import { CAD_MODEL_IDS, ADAPTED_CAD_MODEL_IDS, cadRobotModelBuilder, decodeCadModel, setCadAnimationEnabled, setCadModelsEnabled, cloneCadPart } from '../src/engine/robot/cadModels';
+import { robotModelBuilder } from '../src/engine/robot/models';
 import type { RobotAnimState } from '../src/engine/robot/models';
 
 const idle: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, aiming: false, hood: .9, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
 beforeAll(async () => {
-  for (const id of [...CAD_MODEL_IDS,'intake-581-donor']) {
+  for (const id of [...CAD_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor']) {
     const bytes = readFileSync(`public/models/robots/2026/${id}.glb`);
     await decodeCadModel(id, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   }
+});
+
+describe('photo-fitted CAD mechanisms', () => {
+  for (const id of ADAPTED_CAD_MODEL_IDS) it(`${id}: owns detailed donor geometry and stays coherent through aim, rotation and travel`, () => {
+    setCadModelsEnabled(true);
+    const config = cloneConfig(SEASONS.find(s => s.year === 2026)!.teamRobots!.find(r => r.id === id)!.config);
+    const visual = new THREE.Group(), turret = new THREE.Group(); visual.add(turret);
+    const model = robotModelBuilder(id)!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
+    if (id === 'kepler-1690') {
+      expect(turret.position.x).toBeGreaterThan(config.frameLength*.25);
+      expect(turret.position.z).toBeGreaterThan(config.frameWidth*.25);
+      expect(config.launcher.mounts).toEqual([{forward:turret.position.x,side:-turret.position.z}]);
+      expect(model.flow!.feed!(0)[2].z).toBeCloseTo(turret.position.z);
+      for (let n=0;n<100;n++) {
+        const p = model.flow!.stow!();
+        expect(Math.hypot(p.x-turret.position.x,p.z-turret.position.z)).toBeGreaterThanOrEqual(.23);
+      }
+      const walls = new THREE.Box3().setFromObject(visual.getObjectByName('kepler-upper-hopper')!);
+      expect(walls.max.y).toBeCloseTo(config.height-.07+.009);
+      expect(walls.max.z).toBeGreaterThan(config.frameWidth*.45);
+    }
+    if (id === 'madtown-2026-1323') {
+      expect(turret.position.x).toBe(0);
+      expect(turret.position.z).toBe(0);
+      expect(config.launcher.mounts).toEqual([{forward:0,side:0}]);
+      const shield = visual.getObjectByName('madtown-blocker-shield')!;
+      for (const blocker of [0,.25,.5,.75,1]) {
+        model.update({...idle,blocker}); visual.updateMatrixWorld(true);
+        const bounds = new THREE.Box3().setFromObject(shield);
+        expect(bounds.max.y-bounds.min.y).toBeLessThan(.025);
+        expect((bounds.max.y+bounds.min.y)/2).toBeCloseTo(config.height+config.shotBlocker!.rise*blocker,2);
+        const wall = visual.getObjectByName('madtown-blocker-wall')!;
+        expect(wall.visible).toBe(blocker>.02);
+        if (blocker>0) {
+          const wb = new THREE.Box3().setFromObject(wall);
+          expect(wb.min.y).toBeCloseTo(config.height);
+          expect(wb.max.y).toBeCloseTo(config.height+config.shotBlocker!.rise*blocker);
+          expect(wb.max.z-wb.min.z).toBeCloseTo(config.shotBlocker!.width);
+        }
+      }
+    }
+    const roots: THREE.Object3D[] = []; visual.traverse(o => {if(o.userData.cadDonor) roots.push(o);});
+    expect(roots.length).toBe(id==='croquembouche-5940'||id==='ripcurrent-4414'||id==='madtown-2026-1323'?2:1);
+    for (let i=0;i<80;i++) {
+      turret.rotation.y = (i/79-.5)*Math.PI*2;
+      model.update({...idle,dt:.02,enabled:true,intaking:true,aiming:true,hood:.5+i/79*.75,fill:i/79,firing:.2});
+      visual.updateMatrixWorld(true);
+      for (const root of roots) {
+        root.traverse(o => expect(o.matrixWorld.elements.every(Number.isFinite)).toBe(true));
+        const bounds = new THREE.Box3().setFromObject(root,true);
+        expect(bounds.min.y).toBeGreaterThan(0);
+        expect(bounds.max.y).toBeLessThan(config.height+.25);
+      }
+      expect(model.flow?.feed?.(i).every(p=>p.toArray().every(Number.isFinite))).toBe(true);
+    }
+    model.update(idle); visual.updateMatrixWorld(true);
+    for(const root of roots) expect(new THREE.Box3().setFromObject(root,true).max.y).toBeLessThan(config.height+.02);
+    const donor=roots[0].userData.cadDonor;
+    const part=donor==='mixtape-971'?'turret-left':'frame';
+    const a=cloneCadPart(donor,part)!,b=cloneCadPart(donor,part)!;
+    let ma:THREE.Mesh|undefined,mb:THREE.Mesh|undefined;
+    a.traverse(o=>{if(o instanceof THREE.Mesh)ma??=o;});b.traverse(o=>{if(o instanceof THREE.Mesh)mb??=o;});
+    expect(ma!.geometry).not.toBe(mb!.geometry);expect(ma!.material).not.toBe(mb!.material);
+  });
 });
 
 describe('imported 2026 CAD models', () => {

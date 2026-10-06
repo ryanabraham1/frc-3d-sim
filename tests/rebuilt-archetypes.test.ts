@@ -28,6 +28,21 @@ function run(sim: HeadlessSim, seconds: number, cmd: RobotCommand | (() => Robot
 }
 const empty = (sim: HeadlessSim) => { for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i); };
 
+it('Kepler migrates saved centered shots to its fixed corner bearing, independent of turret yaw', () => {
+  const old = cloneConfig(season.teamRobots!.find(t => t.id === 'kepler-1690')!.config);
+  delete old.launcher.mounts;
+  const c = normalizeRebuiltConfig(old);
+  const sim = make('blue', {x:2,y:2,yaw:0}, c);
+  for (const yaw of [-Math.PI, -.8, 0, .8, Math.PI]) {
+    sim.robot.turretYaw = yaw;
+    const exit = sim.robot.launcherExit(c.launcher.mounts![0].side);
+    expect(exit.forward).toBeCloseTo(c.frameLength*.27 + Math.cos(yaw)*(c.launcher.muzzleForward??0));
+    expect(exit.side).toBeCloseTo(-c.frameWidth*.27 + Math.sin(yaw)*(c.launcher.muzzleForward??0));
+  }
+  c.launcher.mounts = [{forward:.1,side:.1}];
+  expect(normalizeRebuiltConfig(c).launcher.mounts).toEqual(c.launcher.mounts);
+});
+
 describe('2026 REBUILT robot archetypes', () => {
   it('offers realistic archetypes; only the turret archetype has a turret', () => {
     const presets = rebuiltRobotPresets();
