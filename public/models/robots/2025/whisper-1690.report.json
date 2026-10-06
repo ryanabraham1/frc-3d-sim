@@ -1,0 +1,30 @@
+{
+  "id": "whisper-1690",
+  "sourceFile": "1690-25-0000 Post.glb",
+  "inputBytes": 576965016,
+  "outputBytes": 9504568,
+  "inputTriangles": 23455727,
+  "outputTriangles": 636367,
+  "omittedOccurrences": 270,
+  "bounds": {
+    "min": [
+      -0.37850000243634013,
+      -0.002108357846736908,
+      -0.38100000759346164
+    ],
+    "max": [
+      0.3810000130293202,
+      1.0692105293273926,
+      0.6961098313455207
+    ]
+  },
+  "groups": [
+    "frame",
+    "climber",
+    "intake",
+    "arm",
+    "carriage",
+    "effector",
+    "elevator-stage"
+  ]
+}

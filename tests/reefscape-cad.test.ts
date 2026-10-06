@@ -25,6 +25,8 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
   expect(report.outputTriangles/report.inputTriangles).toBeLessThan(.12);
   for(const name of ['frame','arm','carriage','elevator-stage',id==='wildstang-111'?'coral-head':'effector'])expect(root.getObjectByName(name)).toBeTruthy();
   setCadAnimationEnabled(true);model.update(idle);visual.updateMatrixWorld(true);
+  if(id==='firefly-118'){const latch=root.getObjectByName('climber-latch')!;expect(latch.parent?.name).toBe('cad-climber-pivot');const stowed=new THREE.Box3().setFromObject(latch,true);expect(stowed.max.x).toBeLessThan(config.frameLength/2);}
+  if(['subzero-1778','zuma-581'].includes(id))expect(model.coralAxis).toEqual(id==='zuma-581'?[1,0,0]:[0,0,1]);
   const initial=model.heldAnchor!.getWorldPosition(new THREE.Vector3());
   const fixed=root.getObjectByName('frame')!.matrixWorld.clone();
   const poses=[{height:.45,forward:.3,level:1},{height:1.75,forward:.7,level:4},{height:2.03,forward:.45,level:3,algae:true},{height:.45,forward:.3,level:1,handoff:.5}];

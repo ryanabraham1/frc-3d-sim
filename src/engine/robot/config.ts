@@ -171,6 +171,8 @@ export interface RobotConfig {
     secondsPerLevel: number;
     /** Optional total rise time for cage games, independent of the cage's point value. */
     secondsToClimb?: number;
+    /** Deployed cage contact in robot-local visual X/Z meters; omitted uses the generic front climber. */
+    gripOffset?: [number,number];
   };
 }
 

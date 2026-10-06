@@ -57,6 +57,15 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   const bounded = (v: number | undefined, fallback: number, lo: number, hi: number) => Number.isFinite(v) ? Math.min(hi, Math.max(lo, v!)) : fallback;
   c.intake.primary ??= true; c.intake.secondary ??= true;
   c.intake.ground ??= true; c.intake.groundSide ??= 'back'; c.intake.station ??= false; c.intake.stationSide ??= 'back';
+  // Supplied CAD has these floor mouths on +Z. Upgrade legacy saved presets
+  // that predate groundYaw; explicit directional overrides remain supported.
+  if (['wildstang-111','whisper-1690'].includes(c.model ?? '') && c.intake.groundYaw === undefined) {
+    c.intake.groundYaw = -Math.PI / 2;
+    if (c.model === 'wildstang-111') c.intake.ground = true;
+  }
+  // Cage approaches use the actual CAD mechanism, independent of intake/scoring faces.
+  const cageGrips:Record<string,[number,number]>={'wildstang-111':[.72,.05],'firefly-118':[.60,0],'zuma-581':[0,.49],'sublime-1678':[.03,-.60],'quixilver-604-2025':[-.37,0],'whisper-1690':[.43,0]};
+  if(c.model && cageGrips[c.model])c.climber.gripOffset ??= cageGrips[c.model];
   // Older configs flagged NET scoring with the launcher; NET scoring is now the elevator outtake.
   c.options = { ...d.options, ...c.options, net: !!(c.options?.net ?? c.launcher.enabled) };
   c.launcher.enabled = false;

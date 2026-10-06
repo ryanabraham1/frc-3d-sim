@@ -106,7 +106,8 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   battery(k.visual, side * 0.2, bt - 0.02, -0.18, Math.PI / 2);
   for (let i = 0; i < 3; i++) controller(k.visual, -side * (0.08 + i * 0.07), bt, 0.22, 0x46ca79);
   // Floor intake on the intake end: black side plates, a blue spiky star bank and a gray front roller.
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, rollerMaterial: mat(0x8d9299, { metal: 0.3 }) });
+  const intakeVisual = new THREE.Group(); k.visual.add(intakeVisual); intakeVisual.rotation.y = Math.PI / 2;
+  const intake = deployableIntake({...k, visual:intakeVisual}, { reach: c.intake.reach, rollers: 1, frame: black, rollerMaterial: mat(0x8d9299, { metal: 0.3 }) });
   const stars = [starWheels(intake.tip, side * 0.02, 0.0, { n: 10, r: 0.05, span: c.intake.width * 0.9, m: blue }), starWheels(intake.tip, -side * 0.06, 0.03, { n: 6, r: 0.045, span: c.intake.width * 0.8, m: black })];
   // Conveyor from the intake hinge to the elevator base, under the arm.
   box(k.visual, L / 2 - 0.08, 0.012, 0.12, black, side * (L / 4), bt + 0.02, 0.09);
@@ -383,6 +384,8 @@ function config(team: number, model: string, lift: number, release: number, harv
 function whisper() {
   const c = config(1690, 'whisper-1690', 2.2, 0.30, 0.35, 5.4, 2.5, 36);
   c.placement!.scoreSide = 'ends';
+  c.intake.groundYaw = -Math.PI / 2;
+  c.frameLength = c.frameWidth = .744; c.height = 1.065;
   c.options = { ...c.options, coralBuffer: true, dualPieceStorage: true };
   return normalizeReefscapeConfig(c);
 }

@@ -75,6 +75,10 @@ export interface RobotModel {
   update(s: RobotAnimState): void;
   /** Where the robot's held game piece is drawn (seasons parent their held-piece mesh here). */
   heldAnchor?: THREE.Object3D;
+  /** Tube axis in the held anchor's local frame, measured from the actual tool. */
+  coralAxis?: [number,number,number];
+  /** Actual moving cage-contact point for the seasonal climbing visual. */
+  climbAnchor?: THREE.Object3D;
   /** Separate ALGAE holder when it is mounted on the opposite end of a shared arm. */
   algaeAnchor?: THREE.Object3D;
   /** Visual ALGAE compression in the local axes of its holder. */

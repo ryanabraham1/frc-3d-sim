@@ -294,11 +294,20 @@ describe('2025 physical piece storage', () => {
   });
 
   it('WildStang captures floor CORAL at its side intake and accepts station CORAL', () => {
-    const config=team('wildstang-111');
+    const legacy=team('wildstang-111');delete legacy.intake.groundYaw;legacy.intake.ground=false;
+    const config=normalizeReefscapeConfig(legacy);
+    expect(config.intake.groundYaw).toBe(-Math.PI/2);
     expect(config.intake.ground).toBe(true); expect(config.intake.station).toBe(true);
     const sim=make('blue',{x:2,y:2,yaw:0},config); teleop(sim);
+    const guide=sim.robot.visual.getObjectByName('ground-intake-guide')!;
+    sim.robot.visual.updateMatrixWorld(true);
+    const marker=guide.children[4].getWorldPosition(new THREE.Vector3());
+    const center=sim.robot.visual.getWorldPosition(new THREE.Vector3());
+    expect(marker.z-center.z).toBeGreaterThan(.3);expect(Math.abs(marker.x-center.x)).toBeLessThan(.02);
     for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
-    load(sim,126); sim.pool.placeField(0,2,1.37,C.CORAL_RADIUS);
+    load(sim,126);sim.pool.placeField(0,1.37,2,C.CORAL_RADIUS);
+    run(sim,.15,{...IDLE_COMMAND,intake:true});expect(sim.robot.held).toEqual([126]);
+    sim.pool.placeField(0,2,1.37,C.CORAL_RADIUS);
     run(sim,.5,{...IDLE_COMMAND,intake:true}); expect(sim.robot.held).toEqual([126,0]);
     sim.robot.held.pop();sim.pool.reserve(0);
     sim.pool.placeField(0,1.55,2,config.height+.1);
@@ -321,7 +330,7 @@ describe('2025 physical piece storage', () => {
     it(`${id}: can actually collect CORAL with ALGAE already aboard`, () => {
       const sim=make('blue',{x:2,y:2,yaw:0},team(id)); teleop(sim);
       for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
-      load(sim,126); sim.pool.placeField(0,1.37,2,C.CORAL_RADIUS);
+      load(sim,126); sim.pool.placeField(0,id==='whisper-1690'?2:1.37,id==='whisper-1690'?1.37:2,C.CORAL_RADIUS);
       run(sim,.5,{...IDLE_COMMAND,intake:true});
       expect(sim.robot.held).toEqual([126,0]);
     });

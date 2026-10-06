@@ -88,3 +88,15 @@ WildStang has a deployable side ground intake. Quixilver is station-fed with no 
 Firefly and SubLime hold CORAL and ALGAE in separate end-effector regions. Zuma holds ALGAE in its claw while CORAL waits in its ground intake. Held ALGAE uses a cached radial clearance profile against rigid mouth geometry; compression follows contact surfaces without changing field-ball physics. Zuma additionally pinches the lower U-shaped throat, following the supplied competition photos.
 
 Climbers remain stowed during normal play, deploy in the last 30 seconds of teleop, grab only within 0.4 m and 30 degrees of alignment, and retract progressively while lifting. Gallery previews expose each phase separately.
+
+### 1690 WHISPER (2025) and WildStang intake direction correction
+
+- Source: `1690-25-0000 Post.glb`, supplied by the user. This export is already Y-up in meters; use identity axes. The ground intake extends toward local +Z, while the elevator arm scores across the X/Y plane.
+- Groups: vacuum head `1690-25-5100`, arm stub `1690-2025-4140`, carriage `1690-2025-4100` and `1690-25-1230`, moving stage `1690-25-1220`, ground mechanism `1690-25-2600`, upper climber `1690-25-6140`. Intake motors under `2680/2681` remain fixed.
+- Measured shoulder `[-.2147,.8365,0]`, tool joint `[0,.46,0]`, intake shaft `[0,.285,.3859]`, deployed pickup `[0,.10,.67]` meters. The exported arm tube reference is missing; a simplified carbon connector spans the measured joints. Its section, wrist aiming, intake fold travel, and climb travel are simulation estimates. Intake four-bar motion is represented by a rigid fold around its measured shaft.
+- Team reference: [Orbit's WHISPER reveal](https://www.chiefdelphi.com/t/orbit-1690-2025-robot-reveal-whisper/492064). Local TBA contact sheet `refs/1690-2025/sheet.jpg` was inspected to check the vacuum arm and intake relationship.
+- WildStang111's measured side-intake hinge is `[.0603,.2556,.33435]`; roller pickup is `[.0603,.096,.735]`. Legacy presets now migrate to side pickup. The orange bumper stripe, carpet guide, and gallery pickup stream also use `groundYaw`, so they agree with the CAD mouth rather than the old generic rear face.
+- Agent handoff instructions: [CAD robot modeling guide](CAD-ROBOT-MODELING-GUIDE.md).
+
+- CORAL uses a tool-local axis for the supplied 2025 rigs, including sideways roller carries on 1778/581. A bounded seating fit preserves the rigid tube and hollow bore; it does not shrink CORAL.
+- Firefly118's separate `03_3000_CAGELATCH` is parented to its moving climber arm and folds inward during normal play. Deployed cage contacts are configured per robot; cage approaches and actual moving contact anchors replace the generic front attachment.

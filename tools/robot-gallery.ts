@@ -1,3 +1,4 @@
+import { fitCoralInTool } from '../src/seasons/2025-reefscape/coralVisual';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { SEASONS } from '../src/seasons';
@@ -129,7 +130,9 @@ function frame(now: number) {
         i.next = i.t + Math.max(0.12, 2.0 / cap);
         const side = c.intake.ground === false ? (c.intake.stationSide === 'front' ? 1 : -1) : (c.intake.groundSide === 'front' ? 1 : -1);
         const L = r.footprint.length, lat = (Math.random() - 0.5) * c.intake.width * 0.7;
-        r.noteCapture({ x: side * (L / 2 + 0.12), y: c.intake.ground === false ? c.height + 0.25 : SEASONS.find(x => x.id === seasonSelect.value)!.gamePiece.radius, z: lat });
+        const yaw=c.intake.ground===false?undefined:c.intake.groundYaw;
+        const edge=yaw===undefined?L/2:(Math.abs(Math.cos(yaw))*L+Math.abs(Math.sin(yaw))*r.footprint.width)/2;
+        r.noteCapture({ x: yaw===undefined?side*(edge+.12):(edge+.12)*Math.cos(yaw)+lat*Math.sin(yaw), y: c.intake.ground === false ? c.height + 0.25 : SEASONS.find(x => x.id === seasonSelect.value)!.gamePiece.radius, z: yaw===undefined?lat:-(edge+.12)*Math.sin(yaw)+lat*Math.cos(yaw) });
         r.held.push(-1);
       } else if (!intaking && i.t >= i.next && r.held.length > 0 && i.t > 2.7) {
         i.next = i.t + 1 / Math.max(1, c.launcher.rate);
@@ -147,6 +150,7 @@ function frame(now: number) {
         const dir = p.level === 4 ? new THREE.Vector3(0,-1,0) : p.level === 1 ? new THREE.Vector3(0,0,1) : new THREE.Vector3(Math.cos(.6),-Math.sin(.6),0);
         const scoreQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
         scoreQ.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),(p.side ?? 0)*Math.PI/2));
+        if(r.modelCoralAxis)scoreQ.copy(anchor.getWorldQuaternion(new THREE.Quaternion())).premultiply(r.visual.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(...r.modelCoralAxis).normalize()));
         i.coral.quaternion.copy(scoreQ);
         if (p.handoff) {
           const path = r.modelHandoffPath ?? (r.modelIntakeAnchor ? [r.visual.worldToLocal(r.modelIntakeAnchor.getWorldPosition(new THREE.Vector3()))] : []);
@@ -156,6 +160,7 @@ function frame(now: number) {
         }
       }
     }
+    if(i.coral && r.modelHeldAnchor && !r.placeAnim?.handoff && !(pose.value==='both'&&r.config.options?.coralBuffer))fitCoralInTool(i.coral,r.modelHeldAnchor);
     if(pose.value==='both' && i.coral && r.config.options?.coralBufferLocation==='intake' && r.modelIntakeAnchor){
       r.visual.updateMatrixWorld(true);i.coral.position.copy(r.visual.worldToLocal(r.modelIntakeAnchor.getWorldPosition(new THREE.Vector3())));
       i.coral.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));

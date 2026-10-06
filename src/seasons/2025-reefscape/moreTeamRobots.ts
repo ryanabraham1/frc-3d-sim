@@ -296,7 +296,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   bar(climber, [0, 0.32, -0.07], [0, 0.32, 0.07], 0.025, alu);
   let yc = bt + 0.15, phi = Math.PI / 2, deploy = 0;
   return {
-    replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, coralAxis:[0,0,1], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s), yMin = bt + 0.12;

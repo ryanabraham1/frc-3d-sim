@@ -7,7 +7,7 @@ import { buildReefscapeCad } from './reefscapeCadModels';
 import { cadHopper } from './cadHopper';
 import { build9470Cad, build6800Cad, build971Cad, build1114Cad } from './additionalCadModels';
 
-export const CAD_2025_MODEL_IDS = ['wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
+export const CAD_2025_MODEL_IDS = ['whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
 export const CAD_MODEL_IDS = ['toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
 const assets = new Map<string, THREE.Group>();
 const pending = new Map<string, Promise<void>>();

@@ -1,3 +1,4 @@
+import { fitCoralInTool } from './coralVisual';
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { ALLIANCES, opponent, type Alliance } from '@engine/coords';
@@ -885,22 +886,22 @@ export class ReefscapeRules implements SeasonRules {
 
   /** Approach poses for every alliance cage matching this climber (slot = cage index), free or not. */
   cageApproaches(robot: Robot): { slot: number; x: number; y: number; yaw: number; occupied: boolean }[] {
-    const depth = this.climberDepth(robot), yaw = C.sideYaw(robot.alliance, 0);
+    const depth = this.climberDepth(robot), yaw = this.climbYaw(robot);
     return this.refs.cages[robot.alliance].flatMap((cage, slot) => {
       if (this.refs.cageDepth[robot.alliance][slot] !== depth) return [];
-      const p = cage.fieldPosition(), reach = this.gripReach(robot);
+      const p = cage.fieldPosition();
       const occupied = this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.isClimbing && r.climbSlot === slot);
-      return [{ slot, x: p.x - Math.cos(yaw) * reach, y: p.y - Math.sin(yaw) * reach, yaw, occupied }];
+      return [{ slot, ...this.climbCenter(robot,p,yaw), yaw, occupied }];
     });
   }
 
   /** Plan a physical approach to the closest unoccupied cage matching this climber. */
   climbApproach(robot: Robot): { x: number; y: number; yaw: number } | null {
-    const depth = this.climberDepth(robot), yaw = C.sideYaw(robot.alliance, 0);
+    const depth = this.climberDepth(robot), yaw = this.climbYaw(robot);
     const options = this.refs.cages[robot.alliance].flatMap((cage, slot) => {
       if (this.refs.cageDepth[robot.alliance][slot] !== depth || this.ctx.robots.some((r) => r !== robot && r.alliance === robot.alliance && r.isClimbing && r.climbSlot === slot)) return [];
-      const p = cage.fieldPosition(), reach = this.gripReach(robot);
-      return [{ x: p.x - Math.cos(yaw) * reach, y: p.y - Math.sin(yaw) * reach, yaw }];
+      const p = cage.fieldPosition();
+      return [{ ...this.climbCenter(robot,p,yaw), yaw }];
     });
     options.sort((a, b) => Math.hypot(a.x - robot.pose.x, a.y - robot.pose.y) - Math.hypot(b.x - robot.pose.x, b.y - robot.pose.y));
     return options[0] ?? null;
@@ -930,10 +931,9 @@ export class ReefscapeRules implements SeasonRules {
     if (!cage) { this.tell(robot, `Drive to one of your alliance's ${want.toUpperCase()} cages in your BARGE ZONE`); return; }
     if (cage.occupied) { this.tell(robot, 'CAGE already occupied · try another of your cages'); return; }
     const p = C.cage(robot.alliance, cage.slot + 1);
-    const yaw = C.sideYaw(robot.alliance, 0);
+    const yaw = this.climbYaw(robot);
     const live = this.refs.cages[robot.alliance][cage.slot].fieldPosition();
-    const reachNow = this.gripReach(robot);
-    const grab = {x:live.x-Math.cos(yaw)*reachNow,y:live.y-Math.sin(yaw)*reachNow};
+    const grab = this.climbCenter(robot,live,yaw);
     if (Math.hypot(robot.pose.x-grab.x,robot.pose.y-grab.y)>.4 || Math.abs(wrapAngle(robot.pose.yaw-yaw))>Math.PI/6) {
       this.tell(robot,'Line up square with the CAGE · move closer and face it'); return;
     }
@@ -941,11 +941,13 @@ export class ReefscapeRules implements SeasonRules {
     const lift = cage.depth === 'shallow' ? 0.15 : 0.28;
     // The climber grabs the cage where it hangs (swung or not), then robot and cage settle plumb under
     // the pivot with the cage just ahead of the front bumper.
-    const reach = this.gripReach(robot);
-    robot.startClimb({ x: p.x - Math.cos(yaw) * reach, y: p.y, yaw }, lift, cage.depth === 'shallow' ? 1 : 2, cage.slot);
+    robot.startClimb({ ...this.climbCenter(robot,p,yaw), yaw }, lift, cage.depth === 'shallow' ? 1 : 2, cage.slot);
     this.grips.push({ robot, alliance: robot.alliance, slot: cage.slot, from: this.refs.cages[robot.alliance][cage.slot].fieldPosition(), t: 0 });
   }
   private gripReach(robot: Robot): number { return robot.footprint.length / 2 + C.CAGE_SIZE / 2 + 0.02; }
+  private climbYaw(robot:Robot):number {const g=robot.config.climber.gripOffset;return C.sideYaw(robot.alliance,0)-(g?Math.atan2(-g[1],g[0]):0);}
+  private climbCenter(robot:Robot,cage:{x:number;y:number},yaw:number){const [x,z]=robot.config.climber.gripOffset??[this.gripReach(robot),0];return{x:cage.x-Math.cos(yaw)*x-Math.sin(yaw)*z,y:cage.y-Math.sin(yaw)*x+Math.cos(yaw)*z};}
+
 
   /** Held cages follow their climbing robot; a cage is released to swing once its robot is back down. */
   private updateGrips(dt: number): void {
@@ -953,9 +955,12 @@ export class ReefscapeRules implements SeasonRules {
       const g = this.grips[k], cage = this.refs.cages[g.alliance][g.slot];
       if (!g.robot.isClimbing || g.robot.climbSlot !== g.slot) { cage.release(); this.grips.splice(k, 1); continue; }
       g.t += dt;
-      const blend = clamp(g.t / 0.6, 0, 1), reach = this.gripReach(g.robot), p = g.robot.pose;
+      const blend = clamp(g.t / 0.6, 0, 1), p = g.robot.pose;
       const rest = C.CAGE_BOTTOM[this.refs.cageDepth[g.alliance][g.slot]];
-      const tx = p.x + Math.cos(p.yaw) * reach, ty = p.y + Math.sin(p.yaw) * reach;
+      const [x,z]=g.robot.config.climber.gripOffset??[this.gripReach(g.robot),0];
+      let tx=p.x+Math.cos(p.yaw)*x+Math.sin(p.yaw)*z,ty=p.y+Math.sin(p.yaw)*x-Math.cos(p.yaw)*z;
+      const anchor=g.robot.modelClimbAnchor;
+      if(anchor){g.robot.visual.updateMatrixWorld(true);const contact=this.ctx.frame.toField(anchor.getWorldPosition(new THREE.Vector3()));tx=contact.x;ty=contact.y;}
       cage.hold(g.from.x + (tx - g.from.x) * blend, g.from.y + (ty - g.from.y) * blend, g.from.z + (rest - g.from.z) * blend);
     }
   }
@@ -1080,11 +1085,13 @@ export class ReefscapeRules implements SeasonRules {
         robot.visual.updateMatrixWorld(true);
         const inv = anchor.getWorldQuaternion(this.tmpQ).invert().multiply(robot.visual.quaternion);
         held.coral.position.set(0, 0, 0);
-        held.coral.quaternion.premultiply(this.tmpQ2.setFromAxisAngle(up, m.side * Math.PI / 2)).premultiply(inv);
+        if(robot.modelCoralAxis)held.coral.quaternion.setFromUnitVectors(up,new THREE.Vector3(...robot.modelCoralAxis).normalize());
+        else held.coral.quaternion.premultiply(this.tmpQ2.setFromAxisAngle(up, m.side * Math.PI / 2)).premultiply(inv);
         const algaeAnchor = robot.modelAlgaeAnchor ?? anchor;
         if (held.algae.parent !== algaeAnchor) algaeAnchor.add(held.algae);
         held.algae.position.set(robot.modelAlgaeAnchor ? 0 : .05, robot.modelAlgaeAnchor ? 0 : -.14, 0);
       } else if (held.coral.parent !== carriage) carriage.add(held.coral);
+      if(anchor && !this.coralBuffered(robot) && !m.handoff)fitCoralInTool(held.coral,anchor);
       if (anchor && this.coralBuffered(robot)) {
         const path = robot.modelHandoffPath;
         const intakeBuffer = robot.config.options?.coralBufferLocation === 'intake';

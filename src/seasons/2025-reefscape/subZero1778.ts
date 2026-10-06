@@ -86,7 +86,7 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   let deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
+    heldAnchor: held, coralAxis:[0,0,1],
     intakeAnchor: intake.tip,
     lightAt: [ex, H + 0.02, 0],
     update(s) {

@@ -183,6 +183,7 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
       const spot = netSpot();
       const cmd = bot.driveTo(spot, spot.yaw);
       cmd.shoot = dist(r.pose, spot) < (r.config.autoAlign ? 1.2 : .04) && Math.abs(wrapAngle(spot.yaw-r.pose.yaw)) < (r.config.autoAlign ? .6 : .03);
+      if(coralHeld()){cmd.pass=cmd.shoot;cmd.shoot=false;}
       return cmd;
     }
     const proc = C.processor(r.alliance);
@@ -293,6 +294,8 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
       const d = defend();
       if (d) { if (!coralHeld()) d.intake = false; return d; }
     }
+    // A buffered CORAL cannot enter a shared tool until ALGAE leaves it.
+    if (coralHeld() && algaeHeld() && r.config.options?.coralBuffer && (r.config.options?.net || r.config.processor?.enabled)) return scoreAlgae();
     if (coralHeld() && maxLevel > 0) return placeCoral();
     if (role === 'algae' || !coralCapable(r)) {
       const w = algaeWork();

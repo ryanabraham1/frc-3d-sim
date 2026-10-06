@@ -576,12 +576,15 @@ export class Robot {
    */
   private buildGroundIntake(side: 1 | -1, dark: THREE.Material): void {
     const c = this.config;
-    const L = this.fp.length;
+    const yaw=c.intake.groundYaw;
+    const L = yaw===undefined?this.fp.length:Math.abs(Math.cos(yaw))*this.fp.length+Math.abs(Math.sin(yaw))*this.fp.width;
+    const crossSpan=yaw===undefined?this.fp.width:Math.abs(Math.sin(yaw))*this.fp.length+Math.abs(Math.cos(yaw))*this.fp.width;
     const bt = c.bumperThickness;
     const orange = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.55, emissive: 0xff5a00, emissiveIntensity: 0.25 });
-    const w = Math.min(c.intake.width, this.fp.width - 0.04);
+    const w = Math.min(c.intake.width, crossSpan - 0.04);
     const edge = L / 2;
-    const g = new THREE.Group();
+    const g = new THREE.Group();g.name='ground-intake-guide';
+    if(yaw!==undefined)g.rotation.y=yaw-(side<0?Math.PI:0);
     // Roller bar (two stacked drums, like a real under-bumper roller pair).
     for (const [dx, dy] of [[0.035, 0.085], [0.0, 0.14]] as const) {
       const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, w, 14), orange);
@@ -598,7 +601,7 @@ export class Robot {
       this.addPart('intakeRollers', arm);
     }
     // Stripe along the whole bumper face on this side.
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, this.fp.width * 0.98), orange);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, crossSpan * 0.98), orange);
     stripe.position.set(side * (edge + 0.002), c.bumperTop + 0.002, 0);
     g.add(stripe);
     // Capture zone on the carpet (the same strip `groundMouthContains` tests).
@@ -664,6 +667,10 @@ export class Robot {
 
   get modelAlgaeGripThroat(): boolean { return this.model?.algaeGripThroat ?? false; }
   get modelAlgaeAnchor(): THREE.Object3D | undefined { return this.model?.algaeAnchor; }
+
+  get modelClimbAnchor(): THREE.Object3D | undefined { return this.model?.climbAnchor; }
+
+  get modelCoralAxis(): [number,number,number] | undefined { return this.model?.coralAxis; }
 
   get modelHeldAnchor(): THREE.Object3D | undefined {
     return this.model?.heldAnchor;
