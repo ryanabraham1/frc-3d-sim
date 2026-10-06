@@ -93,3 +93,19 @@ it('Orbit keeps its suction head rigid and pass-through intake down on both scor
     expect(head.quaternion.angleTo(bind)).toBeLessThan(1e-6);
   }
 });
+
+it('Spectre floor pickup folds its wrist beneath rails that clear the front bumper',()=>{
+  const config=cloneConfig(SEASONS.find(s=>s.year===2025)!.teamRobots!.find(r=>r.id==='spectre-2910')!.config);
+  expect(config.intake.groundYaw).toBe(0);expect(config.options!.dualPieceStorage).toBe(true);
+  const visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
+  const material=new THREE.MeshStandardMaterial();
+  const model=cadRobotModelBuilder('spectre-2910')!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:1,stationSide:1,mats:{dark:material,alu:material,bumper:material}});
+  setCadAnimationEnabled(true);
+  model.update({...idle,enabled:true,intaking:true,place:{height:.45,forward:.3,level:1}});visual.updateMatrixWorld(true);
+  const shoulder=visual.getObjectByName('cad-arm-pivot')!.getWorldPosition(new THREE.Vector3());
+  const head=visual.getObjectByName('cad-effector-pivot')!.getWorldPosition(new THREE.Vector3());
+  const edge=config.frameLength/2;
+  const railY=shoulder.y+(head.y-shoulder.y)*(edge-shoulder.x)/(head.x-shoulder.x);
+  expect(railY).toBeGreaterThan(config.bumperTop+.01);
+  expect(model.heldAnchor!.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(.11,3);
+});

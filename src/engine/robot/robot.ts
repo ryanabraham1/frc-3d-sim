@@ -956,7 +956,7 @@ export class Robot {
     a.hood = this.lastShotAngle || this.config.launcher.angle;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
-    const target = this.climbPhase === 'none' ? (this.climbReady && this.config.climber.maxLevel > 0 ? 1 : 0)
+    const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
       : this.climbPhase === 'lower' ? 1 : .25;
     a.climb = a.dt > 0 ? target + (a.climb - target) * Math.exp(-6 * a.dt) : target;
@@ -2008,7 +2008,7 @@ export class Robot {
     this.hopperFill.position.y = this.config.bumperTop + (hopperH * frac) / 2;
     this.turret.rotation.y = wrapAngle(this.turretYaw - yawFromQuat(r));
     const armBase = Math.max(0.05, this.config.height - this.config.bumperTop);
-    const deployment = this.climbPhase === 'none' ? (this.climbReady ? 1 : 0) : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * this.climbProgress : .25;
+    const deployment = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' ? 1 : 0) : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * this.climbProgress : .25;
     const armLen = armBase * (.25 + .75 * deployment);
     this.climberArm.scale.y = armLen;
     this.climberArm.position.y = this.config.bumperTop + armLen / 2;

@@ -58,7 +58,7 @@ export function buildSpectreCad(root:THREE.Group,k:ModelKit,animated:()=>boolean
         nextTool=THREE.MathUtils.lerp(35,10,pull)*Math.PI/180;
         nextSlide=.1905*(1-pull);nextExtension=.08255*pull;
       }else if(!parked){
-        nextTool=collecting?-.035:p.algae?(p.height>1.7?1.0:0):p.level===4?-.65:p.level===1?0:-.35;
+        nextTool=collecting?(p.algae?Math.PI-.92:Math.PI-.035):p.algae?(p.height>1.7?1.0:0):p.level===4?-.65:p.level===1?0:-.35;
         const targetX=(p.side===2?-1:1)*(collecting?k.fp.length/2+k.config.intake.reach*.6:p.forward);
         const targetY=collecting?.11:p.height;
         const offset=(p.algae?algae.position:gripOffset).clone().applyAxisAngle(rotationAxis,nextTool-sourceToolPitch);

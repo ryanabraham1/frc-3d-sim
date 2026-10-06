@@ -147,3 +147,16 @@ describe('real team robots', () => {
     expect(r.hood).toBeCloseTo(0.7, 2);
   });
 });
+
+it('Spectre keeps scoring during endgame readiness and raises its arm only after climb starts',()=>{
+  const season=SEASONS.find(s=>s.year===2025)!;
+  const config=cloneConfig(season.teamRobots!.find(t=>t.id==='spectre-2910')!.config);
+  const sim=new HeadlessSim(season,RAPIER,{robot:config,alliance:'blue',pose:season.testing!.scoringSpots('blue')[0]});sims.push(sim);
+  const r=sim.robot;
+  r.placeAnim={height:1.75,forward:.7,level:4};r.climbReady=false;r.syncVisual(0);
+  const before=pose(r.visual);
+  r.climbReady=true;r.syncVisual(0);
+  expect(pose(r.visual)).toEqual(before);
+  r.climbPhase='align';r.syncVisual(0);
+  expect(pose(r.visual)).not.toEqual(before);
+});

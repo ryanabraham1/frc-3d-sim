@@ -251,7 +251,7 @@ describe('2025 ALGAE NET from a raised elevator', () => {
 
 describe('2025 physical piece storage', () => {
   const team = (id: string) => cloneConfig(season.teamRobots!.find(t => t.id === id)!.config);
-  for (const id of ['fiddler-971','spectre-2910','undertow-254','madtown-1323','miss-daisy-341']) {
+  for (const id of ['fiddler-971','undertow-254','madtown-1323','miss-daisy-341']) {
     it(`${id}: one shared holder rejects CORAL while carrying ALGAE`, () => {
       const config=team(id);
       expect(config.intake.primary && config.intake.secondary).toBe(true);
@@ -274,7 +274,7 @@ describe('2025 physical piece storage', () => {
     });
   }
 
-  for(const id of ['firefly-118','sublime-1678'])it(`${id}: independent holders place CORAL while retaining ALGAE`,()=>{
+  for(const id of ['firefly-118','sublime-1678','spectre-2910'])it(`${id}: independent holders place CORAL while retaining ALGAE`,()=>{
     const config=team(id);expect(config.options?.coralBuffer).toBe(false);expect(config.hopperCapacity).toBe(2);
     const sim=make('blue',season.testing!.scoringSpots('blue')[0],config);teleop(sim);
     for(const i of sim.robot.held.splice(0))sim.pool.reserve(i);load(sim,0);load(sim,126);

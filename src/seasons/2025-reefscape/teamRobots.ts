@@ -356,7 +356,8 @@ export function reefscapeTeamRobots(): TeamRobot[] {
       source: 'Onshape "Spectre: 2025 FIRST World Championship robot"; frcteam2910.org 2025 recap',
       config: teamConfig(2910, 'spectre-2910', { coral: 'l4', intake: 'both', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, (c) => {
         c.frameLength=.7112;c.frameWidth=.6604;c.height=.54; // measured source frame, stow height fit
-        c.intake.groundSide='front';c.intake.stationSide='front';
+        c.intake.groundYaw=0;c.intake.groundSide='front';c.intake.stationSide='front';
+        c.options={...c.options,dualPieceStorage:true};
         c.placement!.scoreSide='ends';
         c.climber.gripOffset=[-.43,0];
         c.climber.secondsToClimb = 1.5;
