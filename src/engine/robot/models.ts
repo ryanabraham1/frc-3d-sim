@@ -53,6 +53,10 @@ export interface RobotAnimState {
   vx: number;
   vz: number;
   omega: number;
+  /** World up expressed in the chassis frame (level = 0,1,0): tilts pour loose FUEL toward the low side. */
+  upx?: number;
+  upy?: number;
+  upz?: number;
 }
 
 export interface ModelKit {
@@ -364,10 +368,13 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(o.x, o.y0 + o.height / 2, 0), Math.hypot(o.length, o.width, o.height) / 2 + r);
   mesh.count = 0;
   parent.add(mesh);
+  mesh.userData.setFuelOpen = (open: boolean) => { pile.open = open; };
   mesh.userData.fuelEntry = (hint: THREE.Vector3) => pile.entry(hint);
   mesh.userData.receiveFuel = (position: THREE.Vector3) => pile.receive(position);
   mesh.userData.animateFuel = (s: RobotAnimState) => {
-    if (!pile.step(s)) return;
+    const moved = pile.step(s, (x, y, z, vx, vy, vz) => mesh.userData.fuelEscape?.(mesh, x, y, z, vx, vy, vz));
+    if (pile.size !== mesh.count) mesh.count = pile.size; // balls that went over the rim
+    if (!moved) return;
     for (let i = 0; i < mesh.count; i++) place(i);
     mesh.instanceMatrix.needsUpdate = true;
   };

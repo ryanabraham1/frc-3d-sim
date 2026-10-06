@@ -29,7 +29,7 @@ import { clamp, formatClock } from '../units';
 import { turnToward } from '../ai/steering';
 import { radioFor } from '../ai/team';
 import { fillBotStations } from '../ai/matchSetup';
-import { spillHeld } from '../robot/spill';
+import { drainSpilled } from '../robot/spill';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
 
 type GameState = NetGameState;
@@ -642,7 +642,7 @@ export class Game {
         else if (cmd.climb !== null && !r.isClimbing && !r.tippedOver && r.config.climber.maxLevel > 0) this.rules.requestClimb(r, cmd.climb);
       }
       r.tick(dt);
-      spillHeld(r, this.pool, dt, this.rng);
+      drainSpilled(r, this.pool);
       r.aimTurretAt(target, dt);
       const handled = on && this.rules.handleMechanisms?.(r, cmd, dt);
       if (on && !handled && (cmd.shoot || cmd.pass)) {

@@ -745,6 +745,56 @@ export class Robot {
         this.fuelPiles.push(o);
       }
     });
+    this.wireFuelPiles();
+  }
+
+  /** True when the loose FUEL sits in a bin with no lid: nets / covers (and non-FUEL robots) keep it in. */
+  get openHopper(): boolean {
+    const c = this.config;
+    const netted = c.hopperCovered || (!!c.hopperExpansion && c.hopperExpansion.mechanism !== 'telescoping');
+    return c.launcher.enabled && c.hopperCapacity > 1 && !netted;
+  }
+
+  /** Pieces that went over the hopper rim and are waiting for the sim to turn them back into field pieces. */
+  readonly spilled: { idx: number; pos: THREE.Vector3; vel: THREE.Vector3 }[] = [];
+
+  private wireFuelPiles(): void {
+    const open = this.openHopper;
+    for (const pile of this.fuelPiles) {
+      pile.userData.setFuelOpen?.(open);
+      pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
+    }
+  }
+
+  /**
+   * A ball in the hopper's particle pile rose above the rim (the chassis tilted, was jolted, or is upside down): it
+   * leaves the robot where it is, carrying the chassis' own motion plus its own, and falls under normal physics.
+   * Nothing is thrown: if the robot is level and still, nothing ever gets here.
+   */
+  private fuelEscaped(mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number): void {
+    const idx = this.held[this.held.length - 1];
+    if (idx === undefined || idx < 0) return; // replicas hold placeholders: only the host spills real pieces
+    this.held.pop();
+    const c = this.config, r = this._projectile.radius;
+    this.visual.updateMatrixWorld(true);
+    const local = this.visual.worldToLocal(mesh.localToWorld(new THREE.Vector3(x, y, z)));
+    // The chassis is a solid box in the physics world: put the ball on the nearest face instead of inside it.
+    const hx = c.frameLength / 2 - 0.01, hz = c.frameWidth / 2 - 0.01;
+    if (Math.abs(local.x) < hx && Math.abs(local.z) < hz && local.y > c.bumperTop && local.y < c.height) {
+      const gap = [c.height - local.y, hx - local.x, hx + local.x, hz - local.z, hz + local.z];
+      const face = gap.indexOf(Math.min(...gap)), pad = r * 1.05;
+      if (face === 0) local.y = c.height + pad;
+      else if (face === 1) local.x = hx + pad;
+      else if (face === 2) local.x = -hx - pad;
+      else if (face === 3) local.z = hz + pad;
+      else local.z = -hz - pad;
+    }
+    const pos = this.visual.localToWorld(local);
+    const t = this.body.translation(), lin = this.body.linvel(), ang = this.body.angvel();
+    const arm = pos.clone().sub(new THREE.Vector3(t.x, t.y, t.z));
+    const vel = new THREE.Vector3(vx, vy, vz).applyQuaternion(this.visual.quaternion)
+      .add(new THREE.Vector3(lin.x, lin.y, lin.z)).add(new THREE.Vector3(ang.x, ang.y, ang.z).cross(arm));
+    this.spilled.push({ idx, pos, vel });
   }
 
   /**
@@ -846,6 +896,7 @@ export class Robot {
         this.fuelPiles.push(o);
       }
     });
+    this.wireFuelPiles();
   }
 
   /** Select the active bin nearest the intake path (including deployed hopper extensions). */
@@ -915,6 +966,8 @@ export class Robot {
     a.vx = this.tmp.x;
     a.vz = this.tmp.z;
     a.omega = this.body.angvel().y;
+    this.tmp.set(0, 1, 0).applyQuaternion(this.q); // this.q is already the inverse chassis rotation
+    a.upx = this.tmp.x; a.upy = this.tmp.y; a.upz = this.tmp.z;
     model?.update(a);
     for (const animate of this.fuelAnimations) animate(a);
   }

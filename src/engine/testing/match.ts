@@ -4,7 +4,7 @@ import type { AutoPilot, GameSettings, SeasonDefinition } from '../core/season';
 import type { RapierModule } from '../physics/world';
 import { IDLE_COMMAND, intakeZoneContains, type RobotCommand } from '../robot/robot';
 import { HeadlessSim } from './headless';
-import { spillHeld } from '../robot/spill';
+import { drainSpilled } from '../robot/spill';
 
 export interface MatchRunOptions {
   /** Drive the player's station with a bot too (an all-AI match), instead of leaving it idle. */
@@ -69,7 +69,7 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
           else if (cmd.climb !== null && !r.isClimbing && !r.tippedOver && r.config.climber.maxLevel > 0) rules.requestClimb(r, cmd.climb);
         }
         r.tick(dt);
-        spillHeld(r, pool, dt, sim.rng);
+        drainSpilled(r, pool);
         r.aimTurretAt(target, dt);
         const handled = enabled && rules.handleMechanisms?.(r, cmd, dt);
         if (enabled && !handled && (cmd.shoot || cmd.pass)) {

@@ -151,3 +151,39 @@ it('also puts a dense full hopper to sleep instead of spending CPU forever on re
   for(let frame=0;frame<120;frame++)step(s);
   expect(mesh.instanceMatrix.version).toBe(version);
 });
+
+function packed(open: boolean, balls: number) {
+  const group = new THREE.Group();
+  const fill = fillBlock(group, { x: 0, y0: 0.09, length: 0.6, width: 0.6, height: 0.4, color: 0xf2c200, capacity: 60 });
+  const mesh = group.children[0] as THREE.InstancedMesh;
+  mesh.userData.setFuelOpen(open);
+  const out: number[] = [];
+  mesh.userData.fuelEscape = (_m: unknown, x: number, y: number) => out.push(y);
+  fill.set(balls / mesh.userData.fuelSlots);
+  const step = mesh.userData.animateFuel as (s: RobotAnimState) => void;
+  return { mesh, step, out };
+}
+it('a hard hit throws the top of a brim-full open hopper over the rim; a lid, or a shallow pile, keeps it in', () => {
+  const run = (open: boolean, balls: number) => {
+    const { mesh, step, out } = packed(open, balls), s = state();
+    for (let i = 0; i < 120; i++) step(s);
+    s.vx = 6; for (let i = 0; i < 3; i++) step(s);
+    s.vx = 0; for (let i = 0; i < 90; i++) step(s); // stopped dead by a wall
+    return { escaped: out.length, left: mesh.count };
+  };
+  const full = packed(true, 1).mesh.userData.fuelSlots as number;
+  expect(run(true, full).escaped).toBeGreaterThan(0);
+  expect(run(false, full).escaped).toBe(0);
+  expect(run(true, 5).escaped).toBe(0);
+});
+it('a tilted open hopper pours toward the low side, a level one stays put', () => {
+  const tilted = (ang: number) => {
+    const { mesh, step, out } = packed(true, 40), s = state();
+    for (let i = 0; i < 120; i++) step(s);
+    s.upx = 0; s.upy = Math.cos(ang); s.upz = Math.sin(ang);
+    for (let i = 0; i < 180; i++) step(s);
+    return { escaped: out.length, left: mesh.count };
+  };
+  expect(tilted(0).escaped).toBe(0);
+  expect(tilted(Math.PI).escaped).toBeGreaterThan(30);
+});

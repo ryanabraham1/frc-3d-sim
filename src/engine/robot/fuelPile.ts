@@ -16,6 +16,13 @@ export class FuelPile {
   private readonly contactRadius: Float32Array;
   private readonly arrivals: THREE.Vector3[] = [];
   private count = 0;
+  /** Uncovered hopper: no lid, so FUEL that ends up above the rim leaves the pile (see `step`'s escape callback). */
+  open = false;
+  private lift = 0;
+  private upX = 0;
+  private upY = 1;
+  private upZ = 0;
+  get size(): number { return this.count; }
   private pending = 0;
   private quiet = 0;
   private awake = false;
@@ -88,15 +95,22 @@ export class FuelPile {
   }
 
   /** Returns true only when matrices need uploading (at most 30 Hz, zero while sleeping). */
-  step(s: RobotAnimState): boolean {
+  step(s: RobotAnimState, escape?: (x: number, y: number, z: number, vx: number, vy: number, vz: number) => void): boolean {
     const dt = THREE.MathUtils.clamp(s.dt, 0, 0.1);
     if (dt <= 0) return false;
+    // Gravity in the chassis frame: a tilted or overturned robot pours its pile toward the low side.
+    const ux = s.upx ?? 0, uy = s.upy ?? 1, uz = s.upz ?? 0;
+    if (Math.abs(ux - this.upX) + Math.abs(uy - this.upY) + Math.abs(uz - this.upZ) > 0.01 && this.count > 0) { this.awake = true; this.quiet = 0; }
+    this.upX = ux; this.upY = uy; this.upZ = uz;
     if (this.sampled && s.enabled && this.count > 0) {
       const dx = this.previousX - s.vx, dz = this.previousZ - s.vz, turn = this.previousOmega - s.omega;
       if (Math.hypot(dx, dz) + Math.abs(turn) * 0.15 > 0.025) {
         this.kickX += dx * 0.65; this.kickZ += dz * 0.65; this.kickTurn += turn * 0.5;
         this.awake = this.count > 0; this.quiet = 0;
       }
+      // A hard hit jolts the whole robot: the loose FUEL near the top jumps and can clear the rim.
+      const impact = Math.hypot(dx, dz);
+      if (this.open && impact > 2.5) this.lift = Math.min(2.2, 0.6 + (impact - 2.5) * 0.45);
       if (Math.abs(s.omega) * Math.hypot(s.vx, s.vz) > 0.2) { this.awake = this.count > 0; this.quiet = 0; }
     }
     this.previousX = s.vx; this.previousZ = s.vz; this.previousOmega = s.omega; this.sampled = true;
@@ -111,12 +125,13 @@ export class FuelPile {
       v[j + 2] += THREE.MathUtils.clamp(this.kickZ - this.kickTurn * (p[j] - this.bin.x), -1.8, 1.8);
     }
     this.kickX = this.kickZ = this.kickTurn = 0;
+    if (this.lift > 0) { for (let i = 0; i < this.count; i++) v[i * 3 + 1] += this.lift; this.lift = 0; }
     this.before.set(p);
     const steps = Math.ceil(time * 60), h = time / steps;
     for (let sub = 0; sub < steps; sub++) {
       for (let i = 0; i < this.count; i++) {
         const j = i * 3, oldX = p[j], oldZ = p[j + 2];
-        v[j + 1] -= 9.81 * h;
+        v[j] -= 9.81 * h * ux; v[j + 1] -= 9.81 * h * uy; v[j + 2] -= 9.81 * h * uz;
         if (s.enabled) { v[j] += s.omega * s.vz * h * 0.45; v[j + 2] -= s.omega * s.vx * h * 0.45; }
         p[j] += v[j] * h; p[j + 1] += v[j + 1] * h; p[j + 2] += v[j + 2] * h;
         this.confine(i, oldX, oldZ);
@@ -149,11 +164,25 @@ export class FuelPile {
       const damping = Math.exp(-7 * h);
       for (let j = 0; j < this.count * 3; j++) v[j] *= damping;
     }
+    if (this.open) this.releaseOverRim(escape);
     let movement = 0;
     for (let j = 0; j < this.count * 3; j++) movement = Math.max(movement, Math.abs(p[j] - this.before[j]));
     this.quiet = movement < 0.003 ? this.quiet + time : 0;
     if (this.quiet > 0.6) { this.awake = false; v.fill(0); }
     return true;
+  }
+
+  /** Balls whose centre has risen above the rim are no longer in the hopper: hand them to the caller and drop them from the pile. */
+  private releaseOverRim(escape?: (x: number, y: number, z: number, vx: number, vy: number, vz: number) => void): void {
+    const p = this.positions, v = this.velocity, rim = this.bin.y0 + this.bin.height;
+    for (let i = this.count - 1; i >= 0; i--) {
+      const j = i * 3;
+      if (p[j + 1] <= rim + this.radius * 0.2) continue;
+      escape?.(p[j], p[j + 1], p[j + 2], v[j], v[j + 1], v[j + 2]);
+      const last = (this.count - 1) * 3;
+      for (let k = 0; k < 3; k++) { p[j + k] = p[last + k]; v[j + k] = v[last + k]; }
+      this.count--;
+    }
   }
 
   private confine(i: number, oldX: number, oldZ: number): void {
@@ -167,6 +196,7 @@ export class FuelPile {
     if (b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
     const floor = b.y0 + ry, roof = Math.min(b.y0 + b.height, b.ceiling?.(p[j], p[j + 2]) ?? Infinity) - ry;
     if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.85; v[j + 2] *= 0.85; }
-    if (p[j + 1] > roof) { p[j + 1] = roof; v[j + 1] = Math.min(0, -v[j + 1] * 0.06); }
+    // Uncovered bins have no lid: only the rim (see releaseOverRim) ends a ball's climb.
+    if (!this.open && p[j + 1] > roof) { p[j + 1] = roof; v[j + 1] = Math.min(0, -v[j + 1] * 0.06); }
   }
 }
