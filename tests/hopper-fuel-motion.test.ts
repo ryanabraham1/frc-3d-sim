@@ -13,7 +13,7 @@ function pile() {
 it('stirs with driving and feeding, settles, then stops uploading idle matrices', () => {
   const {fill,mesh,step} = pile(), s = state();
   fill.set(0.8);
-  for(let i=0;i<180;i++) step(s);
+  for(let i=0;i<360;i++) step(s);
   const rest = mesh.instanceMatrix.array.slice();
   const version = mesh.instanceMatrix.version;
   for(let i=0;i<120;i++) step(s);
@@ -22,7 +22,7 @@ it('stirs with driving and feeding, settles, then stops uploading idle matrices'
   for(let i=0;i<12;i++) step(s);
   expect(Array.from(mesh.instanceMatrix.array)).not.toEqual(Array.from(rest));
   s.vx=0;s.intaking=false;
-  for(let i=0;i<240;i++) step(s);
+  for(let i=0;i<360;i++) step(s);
   const settled = mesh.instanceMatrix.version;
   for(let i=0;i<120;i++) step(s);
   expect(mesh.instanceMatrix.version).toBe(settled);
@@ -72,4 +72,82 @@ it('animates default and team 2026 hoppers through the robot render loop after o
       expect(Array.from(mesh.instanceMatrix.array)).not.toEqual(Array.from(rest));
     } finally {sim.dispose();}
   }
+});
+
+it('a wall stop permanently rearranges a half-full pile rather than returning to stored slots', () => {
+  const {fill,mesh,step}=pile(), s=state();
+  fill.set(0.5);
+  for(let frame=0;frame<360;frame++) step(s);
+  s.vx=4;
+  for(let frame=0;frame<180;frame++) step(s);
+  const before=mesh.instanceMatrix.array.slice();
+  s.vx=0; // chassis loses its velocity on impact; the FUEL retains forward momentum
+  for(let frame=0;frame<360;frame++) step(s);
+  let changed=0;
+  for(let i=0;i<mesh.count;i++) {
+    const j=i*16;
+    const travel=Math.hypot(mesh.instanceMatrix.array[j+12]-before[j+12],mesh.instanceMatrix.array[j+14]-before[j+14]);
+    if(travel>0.02) changed++;
+  }
+  expect(changed).toBeGreaterThan(mesh.count/3);
+  const settled=mesh.instanceMatrix.version;
+  for(let frame=0;frame<120;frame++) step(s);
+  expect(mesh.instanceMatrix.version).toBe(settled);
+});
+
+it('continues an incoming ball from the intake endpoint, then rolls into a new resting pocket', () => {
+  const {fill,mesh,step}=pile(), s=state();
+  fill.set(0.5);
+  for(let frame=0;frame<360;frame++) step(s);
+  const old=mesh.count;
+  const entry=mesh.userData.fuelEntry(new THREE.Vector3(-0.23,0.35,0.18)) as THREE.Vector3;
+  mesh.userData.receiveFuel(entry);
+  fill.set((old+1)/mesh.instanceMatrix.count);
+  const matrix=new THREE.Matrix4(),pos=new THREE.Vector3();
+  mesh.getMatrixAt(old,matrix);pos.setFromMatrixPosition(matrix);
+  expect(pos.distanceTo(entry)).toBeLessThan(1e-6);
+  for(let frame=0;frame<180;frame++) step(s);
+  mesh.getMatrixAt(old,matrix);pos.setFromMatrixPosition(matrix);
+  expect(pos.distanceTo(entry)).toBeGreaterThan(0.025);
+});
+
+it('rearranges fuel when the real chassis collides with a field wall', async () => {
+  const {default:RAPIER}=await import('@dimforge/rapier3d-compat');
+  const {SEASONS}=await import('../src/seasons');
+  const {HeadlessSim}=await import('../src/engine/testing/headless');
+  const {cloneConfig}=await import('../src/engine/robot/config');
+  const {IDLE_COMMAND}=await import('../src/engine/robot/robot');
+  await RAPIER.init();
+  const season=SEASONS.find(s=>s.year===2026)!;
+  const sim=new HeadlessSim(season,RAPIER,{robot:cloneConfig(season.robotDefaults),alliance:'blue',pose:{x:3,y:1.8,yaw:0}});
+  try {
+    sim.load(20);const r=sim.robot;
+    r.enabled=true;
+    for(let frame=0;frame<360;frame++)r.syncVisual(1/60);
+    const mesh=r.visual.getObjectByName('hopper-fuel-pile') as THREE.InstancedMesh;
+    let preImpact: Float32Array | null=null, speed=0, collided=false;
+    for(let frame=0;frame<240;frame++) {
+      const old=mesh.instanceMatrix.array.slice() as Float32Array;
+      sim.step({...IDLE_COMMAND,vx:-4});
+      const next=r.body.linvel().x;
+      if(speed < -2 && next-speed>1) {preImpact=old;collided=true;}
+      speed=next;r.syncVisual(sim.physics.dt);
+    }
+    expect(collided).toBe(true);
+    for(let frame=0;frame<360;frame++){sim.step(IDLE_COMMAND);r.syncVisual(sim.physics.dt);}
+    let changed=0;
+    for(let i=0;i<mesh.count;i++) {
+      const j=i*16;
+      if(Math.hypot(mesh.instanceMatrix.array[j+12]-preImpact![j+12],mesh.instanceMatrix.array[j+14]-preImpact![j+14])>0.02)changed++;
+    }
+    expect(changed).toBeGreaterThan(2);
+  } finally {sim.dispose();}
+});
+
+it('also puts a dense full hopper to sleep instead of spending CPU forever on resting contacts', () => {
+  const {fill,mesh,step}=pile(),s=state();fill.set(1);
+  for(let frame=0;frame<600;frame++)step(s);
+  const version=mesh.instanceMatrix.version;
+  for(let frame=0;frame<120;frame++)step(s);
+  expect(mesh.instanceMatrix.version).toBe(version);
 });

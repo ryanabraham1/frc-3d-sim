@@ -13,7 +13,9 @@ import * as THREE from 'three';
  */
 export interface FlowPaths {
   /** Intake path after the capture point, ending at the stow point (where the held piece rests / the hopper). */
-  intake(): THREE.Vector3[];
+  intake(from?: THREE.Vector3 | null): THREE.Vector3[];
+  /** Hand a completed intake token to the hopper at this exact robot-frame position. */
+  arrive?(position: THREE.Vector3): void;
   /** Stow → shooter path for the feed stream (multi-piece robots). Omit for no feed animation. */
   feed?(): THREE.Vector3[];
 }
@@ -26,7 +28,6 @@ interface Token {
   t: number;
   dur: number;
   kind: 'intake' | 'feed';
-  spin: THREE.Vector3;
 }
 
 /** Max animated pieces in flight per robot (a fast FUEL intake swallows ~10 / s). */
@@ -49,6 +50,7 @@ export class PieceFlow {
     private readonly paths: FlowPaths,
     /** Spin pieces as they roll through (balls); flat pieces (rings) stay level. */
     private readonly roll: boolean,
+    private readonly radius = 0.075,
   ) {}
 
   /** A piece was captured at this world position (call when it is pushed onto `robot.held`). */
@@ -97,16 +99,19 @@ export class PieceFlow {
       tok.t += dt;
       const u = Math.min(1, tok.t / tok.dur);
       if (u >= 1) {
+        if (tok.kind === 'intake') this.paths.arrive?.(tok.pts[tok.pts.length - 1]);
         this.release(tok.obj);
         this.live.splice(i, 1);
         continue;
       }
       // Ease in-out: pieces are grabbed, accelerate through the rollers, and settle at the end.
       const e = u * u * (3 - 2 * u);
+      this.tmp.copy(tok.obj.position);
       this.at(tok, e * tok.cum[tok.cum.length - 1], tok.obj.position);
       if (this.roll) {
-        tok.obj.rotation.x += tok.spin.x * dt;
-        tok.obj.rotation.z += tok.spin.z * dt;
+        // Roll in the actual travel direction rather than spin randomly in place.
+        tok.obj.rotation.x += (tok.obj.position.z - this.tmp.z) / this.radius;
+        tok.obj.rotation.z -= (tok.obj.position.x - this.tmp.x) / this.radius;
       } else {
         // Flat pieces pitch with the path (riding up a ramp) and stay level otherwise.
         const s = Math.min(tok.cum[tok.cum.length - 1], e * tok.cum[tok.cum.length - 1] + 0.02);
@@ -124,7 +129,7 @@ export class PieceFlow {
   }
 
   private spawnIntake(from: THREE.Vector3 | null): void {
-    const path = this.paths.intake();
+    const path = this.paths.intake(from);
     if (path.length < 1) return;
     const pts = from ? [from, ...path] : path;
     this.spawn(pts, 'intake');
@@ -141,7 +146,25 @@ export class PieceFlow {
     if (this.live.length >= MAX_TOKENS) {
       // Oldest token finishes instantly so a fast intake never queues up stale animations.
       const old = this.live.shift()!;
+      if (old.kind === 'intake') this.paths.arrive?.(old.pts[old.pts.length - 1]);
       this.release(old.obj);
+    }
+    if (this.roll && kind === 'intake' && pts.length > 2) {
+      // Round roller/ramp corners once at spawn; per-frame motion still uses the cheap polyline sampler.
+      const rounded = [pts[0]];
+      for (let i = 1; i < pts.length - 1; i++) {
+        const corner = pts[i], before = pts[i - 1], after = pts[i + 1];
+        const trim = Math.min(0.06, corner.distanceTo(before) * 0.25, corner.distanceTo(after) * 0.25);
+        const a = corner.clone().lerp(before, trim / Math.max(1e-6, corner.distanceTo(before)));
+        const b = corner.clone().lerp(after, trim / Math.max(1e-6, corner.distanceTo(after)));
+        rounded.push(a);
+        for (let k = 1; k <= 4; k++) {
+          const t = k / 4;
+          rounded.push(a.clone().multiplyScalar((1-t)**2).addScaledVector(corner, 2*t*(1-t)).addScaledVector(b, t*t));
+        }
+      }
+      rounded.push(pts[pts.length - 1]);
+      pts = rounded;
     }
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
@@ -154,7 +177,6 @@ export class PieceFlow {
     const tok: Token = {
       obj, pts, cum, t: 0, kind,
       dur: Math.min(MAX_DUR, Math.max(MIN_DUR, len / SPEED)),
-      spin: new THREE.Vector3(-(8 + Math.random() * 6), 0, (Math.random() - 0.5) * 6),
     };
     this.live.push(tok);
     return tok;

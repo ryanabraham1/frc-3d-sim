@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FuelPile } from './fuelPile';
 import type { Alliance } from '../coords';
 import type { RobotConfig } from './config';
 import { HEADLESS, makeTextTexture } from '../render/text';
@@ -273,9 +274,9 @@ export function seededRandom(seed: number): () => number {
 
 /**
  * Round FUEL inside the hopper, filled from the floor up with `set(fill)` (0–1).
- * Instancing preserves the recognizable game-piece shape without one draw call per ball. The balls are loosely
- * packed (offset layers, jitter, slightly squashed foam), fill in an uneven pile rather than row by row, and new ones
- * drop in and settle instead of popping into place.
+ * Instancing keeps one draw call per bin. A sleeping visual particle solver lets gravity, ball contacts and chassis
+ * impacts form the pile; initial packing is only a starting pose, never a fixed resting target. Intake tokens hand
+ * their exact endpoint to the new particle so it rolls into the pile without a second spawn.
  */
 export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
   type Slot = { x: number; y: number; z: number; s: number; key: number; sy?: number };
@@ -332,86 +333,35 @@ export function fillBlock(parent: THREE.Object3D, o: { x: number; y0: number; le
   const transform = new THREE.Object3D(), tint = new THREE.Color(o.color);
   // Subtle foam color variation gives the pile depth without textures or extra draw calls.
   for (let i = 0; i < count; i++) mesh.setColorAt(i, tint.clone().multiplyScalar(0.9 + rand() * 0.1));
-  const falling = new Map<number, number>();
-  const place = (i: number, drop: number, energy = 0, time = 0, swayX = 0, swayZ = 0) => {
-    const b = slots[i], phase = i * 2.39996;
-    // Only the exposed dozen balls stir; buried balls remain cached. Motion is millimetres, not floating balls.
-    const surface = i >= mesh.count - 12;
-    let dx = surface ? swayX + Math.sin(time * 8 + phase) * energy * 0.004 : 0;
-    let dz = surface ? swayZ + Math.cos(time * 7 + phase) * energy * 0.004 : 0;
-    const radius = r * b.s;
-    dx = THREE.MathUtils.clamp(dx, o.x - o.length / 2 + radius - b.x, o.x + o.length / 2 - radius - b.x);
-    dz = THREE.MathUtils.clamp(dz, -o.width / 2 + radius - b.z, o.width / 2 - radius - b.z);
-    if (o.inside && !o.inside(b.x + dx, b.z + dz)) { dx = 0; dz = 0; }
-    const ceiling = Math.min(o.y0 + o.height, o.ceiling?.(b.x + dx, b.z + dz) ?? Infinity);
-    const lift = surface ? Math.abs(Math.sin(time * 9 + phase)) * energy * 0.003 : 0;
-    transform.position.set(b.x + dx, Math.min(ceiling - radius * (b.sy ?? 0.94), b.y + drop + lift), b.z + dz);
-    transform.rotation.set(surface ? energy * 0.07 * Math.sin(time * 7 + phase) : 0, phase, surface ? energy * 0.07 * Math.cos(time * 8 + phase) : 0);
+  const pile = new FuelPile(o, slots, r);
+  const place = (i: number) => {
+    const b = slots[i], j = i * 3, p = pile.positions;
+    transform.position.set(p[j], p[j + 1], p[j + 2]);
+    transform.rotation.set(0, i * 2.39996, 0);
     transform.scale.set(b.s, b.s * (b.sy ?? 0.94), b.s);
     transform.updateMatrix();
     mesh.setMatrixAt(i, transform.matrix);
   };
-  for (let i = 0; i < count; i++) place(i, 0);
-  // Fixed conservative bounds include drops and sway; no per-frame bounding-volume rebuild.
-  mesh.computeBoundingSphere();
-  if (mesh.boundingSphere) mesh.boundingSphere.radius += r * 2;
+  for (let i = 0; i < count; i++) place(i);
+  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(o.x, o.y0 + o.height / 2, 0), Math.hypot(o.length, o.width, o.height) / 2 + r);
   mesh.count = 0;
   parent.add(mesh);
-  let initialized = false, energy = 0, elapsed = 0, pending = 0;
-  let previousX = 0, previousZ = 0, previousOmega = 0, sampled = false;
-  let swayX = 0, swayZ = 0, dirty = false;
-  // Robot caches this callback once at model creation, including piles inside moving CAD/sliding hoppers.
+  mesh.userData.fuelEntry = (hint: THREE.Vector3) => pile.entry(hint);
+  mesh.userData.receiveFuel = (position: THREE.Vector3) => pile.receive(position);
   mesh.userData.animateFuel = (s: RobotAnimState) => {
-    const dt = THREE.MathUtils.clamp(s.dt, 0, 0.1);
-    if (dt <= 0) return;
-    const accelerationX = sampled ? (s.vx - previousX) / dt - s.omega * s.vz : 0;
-    const accelerationZ = sampled ? (s.vz - previousZ) / dt + s.omega * s.vx : 0;
-    const turn = sampled ? Math.abs(s.omega - previousOmega) / dt : 0;
-    previousX = s.vx; previousZ = s.vz; previousOmega = s.omega; sampled = true;
-    if (!mesh.count) { energy = 0; swayX = swayZ = 0; pending = 0; falling.clear(); return; }
-    const agitation = s.enabled ? Math.min(1, Math.hypot(accelerationX, accelerationZ) * 0.035 + turn * 0.015 + (s.intaking ? 0.18 : 0) + s.firing * 0.4) : 0;
-    energy = Math.max(agitation, energy * Math.exp(-5 * dt));
-    const ease = 1 - Math.exp(-9 * dt);
-    swayX += ((s.enabled ? THREE.MathUtils.clamp(-accelerationX * 0.001, -0.008, 0.008) : 0) - swayX) * ease;
-    swayZ += ((s.enabled ? THREE.MathUtils.clamp(-accelerationZ * 0.001, -0.008, 0.008) : 0) - swayZ) * ease;
-    elapsed += dt; pending += dt;
-    // Cap instance-buffer uploads at 30 Hz; completely skip them once the pile has settled.
-    if (pending < 1 / 30) return;
-    const step = pending; pending = 0;
-    const active = energy > 0.002 || Math.abs(swayX) + Math.abs(swayZ) > 0.0001;
-    if (!active && !dirty && !falling.size) return;
-    if (!active) { energy = 0; swayX = swayZ = 0; }
-    for (const [i, age] of falling) {
-      const t = Math.min(1, (age + step) / 0.28);
-      // Accelerate into the pile, then give the soft foam a very small settling bounce.
-      const drop = t < 0.7 ? r * 1.5 * (1 - (t / 0.7) ** 2) : Math.sin((t - 0.7) / 0.3 * Math.PI) * r * 0.08;
-      place(i, drop, energy, elapsed, swayX, swayZ);
-      if (t >= 1) falling.delete(i); else falling.set(i, age + step);
-    }
-    for (let i = Math.max(0, mesh.count - 12); i < mesh.count; i++) {
-      if (!falling.has(i)) place(i, 0, energy, elapsed, swayX, swayZ);
-    }
+    if (!pile.step(s)) return;
+    for (let i = 0; i < mesh.count; i++) place(i);
     mesh.instanceMatrix.needsUpdate = true;
-    dirty = active;
   };
   return {
     set(f) {
       const want = Math.min(count, Math.round(THREE.MathUtils.clamp(f, 0, 1) * count));
-      const old = mesh.count;
-      if (want !== old) {
-        // Reset the old surface before burying it or changing the pile size.
-        for (let i = Math.max(0, old - 12); i < old; i++) if (!falling.has(i)) place(i, 0);
-        for (const i of falling.keys()) if (i >= want) { falling.delete(i); place(i, 0); }
-        for (let i = old; i < want; i++) {
-          if (initialized) falling.set(i, 0);
-          place(i, initialized ? r * 1.5 : 0);
-        }
-        if (initialized) energy = Math.min(1, energy + Math.min(0.5, Math.abs(want - old) * 0.08));
+      if (want !== mesh.count) {
+        pile.setCount(want);
+        mesh.count = want;
+        for (let i = 0; i < want; i++) place(i);
         mesh.instanceMatrix.needsUpdate = true;
-        dirty = true;
       }
-      initialized = true;
-      mesh.count = want;
       mesh.visible = want > 0;
     },
   };

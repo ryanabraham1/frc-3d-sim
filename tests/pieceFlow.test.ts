@@ -67,3 +67,17 @@ describe('PieceFlow', () => {
     expect(b.visual.children.filter((c) => c.visible)).toHaveLength(0);
   });
 });
+
+it('hands intake tokens to the pile at their exact final point, once per ball', () => {
+  const visual=new THREE.Group(), delivered: THREE.Vector3[]=[];
+  const end=new THREE.Vector3(-0.15,0.35,0.1);
+  const flow=new PieceFlow(visual,()=>new THREE.Mesh(new THREE.SphereGeometry(.075)),{
+    intake: from => [new THREE.Vector3(-.4,.15,from?.z ?? 0),end.clone()],
+    arrive: p => delivered.push(p.clone()),
+  },true);
+  flow.update(0,0,.1);flow.noteCapture({x:-.6,y:.075,z:.1});flow.update(0,1,.1);
+  for(let frame=0;frame<60;frame++)flow.update(1/60,1,.1);
+  expect(delivered).toHaveLength(1);
+  expect(delivered[0].distanceTo(end)).toBeLessThan(1e-8);
+  expect(flow.inTransit).toBe(0);
+});

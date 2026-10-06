@@ -176,6 +176,7 @@ export class Robot {
   /** Real-team visual model (config.model), animated from `anim` every frame. */
   private model: RobotModel | null = null;
   private roundHopper: { set(f: number): void } | null = null;
+  private readonly fuelPiles: THREE.Object3D[] = [];
   private readonly fuelAnimations: ((s: RobotAnimState) => void)[] = [];
   private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, aiming: false, hood: 0, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
   private lastFrame = -1;
@@ -698,8 +699,12 @@ export class Robot {
     for (const part of this.model.replaces) for (const o of this.parts.get(part) ?? []) o.visible = false;
     if (this.model.replaces.includes('hopper')) this.hopperFill.visible = false;
     this.fuelAnimations.length = 0;
+    this.fuelPiles.length = 0;
     this.visual.traverse(o => {
-      if (typeof o.userData.animateFuel === 'function') this.fuelAnimations.push(o.userData.animateFuel);
+      if (typeof o.userData.animateFuel === 'function') {
+        this.fuelAnimations.push(o.userData.animateFuel);
+        this.fuelPiles.push(o);
+      }
     });
   }
 
@@ -797,8 +802,39 @@ export class Robot {
       height: Math.max(0.08, c.height - c.bumperTop - 0.08), color: 0xf2c200, capacity: c.hopperCapacity });
     this.hopperFill.visible = false;
     group.traverse(o => {
-      if (typeof o.userData.animateFuel === 'function') this.fuelAnimations.push(o.userData.animateFuel);
+      if (typeof o.userData.animateFuel === 'function') {
+        this.fuelAnimations.push(o.userData.animateFuel);
+        this.fuelPiles.push(o);
+      }
     });
+  }
+
+  /** Select the active bin nearest the intake path (including deployed hopper extensions). */
+  private fuelEntry(hint: THREE.Vector3): THREE.Vector3 | null {
+    let best: THREE.Vector3 | null = null, distance = Infinity;
+    const active = this.fuelPiles.some(p => p.visible);
+    for (const pile of this.fuelPiles) {
+      if (active ? !pile.visible : pile !== this.fuelPiles[0]) continue;
+      const local = pile.worldToLocal(this.visual.localToWorld(hint.clone()));
+      const entry: THREE.Vector3 = pile.userData.fuelEntry(local);
+      this.visual.worldToLocal(pile.localToWorld(entry));
+      const d = entry.distanceToSquared(hint);
+      if (d < distance) { best = entry; distance = d; }
+    }
+    return best;
+  }
+
+  private receiveFuel(position: THREE.Vector3): void {
+    let best: THREE.Object3D | null = null, entry: THREE.Vector3 | null = null, distance = Infinity;
+    const active = this.fuelPiles.some(p => p.visible);
+    for (const pile of this.fuelPiles) {
+      if (active ? !pile.visible : pile !== this.fuelPiles[0]) continue;
+      const local = pile.worldToLocal(this.visual.localToWorld(position.clone()));
+      const nearby: THREE.Vector3 = pile.userData.fuelEntry(local);
+      const d = nearby.distanceToSquared(local);
+      if (d < distance) { best = pile; entry = local; distance = d; }
+    }
+    if (best && entry) best.userData.receiveFuel(entry);
   }
 
   /** Advance the team model's animation (called from syncVisual, once per rendered frame). */
@@ -1797,9 +1833,15 @@ export class Robot {
         (Math.random() - 0.5) * c.frameWidth * 0.5);
     };
     this.flow = new PieceFlow(this.visual, make, {
-      intake: () => {
-        const end = stow();
+      intake: (from) => {
         const custom = model?.flow?.intake?.();
+        // Keep the pickup lane instead of snapping captured balls sideways to a randomized intake path.
+        if (custom && from && this.fuelPiles.length) {
+          const lane = clamp(from.z, -c.intake.width * 0.42, c.intake.width * 0.42);
+          for (let i = 0; i < custom.length; i++) custom[i].z = lerp(lane, custom[i].z, i / custom.length);
+        }
+        const hint = custom?.[custom.length - 1] ?? v(side * c.frameLength * 0.3, c.bumperTop + pieceR, from?.z ?? 0);
+        const end = this.fuelEntry(hint) ?? stow();
         if (custom) return [...custom, end];
         const pts: THREE.Vector3[] = [];
         if (hasGround) {
@@ -1813,6 +1855,7 @@ export class Robot {
         pts.push(end);
         return pts;
       },
+      arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
       feed: c.launcher.enabled && c.hopperCapacity > 1 ? () => {
         // Host follows the actual exit; replicas/gallery alternate their visual feed stream.
         const shot = this.exitIndex > 0 ? this.exitIndex - 1 : this.flowFeedIndex++;
@@ -1822,7 +1865,7 @@ export class Robot {
         const top = ex.up - pieceR - 0.04;
         return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, 0), v(ex.forward - 0.1, (c.bumperTop + top) / 2, 0), v(ex.forward, top, -ex.side)];
       } : undefined,
-    }, roll);
+    }, roll, pieceR);
   }
 
   /** Show the intake capture zone on the carpet under this robot (the driver's own robot; off for everyone else). */
