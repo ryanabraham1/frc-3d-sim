@@ -11,6 +11,7 @@ import { PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { RobotConfig, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, Robot, RobotCommand } from '../robot/robot';
+import { spillHeld } from '../robot/spill';
 
 /**
  * HEADLESS SIMULATION — a season's real field + Rapier physics + one robot, in Node (no DOM, no renderer).
@@ -116,6 +117,7 @@ export class HeadlessSim {
     if (cmd.descend && robot.isClimbing) rules.requestDescend(robot);
     else if (cmd.climb !== null && !robot.isClimbing && !robot.tippedOver && robot.config.climber.maxLevel > 0) rules.requestClimb(robot, cmd.climb);
     robot.tick(dt);
+    spillHeld(robot, pool, dt, this.rng);
     robot.aimTurretAt(target, dt);
     const handled = rules.handleMechanisms?.(robot, cmd, dt);
     if (!handled && (cmd.shoot || cmd.pass)) {
