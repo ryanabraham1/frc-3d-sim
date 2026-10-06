@@ -53,10 +53,27 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
   const length=sourceVector.length(), neutral=new THREE.Quaternion().setFromUnitVectors(sourceVector.normalize(),forward);
   // Keep the mouth in the same orientation as the imported arm's neutral pose.
   const q=new THREE.Quaternion();let yc=.38,phi=1.2,deploy=0,climbAngle=0;
-  return {replaces:root.getObjectByName('climber')?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:climbHeld,heldAnchor:held,coralAxis:id==='sublime-1678'?[0,0,1]:[1,0,0],algaeAnchor:algaeHeld,algaeGripScale:id==='zuma-581'?[.76,.94,.76]:[.78,.96,.76],intakeAnchor:tip,handoffStyle:id==='quixilver-604-2025'?'direct':'conveyor',lightAt:[f.shoulder[0],f.stageTop,.15],
+  return {replaces:root.getObjectByName('climber')?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:climbHeld,heldAnchor:held,coralAxis:['sublime-1678','whisper-1690'].includes(id)?[0,0,1]:[1,0,0],algaeAnchor:algaeHeld,algaeGripScale:id==='zuma-581'?[.76,.94,.76]:[.78,.96,.76],intakeAnchor:tip,handoffStyle:id==='quixilver-604-2025'?'direct':'conveyor',lightAt:[f.shoulder[0],f.stageTop,.15],
     flow:{handoff:()=>id==='whisper-1690'?[point(k,tip),new THREE.Vector3(0,.29,.30),new THREE.Vector3(0,.29,0),point(k,held)]:[point(k,tip),new THREE.Vector3(-.28,.25,0),point(k,held)]},
     update(s){if(!animated())return;
       const p=s.place??{height:.45,forward:.3,level:1}, parked=p.height<=.46&&!p.handoff;
+      // WHISPER's cup is rigid on the arm. Its single shaft swings in Y/Z,
+      // over the pass-through intake (+Z) or the opposite side (-Z).
+      if(id==='whisper-1690'){
+        const dy=f.grip[1]-f.shoulder[1];
+        const targetZ=p.handoff?.25:parked?0:(p.side===1?-1:1)*p.forward;
+        const theta=Math.asin(THREE.MathUtils.clamp(targetZ/dy,-.98,.98));
+        const targetHeight=p.handoff?.29:parked?.48:p.height;
+        yc=ease(yc,Math.max(.32,targetHeight-dy*Math.cos(theta)),s.dt);
+        phi=ease(phi,theta,s.dt);
+        carriage.position.y=yc-f.shoulder[1];
+        if(stage)stage.position.y=Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
+        arm.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),phi);
+        // Preserve the exported rigid tool transform; never counter-rotate it.
+        intake.rotation.set(0,0,0);
+        climbAngle=ease(climbAngle,-1.1*(1-s.climb),s.dt);climb.rotation.x=climbAngle;
+        return;
+      }
       let targetY:number,targetPhi:number;
       if(p.handoff){targetY=.31+length;targetPhi=-Math.PI/2;}
       else if(parked){targetY=id==='quixilver-604-2025'?.808:.38;targetPhi=1.22;}

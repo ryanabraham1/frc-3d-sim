@@ -88,7 +88,7 @@ describe('2025 side scoring (swinging arm)', () => {
   });
 });
 
-describe('2025 front-and-back scoring (arm over the top)', () => {
+describe('2025 Orbit intake-side and opposite-side scoring', () => {
   const whisper = () => cloneConfig(season.teamRobots!.find((t) => t.id === 'whisper-1690')!.config);
 
   it('is a robot option and WHISPER uses it, with one floor intake', () => {
@@ -96,26 +96,26 @@ describe('2025 front-and-back scoring (arm over the top)', () => {
     const c = cloneConfig(season.robotDefaults);
     opt.set(c, 'ends');
     expect(c.placement!.scoreSide).toBe('ends');
-    expect(whisper().placement!.scoreSide).toBe('ends');
+    expect(whisper().placement!.scoreSide).toBe('sides');
     expect(whisper().intake.groundSide).toBe('back'); // one floor intake; the arm scores over it too
   });
 
-  for (const tail of [false, true]) it(`places L4 ${tail ? 'tail-first out of the back' : 'nose-first out of the front'}`, () => {
+  for (const tail of [false, true]) it(`places L4 ${tail ? 'intake side' : 'opposite side'}`, () => {
     const spot = season.testing!.scoringSpots('blue')[0];
     const reef = C.reefCenter('blue');
     const toReef = Math.atan2(reef.y - spot.y, reef.x - spot.x);
-    const sim = make('blue', { ...spot, yaw: toReef + (tail ? Math.PI : 0) }, whisper()); teleop(sim); load(sim, 0);
+    const sim = make('blue', { ...spot, yaw: toReef + (tail ? Math.PI / 2 : -Math.PI / 2) }, whisper()); teleop(sim); load(sim, 0);
     const rules = rulesOf(sim);
-    expect(rules.placementTarget(sim.robot, 4)!.side).toBe(tail ? 2 : 0);
+    expect(rules.placementTarget(sim.robot, 4)!.side).toBe(tail ? -1 : 1);
     // Auto-align keeps whichever end already faces the REEF instead of turning around.
     const pose = rules.alignPose(sim.robot, 4)!;
     const t = rules.placementTarget(sim.robot, 4)!;
-    expect(Math.abs(wrapAngle(pose.yaw - (t.approach.faceYaw + (tail ? 0 : Math.PI))))).toBeLessThan(1e-6);
+    expect(Math.abs(wrapAngle(pose.yaw - (t.approach.faceYaw + Math.PI - (tail ? -1 : 1) * Math.PI / 2)))).toBeLessThan(1e-6);
     const m = rules.mechanisms.get(sim.robot.id)!;
     let sideAtRelease = -1;
     run(sim, 4, () => { if (holdingCoral(sim)) sideAtRelease = m.side; return { ...IDLE_COMMAND, shoot: holdingCoral(sim), scoringLevel: 4 }; });
     expect(sim.ctx.score.counter('blue', 'coralL4')).toBe(1);
-    expect(sideAtRelease).toBe(tail ? 2 : 0);
+    expect(sideAtRelease).toBe(tail ? -1 : 1);
   });
 });
 

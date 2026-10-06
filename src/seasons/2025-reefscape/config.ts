@@ -63,6 +63,8 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
     c.intake.groundYaw = -Math.PI / 2;
     if (c.model === 'wildstang-111') c.intake.ground = true;
   }
+  // Orbit's rigid arm swings over the intake (+Z) and opposite (-Z) faces.
+  if(c.model==='whisper-1690')c.placement!.scoreSide='sides';
   // Cage approaches use the actual CAD mechanism, independent of intake/scoring faces.
   const cageGrips:Record<string,[number,number]>={'wildstang-111':[.72,.05],'firefly-118':[.60,0],'zuma-581':[0,.49],'sublime-1678':[.03,-.60],'quixilver-604-2025':[-.37,0],'whisper-1690':[.43,0],'spectre-2910':[-.43,0]};
   if(c.model && cageGrips[c.model])c.climber.gripOffset ??= cageGrips[c.model];

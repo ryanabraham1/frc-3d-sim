@@ -70,3 +70,26 @@ it('1778 CAD folds its floor intake upward and meets the hanging coral claw', ()
   expect(end.y-start.y).toBeGreaterThan(.3);
   expect(end.distanceTo(gripper)).toBeLessThan(.12);
 });
+
+it('Orbit keeps its suction head rigid and pass-through intake down on both scoring sides',()=>{
+  const config=cloneConfig(SEASONS.find(s=>s.year===2025)!.teamRobots!.find(r=>r.id==='whisper-1690')!.config);
+  expect(config.placement!.scoreSide).toBe('sides');
+  const visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
+  const material=new THREE.MeshStandardMaterial();
+  const model=cadRobotModelBuilder('whisper-1690')!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:material,alu:material,bumper:material}});
+  setCadAnimationEnabled(true);
+  const head=visual.getObjectByName('cad-effector-pivot')!,intake=visual.getObjectByName('cad-intake-pivot')!;
+  const bind=head.quaternion.clone();
+  expect(model.coralAxis).toEqual([0,0,1]);
+  for(const side of [-1,1]){
+    model.update({...idle,place:{height:1.75,forward:.4,level:4,side}});visual.updateMatrixWorld(true);
+    const at=model.heldAnchor!.getWorldPosition(new THREE.Vector3());
+    expect(at.z).toBeCloseTo(-side*.4,4);expect(at.y).toBeCloseTo(1.75,4);
+    expect(head.quaternion.angleTo(bind)).toBeLessThan(1e-6);
+  }
+  for(const handoff of [.001,.25,.5,.75,.999]){
+    model.update({...idle,place:{height:.45,forward:.3,level:1,handoff}});
+    expect(intake.rotation.x).toBe(0);expect(intake.rotation.z).toBe(0);
+    expect(head.quaternion.angleTo(bind)).toBeLessThan(1e-6);
+  }
+});

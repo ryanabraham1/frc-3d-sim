@@ -127,25 +127,25 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   let yc = yMin, phi = Math.PI / 2, deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, coralAxis:[0,1,0], algaeAnchor: algaeHeld, algaeGripScale: [.98, .98, .98], handoffStyle:'conveyor',
+    heldAnchor: held, coralAxis:[0,0,1], algaeAnchor: algaeHeld, algaeGripScale: [.98, .98, .98], handoffStyle:'conveyor',
     intakeAnchor: intake.tip,
-    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, .09), new THREE.Vector3(0, bt + .09, .09)] },
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(0, bt + .09, L * .3), new THREE.Vector3(0, bt + .09, .09)] },
     lightAt: [0, top + 0.02, 0],
     update(s) {
       const p = place(s);
-      // Stowed: arm straight up. Handoff: arm hangs straight down over the conveyor. Scoring: out of the front
-      // (side 0) or flipped over the top to the back (side 2).
+      // Stowed: arm straight up. Handoff: cup lowers over the pass-through conveyor.
+      // Scoring: swing sideways over either +Z or -Z bumper; the cup has no wrist.
       let goal: { yc: number; phi: number };
       if (p.handoff) goal = { yc: bt + 0.08 + la + .055, phi: -Math.PI / 2 };
       else if (stowed(p)) goal = { yc: yMin, phi: Math.PI / 2 };
-      else goal = reachWith(p, p.side === 2 ? -1 : 1, 0, la, yMin, yMax);
+      else goal = reachWith(p, p.side === -1 ? -1 : 1, 0, la, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt);
       phi = approach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext;
       carriage.position.y = yc - ext;
-      arm.rotation.z = phi;
-      deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
+      arm.rotation.set(0, Math.PI / 2, phi);
+      deploy = 1; // Pass-through intake stays down while the cup collects.
       intake.update(s, deploy);
       const sp = s.intaking && s.enabled && deploy > 0.8 ? 26 : 0;
       spin(stars[0], -side * sp, s.dt); spin(stars[1], side * sp, s.dt);
@@ -354,7 +354,7 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
 export function additionalReefscapeTeamRobots(): TeamRobot[] {
   return [
     { id: 'whisper-1690', team: 1690, name: 'WHISPER',
-      description: '1690 Orbit. Center differential elevator whose carbon arm rotates over the top: the vacuum cup scores CORAL and ALGAE off either end of the robot, including over its own floor intake. Spiky floor intake, conveyor to the arm, deep climb. Simulator estimates: 2.2 m/s lift, 0.30 s release, 0.35 s harvest and 5.4 m/s drive.',
+      description: '1690 Orbit. Center differential elevator whose carbon arm rotates over the top: the rigid vacuum cup scores CORAL and ALGAE on the intake side and its opposite. Spiky floor intake, conveyor to the arm, deep climb. Simulator estimates: 2.2 m/s lift, 0.30 s release, 0.35 s harvest and 5.4 m/s drive.',
       source: 'https://www.chiefdelphi.com/t/orbit-1690-2025-robot-reveal-whisper/492064 — reveal, team Q&A; 1690 CAD release; 1690orbit.com 2025 photos',
       config: whisper() },
     { id: 'lightning-2056', team: 2056, name: 'LIGHTNING',
@@ -383,7 +383,7 @@ function config(team: number, model: string, lift: number, release: number, harv
 /** WHISPER scores off both ends (the arm rotates over the top), including the end with its one floor intake. */
 function whisper() {
   const c = config(1690, 'whisper-1690', 2.2, 0.30, 0.35, 5.4, 2.5, 36);
-  c.placement!.scoreSide = 'ends';
+  c.placement!.scoreSide = 'sides';
   c.intake.groundYaw = -Math.PI / 2;
   c.frameLength = c.frameWidth = .744; c.height = 1.065;
   c.options = { ...c.options, coralBuffer: true, dualPieceStorage: true };
