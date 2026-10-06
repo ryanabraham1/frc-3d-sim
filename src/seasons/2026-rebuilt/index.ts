@@ -90,6 +90,10 @@ export const rebuilt2026: SeasonDefinition = {
   startPose: (a, s) => startPose(a, s),
   driverEye,
 
+  configureRobot(robot) {
+    robot.enableRoundHopper();
+  },
+
   buildField(ctx) {
     fieldRefs = buildRebuiltField(ctx.builder);
   },

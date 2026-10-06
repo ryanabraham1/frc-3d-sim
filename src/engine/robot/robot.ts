@@ -9,7 +9,7 @@ import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, footprint, groundSid
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
-import { pointIn, robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
+import { fillBlock, pointIn, robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 import { PieceFlow } from './pieceFlow';
 import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 
@@ -171,6 +171,8 @@ export class Robot {
   private readonly parts = new Map<ModelPart, THREE.Object3D[]>();
   /** Real-team visual model (config.model), animated from `anim` every frame. */
   private model: RobotModel | null = null;
+  private roundHopper: { set(f: number): void } | null = null;
+  private readonly fuelAnimations: ((s: RobotAnimState) => void)[] = [];
   private readonly anim: RobotAnimState = { dt: 0, time: 0, enabled: false, intaking: false, firing: 0, passing: false, aiming: false, hood: 0, fill: 0, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0 };
   private lastFrame = -1;
   private lastHeld = 0;
@@ -690,6 +692,10 @@ export class Robot {
     });
     for (const part of this.model.replaces) for (const o of this.parts.get(part) ?? []) o.visible = false;
     if (this.model.replaces.includes('hopper')) this.hopperFill.visible = false;
+    this.fuelAnimations.length = 0;
+    this.visual.traverse(o => {
+      if (typeof o.userData.animateFuel === 'function') this.fuelAnimations.push(o.userData.animateFuel);
+    });
   }
 
   /**
@@ -775,10 +781,25 @@ export class Robot {
     return true;
   }
 
+  /** REBUILT's custom/generic robots also carry individual round FUEL rather than a solid fill block. */
+  enableRoundHopper(): void {
+    if (this.roundHopper || this.modelReplaces('hopper')) return;
+    const c = this.config;
+    const group = new THREE.Group();
+    this.visual.add(group);
+    this.roundHopper = fillBlock(group, { x: -c.frameLength * 0.1, y0: c.bumperTop,
+      length: c.frameLength * 0.68, width: c.frameWidth * 0.83,
+      height: Math.max(0.08, c.height - c.bumperTop - 0.08), color: 0xf2c200, capacity: c.hopperCapacity });
+    this.hopperFill.visible = false;
+    group.traverse(o => {
+      if (typeof o.userData.animateFuel === 'function') this.fuelAnimations.push(o.userData.animateFuel);
+    });
+  }
+
   /** Advance the team model's animation (called from syncVisual, once per rendered frame). */
   private animateModel(frameDt?: number): void {
     const model = this.model;
-    if (!model) return;
+    if (!model && !this.roundHopper) return;
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
     const a = this.anim;
     a.dt = frameDt ?? (this.lastFrame < 0 ? 0 : clamp(now - this.lastFrame, 0, 0.1));
@@ -811,7 +832,8 @@ export class Robot {
     a.vx = this.tmp.x;
     a.vz = this.tmp.z;
     a.omega = this.body.angvel().y;
-    model.update(a);
+    model?.update(a);
+    for (const animate of this.fuelAnimations) animate(a);
   }
 
   /**
@@ -1831,6 +1853,7 @@ export class Robot {
     this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null);
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
+    this.roundHopper?.set(frac);
     const hopperH = Math.max(0.08, this.config.height - this.config.bumperTop - 0.08);
     this.hopperFill.scale.y = Math.max(0.001, frac);
     this.hopperFill.position.y = this.config.bumperTop + (hopperH * frac) / 2;
