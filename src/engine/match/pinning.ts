@@ -13,9 +13,10 @@ import type { FoulKind } from './scoreboard';
  * from where the pin began for longer than the count, or (C) the pinning robot itself gets pinned. For A and B the
  * count PAUSES while that distance holds and resumes if the robots come back inside it.
  *
- * What the sim calls "pinned": a robot that is stopped, is being driven, touches an opponent, and is boxed in, with
+ * What the sim calls "pinned": a robot that is barely moving, is being driven, touches an opponent, and is boxed in, with
  * contacts on roughly opposite sides (an opponent on one side, a wall / FIELD element / another robot on the other, or
- * two opponents). A robot that can still back away from a single opponent is being blocked or shoved, not pinned.
+ * two opponents). Once established, sliding or twisting while still boxed in does not interrupt the count.
+ * A robot that can still back away from a single opponent is being blocked or shoved, not pinned.
  */
 export interface PinRule {
   /** Manual rule id used on the foul, e.g. 'G420'. */
@@ -29,9 +30,9 @@ export interface PinRule {
 /** 6 ft, the separation distance in all three manuals. */
 export const PIN_SEPARATION = 1.83;
 
-/** A pinned robot is "stopped" below this speed (m/s) and turn rate (rad/s). */
-export const PIN_MAX_SPEED = 0.25;
-export const PIN_MAX_TURN = 0.6;
+/** Allow slow sliding / twisting when recognizing a pin (m/s and rad/s). */
+export const PIN_MAX_SPEED = 0.5;
+export const PIN_MAX_TURN = 1.2;
 /** The driver has to be asking for motion: otherwise the robot is just parked next to an opponent. */
 export const PIN_MIN_COMMAND = 0.2;
 /** Two contact directions this far apart (dot product ≤ this) box a robot in. */
@@ -153,9 +154,13 @@ export class PinTracker {
     const heldBy = new Map<number, PinAgent[]>();
     for (const o of agents) {
       if (!o.enabled || o.exempt) continue;
-      if (o.speed >= PIN_MAX_SPEED || o.turn >= PIN_MAX_TURN) continue;
       if (o.commanded <= PIN_MIN_COMMAND && o.commandedTurn <= PIN_MIN_COMMAND) continue;
-      const holders = agents.filter((r) => r.alliance !== o.alliance && r.enabled && isTouching(r, o));
+      const holders = agents.filter((r) => {
+        if (r.alliance === o.alliance || !r.enabled || !isTouching(r, o)) return false;
+        // Once established, a pin lasts while the opponent is still driven and boxed in.
+        // Sliding or twisting inside the trap must not pause or reset the count.
+        return this.records.has(`${r.id}:${o.id}`) || (o.speed < PIN_MAX_SPEED && o.turn < PIN_MAX_TURN);
+      });
       if (holders.length && boxedIn(o)) heldBy.set(o.id, holders);
     }
     // C: a robot that is itself pinned isn't pinning.

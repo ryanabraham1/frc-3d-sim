@@ -107,8 +107,8 @@ describe('PinTracker — the count', () => {
   it('keeps counting through a brief escape, but starts over after a real one', () => {
     const pinned = agent(1, 'blue');
     const pinner = agent(0, 'red', { y: 6, contacts: () => [{ nx: 0, ny: -1 }] });
-    const held = () => { pinned.speed = 0; pinned.commanded = 1.5; return [pinner, pinned]; };
-    const free = () => { pinned.speed = 1.5; return [pinner, pinned]; };
+    const held = () => { pinned.speed = 0; pinned.commanded = 1.5; pinned.contacts = () => WALL_AND_ROBOT; return [pinner, pinned]; };
+    const free = () => { pinned.speed = 1.5; pinned.contacts = () => [{ nx: 0, ny: 1 }]; return [pinner, pinned]; };
     const t = g425();
     expect(runPins(t, 2, held).fouls).toHaveLength(0);
     runPins(t, PIN_RELEASE_GRACE * 0.5, free);
@@ -119,6 +119,22 @@ describe('PinTracker — the count', () => {
     runPins(t2, PIN_RELEASE_GRACE + 0.5, free);
     expect(runPins(t2, 2, held).fouls).toHaveLength(0); // started over: only 2 s counted
     expect(t2.countFor(0)).toBeCloseTo(2, 1);
+  });
+
+  it('recognizes a pin even when the trapped opponent moves a little', () => {
+    expect(runPins(g425(), 3.2, pair({ speed: 0.4, turn: 0.8 })).fouls).toHaveLength(1);
+  });
+
+  it('keeps counting when a trapped opponent slides or twists without escaping', () => {
+    const t = g425();
+    const agents = pair();
+    runPins(t, 1, agents);
+    agents[1].speed = 0.7;
+    agents[1].turn = 1.5;
+    agents[1].x += 0.1;
+    expect(runPins(t, 2.2, agents).fouls.map((f) => f.kind)).toEqual(['minor']);
+    expect(t.countFor(0)).toBeCloseTo(3.2, 1);
+    expect(runPins(t, 3, agents).fouls.map((f) => f.kind)).toEqual(['major']);
   });
 
   it('pauses while the robots are 6 ft apart, resumes when they return, ends after a full count apart', () => {
