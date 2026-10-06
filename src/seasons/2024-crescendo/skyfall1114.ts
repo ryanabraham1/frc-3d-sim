@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { approach, bar, box, drivebase, flowAt, link, mat, plate, pivot, pointIn, roller, sidePlates, spin, tube, tubeMat, underBumperEntry, underBumperIntake, wheelShaft, type ModelKit, type RobotModel } from '@engine/robot/models';
+import { approach, bar, box, drivebase, flowAt, link, mat, plate, pivot, pointIn, roller, sidePlates, spin, tubeMat, underBumperEntry, underBumperIntake, wheelShaft, type ModelKit, type RobotModel } from '@engine/robot/models';
 import { motor } from '@engine/robot/mechanicalDetail';
 
 /** Skyfall 2.0: chassis-aimed pivot shooter, one NOTE, rear under-bumper intake.
@@ -15,7 +15,7 @@ export function buildSkyfall1114(k: ModelKit): RobotModel {
   const { frameLength: L, frameWidth: W, bumperTop: bt } = k.config;
   const red = mat(0xdc161e, { metal: .35, rough: .38 }), redTube = tubeMat(0xdc161e);
   const silver = mat(0xbfc3c6, { metal: .7, rough: .35 }), black = mat(0x202125), white = mat(0xe8e9e8);
-  const tan = mat(0xc3af7b), purple = mat(0x783f92), base = drivebase(k, { tube: redTube, motorRing: 0xdc161e });
+  const tan = mat(0xc3af7b), base = drivebase(k, { tube: redTube, motorRing: 0xdc161e });
   const intake = underBumperIntake(k, { n: 3 });
   box(k.visual, L*.94, .006, W*.9, red, 0, bt+.008, 0);
   const px = .035, py = bt+.36, z = W*.36;
@@ -91,7 +91,7 @@ export function buildSkyfall1114(k: ModelKit): RobotModel {
       // CAD horizontal datum is the intake hard stop (-45.27° encoder); outlet angle is fitted.
       const datum=45.27*Math.PI/180;
       const target=s.climb>.5 ? Math.PI/2+datum : s.climb>.1 ? (-39*Math.PI/180+datum)
-        : s.amp ? (23.5*Math.PI/180+datum) : s.enabled&&(s.aiming||s.firing>0) ? THREE.MathUtils.clamp(s.hood-datum,-.15,.65) : 0;
+        : s.amp ? (23.5*Math.PI/180+datum) : s.enabled&&(s.aiming||s.firing>0) ? THREE.MathUtils.clamp(s.hood-datum,-.35,.65) : 0;
       angle=s.dt===0?target:approach(angle,target,6,s.dt); arm.rotation.z=angle;
       held.rotation.z=datum;
       for(const r of rollers) spin(r,s.enabled&&(s.intaking||s.firing>0)?-32:0,s.dt);

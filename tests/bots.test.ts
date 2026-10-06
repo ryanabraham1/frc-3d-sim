@@ -89,7 +89,7 @@ describe.each(SEASONS)('$name Hard challenge', (season) => {
         const red = settings.alliance === 'blue' ? 'red' : 'blue';
         total += res.score[red];
         console.log(season.id, difficulty, seed, res.score[red], JSON.stringify(res.categories[red]));
-        if (difficulty === 'hard') {
+        if (difficulty === 'hard' && season.year !== 2026) { // stock 2026 robots have no climbers
           const cat = res.categories[red];
           expect((cat.onstage ?? 0) + (cat.barge ?? 0) + (cat.towerTeleop ?? 0)).toBeGreaterThan(0);
         }
@@ -114,8 +114,8 @@ describe.each(SEASONS)('$name all-AI match', (season) => {
       // AUTO: every robot's preload on L4 (3 × 7). Station cycles on top depend on traffic: AI robots have no speed edge
       // over players, so one 15 s AUTO may not fit an extra cycle (benchmark seeds 5-6: 56 AUTO CORAL points).
       if (season.year === 2025) { expect(cat.autoCoral ?? 0).toBeGreaterThanOrEqual(21); expect(cat.barge ?? 0).toBeGreaterThanOrEqual(24); }
-      // Most real 2026 robots skipped the TOWER for a bigger hopper; only 1690 Kepler in the Hard lineup climbs.
-      if (season.year === 2026) { expect(cat.towerTeleop ?? 0).toBeGreaterThan(0); expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
+      // Stock 2026 robots have no climbers (TOWER skipped for a bigger hopper).
+      if (season.year === 2026) { expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
     }
   }, 300_000);
 });

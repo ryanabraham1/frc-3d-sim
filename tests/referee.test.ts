@@ -25,7 +25,12 @@ afterEach(() => {
 function scene(period: string, blue: { x: number; y: number; yaw: number }, red: { x: number; y: number; yaw: number }) {
   const season = rebuilt2026;
   const cfg = () => cloneConfig(season.robotDefaults);
-  const sim = new HeadlessSim(season, RAPIER, { robot: cfg(), alliance: 'blue', pose: blue });
+  const climbCfg = () => {
+    const c = cfg();
+    c.climber.maxLevel = 3; // stock 2026 robots have no climber
+    return c;
+  };
+  const sim = new HeadlessSim(season, RAPIER, { robot: climbCfg(), alliance: 'blue', pose: blue });
   sims.push(sim);
   const r = new Robot(sim.physics, sim.ctx.scene, sim.frame, cfg(), 'red', 1, 2, red);
   sim.ctx.robots.push(r);
