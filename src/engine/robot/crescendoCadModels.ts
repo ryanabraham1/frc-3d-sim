@@ -8,6 +8,7 @@ import type { ModelKit, RobotModel } from './models';
  * not a rigid-body simulation; drive and scoring tuning retain roster estimates.
  */
 export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, animated: () => boolean): RobotModel {
+  const doppler = id === 'doppler-1690';
   const typhoon = id === 'typhoon-2910', twister = id === 'twister-118', rush = id === 'gold-rush-27', domotron = id === 'domotron-604';
   if (twister) root.traverse(o => {
     if (!(o instanceof THREE.Mesh)) return;
@@ -54,14 +55,35 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
   const rushClimb = rush ? pivot('climber',[0,0,0]) : undefined;
   const amp = rush ? pivot('amp',[.24,.63,0]) : twister ? pivot('diverter',[.1,.6,0],turret) : undefined;
   const point = (o: THREE.Object3D) => { k.visual.updateMatrixWorld(true); return k.visual.worldToLocal(o.getWorldPosition(new THREE.Vector3())); };
+  let dopplerPitch = 0;
+  let dopplerPitchVelocity = 0;
   return {
     replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     intakeAnchor:intake, heldAnchor:held, lightAt:[0,.3,k.config.frameWidth*.35],
     flow:{ intake:()=>[point(intake),new THREE.Vector3(typhoon ? -.2 : .15,.12,0)], stow:()=>point(held), feed:()=>[point(held),point(shot)] },
     update(s) {
-      if (!animated()) { shooter.rotation.z=0; if(turret)turret.rotation.y=0; for(const c of [...climbers,...skis])c.rotation.z=0; if(carriage)carriage.position.y=.24155; if(rushClimb)rushClimb.position.y=0; if(amp)amp.rotation.z=0; return; }
+      if (!animated()) { dopplerPitch=0; dopplerPitchVelocity=0; shooter.rotation.z=0; if(turret)turret.rotation.y=0; for(const c of [...climbers,...skis])c.rotation.z=0; if(carriage)carriage.position.y=.24155; if(rushClimb)rushClimb.position.y=0; if(amp)amp.rotation.z=0; return; }
       if(turret)turret.rotation.y=k.turret.rotation.y;
-      shooter.rotation.z = s.aiming ? THREE.MathUtils.clamp(s.hood,.14,1.08)-(typhoon ? .435 : twister ? .35 : rush ? .15 : domotron ? .72 : .02) : 0;
+      // Doppler pitches the complete conveyor/shooter about its rear shaft,
+      // including the release animation after the shoot control is let go.
+      if (doppler) {
+        const target = s.passing ? 1.5 : s.enabled && (s.aiming || s.firing > 0)
+          ? THREE.MathUtils.clamp(s.hood, .14, 1.5) - .02 : 0;
+        // Critically damped motion starts gently and settles without bouncing.
+        // The analytic step keeps the same motion at different render rates.
+        if (s.dt > 0) {
+          const frequency = 7;
+          const offset = dopplerPitch - target;
+          const step = (dopplerPitchVelocity + frequency * offset) * s.dt;
+          const decay = Math.exp(-frequency * s.dt);
+          dopplerPitch = target + (offset + step) * decay;
+          dopplerPitchVelocity = (dopplerPitchVelocity - frequency * step) * decay;
+        } else {
+          dopplerPitch = target;
+          dopplerPitchVelocity = 0;
+        }
+        shooter.rotation.z = dopplerPitch;
+      } else shooter.rotation.z = s.aiming ? THREE.MathUtils.clamp(s.hood,.14,1.08)-(typhoon ? .435 : twister ? .35 : rush ? .15 : domotron ? .72 : .02) : 0;
       for(const c of climbers)c.rotation.z = s.climb*(typhoon ? 1.8 : twister ? .8 : domotron ? -1.4 : -1.85);
       if(rushClimb)rushClimb.position.y=.35*s.climb;
       for(const ski of skis)ski.rotation.z=-s.climb*.7;

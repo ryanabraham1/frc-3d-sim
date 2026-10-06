@@ -23,6 +23,24 @@ describe('supplied CRESCENDO CAD',()=>{
       const bounds=new THREE.Box3().setFromObject(root,true);expect(bounds.min.y).toBeGreaterThan(-.035);expect(bounds.max.y).toBeLessThan(2);
       expect(model.flow!.feed!().every(p=>p.toArray().every(Number.isFinite))).toBe(true);
     }
+    if (id === 'doppler-1690') {
+      model.update(idle); visual.updateMatrixWorld(true);
+      const shooter = root.getObjectByName('shooter')!;
+      const rest = new THREE.Box3().setFromObject(shooter, true);
+      const heldRest = model.heldAnchor!.getWorldPosition(new THREE.Vector3());
+      // A released shoot button must not flatten the assembly during the shot.
+      model.update({...idle, enabled:true, firing:1, aiming:false, hood:.8});
+      visual.updateMatrixWorld(true);
+      expect(root.getObjectByName('cad-shooter-pivot')!.rotation.z).toBeCloseTo(.78);
+      expect(new THREE.Box3().setFromObject(shooter,true).max.y).toBeGreaterThan(rest.max.y + .2);
+      expect(model.heldAnchor!.getWorldPosition(new THREE.Vector3()).y).toBeGreaterThan(heldRest.y + .18);
+      expect(frame.matrix.equals(original)).toBe(true);
+      model.update({...idle, enabled:true, passing:true});
+      expect(root.getObjectByName('cad-shooter-pivot')!.rotation.z).toBeCloseTo(1.5);
+      model.update({...idle, dt:.1});
+      expect(root.getObjectByName('cad-shooter-pivot')!.rotation.z).toBeGreaterThan(0);
+      expect(root.getObjectByName('cad-shooter-pivot')!.rotation.z).toBeLessThan(1.5);
+    }
     setCadAnimationEnabled(false);model.update(idle);visual.updateMatrixWorld(true);
     expect(root.getObjectByName('cad-shooter-pivot')!.rotation.z).toBe(0);
     const sourceBounds=new THREE.Box3().setFromObject(root,true);
