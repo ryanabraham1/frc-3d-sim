@@ -20,14 +20,17 @@ function stopGame(): void {
   app.innerHTML = '';
 }
 
-async function loadEngine() {
+/** `setup` is the match's robot lineup when known (network); otherwise it is derived from the settings. */
+async function loadEngine(settings: GameSettings, setup?: MatchSetup) {
   // Physics (Rapier WASM) and the renderer load on demand so the menu appears instantly.
-  const [{ loadRapier }, { Game }, { getSeason }] = await Promise.all([
+  const [{ loadRapier }, { Game, localSetup }, { getSeason }] = await Promise.all([
     import('@engine/physics/world'),
     import('@engine/core/game'),
     import('@seasons/index'),
   ]);
-  const [R] = await Promise.all([loadRapier(), prepareCadModels()]);
+  // Only fetch/decode the CAD models of robots actually in this match (the full set is ~130 MB).
+  const lineup = setup ?? localSetup(settings, getSeason(settings.seasonId));
+  const [R] = await Promise.all([loadRapier(), prepareCadModels(lineup.robots.map((r) => r.config.model))]);
   return { R, Game, getSeason };
 }
 
@@ -44,7 +47,7 @@ async function startGame(settings: GameSettings): Promise<void> {
   if (lobby.client.connected) lobby.leave();
   const gen = generation;
   app.innerHTML = '<div class="loading">LOADING FIELD + PHYSICS…</div>';
-  const { R, Game, getSeason } = await loadEngine();
+  const { R, Game, getSeason } = await loadEngine(settings);
   if (gen !== generation) return;
   game = new Game(mountStage(), R, getSeason(settings.seasonId), settings, {
     onExit: () => menu(),
@@ -59,10 +62,10 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise
   stopGame();
   const gen = generation;
   app.innerHTML = '<div class="loading">LOADING FIELD + PHYSICS…</div>';
-  const { R, Game, getSeason } = await loadEngine();
+  const settings = { ...lobby.settings!, seasonId: setup.seasonId, seed: setup.seed };
+  const { R, Game, getSeason } = await loadEngine(settings, setup);
   if (gen !== generation) return;
   if (!lobby.client.connected) return menu('multiplayer');
-  const settings = { ...lobby.settings!, seasonId: setup.seasonId, seed: setup.seed };
   game = new Game(
     mountStage(),
     R,
