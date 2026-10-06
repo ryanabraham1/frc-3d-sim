@@ -88,7 +88,7 @@ export function rebuiltRobotDefaults(): RobotConfig {
   c.launcher.height = inch(19);
   c.hopperCapacity = 40;
   c.preload = C.FUEL_MAX_PRELOAD;
-  c.climber.maxLevel = 3;
+  c.climber.maxLevel = 0;
   // Full-width ground intake plus a hopper opening that catches FUEL from the OUTPOST CHUTE, both on the back
   // (the shooter faces front).
   c.intake = { ...c.intake, ground: true, groundSide: 'back', station: true, stationSide: 'back', rate: DEFAULT_INTAKE_RATE };
@@ -164,10 +164,10 @@ export function build(b: Build): RobotConfig {
 /** Archetypes seen across 2026 events (docs/ROBOT-ARCHETYPES.md). */
 export function rebuiltRobotPresets() {
   return [
-    { id: 'turret', label: 'Turret trench bot', description: 'Under 22¼ in so it drives through the TRENCH; full-width ground intake, turret shooter that scores on the move, 35-FUEL hopper, climbs to LEVEL 3. The turret makes it slower and its single stream fires 8/s, less accurately on the move.', config: build({ intake: 'both', aim: 'turret', hopper: 35, tall: false, rate: 8, climb: 3, speed: 4.2, weight: 132, accuracy: 72 }) },
-    { id: 'fixed', label: 'Dumper + auto-align', description: 'Trench-height robot whose shooter spans the whole front of the robot (a "dumper"): FUEL leaves in four parallel streams (12/s). Aimed by rotating the chassis, 60-FUEL hopper, LEVEL 2 climb. Quick. The most common competitive design.', config: build({ intake: 'both', aim: 'align', dumper: true, hopper: 60, tall: false, rate: 12, climb: 2, speed: 4.8, weight: 116, accuracy: 82 }) },
-    { id: 'big-hopper', label: 'Big-hopper BUMP bot', description: 'Tall (30 in) with a 70-FUEL hopper and a fast multi-wheel shooter (14/s): too tall for the TRENCH, so it crosses the BUMPs. Slower to drive and less accurate on the move; auto-align, LEVEL 1 climb.', config: build({ intake: 'both', aim: 'align', hopper: 70, tall: true, rate: 14, climb: 1, speed: 4.0, weight: 135, accuracy: 70 }) },
-    { id: 'outpost', label: 'OUTPOST-fed shooter', description: 'No ground intake: loads FUEL from its OUTPOST CHUTE, relying on the human player. Simple and accurate; auto-align, 40-FUEL hopper, LEVEL 2 climb.', config: build({ intake: 'outpost', aim: 'align', hopper: 40, tall: false, rate: 10, climb: 2, speed: 4.8, weight: 112, accuracy: 90 }) },
+    { id: 'turret', label: 'Turret trench bot', description: 'Under 22¼ in so it drives through the TRENCH; full-width ground intake, turret shooter that scores on the move, 35-FUEL hopper. The turret makes it slower and its single stream fires 8/s, less accurately on the move.', config: build({ intake: 'both', aim: 'turret', hopper: 35, tall: false, rate: 8, climb: 0, speed: 4.2, weight: 132, accuracy: 72 }) },
+    { id: 'fixed', label: 'Dumper + auto-align', description: 'Trench-height robot whose shooter spans the whole front of the robot (a "dumper"): FUEL leaves in four parallel streams (12/s). Aimed by rotating the chassis, 60-FUEL hopper. Quick. The most common competitive design.', config: build({ intake: 'both', aim: 'align', dumper: true, hopper: 60, tall: false, rate: 12, climb: 0, speed: 4.8, weight: 116, accuracy: 82 }) },
+    { id: 'big-hopper', label: 'Big-hopper BUMP bot', description: 'Tall (30 in) with a 70-FUEL hopper and a fast multi-wheel shooter (14/s): too tall for the TRENCH, so it crosses the BUMPs. Slower to drive and less accurate on the move; auto-align.', config: build({ intake: 'both', aim: 'align', hopper: 70, tall: true, rate: 14, climb: 0, speed: 4.0, weight: 135, accuracy: 70 }) },
+    { id: 'outpost', label: 'OUTPOST-fed shooter', description: 'No ground intake: loads FUEL from its OUTPOST CHUTE, relying on the human player. Simple and accurate; auto-align, 40-FUEL hopper.', config: build({ intake: 'outpost', aim: 'align', hopper: 40, tall: false, rate: 10, climb: 0, speed: 4.8, weight: 112, accuracy: 90 }) },
   ];
 }
 

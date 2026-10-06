@@ -583,6 +583,7 @@ export class RebuiltRules implements SeasonRules {
   }
 
   requestClimb(robot: Robot, level: number): void {
+    if (robot.config.climber.maxLevel === 0) return;
     const auto = this.ctx.clock.mode === 'auto';
     const lvl = Math.max(1, Math.min(auto ? 1 : 3, level, robot.config.climber.maxLevel));
     const slot = this.freeSlot(robot);
