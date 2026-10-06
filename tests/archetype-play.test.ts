@@ -46,7 +46,7 @@ describe('AI plays each robot archetype the way it is built', () => {
   }, 300_000);
 
   // Floor-pickup robots (no station intake) take the human player's CORAL off the carpet instead of waiting forever.
-  it.each(['whisper-1690', 'firefly-118', 'subzero-1778'])('2025 %s cycles CORAL from the carpet', (id) => {
+  it.each(['whisper-1690', 'firefly-118', 'subzero-1778', 'spectre-2910'])('2025 %s cycles CORAL from the carpet', (id) => {
     expect(solo('2025-reefscape', id, 60).points).toBeGreaterThan(40);
   }, 300_000);
 

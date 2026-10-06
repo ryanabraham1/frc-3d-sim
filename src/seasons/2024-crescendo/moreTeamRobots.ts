@@ -1,3 +1,4 @@
+import { buildSkyfall1114 } from './skyfall1114';
 import * as THREE from 'three';
 import { buildSnoopy6036 } from './snoopy6036';
 import { buildPresto6328 } from './presto6328';
@@ -23,68 +24,7 @@ import { build, normalizeCrescendoConfig } from './config';
 const flywheel = (s: RobotAnimState): number => (s.enabled ? 40 + 50 * s.firing : 0);
 const armAngle = (s: RobotAnimState, rest: number): number => (s.climb > 0.2 ? 0 : (s.amp ?? s.passing) ? 1.75 : s.enabled && (s.aiming || s.firing > 0) ? s.hood : rest);
 
-// ── 1114 SKYFALL (TBA 2024 photos): a low red wedge with black gusset plates carrying GM / WCP / GoBeyond logos, a black
-//    SIMBOT SKYFALL nameplate and white LED strip at the front, a silver pocketed shooter arm with ORANGE wheels, hooks ──
-registerRobotModel('skyfall-1114', (k: ModelKit) => {
-  const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop;
-  const red = mat(0xd2202b, { metal: 0.35, rough: 0.4 }), redTube = tubeMat(0xd2202b), black = mat(0x141518, { metal: 0.3, rough: 0.5 }), white = mat(0xf0f1f3, { rough: 0.55 }), silver = mat(0xc6ccd3, { metal: 0.75, rough: 0.3 });
-  const base = drivebase(k, { tube: redTube, motorRing: 0xd2202b });
-  const intake = underBumperIntake(k, { n: 3 });
-  box(k.visual, L * 0.94, 0.006, W * 0.9, black, 0, bt + 0.004, 0);
-  const px = -L * 0.1, py = H - 0.05, tz = W * .3;
-  const tri: [number, number][] = [[-L / 2 + 0.05, bt], [L * 0.22, bt], [px + 0.05, py + 0.03], [px - 0.05, py + 0.03]];
-  for (const sz of [-1, 1]) {
-    // Spectrum row 219 Skyfall 2.0: red triangular frame carrying the pocketed silver shooter.
-    // Black sponsor skins retained from the match photos; frame proportions follow the CAD.
-    // https://cad.onshape.com/documents/e29d35b669bb6a8cac1e92e8/v/4af41b0ba26263d387049e38/e/ed9bd1dd1db19a55b178226c
-    plate(k.visual, tri, 0.007, black, sz * tz);
-    bar(k.visual,[tri[0][0],bt,sz*tz],[px,py,sz*tz],.025,redTube);
-    bar(k.visual,[tri[1][0],bt,sz*tz],[px,py,sz*tz],.025,redTube);
-    const out = sz * (tz + 0.005), rotY = sz > 0 ? 0 : Math.PI;
-    decal(k.visual, 'gm', { w: 0.07, h: 0.07, background: '#ffffff', color: '#111111', x: -L * 0.22, y: bt + 0.1, z: out, rotY });
-    decal(k.visual, 'WCP', { w: 0.065, h: 0.065, round: true, background: '#ffffff', color: '#111111', x: -L * 0.04, y: bt + 0.16, z: out, rotY });
-    decal(k.visual, 'GOBEYOND', { w: 0.11, h: 0.03, background: '#ffffff', color: '#111111', x: L * 0.08, y: bt + 0.07, z: out, rotY });
-  }
-  decal(k.visual, 'SIMBOT SKYFALL', { w: 0.3, h: 0.06, color: '#ffffff', background: '#141518', x: L / 2 - 0.1, y: bt + 0.09, z: 0, rotY: Math.PI / 2 });
-  const led = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.012, 0.3), mat(0xcfe0ff, { emissive: 0x7fa8ff }));
-  led.position.set(L / 2 - 0.095, bt + 0.16, 0); k.visual.add(led);
-  for (const x of [-L / 2 + 0.08, L * 0.2]) bar(k.visual, [x, bt + 0.02, -tz], [x, bt + 0.02, tz], 0.025, redTube);
-  bar(k.visual, [px, py + 0.02, -tz], [px, py + 0.02, tz], 0.025, redTube); // top cross tube
-  const conveyor: THREE.Group[] = [];
-  for (let i = 0; i < 3; i++) conveyor.push(roller(k.visual, 0.0127, 0.3, white, -L / 2 + 0.07 + i * 0.05, bt + 0.06 + i * 0.06, 0));
-  // Shooter arm: red side rails, white wheel pair at the far end, white feed rollers.
-  const arm = pivot(k.visual, px, py);
-  const armLen = inch(18);
-  sidePlates(arm, [[-0.04, -0.05], [armLen, -0.06], [armLen + 0.04, 0], [armLen, 0.07], [-0.04, 0.05]], tz-.015, silver, [[0.08, 0, 0.022], [0.2, 0, 0.026], [0.3, 0, 0.022]]);
-  for (const [x, y] of [[0.0, -0.045], [0.0, 0.04], [armLen - 0.02, -0.055]] as const) box(arm, 0.018, 0.018, (tz-.015)*2, red, x, y, 0);
-  const wheels = [wheelShaft(arm, armLen, 0.042, { n: 3, r: inch(2), w: 0.04, span: (tz-.035)*2, colors: [0xff6a2a] }), wheelShaft(arm, armLen, -0.042, { n: 3, r: inch(2), w: 0.04, span: (tz-.035)*2, colors: [0xff6a2a] })];
-  const feed = [roller(arm, 0.0127, 0.28, white, 0.08, 0), roller(arm, 0.0127, 0.28, white, 0.2, 0)];
-  const held = pivot(arm, 0.18, 0);
-  // Hooks: two silver posts on the tower with red hook heads that rise to the chain.
-  const hx = L * 0.1, hanger = new THREE.Group();
-  k.visual.add(hanger);
-  for (const sz of [-1, 1]) {
-    tube(k.visual, [hx, bt + 0.01, sz * 0.06], [hx, H - 0.1, sz * 0.06], 0.022, silver);
-    tube(hanger, [hx, H - 0.28, sz * 0.06], [hx, H - 0.04, sz * 0.06], 0.009, silver);
-    box(hanger, 0.012, 0.07, 0.03, red, hx, H + 0.0, sz * 0.06);
-    box(hanger, 0.05, 0.012, 0.03, red, hx - 0.02, H + 0.035, sz * 0.06);
-  }
-  let ang = 0;
-  return {
-    replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
-    lightAt: [px, py + 0.06, 0],
-    flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, conveyor, 0.03), ...overRollers(k, feed, 0.02)] },
-    update(s) {
-      base.update(s); intake.update(s);
-      ang = approach(ang, armAngle(s, 0.12), 8, s.dt);
-      arm.rotation.z = ang;
-      for (const w of wheels) spin(w, flywheel(s) * (w === wheels[0] ? -1 : 1), s.dt);
-      for (const r of [...conveyor, ...feed]) spin(r, s.intaking || s.firing > 0 ? -22 : 0, s.dt);
-      hanger.position.y = approach(hanger.position.y, s.climb > 0.5 ? inch(10) : s.climb > 0.1 ? inch(2) : 0, 10, s.dt);
-    },
-  };
-});
+registerRobotModel('skyfall-1114', buildSkyfall1114);
 
 // ── 2910 TYPHOON (CD tech binder thread + TBA 2024 photos): a TURRET robot. A low silver frame with green corner brackets
 //    and a black sponsor deck; the NOTE goes under the bumper, up a belly conveyor and is fed from any angle (two entry
@@ -332,7 +272,7 @@ export function moreCrescendoTeamRobots(): TeamRobot[] {
       source: 'User-supplied 0000_2024RobotTopLevelAssembly.STEP; Team RUSH 2024 reveal; FIRST 2024 robot name',
       config: cfg(27, 'gold-rush-27', { speed: 4.8, accel: 10, climb: 2.2, height: 25, intake: 24 }, 1) },
     { id: 'skyfall-1114', team: 1114, name: 'Skyfall',
-      description: '1114 Simbotics. Low red robot: under-bumper intake into a pivoting shooter arm with white wheels, chassis-aimed, hooks for the chain. Quick and consistent; a mid-weight SPEAKER cycler. Drive, accel and climb time are simulator estimates.',
+      description: '1114 Simbotics Skyfall 2.0. Red open A-frame carrying a broad pivoting shooter tray, white and purple rollers, exposed pivot gears, and arm-mounted climbing hooks. Quick and consistent; a mid-weight SPEAKER cycler. Drive, accel and climb time are simulator estimates.',
       source: 'Chief Delphi "Team 1114 - Simbot Skyfall" reveal photo; Team 1114 2024 code release',
       config: cfg(1114, 'skyfall-1114', { speed: 5.0, accel: 10, climb: 1.6, height: 22, intake: 24 }) },
     { id: 'typhoon-2910', team: 2910, name: 'Typhoon',

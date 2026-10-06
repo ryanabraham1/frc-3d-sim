@@ -29,6 +29,21 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
   if(id==='subzero-1778')expect(model.coralAxis).toEqual([0,0,1]);
   const rigidHead=root.getObjectByName('cad-effector-pivot');
   const headBind=rigidHead?.quaternion.clone();
+  if(id==='spectre-2910'){
+    const shoulder=root.getObjectByName('cad-arm-pivot')!,mid=root.getObjectByName('cad-elevator-stage-pivot')!,inner=root.getObjectByName('cad-carriage-pivot')!;
+    expect(mid.parent).toBe(shoulder);expect(inner.parent).toBe(mid);
+    expect(root.getObjectByName('cad-effector-pivot')!.parent).toBe(inner);
+    for(const side of [0,2]){
+      for(let n=0;n<150;n++)model.update({...idle,dt:.03,place:{height:1.75,forward:.7,level:4,side}});
+      visual.updateMatrixWorld(true);
+      expect(model.heldAnchor!.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(side===2?-.7:.7,1.75,0))).toBeLessThan(.025);
+      expect(mid.position.distanceTo(inner.position),'cascade stages share extension equally').toBeLessThan(.0001);
+    }
+    model.update({...idle,climb:1});visual.updateMatrixWorld(true);
+    const deployed=model.climbAnchor!.getWorldPosition(new THREE.Vector3());
+    model.update({...idle,climb:.25});visual.updateMatrixWorld(true);
+    expect(model.climbAnchor!.getWorldPosition(new THREE.Vector3()).distanceTo(deployed),'cage contact follows arm-driven pull-in').toBeGreaterThan(.2);
+  }
   const initial=model.heldAnchor!.getWorldPosition(new THREE.Vector3());
   const fixed=root.getObjectByName('frame')!.matrixWorld.clone();
   const poses=[{height:.45,forward:.3,level:1},{height:1.75,forward:.7,level:4},{height:2.03,forward:.45,level:3,algae:true},{height:.45,forward:.3,level:1,handoff:.5}];

@@ -212,8 +212,8 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
       const p = place(s);
       coralAxis[0]=p.level===1&&!p.handoff?0:1; coralAxis[2]=p.level===1&&!p.handoff?1:0;
       const collecting = !!p.handoff || (s.enabled && s.intaking && p.height <= .46);
-      const pitch = collecting ? 0 : wristFor(p.level);
-      const forward = collecting ? k.fp.length / 2 + c.intake.reach * .6 : p.forward;
+      const pitch = collecting ? 0 : (p.side===2?Math.PI-wristFor(p.level):wristFor(p.level));
+      const forward = collecting ? k.fp.length / 2 + c.intake.reach * .6 : (p.side===2?-p.forward:p.forward);
       const height = collecting ? .11 : p.height;
       // Solve to the piece center, including the wrist-to-piece offset.
       const dx = forward - px - .1 * Math.cos(pitch);
