@@ -82,6 +82,8 @@ export interface RobotConfig {
     stationSide?: 'front' | 'back';
   };
   /** Optional flexible hopper roof: starts bulging above this load, reaches fullHeight at capacity. */
+  /** A net / fabric cover over the hopper keeps FUEL in through tips and hits (no spilling). */
+  hopperCovered?: boolean;
   hopperExpansion?: { startCount: number; fullHeight: number; mechanism?: 'telescoping' };
   /**
    * Optional defensive SHOT BLOCKER: a panel hinged on the top edge of the intake side (so it extends over the same

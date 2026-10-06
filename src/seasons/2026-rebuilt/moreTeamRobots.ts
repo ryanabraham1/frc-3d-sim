@@ -588,7 +588,7 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'simbot-tim-1114', team: 1114, name: 'Simbot Tim',
       description: '1114 Simbotics. Simplified supplied CAD intake and tall hopper, with fitted drivetrain and wide drum shooter. Chassis aims; competition climber was removed. Intake travel, capacity, rate, dimensions and speed are simulator estimates.',
       source: 'User supplied S26-A000.glb intake/hopper assembly; Team 1114 Simbot Tim CAD release https://www.chiefdelphi.com/t/522887',
-      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 70, tall: true, rate: 18, climb: 0 }, c => { c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
+      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 70, tall: true, rate: 18, climb: 0 }, c => { c.hopperCovered = true; /* magic-blanket cover */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
     { id: 'rubble-581', team: 581, name: 'Rubble',
       description: '581 Blazing Bulldogs. Champs rebuild: full-width drum and adjustable roller hood, translating rack intake, rising roller floor and smoked hopper with a net roof. Capacity, rate and speed are simulator estimates.',
       source: 'Spectrum CAD Collection row 10; Team 581 CAD and code release https://www.chiefdelphi.com/t/521762',

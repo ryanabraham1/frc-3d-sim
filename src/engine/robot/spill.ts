@@ -5,6 +5,7 @@ import type { Robot } from './robot';
 
 /**
  * FUEL falling out of an open hopper. A multi-ball launcher robot carries its pieces loose in a bin with no lid, so:
+ *  - only the pile above the rim line (RETAINED share of capacity) can come out, and netted/covered hoppers never spill;
  *  - a hard hit (the chassis velocity changing by more than IMPACT_DV within ~0.05 s: wall, robot, or a full-speed stop)
  *    bounces a share of the load over the rim, harder hits throw more, in the direction the load was travelling;
  *  - tilting the chassis spills it like a tipped cup: a trickle once it leans past TILT_START, a stream when it is on
@@ -25,8 +26,12 @@ const states = new WeakMap<Robot, SpillState>();
 /** True for robots that carry several loose pieces in an open bin (REBUILT-style FUEL hoppers). */
 export function hasOpenHopper(robot: Robot): boolean {
   const c = robot.config;
-  return c.launcher.enabled && c.hopperCapacity > 1;
+  const netted = c.hopperCovered || (!!c.hopperExpansion && c.hopperExpansion.mechanism !== 'telescoping');
+  return c.launcher.enabled && c.hopperCapacity > 1 && !netted;
 }
+
+/** FUEL stays put below this share of capacity: a shallow pile sits below the rim and doesn't jump out. */
+const RETAINED = 0.6;
 
 export function spillHeld(robot: Robot, pool: GamePiecePool, dt: number, rng: Rng): number {
   if (!hasOpenHopper(robot)) return 0;
@@ -39,7 +44,10 @@ export function spillHeld(robot: Robot, pool: GamePiecePool, dt: number, rng: Rn
   st.vx.push(v.x); st.vz.push(v.z);
   if (st.vx.length > HISTORY) { st.vx.shift(); st.vz.shift(); }
   st.cooldown = Math.max(0, st.cooldown - dt);
-  if (!robot.enabled || robot.isClimbing || robot.held.length === 0) { st.carry = 0; return 0; }
+  // Only the pile above the rim line can spill (everything, if the robot is upside down).
+  const retain = robot.uprightness < -0.3 ? 0 : Math.ceil(robot.config.hopperCapacity * RETAINED);
+  const spillable = robot.held.length - retain;
+  if (!robot.enabled || robot.isClimbing || spillable <= 0) { st.carry = 0; return 0; }
 
   let out = 0;
   const release = (dir: THREE.Vector3, speed: number, lift: number): void => {
@@ -62,7 +70,7 @@ export function spillHeld(robot: Robot, pool: GamePiecePool, dt: number, rng: Rn
     const dx = st.vx[0] - v.x, dz = st.vz[0] - v.z, dv = Math.hypot(dx, dz);
     if (dv > IMPACT_DV) {
       const share = Math.min(0.6, 0.1 + (dv - IMPACT_DV) * 0.08);
-      const n = Math.max(1, Math.round(robot.held.length * share));
+      const n = Math.min(spillable, Math.max(1, Math.round(spillable * share)));
       const dir = new THREE.Vector3(dx / dv, 0, dz / dv); // the load keeps going the way the robot was moving
       for (let k = 0; k < n; k++) release(dir, Math.min(4, dv * 0.35), 1.2 + dv * 0.15);
       st.cooldown = IMPACT_COOLDOWN;
@@ -78,7 +86,7 @@ export function spillHeld(robot: Robot, pool: GamePiecePool, dt: number, rng: Rn
     const dir = lean > 1e-3 ? new THREE.Vector3(axis.x / lean, 0, axis.z / lean) : new THREE.Vector3(rng.next() - 0.5, 0, rng.next() - 0.5).normalize();
     const severity = Math.min(1, (TILT_START - up) / (TILT_START + 0.5));
     st.carry += TILT_RATE * severity * dt;
-    while (st.carry >= 1 && robot.held.length > 0) { st.carry -= 1; release(dir, 0.6 + severity * 0.8, 0.3); }
+    while (st.carry >= 1 && robot.held.length > retain) { st.carry -= 1; release(dir, 0.6 + severity * 0.8, 0.3); }
   } else st.carry = 0;
   return out;
 }

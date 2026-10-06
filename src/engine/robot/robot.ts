@@ -745,30 +745,6 @@ export class Robot {
         this.fuelPiles.push(o);
       }
     });
-    this.fitCapacityToHopper();
-  }
-
-  /**
-   * Held FUEL is exactly what the hopper model visibly holds: the config's `hopperCapacity` is only an upper bound, and
-   * the real number is how many full-size balls fit in the drawn bin(s). Alternate bins sharing a parent (compact /
-   * extended / raised) are one hopper in different poses, so the biggest counts; separate bins (the sliding extension)
-   * add up. Without it a robot could "hold 50" while 10 balls showed.
-   */
-  private fitCapacityToHopper(): void {
-    const byParent = new Map<THREE.Object3D, number>();
-    for (const pile of this.fuelPiles) {
-      const slots = pile.userData.fuelSlots as number | undefined;
-      if (!slots || !pile.parent) continue;
-      byParent.set(pile.parent, Math.max(byParent.get(pile.parent) ?? 0, slots));
-    }
-    let fits = 0;
-    for (const n of byParent.values()) fits += n;
-    const c = this.config;
-    if (fits <= 0 || fits >= c.hopperCapacity) return;
-    c.hopperCapacity = fits;
-    if (c.hopperExpansion) c.hopperExpansion.startCount = Math.min(c.hopperExpansion.startCount, Math.max(0, fits - 1));
-    c.preload = Math.min(c.preload, fits);
-    while (this.held.length > fits) this.held.pop();
   }
 
   /**
@@ -870,7 +846,6 @@ export class Robot {
         this.fuelPiles.push(o);
       }
     });
-    this.fitCapacityToHopper();
   }
 
   /** Select the active bin nearest the intake path (including deployed hopper extensions). */
