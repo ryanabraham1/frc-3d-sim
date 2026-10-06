@@ -95,7 +95,7 @@ registerRobotModel('lowkey-2056', (k: ModelKit) => {
       intake.update(s);
       // Home: arm down so the shooter mouth meets the conveyor. Holding a NOTE it tracks the shot angle; AMP raises
       // it past vertical to drop the NOTE in; the climber hook stows it flat.
-      const target = s.climb > 0.2 ? 0 : s.passing ? 1.75 : s.fill > 0 && s.enabled ? Math.min(1.1, s.hood) : s.firing > 0 ? s.hood : 0.12;
+      const target = s.climb > 0.2 ? 0 : (s.amp ?? s.passing) ? 1.75 : s.fill > 0 && s.enabled ? Math.min(1.1, s.hood) : s.firing > 0 ? s.hood : 0.12;
       ang = approach(ang, target, 8, s.dt);
       arm.rotation.z = ang;
       const fs = s.enabled ? 40 + 50 * s.firing : 0;

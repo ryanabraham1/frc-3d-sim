@@ -110,6 +110,7 @@ function frame(now: number) {
     r.climbReady=pose.value==='endgame';
     r.climbPhase=pose.value==='climb'?'align':pose.value==='hang'?'hanging':'none';
     r.body.setTranslation({x:0,y:pose.value==='hang'?.28:.002,z:0},false);
+    r.ampDeploy = seasonSelect.value === '2024-crescendo' ? pose.value === 'score' : null;
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
     r.lastShotAngle = Number(hood.value);
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose

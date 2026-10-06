@@ -440,3 +440,52 @@ describe('2024 CRESCENDO — manual facts', () => {
     expect(rules(copy).trapScored.blue).toEqual([false, true, false]);
   });
 });
+
+
+describe('AMP deployment lifecycle', () => {
+  it('deploys before release, holds after scoring, replicates, then retracts', () => {
+    const sim = make('blue', ampPose('blue'));
+    jump(sim, TELEOP + 1);
+    give(sim);
+    run(sim, .15, {...IDLE_COMMAND, pass:true});
+    expect(sim.robot.ampDeploy).toBe(true);
+    expect(sim.robot.held).toHaveLength(1);
+    expect(sim.robot.netState(0).act! & 16).toBe(16);
+    run(sim, .2, {...IDLE_COMMAND, pass:true});
+    expect(sim.robot.held).toHaveLength(0);
+    run(sim, .2);
+    expect(sim.robot.ampDeploy).toBe(true);
+    run(sim, .65);
+    expect(sim.robot.ampDeploy).toBe(false);
+    expect(sim.robot.netState(0).act! & 16).toBe(0);
+  });
+  it('does not deploy for midfield passes, shoot priority, or an unavailable amp', () => {
+    for (const atAmp of [false,true]) {
+      const sim = make('blue', atAmp ? ampPose('blue') : season.startPose('blue',2));
+      jump(sim, TELEOP + 1);
+      run(sim,.1,{...IDLE_COMMAND,pass:true,shoot:atAmp});
+      expect(sim.robot.ampDeploy).toBe(false);
+    }
+    const config = preset('pivot'); config.options = {...config.options, amp:false};
+    const sim = make('blue',ampPose('blue'),config); jump(sim,TELEOP+1);
+    run(sim,.1,{...IDLE_COMMAND,pass:true});
+    expect(sim.robot.ampDeploy).toBe(false);
+  });
+});
+
+
+describe('2910 Typhoon turret discharge', () => {
+  it('releases at the discharge end as the turret turns, including saved configurations', () => {
+    const config = cloneConfig(season.teamRobots!.find(r => r.id === 'typhoon-2910')!.config);
+    delete config.launcher.mounts; delete config.launcher.muzzleForward;
+    const sim = make('blue',season.startPose('blue',2),normalizeCrescendoConfig(config));
+    const robot = sim.robot;
+    for (const angle of [0,Math.PI/2,Math.PI,-Math.PI/2]) {
+      robot.turretYaw = robot.pose.yaw + angle;
+      const exit = robot.launcherExit();
+      expect(exit.forward).toBeCloseTo(.1397 + Math.cos(angle) * .1653);
+      expect(exit.side).toBeCloseTo(Math.sin(angle) * .1653);
+      expect(Math.hypot(exit.forward-.1397,exit.side)).toBeCloseTo(.1653);
+    }
+  });
+});

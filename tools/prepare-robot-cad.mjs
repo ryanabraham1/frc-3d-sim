@@ -23,6 +23,7 @@ const specs = {
   ]},
   'gold-rush-27': {file:'rush-27-source.glb',year:2024,axes:'negative-z',groups:[
     ['shooter',/ShooterV6ASM_inverted/], ['intake',/04_0000_Intake/],
+    ['amp-base',/^(?:Amp Mech Pivot Bracket|Amp Mech Motor Bracket|REV-21-1651|REV-41-1660|10DP10TGear|85T_375hex_print|Hex Shaft With Snap Rings).*AndrewConcept2/],
     ['amp',/AndrewConcept2/], ['climber',/^(?:D1118|D1124|D117[46789]|D1180)/],
   ]},
   'twister-118': {file:'twister-118-source.glb',year:2024,axes:'negative-z',groups:[

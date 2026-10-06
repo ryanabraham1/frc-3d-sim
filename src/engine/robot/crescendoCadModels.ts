@@ -53,21 +53,27 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
   const climbers = typhoon ? [pivot('climber',[-.364,.204,0])] : twister ? [pivot('climber-left',[.06,.335,-.31]),pivot('climber-right',[.06,.335,.31])] : rush ? [] : domotron ? [pivot('climber',[.17,.29,0])] : [pivot('climber-left',[.0175,.147,-.3145]),pivot('climber-right',[.0175,.147,.3145])];
   const skis = twister ? [pivot('ski-left',[-.30,.325,-.27]),pivot('ski-right',[-.30,.325,.27])] : [];
   const rushClimb = rush ? pivot('climber',[0,0,0]) : undefined;
-  const amp = rush ? pivot('amp',[.24,.63,0]) : twister ? pivot('diverter',[.1,.6,0],turret) : undefined;
+  const amp = doppler ? pivot('amp',[-.2644,.16944,0]) : rush ? pivot('amp',[.2667,.6477,0]) : twister ? pivot('diverter',[-.118821,.455295,0],turret) : undefined;
   const point = (o: THREE.Object3D) => { k.visual.updateMatrixWorld(true); return k.visual.worldToLocal(o.getWorldPosition(new THREE.Vector3())); };
+  // Twister's 05_9001/05_9002 deploy shafts share this transverse center.
+  // RUSH pivots on the paired 375x625/437 standoffs, not the offset
+  // 10DP10T drive shaft. Fixed amp-base brackets remain on the frame.
   let dopplerPitch = 0;
   let dopplerPitchVelocity = 0;
+  let ampAngle = 0;
+  let carriageLift = 0;
+  const ease = (from: number, to: number, dt: number) => dt > 0 ? to + (from - to) * Math.exp(-9 * dt) : to;
   return {
     replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     intakeAnchor:intake, heldAnchor:held, lightAt:[0,.3,k.config.frameWidth*.35],
     flow:{ intake:()=>[point(intake),new THREE.Vector3(typhoon ? -.2 : .15,.12,0)], stow:()=>point(held), feed:()=>[point(held),point(shot)] },
     update(s) {
-      if (!animated()) { dopplerPitch=0; dopplerPitchVelocity=0; shooter.rotation.z=0; if(turret)turret.rotation.y=0; for(const c of [...climbers,...skis])c.rotation.z=0; if(carriage)carriage.position.y=.24155; if(rushClimb)rushClimb.position.y=0; if(amp)amp.rotation.z=0; return; }
+      if (!animated()) { dopplerPitch=0; dopplerPitchVelocity=0; shooter.rotation.z=0; if(turret)turret.rotation.y=0; for(const c of [...climbers,...skis])c.rotation.z=0; if(carriage)carriage.position.y=.24155; if(rushClimb)rushClimb.position.y=0; if(amp)amp.rotation.z=0; ampAngle=0; carriageLift=0; return; }
       if(turret)turret.rotation.y=k.turret.rotation.y;
       // Doppler pitches the complete conveyor/shooter about its rear shaft,
       // including the release animation after the shoot control is let go.
       if (doppler) {
-        const target = s.passing ? 1.5 : s.enabled && (s.aiming || s.firing > 0)
+        const target = (s.amp ?? s.passing) ? 1.5 : s.enabled && (s.aiming || s.firing > 0)
           ? THREE.MathUtils.clamp(s.hood, .14, 1.5) - .02 : 0;
         // Critically damped motion starts gently and settles without bouncing.
         // The analytic step keeps the same motion at different render rates.
@@ -83,12 +89,14 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
           dopplerPitchVelocity = 0;
         }
         shooter.rotation.z = dopplerPitch;
-      } else shooter.rotation.z = s.aiming ? THREE.MathUtils.clamp(s.hood,.14,1.08)-(typhoon ? .435 : twister ? .35 : rush ? .15 : domotron ? .72 : .02) : 0;
+      } else shooter.rotation.z = (s.amp ?? s.passing) ? (typhoon ? 1.45-.435 : twister ? .14-.35 : rush ? .15-.15 : domotron ? -.45-.72 : 0) : s.aiming || s.firing > 0 ? THREE.MathUtils.clamp(s.hood,.14,1.08)-(typhoon ? .435 : twister ? .35 : rush ? .15 : domotron ? .72 : .02) : 0;
       for(const c of climbers)c.rotation.z = s.climb*(typhoon ? 1.8 : twister ? .8 : domotron ? -1.4 : -1.85);
       if(rushClimb)rushClimb.position.y=.35*s.climb;
       for(const ski of skis)ski.rotation.z=-s.climb*.7;
-      if(carriage)carriage.position.y=.24155+(s.passing?.25:0);
-      if(amp)amp.rotation.z=rush ? (s.passing ? 0 : -.9) : (s.passing ? -.8 : 0);
+      carriageLift = ease(carriageLift, (s.amp ?? s.passing) ? .25 : 0, s.dt);
+      if(carriage)carriage.position.y=.24155+carriageLift;
+      ampAngle = ease(ampAngle, doppler ? ((s.amp ?? s.passing) ? 1.25 : 0) : rush ? ((s.amp ?? s.passing) ? 0 : -.9) : ((s.amp ?? s.passing) || s.climb > .2 ? -.8 : 0), s.dt);
+      if(amp)amp.rotation.z=ampAngle;
     },
   };
 }

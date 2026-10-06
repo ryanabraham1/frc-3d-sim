@@ -161,6 +161,9 @@ export class CrescendoRules implements SeasonRules {
     this.highNotesLeft = { blue: C.HIGH_NOTES_PER_ALLIANCE, red: C.HIGH_NOTES_PER_ALLIANCE };
     this.forcedEnsemble = { blue: false, red: false };
     this.ampAnim = { blue: 0, red: 0 };
+    this.ampRelease.clear();
+    this.ampReady.clear();
+    for (const robot of this.ctx.robots) robot.ampDeploy = false;
     this.left.clear(); this.launches.clear(); this.contacts.clear(); this.pins.reset(); this.prevZ.clear();
     this.g414.blue = this.g414.red = 0;
     this.leaveAssessed = this.stageAssessed = false;
@@ -186,7 +189,17 @@ export class CrescendoRules implements SeasonRules {
 
   // ─────────────────────────── robot mechanisms ───────────────────────────
 
-  handleMechanisms(robot: Robot, cmd: RobotCommand, _dt: number): boolean {
+  private readonly ampRelease = new Map<number, number>();
+  private readonly ampReady = new Map<number, number>();
+
+  handleMechanisms(robot: Robot, cmd: RobotCommand, dt: number): boolean {
+    const ampRequested = robot.enabled && !robot.isClimbing && cmd.pass && !cmd.shoot
+      && robot.config.options?.amp !== false && this.nearAmp(robot);
+    if (ampRequested) {
+      this.ampRelease.set(robot.id, this.now + 0.6);
+      this.ampReady.set(robot.id, (this.ampReady.get(robot.id) ?? 0) + dt);
+    } else this.ampReady.delete(robot.id);
+    robot.ampDeploy = robot.enabled && !robot.isClimbing && !cmd.shoot && robot.config.options?.amp !== false && (ampRequested || this.now < (this.ampRelease.get(robot.id) ?? -Infinity));
     if (cmd.intake && robot.config.intake.enabled && !robot.isClimbing) this.intake(robot);
     if (robot.isClimbing) {
       if (cmd.shoot) this.scoreTrap(robot);
@@ -195,7 +208,7 @@ export class CrescendoRules implements SeasonRules {
     const note = this.heldNote(robot);
     if (cmd.pass && !cmd.shoot && note !== undefined && this.nearAmp(robot)) {
       if (robot.config.options?.amp === false) this.tell(robot, 'This robot has no AMP mechanism');
-      else if (robot.fireCooldown <= 0) this.scoreAmp(robot, note);
+      else if (robot.fireCooldown <= 0 && (this.ampReady.get(robot.id) ?? 0) >= 0.3) this.scoreAmp(robot, note);
       return true;
     }
     return false;
@@ -233,6 +246,8 @@ export class CrescendoRules implements SeasonRules {
     // NOTES delivered during AMPLIFICATION earn points but don't count toward the next one [M 6.5.3].
     if (!this.amplified(a)) this.bank[a] = Math.min(2, this.bank[a] + 1);
     robot.fireCooldown = 0.45;
+    robot.ampDeploy = true;
+    this.ampRelease.set(robot.id, this.now + 0.6);
     this.ampAnim[a] = 0.45;
     this.ctx.toast(`AMP +${ampPoints(auto)}${this.bank[a] >= 2 && !this.amplified(a) ? ' · AMPLIFY ready (B)' : ''}`, 'good', a, robot);
   }

@@ -107,11 +107,14 @@ registerRobotModel('vortex-254', (k: ModelKit) => {
   hoodShell(hood, 0.06, 0.17, black);
   const held = pivot(t, 0.02, 0.2 * k2);
   held.rotation.z = 0.7;
-  // Amplifier: roller arm on top of the shooter that flips out for the AMP / TRAP.
-  const amp = pivot(t, 0.02, 0.43 * k2);
-  sidePlates(amp, [[0, -0.012], [0.22, -0.012], [0.22, 0.012], [0, 0.012]], 0.08, black);
-  roller(amp, 0.02, 0.16, blue, 0.22, 0);
-  let ampAng = 0;
+  // 254's amplifier is a belt elevator with a roller carriage (2024 tech binder,
+  // p.15), not a hinged flap. The uprights stay fixed to the turret.
+  const ampBase = 0.33 * k2;
+  for (const z of [-0.11, 0.11]) box(t, 0.0254, 0.43, 0.0254, k.mats.alu, -0.12, ampBase + 0.2, z);
+  const amp = pivot(t, -0.12, ampBase);
+  amp.name = 'amplifier-carriage';
+  sidePlates(amp, [[0, -0.04], [0.17, -0.04], [0.17, 0.10], [0, 0.10]], 0.1, black);
+  const ampRollers = [roller(amp, 0.02, 0.18, blue, 0.12, 0.07), roller(amp, 0.02, 0.18, blue, 0.15, 0.02)];
   let hoodAng = 0;
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -127,8 +130,8 @@ registerRobotModel('vortex-254', (k: ModelKit) => {
       for (const r of feed) spin(r, s.intaking || s.firing > 0 ? -20 : 0, s.dt);
       hoodAng = approach(hoodAng, (s.hood - 0.6) * 0.9, 10, s.dt);
       hood.rotation.z = hoodAng;
-      ampAng = approach(ampAng, s.passing || s.climb > 0.2 ? -1.0 : 0, 6, s.dt);
-      amp.rotation.z = ampAng;
+      amp.position.y = approach(amp.position.y, ampBase + (s.climb > 0.2 ? 0.432 : (s.amp ?? s.passing) ? 0.18 : 0), 6, s.dt);
+      for (const r of ampRollers) spin(r, (s.amp ?? s.passing) && s.firing > 0 ? -20 : 0, s.dt);
       climb.position.y = approach(climb.position.y, s.climb * 0.3, 6, s.dt);
     },
   };
@@ -210,7 +213,7 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
       base.update(s);
       intake.update(s);
       // Raises toward the shot elevation while holding a NOTE; straight up for the AMP / TRAP.
-      const target = s.passing || s.climb > 0.2 ? 1.5 : s.enabled && (s.aiming || s.firing > 0) ? Math.min(1.5, s.hood) : 0;
+      const target = (s.amp ?? s.passing) || s.climb > 0.2 ? 1.5 : s.enabled && (s.aiming || s.firing > 0) ? Math.min(1.5, s.hood) : 0;
       arm = approach(arm, target, 7, s.dt);
       pv.rotation.z = arm;
       head.rotation.z = 0; // shooter is fixed to the pitching arm
@@ -312,7 +315,7 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
     update(s) {
       base.update(s);
       intake.update(s);
-      const up = s.passing || s.climb > 0.2;
+      const up = (s.amp ?? s.passing) || s.climb > 0.2;
       lift = approach(lift, up ? inch(14) : 0, 5, s.dt);
       stage.position.y = lift;
       carriage.position.y = H - 0.12 + lift;
@@ -341,7 +344,7 @@ export function crescendoTeamRobots(): TeamRobot[] {
     ...moreCrescendoTeamRobots(),
     {
       id: 'vortex-254', team: 254, name: 'Vortex',
-      description: '254 Cheesy Poofs. Full-width under-bumper intake, NOTES fed around a 360° turret into a quad-flywheel hooded shooter (shoots on the move), "amplifier" arm for the AMP and TRAP, 1 s chain climb. 125 lb.',
+      description: '254 Cheesy Poofs. Full-width under-bumper intake, NOTES fed around a 360° turret into a quad-flywheel hooded shooter (shoots on the move), "amplifier" roller elevator for the AMP and TRAP, 1 s chain climb. 125 lb.',
       source: '254 2024 Technical Binder; Chief Delphi "Team 254 Presents: 2024 VORTEX"',
       config: teamConfig(254, 'vortex-254', { ground: true, source: true, shooter: 'pivot', aim: 'turret', amp: true, climb: 2 }, (c) => {
         c.mass = lb(125);

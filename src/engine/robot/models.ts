@@ -37,6 +37,8 @@ export interface RobotAnimState {
   firing: number;
   /** Pass / AMP button held. */
   passing: boolean;
+  /** Season AMP deployment, distinct from a midfield pass. */
+  amp?: boolean;
   /** Shoot or pass held: the shooter is spun up and the hood is tracking the shot (`hood`). */
   aiming: boolean;
   /** Launch elevation of the latest shot (rad), or the config's default angle. */

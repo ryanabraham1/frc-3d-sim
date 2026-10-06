@@ -191,6 +191,8 @@ export class Robot {
   private netAct: number | null = null;
   /** Placement-season end effector pose for team models (set by the season each frame). */
   placeAnim: PlaceAnim | null = null;
+  /** Set by CRESCENDO rules; null keeps other seasons independent. */
+  ampDeploy: boolean | null = null;
 
   constructor(
     readonly physics: PhysicsWorld,
@@ -942,6 +944,7 @@ export class Robot {
     const act = this.netAct ?? this.actBits();
     a.intaking = (act & 1) !== 0 && this.blockerDeploy === 0;
     a.passing = (act & 2) !== 0;
+    a.amp = this.enabled ? (this.netAct !== null ? (act & 16) !== 0 : this.ampDeploy ?? undefined) : false;
     a.aiming = (act & 8) !== 0 && this.enabled;
     if (this.netAct !== null && this.config.shotBlocker) {
       // Replicas aren't driven: swing the blocker toward the host's state at the real deploy speed.
@@ -1846,10 +1849,10 @@ export class Robot {
     };
   }
 
-  /** Mechanism bits replicated to clients: 1 intake, 2 pass, 4 shot blocker out, 8 aiming (shoot or pass held). */
+  /** Mechanism bits replicated to clients: 1 intake, 2 pass, 4 shot blocker out, 8 aiming (shoot or pass held), 16 AMP deployed. */
   private actBits(): number {
     return (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0) | (this.lastCommand.block && this.blockerDeploy > 0 ? 4 : 0)
-      | (this.lastCommand.shoot || this.lastCommand.pass ? 8 : 0);
+      | (this.lastCommand.shoot || this.lastCommand.pass ? 8 : 0) | (this.ampDeploy ? 16 : 0);
   }
 
   /** Replica update from a (possibly interpolated) snapshot. The body is only posed, never simulated. */

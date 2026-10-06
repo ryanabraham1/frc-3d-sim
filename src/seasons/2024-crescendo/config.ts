@@ -77,6 +77,12 @@ export function normalizeCrescendoConfig(config: RobotConfig): RobotConfig {
     c.launcher.maxSpeed = Math.min(c.launcher.maxSpeed, FIXED_MAX_SPEED);
     c.launcher.turret = false;
   }
+  if (c.model === 'typhoon-2910') {
+    // Physical NOTE release follows the corrected CAD discharge side, from
+    // the real turret center rather than a fixed chassis-front spawn point.
+    c.launcher.mounts = [{forward:.1397, side:0}];
+    c.launcher.muzzleForward = .305 - .1397;
+  }
   c.autoAlign ??= !c.launcher.turret;
   return c;
 }

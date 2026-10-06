@@ -166,7 +166,7 @@ export interface RobotNetState {
   climbLevel: number;
   climbSlot: number | null;
   climbProgress: number;
-  /** Mechanism animation bits (1 = intaking, 2 = passing) and last shot elevation (rad) — visuals only. */
+  /** Mechanism bits: intake=1, pass=2, blocker=4, aim=8, AMP deployment=16. */
   act?: number;
   hood?: number;
   /** Last client command sequence the host applied (for prediction/reconciliation). */

@@ -19,7 +19,7 @@ import { build, normalizeCrescendoConfig } from './config';
  */
 
 const flywheel = (s: RobotAnimState): number => (s.enabled ? 40 + 50 * s.firing : 0);
-const armAngle = (s: RobotAnimState, rest: number): number => (s.climb > 0.2 ? 0 : s.passing ? 1.75 : s.enabled && (s.aiming || s.firing > 0) ? s.hood : rest);
+const armAngle = (s: RobotAnimState, rest: number): number => (s.climb > 0.2 ? 0 : (s.amp ?? s.passing) ? 1.75 : s.enabled && (s.aiming || s.firing > 0) ? s.hood : rest);
 
 // ── 1114 SKYFALL (TBA 2024 photos): a low red wedge with black gusset plates carrying GM / WCP / GoBeyond logos, a black
 //    SIMBOT SKYFALL nameplate and white LED strip at the front, a silver pocketed shooter arm with ORANGE wheels, hooks ──
@@ -246,7 +246,7 @@ registerRobotModel('domotron-604', (k: ModelKit) => {
   sidePlates(head,[[-.16,-.03],[.22,-.03],[.3,.22],[-.16,.22]],W*.25,silver,[],.006);
   const wheels=[roller(head,.045,W*.5,black,.2,.12),roller(head,.045,W*.5,black,.25,.2)];
   for(const z of [-W*.27,W*.27])box(head,.035,.07,.02,yellow,.2,.12,z);
-  return {replaces:['chassis','launcher','intakeRollers','climber'],update(s){base.update(s);intake.update(s);carriage.position.y=.25+(s.passing?.25:0)+s.climb*.18;head.rotation.z=s.aiming?s.hood-.5:0;for(const w of wheels)spin(w,s.enabled?12:0,s.dt);}};
+  return {replaces:['chassis','launcher','intakeRollers','climber'],update(s){base.update(s);intake.update(s);carriage.position.y=.25+((s.amp ?? s.passing)?.25:0)+s.climb*.18;head.rotation.z=s.aiming?s.hood-.5:0;for(const w of wheels)spin(w,s.enabled?12:0,s.dt);}};
 });
 
 // Gold RUSH fallback: yellow braced pivot shooter, rear floor intake (TBA 2024).
