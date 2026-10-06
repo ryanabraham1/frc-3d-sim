@@ -172,8 +172,27 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   const tip=new THREE.Object3D();tip.position.set(-.610318,.160655,0);
   root.add(tip);root.updateMatrixWorld(true);intake.attach(tip);
   const hopper=root.getObjectByName('hopper');
-  // Folded containment sheets have broad bounds; preserve their planar CAD faces.
-  hopper?.traverse(o=>{if(o instanceof THREE.Mesh)for(const material of (Array.isArray(o.material)?o.material:[o.material])){if(material instanceof THREE.MeshStandardMaterial){material.flatShading=true;material.needsUpdate=true;}}});
+  // The source exports the clear containment sheets as opaque gray plastic.
+  // Give only these panels their own material so shared metal parts stay opaque.
+  hopper?.traverse(o=>{
+    if(!(o instanceof THREE.Mesh))return;
+    const clearPanel=(source:THREE.Material)=>{
+      const material=source.clone();
+      if(material instanceof THREE.MeshStandardMaterial){
+        material.color.set(0xdde8f0);
+        material.transparent=true;
+        material.opacity=.22;
+        material.depthWrite=false;
+        material.metalness=0;
+        material.roughness=.18;
+        material.side=THREE.DoubleSide;
+        material.flatShading=true;
+      }
+      return material;
+    };
+    o.material=Array.isArray(o.material)?o.material.map(clearPanel):clearPanel(o.material);
+    o.castShadow=false;
+  });
   const pile=fuel(k,-.58,.02,.255,.525,.65,-.32);
   let deploy=1,angle=0;
   return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,
