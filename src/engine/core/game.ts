@@ -179,6 +179,9 @@ export class Game {
   private lastClockKey = '';
   private lastNetState: GameState | null = null;
   private disposed = false;
+  private readonly perfPanel = new URLSearchParams(location.search).has('perf') ? document.createElement('pre') : null;
+  private readonly timings = { tickMs: 0, drawMs: 0, faderMs: 0, renderMs: 0 };
+  private lastPerfUpdate = 0;
 
   constructor(
     container: HTMLElement,
@@ -281,7 +284,7 @@ export class Game {
           const now = performance.now();
           const snap = this.clientSync!.onBinary(buf, now);
           const mine = snap && this.player ? snap.robots.find((r) => r.id === this.player!.id) : undefined;
-          if (mine) this.predictor!.onSnapshot(mine, now, snap!.meta.st === 'running');
+          if (mine) this.predictor!.queueSnapshot(mine, now, snap!.meta.st === 'running');
         }),
       );
       this.offs.push(
@@ -365,6 +368,10 @@ export class Game {
   // ─────────────────────────── loop ───────────────────────────
 
   start(): void {
+    if (this.perfPanel) {
+      this.perfPanel.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:1000;pointer-events:none;background:#000c;color:#fff;padding:8px;font:11px monospace';
+      this.renderer.container.appendChild(this.perfPanel);
+    }
     this.last = this.lastDraw = performance.now();
     if (this.role !== 'local') {
       // Multiplayer ticks run off a worker timer, not rAF. Host: the simulation must keep running when its
@@ -398,6 +405,12 @@ export class Game {
 
   /** Input + simulation (host/local) or input + command send (client). */
   private tick(now: number): void {
+    const started = performance.now();
+    this.updateTick(now);
+    this.timings.tickMs += (performance.now() - started - this.timings.tickMs) * 0.05;
+  }
+
+  private updateTick(now: number): void {
     const dt = clamp((now - this.last) / 1000, 0, 0.1);
     this.last = now;
     if (now - this.simWindowStart >= 500) {
@@ -424,13 +437,14 @@ export class Game {
         steps++;
         this.simTime += fixed;
         this.stepsSinceSnap++;
-        if (this.hostSync && this.stepsSinceSnap >= SNAPSHOT_EVERY_STEPS) {
-          this.stepsSinceSnap = 0;
-          this.hostSync.sendSnapshot(this.simTime);
-        }
         // Edge-triggered inputs apply to the first step only.
         inp.humanPlayer = false;
         inp.humanPlayerAlt = 0;
+      }
+      // Catch-up steps share one fresh snapshot, avoiding bursts of obsolete intermediate poses after a stall.
+      if (this.hostSync && this.stepsSinceSnap >= SNAPSHOT_EVERY_STEPS) {
+        this.stepsSinceSnap %= SNAPSHOT_EVERY_STEPS;
+        this.hostSync.sendSnapshot(this.simTime);
       }
       if (steps === 5) this.acc = 0;
       this.simBusyMs += performance.now() - t0;
@@ -442,6 +456,7 @@ export class Game {
   }
 
   private draw(now: number): void {
+    const started = performance.now();
     const elapsed = Math.max(0, (now - this.lastDraw) / 1000);
     const dt = Math.min(elapsed, 0.1);
     this.lastDraw = now;
@@ -461,9 +476,18 @@ export class Game {
     this.pool.syncVisuals();
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.pose ?? null, undefined, this.player?.elevation ?? 0);
+    const fadeStart = performance.now();
     this.updateFader(dt);
+    this.timings.faderMs += (performance.now() - fadeStart - this.timings.faderMs) * 0.05;
     this.updateHud(dt);
+    const renderStart = performance.now();
     this.renderer.render();
+    this.timings.renderMs += (performance.now() - renderStart - this.timings.renderMs) * 0.05;
+    this.timings.drawMs += (performance.now() - started - this.timings.drawMs) * 0.05;
+    if (this.perfPanel && now - this.lastPerfUpdate > 500) {
+      this.lastPerfUpdate = now;
+      this.perfPanel.textContent = `${this.role} · CPU averages (ms)\n` + Object.entries(this.netStats()).map(([key, value]) => `${key}: ${value}`).join('\n');
+    }
 
     // Real elapsed time: the clamped dt made 2 fps read as 10.
     this.fpsAcc += elapsed;
@@ -718,6 +742,7 @@ export class Game {
   // ─────────────────────────── client ───────────────────────────
 
   private clientTick(inp: DriverInput, now: number): void {
+    this.predictor?.flush();
     const cs = this.clientSync!;
     const p = this.player;
     if (!p || this.clientModal === 'closed') return;
@@ -915,6 +940,7 @@ export class Game {
   /** Multiplayer stats for debugging (window.game.netStats()). */
   netStats(): Record<string, number> {
     return {
+      ...Object.fromEntries(Object.entries(this.timings).map(([key, value]) => [key, Math.round(value * 100) / 100])),
       bytesSent: this.hostSync?.bytesSent ?? 0,
       bytesReceived: this.clientSync?.bytesReceived ?? 0,
       rttMs: Math.round((this.predictor?.rtt ?? 0) * 1000),
@@ -932,6 +958,7 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    this.perfPanel?.remove();
     cancelAnimationFrame(this.raf);
     this.ticker?.stop();
     for (const off of this.offs) off();

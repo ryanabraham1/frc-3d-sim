@@ -23,6 +23,25 @@ const net = (x: number, z: number, seq = 0): RobotNetState => ({
 });
 
 describe('Predictor', () => {
+  it('reconciles only the newest pose when a connection releases a burst of queued snapshots', () => {
+    const { robot, pos } = fakeRobot();
+    const p = new Predictor(robot);
+    p.onSnapshot(net(0, 0), 0, true);
+    pos.x = 2;
+    p.record(1000);
+    // Old frames would snap the driver backwards even though the newest frame agrees with prediction.
+    for (let i = 0; i < 20; i++) p.queueSnapshot(net(i / 10, 0), 1000, true);
+    p.queueSnapshot(net(2, 0), 1000, true);
+    p.flush();
+    expect(pos.x).toBe(2);
+    expect(p.snaps).toBe(1);
+    expect(p.corrections).toBe(1);
+    p.flush();
+    expect(p.corrections).toBe(1);
+    p.queueSnapshot({ ...net(2, 0), enabled: false }, 1100, true);
+    p.flush();
+    expect(p.active).toBe(false);
+  });
   it('snaps on activation, then blends out the error measured one RTT ago', () => {
     const { robot, pos } = fakeRobot();
     const p = new Predictor(robot);

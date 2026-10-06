@@ -17,9 +17,21 @@ export class Ticker {
     this.stop();
     const period = 1000 / this.hz;
     try {
-      this.url = URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${period});`], { type: 'text/javascript' }));
+      // At most one pending tick. A stalled main thread must not replay hundreds of obsolete timer messages.
+      this.url = URL.createObjectURL(new Blob([`
+        let pending = false;
+        onmessage = () => { pending = false; };
+        setInterval(() => {
+          if (!pending) { pending = true; postMessage(0); }
+        }, ${period});
+      `], { type: 'text/javascript' }));
       this.worker = new Worker(this.url);
-      this.worker.onmessage = () => this.fn(performance.now());
+      const worker = this.worker;
+      worker.onmessage = () => {
+        if (this.worker !== worker) return;
+        try { this.fn(performance.now()); }
+        finally { if (this.worker === worker) worker.postMessage(0); }
+      };
     } catch {
       // Workers unavailable (CSP etc.): plain interval — works while the tab is visible.
       this.fallback = window.setInterval(() => this.fn(performance.now()), period);

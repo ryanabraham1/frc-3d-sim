@@ -40,8 +40,20 @@ export class Predictor {
   private readonly hist: PoseSample[] = [];
   private readonly sendTimes = new Map<number, number>();
   private lastAck = 0;
+  private pending: { state: RobotNetState; localMs: number; running: boolean } | null = null;
 
   constructor(private readonly robot: Robot) {}
+
+  /** TCP can deliver many snapshots together after a stall. Reconcile only the newest before driving. */
+  queueSnapshot(state: RobotNetState, localMs: number, running: boolean): void {
+    this.pending = { state, localMs, running };
+  }
+
+  flush(): void {
+    const pending = this.pending;
+    this.pending = null;
+    if (pending) this.onSnapshot(pending.state, pending.localMs, pending.running);
+  }
 
   onSent(seq: number, localMs: number): void {
     this.sendTimes.set(seq, localMs);

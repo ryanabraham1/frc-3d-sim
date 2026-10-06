@@ -9,9 +9,9 @@ import { decodeSnapshot, packCommand, type ClientMsg, type NetGameState, type Ro
 
 const STATES: PieceState[] = ['field', 'held', 'reserve'];
 /** Starting render delay behind the newest host time, so there are usually two snapshots to blend. */
-export const INTERP_DELAY = 0.1;
+export const INTERP_DELAY = 0.075;
 /** The render delay adapts to measured arrival jitter within these bounds (s). */
-export const MIN_INTERP_DELAY = 0.075;
+export const MIN_INTERP_DELAY = 0.05;
 export const MAX_INTERP_DELAY = 0.35;
 /** Nominal snapshot spacing (host sends at ~30 Hz). */
 const SNAP_DT = 1 / 30;
@@ -57,6 +57,7 @@ export class ClientSync {
   private offset: number | null = null;
   private lastSeq = -1;
   private lastResyncAt = -Infinity;
+  private needsKeyframe = false;
   /** Last full rules state (rules patches are merged into it). */
   private rulesState: Record<string, unknown> | null = null;
   /** Pieces whose replica pose already sits at their newest sample (nothing to interpolate). */
@@ -98,17 +99,20 @@ export class ClientSync {
   onBinary(buf: ArrayBuffer, localMs: number): Snapshot | null {
     const s = decodeSnapshot(buf);
     if (!s) return null;
-    if (!this.gotKeyframe && !s.meta.key) return null; // wait for a full picture
+    if (!this.gotKeyframe && !s.meta.key) {
+      this.needsKeyframe = true;
+      this.requestResync(localMs);
+      return null;
+    }
     this.bytesReceived += buf.byteLength;
     this.snapshots++;
     // Deltas are only safe when none were lost (the relay drops frames for peers that fall behind).
     if (this.lastSeq >= 0 && s.seq !== this.lastSeq + 1 && !s.meta.key) {
       this.missed += Math.max(1, s.seq - this.lastSeq - 1);
-      if (localMs - this.lastResyncAt >= RESYNC_EVERY_MS) {
-        this.lastResyncAt = localMs;
-        this.client.send({ t: 'resync' } satisfies ClientMsg);
-      }
+      this.needsKeyframe = true;
     }
+    if (s.meta.key) this.needsKeyframe = false;
+    this.requestResync(localMs);
     this.lastSeq = s.seq;
     const sample = s.time - localMs / 1000;
     if (this.offset === null || Math.abs(sample - this.offset) > 0.5) {
@@ -129,7 +133,7 @@ export class ClientSync {
     this.countdown = m.cd;
     if (m.clock) clock.restore(m.clock);
     if (m.score) score.restore(m.score);
-    if (rules.applyNetState) {
+    if (!this.needsKeyframe && rules.applyNetState) {
       if (m.rules !== undefined) {
         this.rulesState = m.rules && typeof m.rules === 'object' && !Array.isArray(m.rules) ? { ...(m.rules as Record<string, unknown>) } : null;
         rules.applyNetState(m.rules);
@@ -138,7 +142,7 @@ export class ClientSync {
         rules.applyNetState(this.rulesState);
       }
     }
-    for (const [i, x, y, z, w] of m.rotations ?? []) {
+    for (const [i, x, y, z, w] of this.needsKeyframe ? [] : m.rotations ?? []) {
       if (i >= 0 && i < pool.count) {
         pool.setReplicaRotation(i, x, y, z, w);
         this.settled[i] = 0;
@@ -151,14 +155,14 @@ export class ClientSync {
       this.gotKeyframe = true;
       for (let i = 0; i < pool.count; i++) fresh.add(i);
     }
-    for (const [i, code, owner, tag] of m.pieces ?? []) {
+    for (const [i, code, owner, tag] of this.needsKeyframe ? [] : m.pieces ?? []) {
       if (i < 0 || i >= pool.count) continue;
       const st = STATES[code] ?? 'reserve';
       if (st === 'field' && pool.state[i] !== 'field') fresh.add(i);
       this.settled[i] = 0;
       pool.applyReplicaState(i, st, owner, tag);
     }
-    for (let k = 0; k < s.pieceIdx.length; k++) {
+    for (let k = 0; !this.needsKeyframe && k < s.pieceIdx.length; k++) {
       const i = s.pieceIdx[k];
       if (i >= pool.count) continue;
       const j = i * 3;
@@ -194,6 +198,7 @@ export class ClientSync {
    * Pose the replica world for this frame. `skipRobot` = a robot rendered by client prediction instead.
    */
   interpolate(localMs: number, skipRobot: number | null = null): void {
+    this.requestResync(localMs);
     if (this.offset === null || !this.robotSnaps.length) return;
     const rt = this.hostNow(localMs) - this.delay;
 
@@ -237,6 +242,12 @@ export class ClientSync {
       // At rest on its newest sample: nothing more to do until the next update for this piece.
       if (k >= 1) settled[i] = 1;
     }
+  }
+
+  private requestResync(localMs: number): void {
+    if (!this.needsKeyframe || localMs - this.lastResyncAt < RESYNC_EVERY_MS) return;
+    this.lastResyncAt = localMs;
+    this.client.send({ t: 'resync' } satisfies ClientMsg);
   }
 
   private poseRobots(a: RobotSnap, b: RobotSnap, k: number, skipRobot: number | null): void {

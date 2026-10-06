@@ -22,9 +22,9 @@ import {
 const STATE_CODE: Record<PieceState, number> = { field: 0, held: 1, reserve: 2 };
 /**
  * Skip a snapshot while this much is still queued on the socket (slow uplink) — deltas stay queued for the
- * next one. Kept small: everything queued here is latency every client sees (~4 keyframes' worth).
+ * next one. Everything queued here is latency every client sees, so allow roughly one keyframe.
  */
-const MAX_BUFFERED = 64 * 1024;
+const MAX_BUFFERED = 16 * 1024;
 
 /** What the host sync reads from the running Game. */
 export interface HostSyncSource {

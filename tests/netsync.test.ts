@@ -223,6 +223,41 @@ describe('ClientSync', () => {
     p.dispose();
   });
 
+  it('retries a lost resync and keeps incomplete piece deltas out of the replica until a keyframe', () => {
+    const p = pair('2026-rebuilt');
+    const { h, cs, c, hostSim, clientSim } = p;
+    h.hs.sendSnapshot(0);
+    cs.onBinary(h.frames[0], 0);
+    const i = hostSim.pool.indices('field')[0];
+    hostSim.pool.reserve(i, 'missed');
+    h.hs.sendSnapshot(1 / 30); // lose this state transition
+    h.hs.sendSnapshot(2 / 30);
+    cs.onBinary(h.frames[2], 67);
+    expect(c.sent).toEqual([{ t: 'resync' }]);
+    cs.interpolate(1068); // the requested keyframe never arrives
+    expect(c.sent).toHaveLength(2);
+    expect(clientSim.pool.state[i]).toBe('field');
+    h.deliver({ t: 'resync' });
+    h.hs.sendSnapshot(1.1);
+    cs.onBinary(h.frames[3], 1100);
+    expect(clientSim.pool.state[i]).toBe('reserve');
+    expect(clientSim.pool.tag[i]).toBe('missed');
+    cs.interpolate(3000);
+    expect(c.sent).toHaveLength(2);
+    p.dispose();
+  });
+
+  it('requests a replacement when the initial keyframe was dropped', () => {
+    const p = pair('2026-rebuilt');
+    p.h.hs.sendSnapshot(0);
+    p.h.hs.sendSnapshot(1 / 30);
+    expect(p.cs.onBinary(p.h.frames[1], 33)).toBeNull();
+    expect(p.c.sent).toEqual([{ t: 'resync' }]);
+    p.cs.interpolate(1100);
+    expect(p.c.sent).toHaveLength(2);
+    p.dispose();
+  });
+
   it('keeps robots moving through a late snapshot instead of freezing', () => {
     const p = pair('2026-rebuilt');
     const { hostSim, h, cs, clientSim } = p;
@@ -252,7 +287,7 @@ describe('ClientSync', () => {
     for (let k = 0; k < 60; k++) cs.onBinary(h.frames[k], (k * 1000) / 30);
     const smooth = cs.delay;
     expect(smooth).toBeGreaterThanOrEqual(MIN_INTERP_DELAY);
-    expect(smooth).toBeLessThan(0.1);
+    expect(smooth).toBeLessThan(0.065);
     // Bursty arrival: ±60 ms.
     for (let k = 60; k < 120; k++) cs.onBinary(h.frames[k], (k * 1000) / 30 + (k % 2 ? 60 : -60));
     expect(cs.delay).toBeGreaterThan(smooth + 0.05);
