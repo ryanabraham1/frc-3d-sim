@@ -158,7 +158,7 @@ function packed(open: boolean, balls: number) {
   const mesh = group.children[0] as THREE.InstancedMesh;
   mesh.userData.setFuelOpen(open);
   const out: number[] = [];
-  mesh.userData.fuelEscape = (_m: unknown, x: number, y: number) => out.push(y);
+  mesh.userData.fuelEscape = (_m: unknown, _x: number, y: number) => out.push(y);
   fill.set(balls / mesh.userData.fuelSlots);
   const step = mesh.userData.animateFuel as (s: RobotAnimState) => void;
   return { mesh, step, out };
