@@ -54,7 +54,7 @@ registerRobotModel('wildstang-111', k => {
   bar(climb,[0,0,0],[0,.5,0],.04,silver); box(climb,.12,.04,.05,black,-.04,.5,0);
   let yc=bt+.18, phi=1.1;
   return {
-    replaces:['chassis','mast','hopper','intakeRollers','climber','funnel'], heldAnchor:held,coralAxis:[1,0,0], algaeAnchor:algaeHeld, algaeGripScale:[.70,1.04,1.07], intakeAnchor:floor.tip,
+    replaces:['chassis','mast','hopper','intakeRollers','climber','funnel'], heldAnchor:held,handoffStyle:'fold',coralAxis:[1,0,0], algaeAnchor:algaeHeld, algaeGripScale:[.70,1.04,1.07], intakeAnchor:floor.tip,
     flow:{handoff:()=>[flowAt(k,floor.tip),new THREE.Vector3(-.20,bt+.12,0),flowAt(k,held)]},
     update(s) {
       deploy=approach(deploy,intakeDeployTarget(s),7,s.dt);floor.update(s,deploy);

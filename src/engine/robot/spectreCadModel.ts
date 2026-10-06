@@ -34,15 +34,20 @@ export function buildSpectreCad(root:THREE.Group,k:ModelKit,animated:()=>boolean
   const algae=anchor(head,new THREE.Vector3(.54,2.165,0));
   const cage=anchor(climber,new THREE.Vector3(-.29,.514,0));
   const gripOffset=held.position.clone();
+  const coralAxis:[number,number,number]=[0,0,1];
   let pitch=.15,extension=0,toolPitch=125*Math.PI/180,slide=0;
   return {
     replaces:['chassis','mast','hopper','intakeRollers','climber','funnel'],
-    heldAnchor:held,coralAxis:[0,0,1],algaeAnchor:algae,algaeGripScale:[.90,.82,.96],
+    heldAnchor:held,coralAxis,handoffStyle:'direct',algaeAnchor:algae,algaeGripScale:[.90,.82,.96],
     intakeAnchor:held,climbAnchor:cage,lightAt:[-.26,.32,.12],
     flow:{handoff:()=>[]},
     update(s){
       if(!animated())return;
       const p=s.place??{height:.45,forward:.3,level:1};
+      const lengthwise=p.level!==1 || !!p.handoff || s.intaking;
+      coralAxis[0]=lengthwise?Math.cos(sourceToolPitch):0;
+      coralAxis[1]=lengthwise?Math.sin(sourceToolPitch):0;
+      coralAxis[2]=lengthwise?0:1;
       const climbing=s.climb>.01;
       const collecting=!!p.handoff || s.intaking&&p.height<=.46;
       const parked=!collecting&&p.height<=.46&&!p.algae;

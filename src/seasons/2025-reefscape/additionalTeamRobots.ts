@@ -100,7 +100,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
     r.rotation.y = Math.PI / 2; r.position.x = la - 0.035 + i * 0.01; arm.add(r);
   }
   wire(arm, [[0.02, 0.02, 0.02], [la * 0.5, 0.024, 0.02], [la - 0.07, 0.02, 0.02]], 0x2f62d4, 0.006);
-  const held = pivot(arm, la + 0.02, 0);
+  const held = pivot(arm, la + .075, 0), algaeHeld = pivot(arm, la + .225, 0);
   // Vacuum pump and electronics on the deck, beside the conveyor.
   box(k.visual, 0.12, 0.07, 0.08, silver, -side * 0.2, bt + 0.035, -0.17);
   battery(k.visual, side * 0.2, bt - 0.02, -0.18, Math.PI / 2);
@@ -127,7 +127,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
   let yc = yMin, phi = Math.PI / 2, deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, algaeGripScale: [.98, .98, .98],
+    heldAnchor: held, coralAxis:[0,1,0], algaeAnchor: algaeHeld, algaeGripScale: [.98, .98, .98], handoffStyle:'conveyor',
     intakeAnchor: intake.tip,
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, .09), new THREE.Vector3(0, bt + .09, .09)] },
     lightAt: [0, top + 0.02, 0],
@@ -136,7 +136,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
       // Stowed: arm straight up. Handoff: arm hangs straight down over the conveyor. Scoring: out of the front
       // (side 0) or flipped over the top to the back (side 2).
       let goal: { yc: number; phi: number };
-      if (p.handoff) goal = { yc: bt + 0.08 + la, phi: -Math.PI / 2 };
+      if (p.handoff) goal = { yc: bt + 0.08 + la + .055, phi: -Math.PI / 2 };
       else if (stowed(p)) goal = { yc: yMin, phi: Math.PI / 2 };
       else goal = reachWith(p, p.side === 2 ? -1 : 1, 0, la, yMin, yMax);
       yc = approach(yc, goal.yc, 12, s.dt);
@@ -201,7 +201,7 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
     wheelShaft(grip, 0.05, 0.045, { n: 2, r: 0.038, w: 0.03, span: 0.1, colors: [0x2a55d6] }),
     wheelShaft(grip, 0.05, -0.045, { n: 2, r: 0.038, w: 0.03, span: 0.1, colors: [0x2a55d6] }),
   ];
-  const held = pivot(grip, 0.06, 0);
+  const held = pivot(grip, 0.06, 0), algaeHeld = pivot(grip, .23, 0);
   // Floor intake (back): polycarbonate side plates, blue star wheels on the front roller.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: poly, rollerMaterial: black });
   const stars = starWheels(intake.tip, side * 0.04, 0, { n: 7, r: 0.045, span: c.intake.width * 0.85, m: blue, spikes: 6 });
@@ -227,7 +227,7 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
   const yMin = bt + 0.12, yMax = top + 0.7, dir = -side;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
+    heldAnchor: held, coralAxis:[1,0,0], algaeAnchor: algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'conveyor',
     intakeAnchor: intake.tip,
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .1, 0), new THREE.Vector3(ex - side * .02, bt + .1, 0)] },
     lightAt: [ex, top + 0.01, 0],
@@ -325,7 +325,7 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
   const yMin = bt + 0.12, yMax = top + 0.58, dir = -side; // single stage: the carriage rides to the top of the raised stage
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, algaeAnchor: algaeHeld, algaeGripScale:[.74,.96,.74],
+    heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'fold', algaeAnchor: algaeHeld, algaeGripScale:[.74,.96,.74],
     intakeAnchor: intake.tip,
     lightAt: [ex, top + 0.01, 0],
     update(s) {

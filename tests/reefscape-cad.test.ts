@@ -51,3 +51,22 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
   model.update({...idle,place:{height:1.75,forward:.7,level:4}});visual.updateMatrixWorld(true);
   expect(model.heldAnchor!.getWorldPosition(new THREE.Vector3()).distanceTo(initial)).toBeGreaterThan(.1);
 },30000);
+
+it('1778 CAD folds its floor intake upward and meets the hanging coral claw', () => {
+  const config=cloneConfig(SEASONS.find(s=>s.year===2025)!.teamRobots!.find(r=>r.id==='subzero-1778')!.config);
+  const visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
+  const material=new THREE.MeshStandardMaterial();
+  const model=cadRobotModelBuilder('subzero-1778')!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:material,alu:material,bumper:material}});
+  setCadAnimationEnabled(true);
+  const tip=()=>{visual.updateMatrixWorld(true);return model.intakeAnchor!.getWorldPosition(new THREE.Vector3());};
+  model.update({...idle,enabled:true,intaking:true,place:{height:.45,forward:.3,level:1}});
+  const start=tip();
+  for(const progress of [.001,.1,.25,.5,.65,.9,.999]) {
+    model.update({...idle,enabled:true,place:{height:.45,forward:.3,level:1,handoff:progress}});
+    visual.updateMatrixWorld(true);
+    expect(new THREE.Box3().setFromObject(visual,true).min.y).toBeGreaterThan(-.04);
+  }
+  const end=tip(),gripper=model.heldAnchor!.getWorldPosition(new THREE.Vector3());
+  expect(end.y-start.y).toBeGreaterThan(.3);
+  expect(end.distanceTo(gripper)).toBeLessThan(.12);
+});

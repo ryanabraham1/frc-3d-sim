@@ -6,7 +6,7 @@ import { PhysicsWorld, loadRapier } from '../src/engine/physics/world';
 import { Robot, IDLE_COMMAND } from '../src/engine/robot/robot';
 import { cloneConfig } from '../src/engine/robot/config';
 import { FieldFrame } from '../src/engine/coords';
-import { handoffPoint } from '../src/engine/robot/handoff';
+import { coralTransferPose } from '../src/seasons/2025-reefscape/transferVisual';
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
@@ -114,10 +114,16 @@ function frame(now: number) {
     r.lastShotAngle = Number(hood.value);
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
     r.placeAnim = {algae:pose.value==='algae'||pose.value==='both',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='both'?1:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:(pose.value==='score'||pose.value==='algae')&&r.config.placement?.scoreSide==='sides'?1:0};
+    if (pose.value === 'transfer') {
+      r.held.length = 1;
+      r.placeAnim = {height:.45, forward:.3, level:1,
+        handoff:(r.config.placement?.handoffSeconds ?? 0) > 0 ? Number(document.querySelector<HTMLInputElement>('#transfer')!.value) : 0};
+      r.lastCommand = {...IDLE_COMMAND, intake: r.modelHandoffStyle === 'direct'};
+    }
     if (pose.value === 'flow' && i.coral) {
       // CORAL: collect → conveyor handoff → extend to L4 → retract, using the match's model path.
       i.t = (i.t + dt) % 6;
-      const collecting = i.t < .8, transfer = i.t >= .8 && i.t < 2.5, scoring = i.t >= 2.5 && i.t < 5;
+      const collecting = i.t < .8, transfer = (r.config.placement?.handoffSeconds ?? 0) > 0 && i.t >= .8 && i.t < 2.5, scoring = i.t >= 2.5 && i.t < 5;
       r.held.length = i.t >= .8 && i.t < 5 ? 1 : 0;
       r.lastCommand = { ...IDLE_COMMAND, intake:collecting, shoot:scoring };
       r.placeAnim = { height:scoring ? 1.75 : .45, forward:scoring ? .7 : .3, level:4,
@@ -141,7 +147,7 @@ function frame(now: number) {
         i.next = i.t + 1 / Math.max(1, c.launcher.rate);
         r.held.pop();
       }
-    } else r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='both'?(r.config.options?.dualPieceStorage||r.config.options?.coralBuffer?1:0):pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
+    } else if (pose.value !== 'transfer') r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='both'?(r.config.options?.dualPieceStorage||r.config.options?.coralBuffer?1:0):pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
     r.syncVisual(dt);
     if (i.coral) {
       const anchor = r.modelHeldAnchor, p = r.placeAnim!;
@@ -156,10 +162,8 @@ function frame(now: number) {
         if(r.modelCoralAxis)scoreQ.copy(anchor.getWorldQuaternion(new THREE.Quaternion())).premultiply(r.visual.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(...r.modelCoralAxis).normalize()));
         i.coral.quaternion.copy(scoreQ);
         if (p.handoff) {
-          const path = r.modelHandoffPath ?? (r.modelIntakeAnchor ? [r.visual.worldToLocal(r.modelIntakeAnchor.getWorldPosition(new THREE.Vector3()))] : []);
-          handoffPoint(path,end,p.handoff,i.coral.position);
-          const across = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));
-          i.coral.quaternion.copy(across).slerp(scoreQ,Math.max(0,(p.handoff-.5)*2));
+          coralTransferPose(r.visual, r.modelIntakeAnchor, end, scoreQ, p.handoff,
+            r.modelHandoffPath, r.modelHandoffStyle, i.coral.position, i.coral.quaternion);
         }
       }
     }
@@ -179,7 +183,7 @@ function frame(now: number) {
 
     }
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
-    const scale=Math.max(pose.value==='algae'?2.6:1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='algae' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
+    const scale=Math.max(new THREE.Box3().setFromObject(r.visual).max.y + .15,pose.value==='algae'?2.6:1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='algae' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
     if (focus >= 0) {
       const d=scale*3.0*zoom, a=Math.atan2(2,1.8)+orbit+(reverse?Math.PI:0);
       i.camera.position.set(Math.cos(a)*Math.cos(tiltView)*d,Math.sin(tiltView)*d+scale*0.3,Math.sin(a)*Math.cos(tiltView)*d);

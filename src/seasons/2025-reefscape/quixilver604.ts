@@ -13,7 +13,7 @@ registerRobotModel('quixilver-604-2025',k=>{
   sidePlates(head,[[-.08,-.08],[.15,-.08],[.15,.1],[-.08,.1]],.17,black);
   const rollers=wheelShaft(head,.1,0,{n:2,r:.04,w:.03,span:.28,colors:[0x27292b]});
   const held=pivot(head,.08,0),algae=pivot(head,.22,.03);
-  return {replaces:['chassis','mast','hopper','intakeRollers','funnel'],heldAnchor:held,algaeAnchor:algae,algaeGripScale:[.84,1,.84],intakeAnchor:held,update(s){
+  return {replaces:['chassis','mast','hopper','intakeRollers','funnel'],heldAnchor:held,coralAxis:[1,0,0],handoffStyle:'direct',algaeAnchor:algae,algaeGripScale:[.84,1,.84],intakeAnchor:held,update(s){
     const p=place(s),goal=stowed(p)?{yc:.4,phi:1.2}:reachWith(p,1,.1,.6,.3,1.8);
     carriage.position.y=goal.yc;arm.rotation.z=goal.phi;head.rotation.z=-goal.phi;spin(rollers,s.enabled&&s.intaking?20:0,s.dt);db.update(s);
   }};

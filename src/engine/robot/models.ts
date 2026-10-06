@@ -91,6 +91,8 @@ export interface RobotModel {
   algaeGripThroat?: boolean;
   /** Where a piece rides on the ground intake (its roller), so seasons can animate the handoff to `heldAnchor`. */
   intakeAnchor?: THREE.Object3D;
+  /** A folding intake carries CORAL until the rollers meet the receiving tool. */
+  handoffStyle?: 'fold' | 'conveyor' | 'direct' | 'toss';
   /** Status light position (robot frame), on top of the model's structure. */
   lightAt?: [number, number, number];
   /**

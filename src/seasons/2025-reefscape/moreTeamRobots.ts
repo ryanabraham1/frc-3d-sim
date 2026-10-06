@@ -69,7 +69,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
   const yMin = bt + 0.12, yMax = top + 0.7, dir = -side;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, algaeAnchor: algaeHeld, algaeGripScale:[.76,.96,.72], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'conveyor', algaeAnchor: algaeHeld, algaeGripScale:[.76,.96,.72], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s);
@@ -142,7 +142,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       w.rotation.x = Math.PI / 2; w.position.set(0.04 + i * 0.075, 0, 0.0); a2.add(w); wheels.push(w);
     }
   }
-  const held = pivot(eff, 0.13, 0);
+  const held = pivot(eff, 0.13, 0), algaeHeld = pivot(eff, .25, 0);
   const tip = pivot(eff, 0.13, -0.02);
   // Hook arm at the open end for the climb.
   const hook = pivot(k.visual, L / 2 - 0.12, bt + 0.05, W / 2 - 0.08);
@@ -155,7 +155,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
   const yMin = bt + 0.1, yMax = top + 1.2;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, intakeAnchor: tip, lightAt: [ex, top + 0.02, 0],
+    heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'direct', algaeAnchor: algaeHeld, algaeGripScale:[.96,.96,.96], intakeAnchor: tip, lightAt: [ex, top + 0.02, 0],
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
@@ -217,7 +217,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   sidePlates(eff, [[-0.03, -0.06], [0.1, -0.06], [0.14, 0], [0.1, 0.07], [-0.03, 0.06]], 0.085, white, [], 0.008);
   box(eff, 0.04, 0.03, 0.18, yellow, -0.02, 0.05, 0);
   const effWheels = [wheelShaft(eff, 0.02, 0.03, { n: 3, r: 0.034, w: 0.028, span: 0.12, colors: [0xeef0f2] }), wheelShaft(eff, 0.1, -0.03, { n: 3, r: 0.03, w: 0.028, span: 0.12, colors: [0xeef0f2] })];
-  const held = pivot(eff, 0.06, 0);
+  const held = pivot(eff, 0.06, 0), algaeHeld = pivot(eff, .22, 0);
   // Floor CORAL intake: a row of green wheels across the front on blue plates.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: silverTube, rollerMaterial: green });
   const bank = starWheels(intake.tip, 0, 0, { n: 9, r: 0.04, span: c.intake.width * 0.88, m: green, spikes: 5 });
@@ -236,7 +236,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   const yMin = bt + 0.12, yMax = top + 0.7, dir = -side;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'toss', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s);
@@ -250,7 +250,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
       arm.rotation.z = phi;
       eff.rotation.z = -phi + (p.handoff ? 0 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
       for (const w of effWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
-      deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
+      deploy = approach(deploy, p.handoff ? 1 : intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
       spin(bank, -side * (s.intaking && s.enabled && deploy > 0.8 ? 26 : 0), s.dt);
       climb.rotation.x = approach(climb.rotation.x, (-1.2) * s.climb, 5, s.dt);
@@ -286,7 +286,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   const wrist = pivot(arm, la, 0);
   sidePlates(wrist, [[-0.07, -0.08], [0.1, -0.07], [0.1, 0.07], [-0.07, 0.08]], 0.08, black);
   const wheels = [wheelShaft(wrist, 0.045, -0.055, { n: 2, r: 0.045, w: 0.035, span: 0.12, colors: [0x282a2d] }), wheelShaft(wrist, 0.045, 0.055, { n: 2, r: 0.045, w: 0.035, span: 0.12, colors: [0x282a2d] })];
-  const held = pivot(wrist, 0.07, 0);
+  const held = pivot(wrist, 0.07, 0), algaeHeld = pivot(wrist, .24, 0);
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, rollerMaterial: black });
   const stars = starWheels(intake.tip, 0, 0, { n: 9, r: 0.04, span: c.intake.width * 0.9, m: black });
   box(k.visual, L * 0.42, 0.015, W * 0.52, black, side * L * 0.19, bt + 0.025, 0);
@@ -296,7 +296,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   bar(climber, [0, 0.32, -0.07], [0, 0.32, 0.07], 0.025, alu);
   let yc = bt + 0.15, phi = Math.PI / 2, deploy = 0;
   return {
-    replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, coralAxis:[0,0,1], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, coralAxis:[0,0,1], handoffStyle:'conveyor', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s), yMin = bt + 0.12;

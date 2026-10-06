@@ -82,7 +82,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
   box(carriage, 0.05, 0.16, 0.24, black, 0, 0, 0);
   const eff = endEffector(carriage, mat(0x8a9099, { metal: 0.2 }), black);
   const reach = box(carriage, 1, 0.03, 0.16, blue);
-  const held = pivot(eff.wrist, 0.1, 0);
+  const held = pivot(eff.wrist, 0.1, 0), algaeHeld = pivot(eff.wrist, .29, 0);
   // Smoked CORAL funnel on the back: an open chute leaning back toward the station, NASA logo on both sides.
   const fun = new THREE.Group();
   fun.position.set(-L / 2 + 0.2, H - 0.62, 0);
@@ -116,7 +116,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
   let deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'funnel', 'climber'],
-    heldAnchor: held,
+    heldAnchor: held, coralAxis:[1,0,0], algaeAnchor:algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'conveyor',
     intakeAnchor: intake.tip,
     lightAt: [ex - 0.015, H - 0.01, 0],
     update(s) {
@@ -201,13 +201,16 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
   let ang = 0.3;
   let len = seg;
   let wrist = 0;
+  const algaeHeld=pivot(eff.wrist,.29,0);
+  const coralAxis:[number,number,number]=[0,0,1];
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
+    heldAnchor: held, coralAxis, algaeAnchor:algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'direct',
     intakeAnchor: held,
     lightAt: [-L * 0.42, bt + 0.03, W * 0.3],
     update(s) {
       const p = place(s);
+      coralAxis[0]=p.level===1&&!p.handoff?0:1; coralAxis[2]=p.level===1&&!p.handoff?1:0;
       const collecting = !!p.handoff || (s.enabled && s.intaking && p.height <= .46);
       const pitch = collecting ? 0 : wristFor(p.level);
       const forward = collecting ? k.fp.length / 2 + c.intake.reach * .6 : p.forward;
@@ -289,7 +292,7 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
   diff.rotation.x = Math.PI / 2;
   diff.position.z = 0.12;
   eff.wrist.add(diff);
-  const held = pivot(eff.wrist, 0.13, 0);
+  const held = pivot(eff.wrist, 0.13, 0), algaeHeld = pivot(eff.wrist, .31, 0);
   const coralIntake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, stow: Math.PI - 0.45 });
   const algaeIntake = deployableIntake(k, { reach: c.intake.reach * 0.6, hingeY: bt + 0.12, rollers: 1, width: c.intake.width * 0.8, frame: blue, stow: Math.PI - 0.25 });
   // Rest pose from the photo: leaned forward, end effector up high.
@@ -299,13 +302,15 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
   let along = REST_ALONG;
   let wrist = 0;
   let deploy = 0;
+  const coralAxis:[number,number,number]=[0,0,1];
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
+    heldAnchor: held, coralAxis, algaeAnchor:algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'fold',
     intakeAnchor: coralIntake.tip,
     lightAt: [-L * 0.42, bt + 0.04, 0],
     update(s) {
       const p = place(s);
+      coralAxis[0]=p.level===1&&!p.handoff?0:1; coralAxis[2]=p.level===1&&!p.handoff?1:0;
       // At rest (end effector parked low, not scoring the trough) hold the photo pose; otherwise reach the rules'
       // end effector so CORAL leaves exactly where it is placed.
       // Handoff: elevator upright and short, wrist pointing back down at the CORAL intake folding in.

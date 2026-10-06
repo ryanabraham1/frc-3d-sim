@@ -718,6 +718,8 @@ export class Robot {
     return this.model?.flow?.handoff?.();
   }
 
+  get modelHandoffStyle(): 'fold' | 'conveyor' | 'direct' | 'toss' | undefined { return this.model?.handoffStyle; }
+
   /** True when this robot's team model draws `part` itself (seasons hide their own version of it, e.g. the mast). */
   modelReplaces(part: ModelPart): boolean {
     return !!this.model?.replaces.includes(part);

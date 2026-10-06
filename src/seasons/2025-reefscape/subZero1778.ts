@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, decal, deployableIntake, drivebase, intakeDeployTarget, ledStrip, mat, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat, type ModelKit } from '@engine/robot/models';
+import { transferFold } from './transferVisual';
 import { lb, wrapAngle } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
 
@@ -78,7 +79,9 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   sidePlates(head, [[-0.07, -0.03], [0.07, -0.03], [0.08, 0.07], [-0.08, 0.07]], 0.12, black, [[0, 0.03, 0.02]]);
   const wheels = [roller(head, 0.03, 0.22, black, -0.045, 0.045), roller(head, 0.03, 0.22, black, 0.045, 0.045)];
   for (const w of wheels) for (const z of [-0.06, 0.06]) roller(w, 0.018, 0.02, blue, 0, 0, z);
-  const held = pivot(head, 0, 0);
+  // Match/CAD photos: the tube crosses the hanging arm, seated below
+  // the pair of rollers; ALGAE sits farther out in the same open claw.
+  const held = pivot(head, 0, 0), algaeHeld = pivot(head, 0, -.19);
   // Floor intake across the front: folds up and back under the arm to hand the CORAL off.
   const intake = deployableIntake(k, { reach: c.intake.reach, hingeY: bt + 0.12, rollers: 2, frame: black, stow: Math.PI - 0.45 });
   let lift = 0.97;
@@ -86,7 +89,7 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   let deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, coralAxis:[0,0,1],
+    heldAnchor: held, coralAxis:[0,0,1], algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], handoffStyle: 'fold',
     intakeAnchor: intake.tip,
     lightAt: [ex, H + 0.02, 0],
     update(s) {
@@ -103,16 +106,21 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
       }
       swing += wrapAngle(theta - swing) * Math.min(1, 12 * s.dt);
       arm.rotation.x = swing;
+      // SubZero raises its intake while the receiving arm hangs down.
+      // Drive folding from transfer progress so even a short handoff reaches
+      // the meeting pose before the piece leaves the roller bank.
+      deploy = handoff ? 1 - transferFold(p.handoff!) : approach(deploy, intakeDeployTarget(s), 8, s.dt);
+      intake.update(s, deploy);
+      k.visual.updateMatrixWorld(true);
+      const transferY = k.visual.worldToLocal(intake.tip.getWorldPosition(new THREE.Vector3())).y;
       // Carriage height that puts the end effector at the rules' height.
-      lift = approach(lift, Math.max(bt + 0.32, p.height + Math.cos(swing) * ARM), 14, s.dt);
+      lift = approach(lift, Math.max(bt + 0.32, (handoff ? transferY : p.height) + Math.cos(swing) * ARM), 14, s.dt);
       carriage.position.y = lift;
       const ext = Math.max(0, lift + 0.12 - (H - 0.04));
       stages[0].position.y = ext / 2;
       stages[1].position.y = ext;
       const spinRate = s.intaking ? 22 : s.firing > 0 ? -30 : 0;
       for (const w of wheels) spin(w, spinRate, s.dt);
-      deploy = approach(deploy, intakeDeployTarget(s), 8, s.dt);
-      intake.update(s, deploy);
       db.update(s);
     },
   };

@@ -8,7 +8,7 @@ import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
 import { groundSideSign, stationSideSign } from '@engine/robot/config';
 import { animateAlgaeGrip } from './algaeVisual';
-import { handoffPoint } from '@engine/robot/handoff';
+import { coralTransferPose } from './transferVisual';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
@@ -1124,23 +1124,9 @@ export class ReefscapeRules implements SeasonRules {
     // Where the end effector will hold it (the pose computed above), in the robot frame.
     const endPos = visual.worldToLocal(coral.getWorldPosition(this.tmpV.set(0, 0, 0))).clone();
     const endQ = visual.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(coral.getWorldQuaternion(new THREE.Quaternion()));
-    const side = groundSideSign(robot.config), L = robot.footprint.length;
-    const intake = robot.modelIntakeAnchor;
-    const mouth = new THREE.Vector3(side * (L / 2 + 0.08), 0.1, 0);
-    const stowed = intake ? visual.worldToLocal(intake.getWorldPosition(new THREE.Vector3())) : new THREE.Vector3(side * (L / 2 - 0.12), robot.config.bumperTop + 0.12, 0);
-    const across = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1));
-    const a = clamp(t / 0.5, 0, 1), b = clamp((t - 0.5) / 0.5, 0, 1);
-    const ease = (x: number) => x * x * (3 - 2 * x);
-    // A model's intake anchor already folds in with the intake; the generic intake is fixed, so slide up it.
-    const onIntake = intake ? stowed : mouth.lerp(stowed, ease(a));
     if (coral.parent !== visual) visual.add(coral);
-    const path = robot.modelHandoffPath;
-    if (path && path.length > 1) {
-      // Ride the actual conveyor/cradle rather than cutting diagonally through the elevator.
-      handoffPoint(path, endPos, t, coral.position);
-    } else coral.position.copy(onIntake.lerp(endPos, ease(b)));
-    coral.position.y += Math.sin(Math.PI * b) * 0.06; // small lift as it clears the bumper / end effector lip
-    coral.quaternion.copy(across).slerp(endQ, ease(b));
+    coralTransferPose(visual, robot.modelIntakeAnchor, endPos, endQ, t,
+      robot.modelHandoffPath, robot.modelHandoffStyle, coral.position, coral.quaternion);
   }
 
   private scoredMesh(i: number, algae: boolean): THREE.Mesh {
