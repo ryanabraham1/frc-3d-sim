@@ -234,6 +234,38 @@ registerRobotModel('titan-581', (k: ModelKit) => {
   };
 });
 
+// Domotron fallback: silver elevator with yellow hubs and a pitching conveyor,
+// measured layout from supplied CAD and 604's TBA 2024 photos. Motion is fitted.
+registerRobotModel('domotron-604', (k: ModelKit) => {
+  const silver=mat(0xaeb5bd,{metal:.65}), yellow=mat(0xe7ba22), black=mat(0x17191c), W=k.config.frameWidth;
+  const base=drivebase(k,{tube:silver}), intake=underBumperIntake(k,{n:4});
+  for(const z of [-W*.36,W*.36])bar(k.visual,[.12,.15,z],[.12,.65,z],.025,silver);
+  const carriage=new THREE.Group();carriage.position.set(.12,.25,0);k.visual.add(carriage);
+  for(const z of [-W*.28,W*.28])bar(carriage,[0,-.1,z],[0,.35,z],.025,silver);
+  const head=pivot(carriage,0,0);
+  sidePlates(head,[[-.16,-.03],[.22,-.03],[.3,.22],[-.16,.22]],W*.25,silver,[],.006);
+  const wheels=[roller(head,.045,W*.5,black,.2,.12),roller(head,.045,W*.5,black,.25,.2)];
+  for(const z of [-W*.27,W*.27])box(head,.035,.07,.02,yellow,.2,.12,z);
+  return {replaces:['chassis','launcher','intakeRollers','climber'],update(s){base.update(s);intake.update(s);carriage.position.y=.25+(s.passing?.25:0)+s.climb*.18;head.rotation.z=s.aiming?s.hood-.5:0;for(const w of wheels)spin(w,s.enabled?12:0,s.dt);}};
+});
+
+// Gold RUSH fallback: yellow braced pivot shooter, rear floor intake (TBA 2024).
+// CAD is preferred in browsers; all speeds and actuator timing are estimates.
+registerRobotModel('gold-rush-27', (k: ModelKit) => {
+  const gold=mat(0xdcb326,{metal:.4}), black=mat(0x151719), L=k.config.frameLength, W=k.config.frameWidth;
+  const base=drivebase(k,{tube:gold}), intake=underBumperIntake(k,{n:3});
+  for(const z of [-W*.32,W*.32]) {
+    bar(k.visual,[-L*.3,.18,z],[.05,.55,z],.025,gold);
+    bar(k.visual,[L*.3,.18,z],[.05,.55,z],.025,gold);
+  }
+  const head=pivot(k.visual,.05,.55);
+  sidePlates(head,[[-.18,-.08],[.24,-.08],[.24,.2],[-.18,.2]],W*.25,gold,[],.006);
+  for(const x of [-.08,.15])roller(head,.065,W*.5,black,x,.05);
+  const climb=pivot(k.visual,-L*.25,.22);
+  for(const z of [-W*.38,W*.38])bar(climb,[0,0,z],[.46,0,z],.025,gold);
+  return {replaces:['chassis','launcher','intakeRollers','climber'],update(s){base.update(s);intake.update(s);head.rotation.z=s.aiming?s.hood-.3:0;climb.rotation.z=s.climb*1.7;}};
+});
+
 const cfg = (team: number, model: string, o: { turret?: boolean; speed: number; accel: number; climb: number; height: number; frame?: [number, number]; intake?: number; mass?: number }, level: 0 | 1 | 2 = 2) => {
   const c = build({ ground: true, source: true, shooter: 'pivot', aim: o.turret ? 'turret' : 'align', amp: true, climb: level });
   c.teamNumber = team; c.model = model; c.maxSpeed = o.speed; c.maxAccel = o.accel;
@@ -247,6 +279,14 @@ const cfg = (team: number, model: string, o: { turret?: boolean; speed: number; 
 
 export function moreCrescendoTeamRobots(): TeamRobot[] {
   return [
+    { id: 'domotron-604', team: 604, name: 'Domotron',
+      description: '604 Quixilver. Floor intake, elevator-mounted pitching NOTE launcher and chain climber. Drive speed and mechanism timing are simulator estimates.',
+      source: 'User-supplied 2024 FRC604.glb; 604robotics.com 2024 Domotron',
+      config: cfg(604, 'domotron-604', { speed: 4.8, accel: 10, climb: 2.2, height: 25, intake: 24, frame: [29.5,29.5] }, 1) },
+    { id: 'gold-rush-27', team: 27, name: 'Gold RUSH',
+      description: 'Team RUSH. 2024 CRESCENDO robot with a chassis-aimed pivot shooter, floor intake, AMP mechanism and chain climber. Drive performance and timing are simulator estimates.',
+      source: 'User-supplied 0000_2024RobotTopLevelAssembly.STEP; Team RUSH 2024 reveal; FIRST 2024 robot name',
+      config: cfg(27, 'gold-rush-27', { speed: 4.8, accel: 10, climb: 2.2, height: 25, intake: 24 }, 1) },
     { id: 'skyfall-1114', team: 1114, name: 'Skyfall',
       description: '1114 Simbotics. Low red robot: under-bumper intake into a pivoting shooter arm with white wheels, chassis-aimed, hooks for the chain. Quick and consistent; a mid-weight SPEAKER cycler. Drive, accel and climb time are simulator estimates.',
       source: 'Chief Delphi "Team 1114 - Simbot Skyfall" reveal photo; Team 1114 2024 code release',

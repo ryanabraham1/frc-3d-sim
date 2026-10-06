@@ -114,3 +114,29 @@ The source supplies one extended pose. The 2.65 rad intake fold, 0.25 m hopper c
 Reproduce with `npm run cad:prepare -- /path/to/downloads reblitz-2910`. The generated report records exact counts, size, bounds and omitted occurrences. Tests cover decoding, bounded reduction, finite motion throughout forward/reverse deployment, stationary frame, intake floor clearance, saved settings, retained capacity/rate, and actual rear pickup versus shooter-side rejection.
 
 Final asset: 89.65 MB / 4,603,004 triangles reduced to 6.68 MB / 487,204 triangles, with 964 occurrences omitted. Production build and 29 focused CAD/capacity/gameplay tests pass. Browser inspection covers source pose, stowed/deployed intake, both sides, low/high hood settings and full hopper; planar shading keeps the folded containment sheets readable.
+
+
+## Supplied 2024 CRESCENDO batch
+
+Existing IDs `doppler-1690`, `typhoon-2910` and `twister-118` are preserved. Gold RUSH (`gold-rush-27`) and Domotron (`domotron-604`) are new 2024 roster entries. Their speeds and climb timing are explicitly simulator estimates. All five load in the workshop, menu previews and playable browser simulator, with independent procedural fallbacks.
+
+| Team | User source | Runtime axes | Asset MB | Triangles |
+| --- | --- | --- | ---: | ---: |
+| 1690 Doppler | `1690-24-0000-manufacture v1 closed.SLDASM.glb` | `(Y,Z,X)` | 3.73 | 543,329 |
+| 2910 Typhoon | `11 - 2024 Robot.glb` | `(Y,Z,X)` | 4.78 | 730,063 |
+| 27 Gold RUSH | `0000_2024RobotTopLevelAssembly.STEP` | `(-Z,Y,X)` after STEP tessellation | 8.20 | 503,950 |
+| 118 Twister | `robonauts-118-2024-robot-twister-1.snapshot.2.zip` → `00_0000_2024_top_robot_asm_asm.stp` | `(-Z,Y,X)` after STEP tessellation | 10.60 | 741,238 |
+| 604 Domotron | `2024 FRC604.glb` | `(-Y,Z,-X)` | 18.53 | 1,179,020 |
+
+Source files remain untouched. STEP imports use `tools/prepare-step-cad.py` with OCP/XCAF to retain assemblies, source units and available colors. Converted inputs are `rush-27-source.glb` and `twister-118-source.glb`; run the shared preparer against their directory. The 604 model retains more thin structural geometry and uses a 20 MB asset budget. New conversions avoid position quantization.
+
+Rigid groups preserve the frame, shooter, intake, turret/feeder, elevator carriage, AMP mechanism, climber and skis where present. RUSH's hook carriage is separated from its fixed gearbox and uprights. Generic simulator bumpers replace exported bumpers. Internal bearings, fasteners and selected electronics are omitted; visible rails, shafts, plates and rollers remain.
+
+Measured simulator-local joints (meters): Typhoon turret `[.1397,.1524,0]`, pitch `[-.11315,.2742,0]`; Doppler rear conveyor axis `[-.2422,.1027,0]`; Twister turret `[0,.28085,0]`, pitch `[-.1651,.4223,0]`; RUSH shooter `[.28745,.48165,0]`; Domotron carriage/pitch `[.12225,.24155,0]`. Actual actuator travel, hood reference offsets, AMP travel and climber linkages remain fitted visual approximations. The source export pose is preserved independently of those animations. NOTE storage/feed anchors follow the corresponding mechanism; existing shot ballistics remain unchanged.
+
+RUSH's STEP has a uniform pale manufacturing swatch. Its gold cut structure, black rubber/motor finishes and brass flywheels are fitted to the TBA competition photo and [Team RUSH reveal](https://www.chiefdelphi.com/t/frc-27-team-rush-robot-reveal-2024/456331). Twister's orange structural CAD swatch receives gold anodizing from its included competition photo. Orbit's cut plates/covers and white CAD roller swatches receive black competition finishes using the user's two photographs. The source model is the closed pose: it should look flat when stowed. The orientation correction applies to complete occurrence transforms, preventing the displaced and below-floor components seen during the initial import. CAD-export bounds are checked against the decoded asset report to prevent recurrence.
+
+References: user-supplied CAD and photos; local TBA contact sheets under `refs/<team>-2024/`; [Orbit reveal](https://www.chiefdelphi.com/t/orbit-1690-presents-2024-robot-reveal-doppler/455350), [2910's CAD/binder release](https://www.chiefdelphi.com/t/2910-cad-code-and-tech-binder-release-2024/467192), Twister's included `twister24.PNG`, and [604's Domotron identification](https://604robotics.com/wordpress/new604/).
+
+
+Validation for the 2024 batch: 86 affected CAD, roster and CRESCENDO scoring tests pass, including decoded export/report bounds, mechanism sweeps, fixed-frame stability and NOTE paths. The final five CAD tests and production build pass after the finish corrections; `git diff --check` passes. Browser checks cover all five in export, aiming and reverse-side endgame poses. The broader run records 610 passing tests and the known CRESCENDO Hard-versus-Normal failure (499 vs 644); an early CAD test run before assets existed was superseded by the successful focused run. Screenshot: `/tmp/2024-cad-final.jpg`. Deployment was not requested.

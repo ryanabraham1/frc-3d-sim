@@ -8,10 +8,32 @@ import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer
 import { Matrix4 } from 'three';
 
 const specs = {
+  'domotron-604': {file:'2024 FRC604.glb',year:2024,axes:'negative-y',groups:[
+    ['intake',/Intake Assembly/], ['shooter',/Arm Assembly/], ['carriage',/Carriage/], ['climber',/Climber </],
+  ]},
   'reblitz-2910': {file:'12 - Robot 2 Top Level Assembly.glb',year:2026,axes:'yzx',groups:[
     ['hood',/32-17 Hood Assembly/], ['flywheel',/Brass Flywheel/],
     ['intake',/Pivoting Intake Assembly/], ['hopper',/62 - R2 Hopper/],
     ['feeder',/32-03 Single Sprocket Hub Roller|32-07 Thin Aluminum Roller/],
+  ]},
+  'gold-rush-27': {file:'rush-27-source.glb',year:2024,axes:'negative-z',groups:[
+    ['shooter',/ShooterV6ASM_inverted/], ['intake',/04_0000_Intake/],
+    ['amp',/AndrewConcept2/], ['climber',/^(?:D1118|D1124|D117[46789]|D1180)/],
+  ]},
+  'twister-118': {file:'twister-118-source.glb',year:2024,axes:'negative-z',groups:[
+    ['shooter',/05_6000_NEW_SHOOTER_HEAD|05_7777_EMR_PITCH/],
+    ['pitch-drive',/05_6500_PITCH_V2/], ['turret',/05_0000_SHOOTER_TOP/],
+    ['climber-left',/03_CHAINARM_AF0/], ['climber-right',/03_CHAINARM_AF1/],
+    ['ski-left',/03_1000_SKI_ARM_ASM/], ['ski-right',/03_1000_SKI_ARM_MIR/],
+    ['diverter',/06_0000_DIVERTER/], ['intake',/02_INTAKE_TOP/],
+  ]},
+  'typhoon-2910': {file:'11 - 2024 Robot.glb',year:2024,axes:'yzx',groups:[
+    ['shooter',/52-04 V2 Shooter/], ['feeder',/52-05 V2 Feeder/], ['turret',/41 - 2024 Turret/],
+    ['intake',/31 - 2024 Intake/], ['climber',/62 - 2024 Climber/],
+  ]},
+  'doppler-1690': {file:'1690-24-0000-manufacture v1 closed.SLDASM.glb',year:2024,axes:'yzx',groups:[
+    ['shooter',/1690-24-3100-1/], ['amp',/1690-2024-5000/],
+    ['climber-left',/Mirror1690-24-4400-1/], ['climber-right',/1690-24-4400-1/],
   ]},
   'whisper-1690': {file:'1690-25-0000 Post.glb',year:2025,axes:'identity',groups:[
     ['effector',/1690-25-5100/],['arm',/1690-2025-4140/],
@@ -103,7 +125,7 @@ for (const id of ids) {
   };
   const inputTriangles = triangleCount();
   // CAD exports use Z up. Preserve meters; turn the real intake toward robot -X.
-  const axes = spec.axes === 'identity' ? new Matrix4() : spec.axes === 'zy-x' ? new Matrix4().set(0,0,1,0, 0,1,0,0, -1,0,0,0, 0,0,0,1) : spec.axes === 'negative-y' ? new Matrix4().set(0,-1,0,0, 0,0,1,spec.offsetY??0, -1,0,0,0, 0,0,0,1) : spec.axes === 'yzx' ? new Matrix4().set(0,1,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,1)
+  const axes = spec.axes === 'negative-z' ? new Matrix4().set(0,0,-1,0, 0,1,0,0, 1,0,0,0, 0,0,0,1) : spec.axes === 'identity' ? new Matrix4() : spec.axes === 'zy-x' ? new Matrix4().set(0,0,1,0, 0,1,0,0, -1,0,0,0, 0,0,0,1) : spec.axes === 'negative-y' ? new Matrix4().set(0,-1,0,0, 0,0,1,spec.offsetY??0, -1,0,0,0, 0,0,0,1) : spec.axes === 'yzx' ? new Matrix4().set(0,1,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,1)
     : new Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);
   const nodes = root.listNodes();
   axes.elements[12] = spec.offsetX ?? 0;
@@ -116,6 +138,7 @@ for (const id of ids) {
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
     if (id === 'reblitz-2910' && /Bumper Assembly|Battery|RoboRIO|Radio|Power Distribution|PDH|PDP|(?:^|\/)Fuel(?:\/|$)/i.test(full)) {n.setMesh(null);omitted++;continue;}
+    if (spec.year===2024 && /Bumper|Battery|RoboRIO|Power Distribution|Radio Power|Brain Box/i.test(full)) {n.setMesh(null);omitted++;continue;}
     if(id==='whisper-1690' && /1690-25-1000-BasePart/.test(full)){n.setMesh(null);omitted++;continue;}
     if (['quixilver-604-2025','subzero-1778'].includes(id) && /Bumper|Battery|RoboRIO|PDH|Radio|Origin Cat|Reference Cube/i.test(full)) { n.setMesh(null); omitted++; continue; }
     if (id === 'zuma-581' && /581-25B0000|Battery|RoboRIO|PDH|Radio|Origin Cube/i.test(full)) { n.setMesh(null); omitted++; continue; }
@@ -165,7 +188,7 @@ for (const id of ids) {
     const dims = bounds.max.map((v,i) => v-bounds.min[i]);
     const simbotSheet = id === 'simbot-tim-1114' && /^S26-IN-P(?:301|315|318|321|322|330)$/.test(n.getName());
     const sheet = simbotSheet || /wall|coroplast|panel|plate|bellypan|polycarb/i.test(n.getName()) || (Math.min(...dims)<.012 && dims.filter(v=>v>.15).length>=2) || (id === 'limestone-1678' && /^Part 60$/.test(n.getName()));
-    const themed = spec.year !== 2025 && (/arm plate|hood plate|slider mount|slot reinforcement|sponsor panel|printed|wire guide/i.test(n.getName()) || (id === 'limestone-1678' && /1678-26c-16(?:14|85)/.test(n.getName())));
+    const themed = spec.year !== 2025 && spec.year !== 2024 && (/arm plate|hood plate|slider mount|slot reinforcement|sponsor panel|printed|wire guide/i.test(n.getName()) || (id === 'limestone-1678' && /1678-26c-16(?:14|85)/.test(n.getName())));
     // Retain CAD colors, with rubber and clear-sheet finishes identified by part names.
     for (const p of n.getMesh().listPrimitives()) {
       if (!p.getMaterial()) continue;
@@ -197,6 +220,19 @@ for (const id of ids) {
         if (/polycarb/i.test(n.getName())) m.setBaseColorFactor([.65,.72,.78,.24]).setAlphaMode('BLEND').setDoubleSided(true);
         m.setMetallicFactor(0).setRoughnessFactor(.55); p.setMaterial(m);
       }
+    }
+    // Team 27's STEP carries a uniform pale CAD swatch, not its competition finish.
+    // Photo fit: gold cut structure, black rubber/motors, brass flywheels, silver shafts.
+    if (id === 'gold-rush-27') for (const p of n.getMesh().listPrimitives()) {
+      const name=n.getName(), brass=/Brass Flywheel/i.test(name);
+      const rubber=/Grip_Wheel|belt|roller|Printed Insert|Print$|ShooterFloor|ShooterSideSkin/i.test(name);
+      const motor=/NEO-Vortex|SPARK|WCP-0940|MAXPlanetary|REV-11-1271/i.test(full);
+      const gold=!rubber&&!motor&&!/shaft|axle|spacer|collar|hub|pulley|gear(?!arm)/i.test(name)
+        && /D11|plate|tube|bar|brace|bracket|support|frame|stiffener|Crash|GearArm|Hanger/i.test(name);
+      const color=brass?[.66,.48,.16,1]:rubber||motor?[.045,.048,.052,1]:gold?[.74,.50,.045,1]:[.5,.52,.54,1];
+      const material=p.getMaterial().clone().setName(brass?'rush-brass':rubber?'rubber':motor?'rush-motor':gold?'rush-gold':'rush-aluminum')
+        .setBaseColorFactor(color).setMetallicFactor(brass?.75:rubber||motor?.05:gold?.4:.65).setRoughnessFactor(brass?.34:rubber||motor?.8:gold?.48:.42);
+      p.setMaterial(material);
     }
     const matrix = axes.clone().multiply(new Matrix4().fromArray(n.getWorldMatrix())).toArray();
     retained.push({ n, group, matrix });
@@ -238,7 +274,7 @@ for (const id of ids) {
   }
   const outputTriangles = triangleCount();
   const bounds = getBounds(scene);
-  if (spec.year === 2025 || id === 'reblitz-2910') {
+  if (spec.year === 2025 || spec.year === 2024 || id === 'reblitz-2910') {
     // Keep occurrence transforms lossless: these assemblies reuse curved parts
     // across differently transformed meshes, making per-mesh quantization unsafe.
     await io.write(`/tmp/${id}-reduced.glb`, doc);

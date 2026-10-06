@@ -1,0 +1,32 @@
+{
+  "id": "twister-118",
+  "sourceFile": "twister-118-source.glb",
+  "inputBytes": 148348064,
+  "outputBytes": 10597124,
+  "inputTriangles": 10170697,
+  "outputTriangles": 741238,
+  "omittedOccurrences": 110,
+  "bounds": {
+    "min": [
+      -0.4379181851802189,
+      0.00046038336236362,
+      -0.3492500185966492
+    ],
+    "max": [
+      0.5031933188438416,
+      0.9245061473578386,
+      0.34925576470007796
+    ]
+  },
+  "groups": [
+    "frame",
+    "turret",
+    "shooter",
+    "climber-left",
+    "climber-right",
+    "ski-left",
+    "ski-right",
+    "intake",
+    "diverter"
+  ]
+}

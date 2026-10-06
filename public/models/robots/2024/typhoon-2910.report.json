@@ -1,0 +1,29 @@
+{
+  "id": "typhoon-2910",
+  "sourceFile": "11 - 2024 Robot.glb",
+  "inputBytes": 397680508,
+  "outputBytes": 4780868,
+  "inputTriangles": 11732306,
+  "outputTriangles": 730063,
+  "omittedOccurrences": 1754,
+  "bounds": {
+    "min": [
+      -0.43814998865127563,
+      -0.002558362903073292,
+      -0.3380739893764256
+    ],
+    "max": [
+      0.35087638720870806,
+      0.546406291425212,
+      0.3380739986896517
+    ]
+  },
+  "groups": [
+    "intake",
+    "turret",
+    "climber",
+    "frame",
+    "feeder",
+    "shooter"
+  ]
+}

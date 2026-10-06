@@ -2,7 +2,8 @@ import {NodeIO} from '@gltf-transform/core';
 import {ALL_EXTENSIONS} from '@gltf-transform/extensions';
 import {getBounds} from '@gltf-transform/functions';
 import fs from 'node:fs/promises';
-const doc=await new NodeIO().registerExtensions(ALL_EXTENSIONS).read(process.argv[2]);
+import {MeshoptDecoder} from 'meshoptimizer';
+const doc=await new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({'meshopt.decoder':MeshoptDecoder}).read(process.argv[2]);
 const scene=doc.getRoot().listScenes()[0],parts=[];
 for(const n of doc.getRoot().listNodes()){
   if(!n.getMesh())continue;const names=[n.getName()];for(let p=n.getParentNode();p;p=p.getParentNode())names.push(p.getName());

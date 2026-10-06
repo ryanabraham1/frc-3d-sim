@@ -1,0 +1,28 @@
+{
+  "id": "doppler-1690",
+  "sourceFile": "1690-24-0000-manufacture v1 closed.SLDASM.glb",
+  "inputBytes": 567743520,
+  "outputBytes": 3729484,
+  "inputTriangles": 21167857,
+  "outputTriangles": 543329,
+  "omittedOccurrences": 457,
+  "bounds": {
+    "min": [
+      -0.3280029741285864,
+      -0.002999041934039569,
+      -0.32900134190569347
+    ],
+    "max": [
+      0.32499999552965103,
+      0.3011142787191507,
+      0.32899847814678707
+    ]
+  },
+  "groups": [
+    "frame",
+    "amp",
+    "climber-right",
+    "shooter",
+    "climber-left"
+  ]
+}

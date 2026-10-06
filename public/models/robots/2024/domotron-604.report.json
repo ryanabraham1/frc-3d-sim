@@ -1,0 +1,28 @@
+{
+  "id": "domotron-604",
+  "sourceFile": "2024 FRC604.glb",
+  "inputBytes": 217026868,
+  "outputBytes": 18534828,
+  "inputTriangles": 85732082,
+  "outputTriangles": 1179020,
+  "omittedOccurrences": 351,
+  "bounds": {
+    "min": [
+      -0.3746500015258789,
+      -0.003197968006134172,
+      -0.37465001382224805
+    ],
+    "max": [
+      0.3746500015258789,
+      0.642969042177153,
+      0.3746500015258789
+    ]
+  },
+  "groups": [
+    "frame",
+    "climber",
+    "carriage",
+    "shooter",
+    "intake"
+  ]
+}

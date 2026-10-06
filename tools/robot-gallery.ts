@@ -10,7 +10,7 @@ import { handoffPoint } from '../src/engine/robot/handoff';
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
-import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2025_MODEL_IDS } from '../src/engine/robot/cadModels';
+import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2024_MODEL_IDS, CAD_2025_MODEL_IDS } from '../src/engine/robot/cadModels';
 await prepareCadModels();
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -26,6 +26,8 @@ setRobotEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
 pmrem.dispose();
 const seasonSelect = document.querySelector<HTMLSelectElement>('#season')!;
 for (const s of SEASONS) seasonSelect.add(new Option(`${s.year} ${s.name}`, s.id));
+const requestedSeason = new URLSearchParams(location.search).get('season');
+if (SEASONS.some(s => s.id === requestedSeason)) seasonSelect.value = requestedSeason!;
 const pose = document.querySelector<HTMLSelectElement>('#pose')!;
 const hood = document.querySelector<HTMLSelectElement>('#hood')!;
 let reverse = false;
@@ -61,7 +63,7 @@ function build() {
   const grid = document.querySelector('#grid')!;
   grid.innerHTML = '';
   const s = SEASONS.find(s => s.id === seasonSelect.value)!;
-  const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2025_MODEL_IDS];
+  const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS];
   const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || detailedIds.includes(t.config.model ?? '')).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
   for (const [index, entry] of configs.entries()) {
     const el = document.createElement('div'); el.className = 'card';

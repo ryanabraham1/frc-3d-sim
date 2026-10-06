@@ -1,0 +1,28 @@
+{
+  "id": "gold-rush-27",
+  "sourceFile": "rush-27-source.glb",
+  "inputBytes": 132050752,
+  "outputBytes": 8201896,
+  "inputTriangles": 8766164,
+  "outputTriangles": 503950,
+  "omittedOccurrences": 82,
+  "bounds": {
+    "min": [
+      -0.6564261592864926,
+      0.0007687912941005681,
+      -0.3625850001594544
+    ],
+    "max": [
+      0.45652803568840133,
+      0.9613025594760121,
+      0.3619500010132799
+    ]
+  },
+  "groups": [
+    "frame",
+    "climber",
+    "amp",
+    "shooter",
+    "intake"
+  ]
+}
