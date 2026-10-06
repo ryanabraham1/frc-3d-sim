@@ -1,0 +1,28 @@
+{
+  "id": "roti-5940",
+  "sourceFile": "2024 5940.glb",
+  "inputBytes": 198945348,
+  "outputBytes": 10534232,
+  "inputTriangles": 8046136,
+  "outputTriangles": 715214,
+  "omittedOccurrences": 603,
+  "bounds": {
+    "min": [
+      -0.4865733766928315,
+      -1.5035201433866163e-7,
+      -0.3841750025749207
+    ],
+    "max": [
+      0.34500818606466055,
+      1.1567223781228793,
+      0.38413465023040766
+    ]
+  },
+  "groups": [
+    "intake",
+    "shooter",
+    "frame",
+    "elevator-stage",
+    "carriage"
+  ]
+}

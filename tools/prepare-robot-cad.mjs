@@ -8,6 +8,22 @@ import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer
 import { Matrix4 } from 'three';
 
 const specs = {
+  'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
+    ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
+    ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
+  ]},
+  'presto-6328': {file:'presto-6328-complete-source.glb',year:2024,axes:'zy-x',groups:[
+    ['intake',/6328-24b-5000 Intake/],
+    ['climber',/6328-24b-700[347]|6328-24b-7026|Part 25\/6328-24b-7000/],
+    ['backpack-slide',/6328-24b-80(?:12|13|15|17|18|2[2-9]|3[0-5])/],
+    ['backpack',/6328-24b-8000 Backpack/],
+    ['shooter',/6328-24b-3000 Shooter/], ['feeder',/6328-24b-4000 Indexer/],
+    ['arm',/6328-24b-6000 Arm|6328-24b-7000 Climber/],
+  ]},
+  'roti-5940': {file:'2024 5940.glb',year:2024,axes:'yzx',offsetY:.047632,groups:[
+    ['shooter',/3\. Pod Shooter/], ['intake',/2\. Intake/],
+    ['carriage',/1\.3 Stage 2/], ['elevator-stage',/1\.2 Stage 1/],
+  ]},
   'spectre-2910': {file:'2025 2910glb',year:2025,axes:'negative-y',groups:[
     ['effector',/53 - 2025 Intake & Wrist V3/], ['climber',/41 - 2025 Climber/],
     ['carriage',/Phantom Arm V2, Stage 2/], ['elevator-stage',/Phantom Arm V2, Stage 1/],
@@ -141,6 +157,7 @@ for (const id of ids) {
     : new Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);
   const nodes = root.listNodes();
   axes.elements[12] = spec.offsetX ?? 0;
+  axes.elements[13] = spec.offsetY ?? 0;
   const retained = [];
   let omitted = 0;
   const surfaces = new Set();
@@ -149,6 +166,7 @@ for (const id of ids) {
     const names = [n.getName()];
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
+    if(id==='roti-5940' && /clothed noodle|noodle|bumper/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='spectre-2910' && /Bumper|Origin Cube|Battery|RoboRIO|Power Distribution|Radio Power|Reference/i.test(full)){n.setMesh(null);omitted++;continue;}
     if (id === 'reblitz-2910' && /Bumper Assembly|Battery|RoboRIO|Radio|Power Distribution|PDH|PDP|(?:^|\/)Fuel(?:\/|$)/i.test(full)) {n.setMesh(null);omitted++;continue;}
     if (spec.year===2024 && /Bumper|Battery|RoboRIO|Power Distribution|Radio Power|Brain Box/i.test(full)) {n.setMesh(null);omitted++;continue;}

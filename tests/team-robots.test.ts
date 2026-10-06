@@ -43,7 +43,7 @@ describe('real team robots', () => {
         expect(2 * (t.config.frameLength + t.config.frameWidth), label).toBeLessThanOrEqual(season.maxRobotPerimeter + 1e-6);
         // Scoring mechanisms face front, intakes go on the back (CLAUDE.md) — except where the real robot shoots
         // from its intake end (1690 Doppler's arm takes the NOTE straight from the intake).
-        expect(t.config.intake.groundSide, label).toBe(['doppler-1690', 'fiddler-971'].includes(t.id) ? 'front' : 'back');
+        expect(t.config.intake.groundSide, label).toBe(['doppler-1690', 'fiddler-971', 'snoopy-6036'].includes(t.id) ? 'front' : 'back');
         // No turrets on pick-and-place robots.
         if (season.maxScoringLevel) expect(t.config.launcher.turret, label).toBe(false);
       }

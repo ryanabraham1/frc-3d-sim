@@ -1,0 +1,31 @@
+{
+  "id": "presto-6328",
+  "sourceFile": "presto-6328-complete-source.glb",
+  "inputBytes": 74489540,
+  "outputBytes": 10017924,
+  "inputTriangles": 6526888,
+  "outputTriangles": 695277,
+  "omittedOccurrences": 799,
+  "bounds": {
+    "min": [
+      -0.4318000078201296,
+      0.0006558304303322766,
+      -0.3381375284194946
+    ],
+    "max": [
+      0.4076953884833782,
+      0.5901975770963928,
+      0.33657181682280657
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake",
+    "arm",
+    "feeder",
+    "shooter",
+    "backpack",
+    "backpack-slide",
+    "climber"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "snoopy-6036",
+  "sourceFile": "6036.glb",
+  "inputBytes": 380167044,
+  "outputBytes": 12434864,
+  "inputTriangles": 11979754,
+  "outputTriangles": 849968,
+  "omittedOccurrences": 1643,
+  "bounds": {
+    "min": [
+      -0.3511632715561742,
+      0.0006558299064636369,
+      -0.3365499973297119
+    ],
+    "max": [
+      0.46037498116493236,
+      0.6978822517514177,
+      0.3365500271320343
+    ]
+  },
+  "groups": [
+    "intake",
+    "pivot-frame",
+    "shooter",
+    "turret",
+    "frame"
+  ]
+}

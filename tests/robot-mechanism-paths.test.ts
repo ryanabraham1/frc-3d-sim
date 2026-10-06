@@ -67,7 +67,7 @@ describe('CAD mechanism paths', () => {
     expect(k.config.launcher.minAngle).toBe(k.config.launcher.maxAngle);
   });
 
-  for (const id of ['doppler-1690','axl-4522','skyfall-1114','typhoon-2910','titan-581']) {
+  for (const id of ['doppler-1690','axl-4522','skyfall-1114','typhoon-2910','titan-581','roti-5940','presto-6328']) {
     it(`${id}: pitching shooter follows the solved elevation`, () => {
       const k = kit(2024,id), model = robotModelBuilder(id)!(k);
       for (const hood of [.5,1.2]) {

@@ -22,6 +22,16 @@ describe('supplied CRESCENDO CAD',()=>{
       expect(frame.matrix.equals(original)).toBe(true);
       const bounds=new THREE.Box3().setFromObject(root,true);expect(bounds.min.y).toBeGreaterThan(-.035);expect(bounds.max.y).toBeLessThan(2);
       expect(model.flow!.feed!().every(p=>p.toArray().every(Number.isFinite))).toBe(true);
+
+    }
+    if (id === 'roti-5940' || id === 'presto-6328') {
+      model.update({...idle,aiming:true,hood:.7});visual.updateMatrixWorld(true);
+      const direction = new THREE.Vector3(1,0,0).applyQuaternion(model.heldAnchor!.getWorldQuaternion(new THREE.Quaternion()));
+      expect(Math.atan2(direction.y,direction.x)).toBeCloseTo(.7);
+      model.update({...idle,amp:true});visual.updateMatrixWorld(true);
+      const ampPose = model.heldAnchor!.getWorldPosition(new THREE.Vector3());
+      model.update(idle);visual.updateMatrixWorld(true);
+      expect(ampPose.distanceTo(model.heldAnchor!.getWorldPosition(new THREE.Vector3()))).toBeGreaterThan(.2);
     }
     if (id === 'doppler-1690') {
       model.update(idle); visual.updateMatrixWorld(true);
@@ -47,7 +57,7 @@ describe('supplied CRESCENDO CAD',()=>{
     const recorded=JSON.parse(readFileSync(`public/models/robots/2024/${id}.report.json`,'utf8')).bounds;
     for(let i=0;i<3;i++){expect(Math.abs(sourceBounds.min.getComponent(i)-recorded.min[i])).toBeLessThan(.001);expect(Math.abs(sourceBounds.max.getComponent(i)-recorded.max[i])).toBeLessThan(.001);}
     setCadAnimationEnabled(true);
-    expect(Math.sign(model.intakeAnchor!.position.x)).toBe(config.intake.groundSide==='front'?1:-1);
+    expect(Math.sign(model.intakeAnchor!.getWorldPosition(new THREE.Vector3()).x)).toBe(config.intake.groundSide==='front'?1:-1);
     const report=JSON.parse(readFileSync(`public/models/robots/2024/${id}.report.json`,'utf8'));expect(report.outputBytes).toBeLessThan(id==='domotron-604'?20_000_000:15_000_000);expect(report.outputTriangles).toBeLessThan(1_200_000);
   });
 });

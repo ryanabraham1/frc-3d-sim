@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { buildSnoopy6036 } from './snoopy6036';
+import { buildPresto6328 } from './presto6328';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, decal, drivebase, mat, overRollers, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperEntry, underBumperIntake, wheelShaft, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { motor } from '@engine/robot/mechanicalDetail';
@@ -234,6 +236,35 @@ registerRobotModel('titan-581', (k: ModelKit) => {
   };
 });
 
+registerRobotModel('snoopy-6036', k => buildSnoopy6036(k));
+
+registerRobotModel('presto-6328', k => buildPresto6328(k));
+
+// Roti fallback follows the supplied CAD and BREAD's 2024 page/photo:
+// silver two-stage elevator, orange rollers, rear pickup, front pitching shooter.
+registerRobotModel('roti-5940', (k: ModelKit) => {
+  const silver = tubeMat(0xbfc5cc), black = mat(0x202226), orange = mat(0xe96b1b);
+  const base = drivebase(k), intake = underBumperIntake(k, { n: 3 });
+  const stage = new THREE.Group(); k.visual.add(stage);
+  const carriage = new THREE.Group(); stage.add(carriage);
+  for (const z of [-.27,.27]) {
+    bar(k.visual,[.09,.16,z],[.09,.78,z],.03,silver);
+    bar(stage,[.09,.3,z],[.09,.84,z],.022,silver);
+  }
+  bar(carriage,[.09,.70,-.27],[.09,.70,.27],.02,silver);
+  const head = pivot(carriage,.09,.70);
+  sidePlates(head,[[-.12,-.06],[.38,-.06],[.38,.06],[-.12,.06]],.16,black);
+  const wheels = [roller(head,.05,.30,orange,.32,.035),roller(head,.04,.30,black,.24,-.035)];
+  const held = pivot(head,.1,0);
+  return { replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'], heldAnchor:held,
+    flow:{intake:()=>[...underBumperEntry(k,inch(1)),...overRollers(k,wheels,.025)]},
+    update(s) { base.update(s); intake.update(s);
+      const lift=s.climb>.5?.62:(s.amp ?? s.passing)?.4304:.015; stage.position.y=lift/2; carriage.position.y=lift/2;
+      head.rotation.z=(s.amp ?? s.passing)?-.419:s.aiming||s.firing>0?s.hood:.471;
+      for(const w of wheels)spin(w,-flywheel(s),s.dt);
+    } };
+});
+
 // Domotron fallback: silver elevator with yellow hubs and a pitching conveyor,
 // measured layout from supplied CAD and 604's TBA 2024 photos. Motion is fitted.
 registerRobotModel('domotron-604', (k: ModelKit) => {
@@ -268,6 +299,7 @@ registerRobotModel('gold-rush-27', (k: ModelKit) => {
 
 const cfg = (team: number, model: string, o: { turret?: boolean; speed: number; accel: number; climb: number; height: number; frame?: [number, number]; intake?: number; mass?: number }, level: 0 | 1 | 2 = 2) => {
   const c = build({ ground: true, source: true, shooter: 'pivot', aim: o.turret ? 'turret' : 'align', amp: true, climb: level });
+  if (model === 'snoopy-6036') { c.intake.groundSide = 'front'; c.intake.stationSide = 'front'; }
   c.teamNumber = team; c.model = model; c.maxSpeed = o.speed; c.maxAccel = o.accel;
   c.height = inch(o.height); c.launcher.height = inch(o.height - 2);
   if (o.intake) c.intake.width = inch(o.intake);
@@ -279,6 +311,18 @@ const cfg = (team: number, model: string, o: { turret?: boolean; speed: number; 
 
 export function moreCrescendoTeamRobots(): TeamRobot[] {
   return [
+    { id: 'snoopy-6036', team: 6036, name: 'Snoopy',
+      description: '6036 Peninsula Robotics. Turret-mounted pitching shooter with integrated chain hooks and TRAP blower. Published AMP and climb poses; drive speed and actuator timing are simulator estimates.',
+      source: 'User-supplied 6036.glb; 6036 2024 technical binder and FRC-2024-Public code',
+      config: cfg(6036, 'snoopy-6036', { turret: true, speed: 5, accel: 10, climb: 2.5, height: 28, intake: 28, frame: [28,28] }, 2) },
+    { id: 'presto-6328', team: 6328, name: 'Presto',
+      description: '6328 Mechanical Advantage. Rear floor intake, center-pivot belt shooter, AMP backpack and chain climber. Complete team CAD with the supplied intake; published arm/climb poses. Drive speed and actuator timing are simulator estimates.',
+      source: 'User-supplied 6328 intake plus official RobotCode2024Public AdvantageScope CAD; 6328 build thread and TBA photos',
+      config: cfg(6328, 'presto-6328', { speed: 4.8, accel: 10, climb: 2.5, height: 24, intake: 26, frame: [26,26] }, 2) },
+    { id: 'roti-5940', team: 5940, name: 'Roti',
+      description: '5940 BREAD. Under-bumper floor intake, two-stage elevator and pitching pod shooter for SPEAKER, AMP and TRAP. Drive speed and actuator timing are simulator estimates.',
+      source: 'User-supplied 2024 5940.glb; team5940.org/2024; BREAD 2024 CAD and Code Release',
+      config: cfg(5940, 'roti-5940', { speed: 4.8, accel: 10, climb: 2.5, height: 32, intake: 28, frame: [26,28], mass: 120 }, 2) },
     { id: 'domotron-604', team: 604, name: 'Domotron',
       description: '604 Quixilver. Floor intake, elevator-mounted pitching NOTE launcher and chain climber. Drive speed and mechanism timing are simulator estimates.',
       source: 'User-supplied 2024 FRC604.glb; 604robotics.com 2024 Domotron',

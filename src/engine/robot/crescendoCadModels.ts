@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { buildPrestoCad } from './prestoCadModel';
+import { buildDomotronCad } from './domotronCadModel';
+import { buildSnoopyCad } from './snoopyCadModel';
+import { buildRotiCad } from './rotiCadModel';
 import type { ModelKit, RobotModel } from './models';
 
 /** Supplied 2024 assemblies in meters. +X points toward the shooter.
@@ -8,6 +12,10 @@ import type { ModelKit, RobotModel } from './models';
  * not a rigid-body simulation; drive and scoring tuning retain roster estimates.
  */
 export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, animated: () => boolean): RobotModel {
+  if (id === 'presto-6328') return buildPrestoCad(root, k, animated);
+  if (id === 'snoopy-6036') return buildSnoopyCad(root, k, animated);
+  if (id === 'roti-5940') return buildRotiCad(root, k, animated);
+  if (id === 'domotron-604') return buildDomotronCad(root, k, animated);
   const doppler = id === 'doppler-1690';
   const typhoon = id === 'typhoon-2910', twister = id === 'twister-118', rush = id === 'gold-rush-27', domotron = id === 'domotron-604';
   if (twister) root.traverse(o => {
