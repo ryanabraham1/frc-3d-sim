@@ -74,7 +74,10 @@ export const UPRIGHT_X = TOWER_DEPTH - UPRIGHT_DEEP / 2; // [EST] uprights at th
 export const RUNG_OD = inch(1.66);
 export const RUNG_OVERHANG = inch(5.875); // beyond outer face of each upright
 export const RUNG_HEIGHTS = [inch(27), inch(45), inch(63)]; // LOW, MID, HIGH centers
-export const TOWER_SUPPORT_Z: [number, number] = [inch(28.4), inch(43.38)];
+// GE-26500 sheet 2: support tube top at 35.125 in, 1.75 in deep.
+export const TOWER_SUPPORT_TOP = inch(35.125);
+export const TOWER_SUPPORT_THICK = inch(1.75);
+export const TOWER_SUPPORT_Z: [number, number] = [inch(28.4), inch(43.375)];
 
 // ─── ALLIANCE WALL / DRIVER STATIONS [M 5.9] ────────────────────────────────
 export const WALL_BASE_HEIGHT = inch(36.8);

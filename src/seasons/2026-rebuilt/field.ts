@@ -343,8 +343,16 @@ function buildTower(b: FieldBuilder, a: Alliance): void {
     b.box([u.x, u.y, C.UPRIGHT_HEIGHT / 2], [C.UPRIGHT_DEEP, C.UPRIGHT_THICK, C.UPRIGHT_HEIGHT], coated);
     // Supports back to the tower wall
     const wallP = side(a, 0.02, ty + s * uOff);
-    b.cylinder(V(u, C.TOWER_SUPPORT_Z[1]), V(wallP, C.TOWER_SUPPORT_Z[0]), inch(0.9), { color: C.COLORS.steel });
-    b.cylinder(V(u, C.TOWER_SUPPORT_Z[0]), V(wallP, C.TOWER_SUPPORT_Z[0]), inch(0.9), { color: C.COLORS.steel });
+    // The low dimension is the wall gusset tip, not a full-length beam.
+    // GE-26500 sheet 2 leaves a clear sideways passage for 30 in robots.
+    const top = C.TOWER_SUPPORT_TOP;
+    const thick = C.TOWER_SUPPORT_THICK;
+    const center = top - thick / 2;
+    b.box([(u.x + wallP.x) / 2, u.y, center], [Math.abs(u.x - wallP.x), thick, thick], { color: C.COLORS.steel });
+    const wallEnd = side(a, inch(8), ty + s * uOff);
+    const uprightEnd = side(a, C.UPRIGHT_X - inch(7), ty + s * uOff);
+    b.cylinder(V(wallP, C.TOWER_SUPPORT_Z[0]), V(wallEnd, center), inch(0.9), { color: C.COLORS.steel });
+    b.cylinder(V(uprightEnd, top), V(u, C.TOWER_SUPPORT_Z[1]), inch(0.9), { color: C.COLORS.steel });
   }
   // Rungs
   const half = uOff + C.UPRIGHT_THICK / 2 + C.RUNG_OVERHANG;
