@@ -453,7 +453,10 @@ export class Game {
       this.syncClientState();
     }
     this.rules.updateVisuals(dt, this.time);
-    for (const r of this.robots) r.syncVisual();
+    for (const r of this.robots) {
+      r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= 30;
+      r.syncVisual();
+    }
     this.pool.syncVisuals();
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.pose ?? null, undefined, this.player?.elevation ?? 0);

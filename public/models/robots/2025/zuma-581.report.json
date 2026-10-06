@@ -1,0 +1,30 @@
+{
+  "id": "zuma-581",
+  "sourceFile": "BB581 2025 TLA.glb",
+  "inputBytes": 262686700,
+  "outputBytes": 11226052,
+  "inputTriangles": 14176384,
+  "outputTriangles": 868453,
+  "omittedOccurrences": 403,
+  "bounds": {
+    "min": [
+      -0.6340021083087405,
+      -0.0025400000158697367,
+      -0.5392477588805511
+    ],
+    "max": [
+      0.3698214739561081,
+      1.9448431804776192,
+      0.4930217237059962
+    ]
+  },
+  "groups": [
+    "frame",
+    "arm",
+    "effector",
+    "elevator-stage",
+    "climber",
+    "intake",
+    "carriage"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "subzero-1778",
+  "sourceFile": "1778.gltf",
+  "inputBytes": 273057824,
+  "outputBytes": 7520996,
+  "inputTriangles": 6152864,
+  "outputTriangles": 576417,
+  "omittedOccurrences": 572,
+  "bounds": {
+    "min": [
+      -0.6516637963373775,
+      0,
+      -0.3746500015258789
+    ],
+    "max": [
+      0.3746500015258789,
+      1.0350500345230103,
+      0.3746500611305237
+    ]
+  },
+  "groups": [
+    "frame",
+    "arm",
+    "effector",
+    "carriage",
+    "elevator-stage",
+    "intake"
+  ]
+}

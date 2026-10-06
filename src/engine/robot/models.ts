@@ -78,6 +78,8 @@ export interface RobotModel {
   algaeAnchor?: THREE.Object3D;
   /** Visual ALGAE compression in the local axes of its holder. */
   algaeGripScale?: [number, number, number];
+  /** A round ball with localized compression at the claw throat. */
+  algaeGripThroat?: boolean;
   /** Where a piece rides on the ground intake (its roller), so seasons can animate the handoff to `heldAnchor`. */
   intakeAnchor?: THREE.Object3D;
   /** Status light position (robot frame), on top of the model's structure. */

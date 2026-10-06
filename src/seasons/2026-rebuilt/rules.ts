@@ -593,6 +593,10 @@ export class RebuiltRules implements SeasonRules {
       }
       return;
     }
+    if (slot.dist > .4 || Math.abs(Math.atan2(Math.sin(robot.pose.yaw-slot.pose.yaw),Math.cos(robot.pose.yaw-slot.pose.yaw))) > Math.PI/6) {
+      if (robot.controller === 'player') this.ctx.toast('Line up square with the TOWER rung · move closer and face it','warn',undefined,robot);
+      return;
+    }
     robot.startClimb(slot.pose, this.liftHeight(robot, lvl), lvl, slot.idx);
   }
 

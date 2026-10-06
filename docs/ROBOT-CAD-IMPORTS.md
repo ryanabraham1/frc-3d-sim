@@ -59,3 +59,32 @@ Limestone follow-up: the lower 0409 shaft is its intake hinge. The former 1507 p
 Final validation: 76 focused CAD/roster/piece-path tests pass and production build/typecheck pass. The full suite has 559 passes and one unrelated CRESCENDO opponent-difficulty failure (Hard score 500 vs Normal 642). The same failure reproduces on an untouched HEAD checkout (2265f9b), independently of the CAD changes. Gallery checks cover both sides, low/high hoods, intake and full hopper poses.
 
 Travel-hood correction: 971's two hoods return to a common compact 1.28 rad reference when aim/fire is released; 6800 parks at 1.50 rad. Its 100T hood belt moves with the hood around the drum center. Both compact CAD envelopes stay below 0.55 m. Their collision height defaults are 0.55 m, replacing raised export measurements; saved configurations with those exact former defaults migrate, while custom heights remain unchanged. The static collision envelope describes travel, not the raised shooting pose. Validation covers CAD return from shooting, saved settings, and physical trench crossing with full hoppers (66 focused tests), plus the production build.
+
+## 1114 Simbot Tim supplied intake/hopper
+
+`S26-A000.glb` contains the `S26-IN-A200` intake/hopper subassembly, not a complete robot. The browser model uses its reduced side plates, upper panels, rollers, cross shafts, gears and motors. Source meters and panel cutouts are retained; the source Y coordinate is mapped to robot X with a 0.3048 m offset. Screws, washers, bearings and unnamed tiny rivet interiors are omitted. The original 29.81 MB / 1,035,160 rendered triangles becomes 0.57 MB / 110,678 triangles.
+
+The drivetrain and fixed wide drum shooter are fitted procedural assemblies. The lower pickup carriage uses an estimated 0.36 m horizontal deployment with supplemental telescoping supports; the attachment provides only one pose and does not establish the real linkage motion. Upper hopper panels remain fixed. Intake and feed paths follow the assembled model, and the roster retains its existing gameplay estimates. Validate in the workshop using CAD export, stowed, intake, full hopper and low/high aim poses on both sides.
+
+Reproduce with `npm run cad:prepare -- /path/to/original/downloads simbot-tim-1114`.
+
+## Supplied 2025 REEFSCAPE assemblies
+
+| Team | Source | Optimized size | Triangles |
+| --- | --- | ---: | ---: |
+| 111 | `25W - WildStang 2025.glb` | 7.92 MB | 538,099 |
+| 118 | `Firefly snapshot STEP assembly` | 6.84 MB | 442,784 |
+| 581 | `BB581 2025 TLA.glb` | 11.23 MB | 868,453 |
+| 1678 | `1678-2025-O-0000.glb` | 8.88 MB | 599,664 |
+| 1778 | `1778.gltf` | 7.52 MB | 576,417 |
+| 604 | `2025 FRC604 Robot.glb` | 8.22 MB | 608,135 |
+
+These replace existing roster entries; 604 is newly added. The 1778 glTF embeds its buffers and needs no separate GLB. Firefly comes from the ZIP's STEP assembly: `tools/prepare-step-cad.py` uses OCP/XCAF to retain assembly names, transforms and colors before the shared converter. Its converted input is named `firefly-118-source.glb`. Pass a model ID to `npm run cad:prepare -- <source-directory> <model-id>`.
+
+The converter merges each rigid assembly separately, removes fasteners/electrical interiors, simplifies surfaces and encodes lossless meshopt compression. Position quantization is deliberately avoided because it distorted small meshes in large assemblies. SubLime's camera field-of-view reference meshes are removed. The gallery season selector shows all six, including original export, transfer, dual-storage, deployed-climber and pulled-in poses.
+
+WildStang has a deployable side ground intake. Quixilver is station-fed with no ground intake; its named Pinnacles climber arm is separated from the scoring arm. Zuma and SubZero retain their sideways shoulder rotation instead of twisting a forward-pitch arm. Actuator travel, performance and climb timing remain simulator estimates.
+
+Firefly and SubLime hold CORAL and ALGAE in separate end-effector regions. Zuma holds ALGAE in its claw while CORAL waits in its ground intake. Held ALGAE uses a cached radial clearance profile against rigid mouth geometry; compression follows contact surfaces without changing field-ball physics. Zuma additionally pinches the lower U-shaped throat, following the supplied competition photos.
+
+Climbers remain stowed during normal play, deploy in the last 30 seconds of teleop, grab only within 0.4 m and 30 degrees of alignment, and retract progressively while lifting. Gallery previews expose each phase separately.

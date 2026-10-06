@@ -138,3 +138,35 @@ describe('additional supplied CAD',()=>{
     expect(pile.children.some(o=>o instanceof THREE.InstancedMesh&&o.count>10)).toBe(true);
   });
 });
+
+it('1114: simplified intake/hopper retains source scale and deployed pickup stays above the floor',()=>{
+  const id='simbot-tim-1114';
+  const config=cloneConfig(SEASONS.find(s=>s.year===2026)!.teamRobots!.find(r=>r.id===id)!.config);
+  const visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
+  const model=cadRobotModelBuilder(id)!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
+  const root=visual.getObjectByName(`cad-${id}`)!;
+  const report=JSON.parse(readFileSync(`public/models/robots/2026/${id}.report.json`,'utf8'));
+  expect(report.outputBytes).toBeLessThan(1_000_000);
+  expect(report.outputTriangles/report.inputTriangles).toBeLessThan(.2);
+  setCadAnimationEnabled(true);model.update(idle);visual.updateMatrixWorld(true);
+  const initial=new THREE.Box3().setFromObject(root,true);
+  expect(initial.max.y).toBeCloseTo(.70178,3);
+  expect(initial.getSize(new THREE.Vector3()).z).toBeCloseTo(.759,2);
+  const frame=root.getObjectByName('frame')!;
+  const frameBefore=new THREE.Box3().setFromObject(frame,true);
+  for(let i=0;i<=100;i++) {
+    model.update({...idle,dt:.02,enabled:true,intaking:true,aiming:true,fill:i/100,hood:.5+.75*i/100});
+    visual.updateMatrixWorld(true);
+    const bounds=new THREE.Box3().setFromObject(root,true);
+    expect(bounds.min.y).toBeGreaterThan(.02);
+    expect(bounds.max.y).toBeLessThan(.71);
+    expect([...model.flow!.intake!(),...model.flow!.feed!(i),model.flow!.stow!()].flatMap(p=>p.toArray()).every(Number.isFinite)).toBe(true);
+  }
+  const pickup=model.intakeAnchor!.getWorldPosition(new THREE.Vector3());
+  expect(pickup.x).toBeLessThan(-config.frameLength/2-config.bumperThickness);
+  expect(pickup.y).toBeGreaterThan(.05);
+  expect(new THREE.Box3().setFromObject(frame,true).min.distanceTo(frameBefore.min)).toBeLessThan(.001);
+  expect(root.getObjectByName('cad-intake-pivot')!.position.x).toBeCloseTo(-.36,2);
+  model.update(idle);
+  expect(root.getObjectByName('cad-intake-pivot')!.position.x).toBeCloseTo(0,5);
+});

@@ -1,0 +1,31 @@
+{
+  "id": "firefly-118",
+  "sourceFile": "firefly-118-source.glb",
+  "inputBytes": 134373004,
+  "outputBytes": 6839892,
+  "inputTriangles": 9921189,
+  "outputTriangles": 442784,
+  "omittedOccurrences": 120,
+  "bounds": {
+    "min": [
+      -0.6290723882573338,
+      -0.00005527858474588254,
+      -0.3772408061175855
+    ],
+    "max": [
+      0.6690421649167422,
+      1.500378716679465,
+      0.3772408000678509
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake",
+    "climber",
+    "elevator-stage",
+    "carriage",
+    "algae-intake",
+    "effector",
+    "arm"
+  ]
+}

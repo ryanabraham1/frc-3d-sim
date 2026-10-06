@@ -1,0 +1,31 @@
+{
+  "id": "wildstang-111",
+  "sourceFile": "25W - WildStang 2025.glb",
+  "inputBytes": 177354492,
+  "outputBytes": 7924164,
+  "inputTriangles": 8100436,
+  "outputTriangles": 538099,
+  "omittedOccurrences": 772,
+  "bounds": {
+    "min": [
+      -0.3825635015964508,
+      0.00019999966025185945,
+      -0.4914033890624441
+    ],
+    "max": [
+      0.785467028618033,
+      1.113457245824379,
+      0.8043573498725891
+    ]
+  },
+  "groups": [
+    "frame",
+    "algae-head",
+    "arm",
+    "coral-head",
+    "climber",
+    "intake",
+    "elevator-stage",
+    "carriage"
+  ]
+}

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, decal, drivebase, mat, pivot, registerRobotModel, sidePlates, spin, tubeMat, wheelShaft } from '@engine/robot/models';
+import { approach, bar, box, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, mat, pivot, registerRobotModel, sidePlates, spin, tubeMat, wheelShaft } from '@engine/robot/models';
 import { inch } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
 import { place, stowed } from './additionalTeamRobots';
@@ -12,6 +12,9 @@ registerRobotModel('wildstang-111', k => {
   const c = k.config, H = c.height, bt = c.bumperTop, ex = -.12;
   const silver = tubeMat(0xbcc5cd), black = mat(0x191b20);
   const db = drivebase(k, { tube: silver, motorRing: 0x6dc338 });
+  const floorVisual=new THREE.Group();k.visual.add(floorVisual);
+  const floor = deployableIntake({...k,visual:floorVisual},{reach:c.intake.reach,rollers:2,frame:black,rollerMaterial:mat(0x6dc338)});
+  floorVisual.rotation.y=Math.PI/2;let deploy=0;
   for (const z of [-.14, .14]) {
     bar(k.visual, [ex, bt, z], [ex, H, z], .035, silver);
     bar(k.visual, [ex-.08, bt, z], [ex-.08, H, z], .026, silver);
@@ -51,8 +54,10 @@ registerRobotModel('wildstang-111', k => {
   bar(climb,[0,0,0],[0,.5,0],.04,silver); box(climb,.12,.04,.05,black,-.04,.5,0);
   let yc=bt+.18, phi=1.1;
   return {
-    replaces:['chassis','mast','hopper','intakeRollers','climber','funnel'], heldAnchor:held, algaeAnchor:algaeHeld, algaeGripScale:[.70,1.04,1.07], intakeAnchor:held,
+    replaces:['chassis','mast','hopper','intakeRollers','climber','funnel'], heldAnchor:held, algaeAnchor:algaeHeld, algaeGripScale:[.70,1.04,1.07], intakeAnchor:floor.tip,
+    flow:{handoff:()=>[flowAt(k,floor.tip),new THREE.Vector3(-.20,bt+.12,0),flowAt(k,held)]},
     update(s) {
+      deploy=approach(deploy,intakeDeployTarget(s),7,s.dt);floor.update(s,deploy);
       const p=place(s), algae=!!p.algae, length=algae?.46:.66;
       const reach=Math.min(length,Math.max(0,p.forward)), side=p.side===-1?-1:1;
       let height=p.height, angle=0;
@@ -67,16 +72,16 @@ registerRobotModel('wildstang-111', k => {
       arm.rotation.x=phi;
       for (const r of coralRollers) spin(r,s.intaking?20:s.firing>0?-25:0,s.dt);
       for (const r of algaeRollers) spin(r,s.intaking?18:s.passing?-24:0,s.dt);
-      climb.rotation.z=approach(climb.rotation.z,s.climb>.1?-1.1:0,5,s.dt); db.update(s);
+      climb.rotation.z=approach(climb.rotation.z,(-1.1) * s.climb,5,s.dt); db.update(s);
     },
   };
 });
 
 export function wildStang111(): TeamRobot {
-  const c=build({coral:'l4',intake:'funnel',algae:'reef',algaeScore:'both',climb:2,align:true,speed:4.7});
+  const c=build({coral:'l4',intake:'both',algae:'reef',algaeScore:'both',climb:2,align:true,speed:4.7});
   c.teamNumber=111; c.model='wildstang-111'; c.height=inch(42);
-  c.options={...c.options,dualPieceStorage:true};
+  c.options={...c.options,dualPieceStorage:true};c.intake.groundYaw=-Math.PI/2;
   c.placement!.scoreSide='sides';
-  c.placement!.handoffSeconds=0; c.placement!.liftSpeed=1.8; c.placement!.cycleSeconds=.45; c.climber.secondsToClimb=3;
-  return {id:'wildstang-111',team:111,name:'WildStang',description:'111 WildStang. Elevator with a shared rotating arm carrying independent CORAL and ALGAE heads on opposite ends, green rollers, station-fed CORAL and a deep climber. No ground intake. Can hold one of each. Dimensions, speeds and timings are simulator estimates.',source:'Team reveal https://www.chiefdelphi.com/t/492790; team code https://github.com/wildstang/2025_111_robot_software',config:normalizeReefscapeConfig(c)};
+  c.placement!.handoffSeconds=.6; c.placement!.liftSpeed=1.8; c.placement!.cycleSeconds=.45; c.climber.secondsToClimb=3;
+  return {id:'wildstang-111',team:111,name:'WildStang',description:'111 WildStang. Elevator with a shared rotating arm carrying independent CORAL and ALGAE heads on opposite ends, green rollers, deployable ground intake, station-fed CORAL and a deep climber. Can hold one of each. Dimensions, speeds and timings are simulator estimates.',source:'Supplied 25W - WildStang 2025.glb; team reveal https://www.chiefdelphi.com/t/492790; team code https://github.com/wildstang/2025_111_robot_software',config:normalizeReefscapeConfig(c)};
 }

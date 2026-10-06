@@ -1,0 +1,31 @@
+{
+  "id": "sublime-1678",
+  "sourceFile": "1678-2025-O-0000.glb",
+  "inputBytes": 182965956,
+  "outputBytes": 8879740,
+  "inputTriangles": 5572412,
+  "outputTriangles": 599664,
+  "omittedOccurrences": 266,
+  "bounds": {
+    "min": [
+      -0.609129892708044,
+      -1.3877787807814457e-17,
+      -0.6210724580864772
+    ],
+    "max": [
+      0.33652459825704323,
+      1.0382251403277407,
+      0.3365118982610267
+    ]
+  },
+  "groups": [
+    "frame",
+    "carriage",
+    "elevator-stage",
+    "arm",
+    "algae-intake",
+    "intake",
+    "effector",
+    "climber"
+  ]
+}

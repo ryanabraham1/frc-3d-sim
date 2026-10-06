@@ -1,0 +1,25 @@
+{
+  "id": "simbot-tim-1114",
+  "sourceFile": "S26-A000.glb",
+  "inputBytes": 29807196,
+  "outputBytes": 571316,
+  "inputTriangles": 1035160,
+  "outputTriangles": 110678,
+  "omittedOccurrences": 128,
+  "bounds": {
+    "min": [
+      -0.304347846233099,
+      0.027534895227112194,
+      -0.37949037179350853
+    ],
+    "max": [
+      0.3242912240840516,
+      0.7017781169270185,
+      0.37949034571647655
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake"
+  ]
+}

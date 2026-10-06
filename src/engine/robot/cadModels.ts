@@ -3,10 +3,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { ModelKit, RobotModel, RobotModelBuilder } from './models';
 import { getRobotEnvironment } from './models';
+import { buildReefscapeCad } from './reefscapeCadModels';
 import { cadHopper } from './cadHopper';
-import { build9470Cad, build6800Cad, build971Cad } from './additionalCadModels';
+import { build9470Cad, build6800Cad, build971Cad, build1114Cad } from './additionalCadModels';
 
-export const CAD_MODEL_IDS = ['toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971'] as const;
+export const CAD_2025_MODEL_IDS = ['wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
+export const CAD_MODEL_IDS = ['toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
 const assets = new Map<string, THREE.Group>();
 const pending = new Map<string, Promise<void>>();
 let enabled = true;
@@ -20,14 +22,15 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 }
 
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
-export async function prepareCadModels(ids: readonly (string | undefined)[] = CAD_MODEL_IDS): Promise<void> {
+export async function prepareCadModels(ids: readonly (string | undefined)[] = [...CAD_MODEL_IDS,...CAD_2025_MODEL_IDS]): Promise<void> {
   if (typeof document === 'undefined') return;
   const requested = ids.includes('ctrl-alt-defeat-9470') ? [...ids,'intake-581-donor'] : ids;
-  await Promise.all([...new Set(requested)].filter((id): id is typeof CAD_MODEL_IDS[number] | 'intake-581-donor' => id === 'intake-581-donor' || CAD_MODEL_IDS.includes(id as typeof CAD_MODEL_IDS[number])).map(id => {
+  const assetIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor'];
+  await Promise.all([...new Set(requested)].filter((id): id is string => typeof id === 'string' && assetIds.includes(id)).map(id => {
     if (assets.has(id)) return Promise.resolve();
     let request = pending.get(id);
     if (!request) {
-      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/2026/${id}.glb`)
+      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${id}.glb`)
         .then(gltf => { assets.set(id, gltf.scene); })
         .catch(error => { console.warn(`CAD model ${id} unavailable; using procedural model.`, error); })
         .finally(() => { pending.delete(id); });
@@ -46,6 +49,8 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   root.name = `cad-${id}`;
   root.userData.cadModel = id;
   k.visual.add(root);
+  if ((CAD_2025_MODEL_IDS as readonly string[]).includes(id)) return buildReefscapeCad(id,root,k,()=>animated);
+  if (id === 'simbot-tim-1114') return build1114Cad(root,k,()=>animated);
   if (id === 'ctrl-alt-defeat-9470') return build9470Cad(root,k,()=>animated,assets.has('intake-581-donor') ? ownedClone(assets.get('intake-581-donor')!.getObjectByName('intake')!) : undefined);
   if (id === 'downpour-6800') return build6800Cad(root,k,()=>animated);
   if (id === 'mixtape-971') return build971Cad(root,k,()=>animated);
@@ -133,7 +138,7 @@ function ownedClone<T extends THREE.Object3D>(source:T):T {
       if (copy.isMeshStandardMaterial) {
         // Onshape's exported CAD swatches need a darker, matte finish under the game's bright field lighting.
         if (copy.name !== 'rubber') copy.color.convertSRGBToLinear();
-        if (copy.userData.cadSheet) copy.flatShading = true;
+        if (copy.userData.cadSheet && !copy.userData.cadSmoothSheet) copy.flatShading = true;
         copy.envMap = getRobotEnvironment(); copy.envMapIntensity = .25;
       }
       return copy;

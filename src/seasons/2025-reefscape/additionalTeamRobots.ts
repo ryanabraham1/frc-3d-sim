@@ -149,7 +149,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
       const sp = s.intaking && s.enabled && deploy > 0.8 ? 26 : 0;
       spin(stars[0], -side * sp, s.dt); spin(stars[1], side * sp, s.dt);
       for (const r of conveyor) spin(r, -side * (s.intaking || p.handoff ? 20 : 0), s.dt);
-      climbArm.rotation.x = approach(climbArm.rotation.x, s.climb > 0.1 ? -1.25 : 0, 5, s.dt); // out over the +z bumper
+      climbArm.rotation.x = approach(climbArm.rotation.x, (-1.25) * s.climb, 5, s.dt); // out over the +z bumper
       db.update(s);
     },
   };
@@ -251,7 +251,7 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
       intake.update(s, deploy);
       spin(stars, -side * (s.intaking && deploy > 0.8 ? 26 : 0), s.dt);
       for (const w of straight) spin(w, s.intaking ? 20 : 0, s.dt, 'y');
-      climb.rotation.z = approach(climb.rotation.z, s.climb > 0.1 ? side * 1.1 : 0, 5, s.dt);
+      climb.rotation.z = approach(climb.rotation.z, (side * 1.1) * s.climb, 5, s.dt);
       db.update(s);
     },
   };
@@ -300,7 +300,7 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
     wheelShaft(eff, 0.09, -0.04, { n: 3, r: 0.03, w: 0.022, span: 0.13, colors: [0xdfe3e7] }),
   ];
   for (const sz of [-1, 1]) fasteners(eff, [[0.1, 0.1], [0.12, 0.03], [-0.02, -0.05]], sz * 0.093);
-  const held = pivot(eff, 0.05, -0.01);
+  const held = pivot(eff, 0.05, -0.01), algaeHeld = pivot(eff,-.14,.08);
   // White diamond-pocketed bellypan over the electronics.
   const pockets: [number, number, number][] = [];
   for (let i = 0; i < 4; i++) for (let j = -2; j <= 2; j++) pockets.push([-side * (0.11 + i * 0.05 + (j & 1) * 0.025), j * 0.05, 0.014]);
@@ -324,7 +324,7 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
   const yMin = bt + 0.12, yMax = top + 0.58, dir = -side; // single stage: the carriage rides to the top of the raised stage
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held,
+    heldAnchor: held, algaeAnchor: algaeHeld, algaeGripScale:[.74,.96,.74],
     intakeAnchor: intake.tip,
     lightAt: [ex, top + 0.01, 0],
     update(s) {
@@ -344,7 +344,7 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
       for (const r of algaeRollers) spin(r, s.intaking ? 20 : 0, s.dt);
-      climb.rotation.x = approach(climb.rotation.x, s.climb > 0.1 ? -1.2 : 0, 5, s.dt); // swings out over the side
+      climb.rotation.x = approach(climb.rotation.x, (-1.2) * s.climb, 5, s.dt); // swings out over the side
       db.update(s);
     },
   };
@@ -362,7 +362,7 @@ export function additionalReefscapeTeamRobots(): TeamRobot[] {
       config: config(2056, 'lightning-2056', 2.5, 0.40, 0.45, 4.572, 3.0, 40, [32, 28]) },
     { id: 'firefly-118', team: 118, name: 'Firefly',
       description: '118 Robonauts. 29 in square. Single-stage elevator with a cycloidal-driven arm and a white end effector that takes CORAL from the floor intake and ALGAE from the REEF; separate ALGAE floor rollers; L1–L4, NET, PROCESSOR and deep cage climb. Simulator estimates: 1.9 m/s lift, 0.25 s release, 0.30 s harvest, 4.9 m/s drive and 2.0 s climb.',
-      source: 'https://www.chiefdelphi.com/t/2025-robonauts-cad-and-code-release/502317 — Firefly technical binder; TBA 2025 photos',
+      source: 'Supplied 00_0000_2025_Firefly.stp; https://www.chiefdelphi.com/t/2025-robonauts-cad-and-code-release/502317 — Firefly technical binder; TBA 2025 photos',
       config: config(118, 'firefly-118', 1.9, 0.25, 0.30, 4.9, 2.0, 40, [29, 29]) },
   ];
 }
@@ -371,7 +371,7 @@ export function additionalReefscapeTeamRobots(): TeamRobot[] {
 function config(team: number, model: string, lift: number, release: number, harvest: number, speed: number, climb: number, height: number, frame?: [number, number]) {
   const c = build({ coral: 'l4', intake: 'ground', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true });
   c.teamNumber = team; c.model = model;
-  c.options = { ...c.options, dualPieceStorage: false, coralBuffer: team === 118 || team === 2056, ...(team === 118 ? { coralBufferLocation: 'intake' } : {}) };
+  c.options = { ...c.options, dualPieceStorage: team === 118, coralBuffer: team === 2056 };
   c.height = inch(height); c.maxSpeed = speed;
   if (frame) { c.frameLength = inch(frame[0]); c.frameWidth = inch(frame[1]); }
   c.placement!.liftSpeed = lift; c.placement!.cycleSeconds = release; c.placement!.harvestSeconds = harvest;

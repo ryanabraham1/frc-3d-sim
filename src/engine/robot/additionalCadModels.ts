@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { box, bar, mat, fillBlock } from './models';
+import { box, bar, mat, fillBlock, drivebase, roller, hoodShell } from './models';
 import type { ModelKit, RobotModel } from './models';
 
 // Source: user-supplied 9470 MAIN, Valor VR26A and 971 Championship assemblies.
@@ -36,6 +36,43 @@ function fuel(k:ModelKit,front:number,back:number,base:number,roof:number,width:
   }};
 }
 const replaces:RobotModel['replaces']=['chassis','launcher','hopper','intakeRollers','climber','funnel'];
+
+/** S26-A000 supplies the intake/hopper only; drivetrain and shooter remain procedural.
+ * CAD origin is shifted 12 inches so the hopper lies over the existing chassis.
+ * The lower pickup carriage translates for deployment; upper panels stay rigid.
+ * Travel is a simulator approximation because the export contains only one pose.
+ */
+export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):RobotModel {
+  const db=drivebase(k,{motorRing:0xb93628});
+  const intake=articulation(root)('intake',[0,0,0]);
+  const tip=new THREE.Object3D();tip.position.set(-.15445,.085,0);intake.add(tip);
+  const pile=fuel(k,-.27,.18,.25,.685,.68);
+  const dark=mat(0x17191c,{rough:.85}),silver=mat(0xbdc4cc,{metal:.7});
+  const x=.27,y=k.config.launcher.height,width=.63;
+  const drum=roller(k.visual,.051,width,dark,x,y);
+  const hood=new THREE.Group();hood.name='cad-hood-pivot';hood.position.set(x,y,0);k.visual.add(hood);
+  hoodShell(hood,.062,width+.015,silver);
+  const feeds=[.35,.46,.57].map(h=>roller(k.visual,.025,width,dark,.235,h));
+  // Supplemental telescoping supports keep the exported pickup carriage connected
+  // to the frame throughout the approximated horizontal deployment.
+  const rails=[-.365,.365].map(z=>{const rail=box(k.visual,1,.018,.018,silver,-.147,.195,z);rail.scale.x=.025;return rail;});
+  for(const z of [-.335,.335]) {
+    bar(k.visual,[x,.23,z],[x,y+.06,z],.022,silver);
+  }
+  let deploy=0,angle=0;
+  return {replaces,lightAt:[x,y+.1,.32],intakeAnchor:tip,
+    flow:{intake:()=>[point(k,tip,0,.075),new THREE.Vector3(-.30,.22,0),new THREE.Vector3(-.24,.30,0)],stow:pile.stow,
+      feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.15,.32,z),
+        ...feeds.map(r=>point(k,r,-.035,.055,z)),point(k,drum,-.035,.08,z)];}},
+    update(s){db.update(s);deploy=ease(deploy,s.enabled||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);
+      if(!isAnimated())return;
+      intake.position.x=-.36*deploy;
+      for(const rail of rails){rail.scale.x=.025+.36*deploy;rail.position.x=-.147-.18*deploy;}
+      angle=ease(angle,s.aiming||s.firing>0 ? (s.hood-.9)*.8 : -.2,s.dt);hood.rotation.z=angle;
+      drum.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?45:0)*s.dt;
+      for(const r of feeds)r.rotation.z+=(s.enabled&&(s.intaking||s.firing>0)?32:0)*s.dt;
+    }};
+}
 
 /** Wide fixed drum, raw metal and clear white-roof hopper; supplemental pieces fit source photos. */
 export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean,donor?:THREE.Object3D):RobotModel {

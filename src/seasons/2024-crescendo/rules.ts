@@ -62,11 +62,11 @@ export class CrescendoRules implements SeasonRules {
   private stageAssessed = false;
   private readonly heldVisuals = new Map<number, THREE.Mesh>();
 
-  /** The head referee (shared calls: combat, tipping, collusion, launching at robots, ejecting NOTES). */
+  /** The head referee (shared calls: tipping, collusion, launching at robots, ejecting NOTES). */
   readonly ref: Referee;
 
   constructor(readonly ctx: SeasonContext, readonly refs: CrescendoFieldRefs) {
-    this.ref = new Referee(ctx, { combat: 'G418', tip: 'G419', collusion: 'G421', launchAtRobot: 'G406', eject: 'G407', labels: { minor: 'FOUL', major: 'TECH FOUL' } });
+    this.ref = new Referee(ctx, { tip: 'G419', collusion: 'G421', launchAtRobot: 'G406', eject: 'G407', labels: { minor: 'FOUL', major: 'TECH FOUL' } });
     for (const r of ctx.robots) {
       r.hideHopperFill();
       const m = noteMesh(false);
@@ -542,6 +542,8 @@ export class CrescendoRules implements SeasonRules {
     }
     if (along === null) return this.tell(robot, 'No room left on this chain');
     const hang = { x: g.mid.x + Math.cos(g.dir) * along + Math.cos(g.normal) * 0.05, y: g.mid.y + Math.sin(g.dir) * along + Math.sin(g.normal) * 0.05 };
+    const yaw=g.normal+Math.PI;
+    if(Math.hypot(robot.pose.x-hang.x,robot.pose.y-hang.y)>.4 || Math.abs(Math.atan2(Math.sin(robot.pose.yaw-yaw),Math.cos(robot.pose.yaw-yaw)))>Math.PI/6) return this.tell(robot,'Line up under the CHAIN and face the STAGE');
     // Face the core so a TRAP mechanism reaches the TRAP above the robot.
     robot.startClimb({ ...hang, yaw: g.normal + Math.PI }, 0.3, 1, hit.chain);
   }

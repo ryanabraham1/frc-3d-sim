@@ -251,7 +251,7 @@ describe('2025 ALGAE NET from a raised elevator', () => {
 
 describe('2025 physical piece storage', () => {
   const team = (id: string) => cloneConfig(season.teamRobots!.find(t => t.id === id)!.config);
-  for (const id of ['fiddler-971','spectre-2910','undertow-254','madtown-1323','sublime-1678','miss-daisy-341','zuma-581']) {
+  for (const id of ['fiddler-971','spectre-2910','undertow-254','madtown-1323','miss-daisy-341']) {
     it(`${id}: one shared holder rejects CORAL while carrying ALGAE`, () => {
       const config=team(id);
       expect(config.intake.primary && config.intake.secondary).toBe(true);
@@ -274,6 +274,15 @@ describe('2025 physical piece storage', () => {
     });
   }
 
+  for(const id of ['firefly-118','sublime-1678'])it(`${id}: independent holders place CORAL while retaining ALGAE`,()=>{
+    const config=team(id);expect(config.options?.coralBuffer).toBe(false);expect(config.hopperCapacity).toBe(2);
+    const sim=make('blue',season.testing!.scoringSpots('blue')[0],config);teleop(sim);
+    for(const i of sim.robot.held.splice(0))sim.pool.reserve(i);load(sim,0);load(sim,126);
+    run(sim,4,()=>({...IDLE_COMMAND,shoot:holdingCoral(sim),scoringLevel:4}));
+    expect(sim.robot.held).toEqual([126]);expect(sim.ctx.score.counter('blue','coralL4')).toBe(1);
+    expect(sim.robot.modelAlgaeAnchor).toBeTruthy();expect(sim.robot.modelAlgaeAnchor).not.toBe(sim.robot.modelHeldAnchor);
+  });
+
   it('custom storage settings distinguish shared, buffered and independent holders', () => {
     const option=reefscapeRobotOptions.find(o=>o.id==='pieceStorage')!;
     let c=team('whisper-1690');
@@ -284,13 +293,14 @@ describe('2025 physical piece storage', () => {
     }
   });
 
-  it('WildStang rejects floor CORAL and accepts CORAL at its station mouth', () => {
+  it('WildStang captures floor CORAL at its side intake and accepts station CORAL', () => {
     const config=team('wildstang-111');
-    expect(config.intake.ground).toBe(false); expect(config.intake.station).toBe(true);
+    expect(config.intake.ground).toBe(true); expect(config.intake.station).toBe(true);
     const sim=make('blue',{x:2,y:2,yaw:0},config); teleop(sim);
     for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
-    load(sim,126); sim.pool.placeField(0,1.37,2,C.CORAL_RADIUS);
-    run(sim,.5,{...IDLE_COMMAND,intake:true}); expect(sim.robot.held).toEqual([126]);
+    load(sim,126); sim.pool.placeField(0,2,1.37,C.CORAL_RADIUS);
+    run(sim,.5,{...IDLE_COMMAND,intake:true}); expect(sim.robot.held).toEqual([126,0]);
+    sim.robot.held.pop();sim.pool.reserve(0);
     sim.pool.placeField(0,1.55,2,config.height+.1);
     run(sim,.15,{...IDLE_COMMAND,intake:true}); expect(sim.robot.held).toEqual([126,0]);
   });
@@ -307,7 +317,7 @@ describe('2025 physical piece storage', () => {
     expect(visuals.algae.parent).toBe(sim.robot.modelAlgaeAnchor);
   });
 
-  for (const id of ['whisper-1690','subzero-1778','firefly-118','lightning-2056']) {
+  for (const id of ['whisper-1690','subzero-1778','lightning-2056','zuma-581','firefly-118','sublime-1678']) {
     it(`${id}: can actually collect CORAL with ALGAE already aboard`, () => {
       const sim=make('blue',{x:2,y:2,yaw:0},team(id)); teleop(sim);
       for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
@@ -317,7 +327,7 @@ describe('2025 physical piece storage', () => {
     });
   }
 
-  for (const id of ['whisper-1690','subzero-1778','firefly-118','lightning-2056']) {
+  for (const id of ['whisper-1690','subzero-1778','lightning-2056','zuma-581']) {
     it(`${id}: buffered CORAL waits for ALGAE, then transfers and scores`, () => {
       const config=team(id); expect(config.hopperCapacity).toBe(2);
       const sim=make('blue',season.testing!.scoringSpots('blue')[0],config); teleop(sim);

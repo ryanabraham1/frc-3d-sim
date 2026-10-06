@@ -51,7 +51,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
   const eff = pivot(arm, la - 0.04, 0);
   sidePlates(eff, [[-0.03, -0.06], [0.1, -0.06], [0.14, 0], [0.1, 0.07], [-0.03, 0.06]], 0.085, clear, [], 0.008);
   const effWheels = [wheelShaft(eff, 0.0, 0.02, { n: 3, r: 0.035, w: 0.03, span: 0.12, colors: [0x5ad23c] }), wheelShaft(eff, 0.08, -0.03, { n: 3, r: 0.03, w: 0.03, span: 0.12, colors: [0x5ad23c] })];
-  const held = pivot(eff, 0.05, -0.005);
+  const held = pivot(eff, 0.05, -0.005), algaeHeld = pivot(eff,-.12,.02);
   // Floor intake: lime plates with two banks of green star wheels.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, rollerMaterial: mat(0x1c1e22) });
   const stars = [starWheels(intake.tip, -side * 0.0, 0, { n: 7, r: 0.05, span: c.intake.width * 0.85, m: lime }), starWheels(intake.tip, -side * -0.07, 0.03, { n: 7, r: 0.045, span: c.intake.width * 0.85, m: black })];
@@ -69,7 +69,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
   const yMin = bt + 0.12, yMax = top + 0.7, dir = -side;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    heldAnchor: held, algaeAnchor: algaeHeld, algaeGripScale:[.76,.96,.72], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
     update(s) {
       const p = place(s);
@@ -86,7 +86,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
       for (const st of stars) spin(st, -side * (s.intaking && s.enabled && deploy > 0.8 ? 26 : 0), s.dt);
-      climb.rotation.x = approach(climb.rotation.x, s.climb > 0.1 ? -1.2 : 0, 5, s.dt);
+      climb.rotation.x = approach(climb.rotation.x, (-1.2) * s.climb, 5, s.dt);
       db.update(s);
     },
   };
@@ -172,7 +172,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       arm.rotation.z = phi;
       eff.rotation.z = -phi + pitch;
       for (const w of wheels) w.rotation.z += (s.intaking ? 22 : s.firing > 0 ? -30 : 0) * s.dt;
-      hook.rotation.x = approach(hook.rotation.x, s.climb > 0.1 ? -1.2 : 0, 5, s.dt);
+      hook.rotation.x = approach(hook.rotation.x, (-1.2) * s.climb, 5, s.dt);
       db.update(s);
     },
   };
@@ -253,7 +253,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
       spin(bank, -side * (s.intaking && s.enabled && deploy > 0.8 ? 26 : 0), s.dt);
-      climb.rotation.x = approach(climb.rotation.x, s.climb > 0.1 ? -1.2 : 0, 5, s.dt);
+      climb.rotation.x = approach(climb.rotation.x, (-1.2) * s.climb, 5, s.dt);
       db.update(s);
     },
   };
@@ -279,6 +279,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   for (const sz of [-1, 1]) bar(stage2, [ex + 0.06, bt + 0.1, sz * (ez - 0.045)], [ex + 0.06, top - 0.07, sz * (ez - 0.045)], 0.021, alu);
   bar(stage2, [ex + 0.06, top - 0.07, -ez + 0.045], [ex + 0.06, top - 0.07, ez - 0.045], 0.021, alu);
   const carriage = pivot(k.visual, ex, bt + 0.12);
+  carriage.rotation.y=Math.PI/2; // Sideways shoulder face, matching the supplied assembly.
   box(carriage, 0.08, 0.12, 2 * ez, black, 0, 0, 0);
   const arm = pivot(carriage, 0.04, 0), la = 0.65;
   for (const sz of [-1, 1]) lattice(arm, [0, -0.025, sz * 0.045], [la - 0.07, 0, 0], [0, 0.05, 0], { cells: 8, w: 0.01, m: silver, zig: true });
@@ -307,7 +308,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt); intake.update(s, deploy);
       spin(stars, s.enabled && s.intaking ? -side * 25 : 0, s.dt);
       for (const w of wheels) spin(w, s.enabled && (s.intaking || p.handoff) ? 20 : 0, s.dt);
-      climber.rotation.z = approach(climber.rotation.z, s.climb > 0.1 ? -side * 0.9 : 0, 5, s.dt);
+      climber.rotation.z = approach(climber.rotation.z, (-side * 0.9) * s.climb, 5, s.dt);
       db.update(s);
     },
   };
@@ -316,10 +317,11 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
 const cfg = (team: number, model: string, o: { lift: number; release: number; harvest: number; speed: number; climb: number; height: number; weight: number; cycle: number; frame?: [number, number]; frontIntake?: boolean; algae?: 'reef' | 'reefGround'; algaeScore?: 'processor' | 'both' }) => {
   const c = build({ coral: 'l4', intake: 'ground', algae: o.algae ?? 'reefGround', algaeScore: o.algaeScore ?? 'both', climb: 2, align: true, speed: o.speed, weight: o.weight, cycle: o.cycle });
   c.teamNumber = team; c.model = model;
-  c.options = { ...c.options, dualPieceStorage: false };
+  c.options = { ...c.options, dualPieceStorage: model === 'sublime-1678', coralBuffer:model==='zuma-581', ...(model==='zuma-581'?{coralBufferLocation:'intake'}:{}) };
   c.height = inch(o.height); c.mass = lb(o.weight);
   if (o.frame) { c.frameLength = inch(o.frame[0]); c.frameWidth = inch(o.frame[1]); }
   if (o.frontIntake) { c.intake.groundSide = 'front'; c.intake.stationSide = 'front'; }
+  if(model==='zuma-581')c.placement!.scoreSide='sides';
   if (model === 'fiddler-971') c.placement!.handoffSeconds = 0; // claw picks directly from the floor
   c.placement!.liftSpeed = o.lift; c.placement!.cycleSeconds = o.release; c.placement!.harvestSeconds = o.harvest;
   c.climber.secondsToClimb = o.climb;
@@ -329,12 +331,12 @@ const cfg = (team: number, model: string, o: { lift: number; release: number; ha
 export function moreReefscapeTeamRobots(): TeamRobot[] {
   return [
     { id: 'zuma-581', team: 581, name: 'Zuma',
-      description: '581 Blazing Bulldogs. Silver continuous elevator with a long truss arm, rotating wrist and black CORAL/ALGAE gripper, separate floor intake and deep-cage climber. Dimensions, lift, release and speed are simulator estimates.',
-      source: 'Spectrum CAD Collection row 110, 581 2025 Zuma; team reveal https://www.chiefdelphi.com/t/493323',
+      description: '581 Blazing Bulldogs. Silver continuous elevator with a long truss arm, rotating wrist and black CORAL/ALGAE gripper, separate floor intake that stages CORAL while ALGAE occupies the claw, and deep-cage climber. Dimensions, lift, release and speed are simulator estimates.',
+      source: 'Supplied BB581 2025 TLA.glb; Spectrum CAD Collection row 110, 581 2025 Zuma; team reveal https://www.chiefdelphi.com/t/493323',
       config: cfg(581, 'zuma-581', { lift: 2.2, release: 0.35, harvest: 0.4, speed: 4.7, climb: 2.5, height: 40, weight: 126, cycle: 0.6 }) },
     { id: 'sublime-1678', team: 1678, name: 'SubLime',
-      description: '1678 Citrus Circuits. A lime-green single tall elevator tower with a purple LED strip, a short arm and clear end effector that places CORAL on all levels and handles ALGAE, with a star-wheel CORAL floor intake and a deep-cage climb. One of the fastest cyclers of 2025. Lift, release and speed are simulator estimates.',
-      source: 'Chief Delphi "1678 Citrus Circuits 2025 Robot: SubLime" and "1678 2025 CAD, Code and Strategy Release"',
+      description: '1678 Citrus Circuits. A lime-green single tall elevator tower with a purple LED strip, a short arm and clear end effector that holds CORAL and ALGAE simultaneously and places CORAL on all levels, with a star-wheel CORAL floor intake and a deep-cage climb. One of the fastest cyclers of 2025. Lift, release and speed are simulator estimates.',
+      source: 'Supplied 1678-2025-O-0000.glb; Chief Delphi "1678 Citrus Circuits 2025 Robot: SubLime" and "1678 2025 CAD, Code and Strategy Release"',
       config: cfg(1678, 'sublime-1678', { lift: 2.5, release: 0.3, harvest: 0.4, speed: 4.8, climb: 2.2, height: 40, weight: 126, cycle: 0.5 }) },
     { id: 'fiddler-971', team: 971, name: 'Fiddler',
       description: '971 Spartan Robotics. A swerve robot with a silver truss elevator and a V-shaped claw of orange wheels that grips CORAL and ALGAE and also IS the floor intake (it dips to the carpet on the open end, so there is no separate intake mouth), and a deep climb. Dimensions, lift and timings are estimates.',

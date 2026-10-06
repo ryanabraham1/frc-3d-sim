@@ -1,0 +1,29 @@
+{
+  "id": "quixilver-604-2025",
+  "sourceFile": "2025 FRC604 Robot.glb",
+  "inputBytes": 233000672,
+  "outputBytes": 8222104,
+  "inputTriangles": 10345680,
+  "outputTriangles": 608135,
+  "omittedOccurrences": 322,
+  "bounds": {
+    "min": [
+      -0.37740829364080675,
+      -2.220446049250313e-16,
+      -0.374650001525879
+    ],
+    "max": [
+      0.7982962405490585,
+      1.4366624355316162,
+      0.3746500015258789
+    ]
+  },
+  "groups": [
+    "frame",
+    "elevator-stage",
+    "carriage",
+    "climber",
+    "effector",
+    "arm"
+  ]
+}

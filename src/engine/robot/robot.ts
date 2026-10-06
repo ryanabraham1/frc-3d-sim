@@ -62,7 +62,7 @@ export interface IntakeZone {
   cos: number;
   sin: number;
   halfLength: number;
-  ground: { side: number; reach: number; halfWidth: number; maxHeight: number } | null;
+  ground: { yaw?: number; halfLength?: number; side: number; reach: number; halfWidth: number; maxHeight: number } | null;
   station: { side: number; halfWidth: number; minHeight: number; maxHeight: number } | null;
 }
 
@@ -77,8 +77,10 @@ export function intakeZoneContains(z: IntakeZone, p: { x: number; y: number; z: 
   const l = -dx * z.sin - dz * z.cos;
   const h = p.y - z.y;
   const g = z.ground;
-  if (g && p.y <= groundMaxY && Math.abs(l) < g.halfWidth && h < g.maxHeight) {
-    const gout = g.side * f - z.halfLength; // + = outside the bumper on the intake face
+  const gf = g?.yaw === undefined ? f : f*Math.cos(g.yaw)+l*Math.sin(g.yaw);
+  const gl = g?.yaw === undefined ? l : -f*Math.sin(g.yaw)+l*Math.cos(g.yaw);
+  if (g && p.y <= groundMaxY && Math.abs(gl) < g.halfWidth && h < g.maxHeight) {
+    const gout = g.side * gf - (g.halfLength ?? z.halfLength); // + = outside the bumper on the intake face
     if (gout > -0.06 && gout < g.reach + pieceRadius) return true;
   }
   const s = z.station;
@@ -106,6 +108,8 @@ export class Robot {
   fireCooldown = 0;
   /** 'player' robots read input; 'bot' robots are driven by a brain. */
   controller: 'player' | 'bot' = 'bot';
+  /** Endgame deployment supplied by the shared match clock. */
+  climbReady = false;
   lastCommand: RobotCommand = { ...IDLE_COMMAND };
 
   climbPhase: ClimbPhase = 'none';
@@ -657,6 +661,7 @@ export class Robot {
   /** Where the team model holds a game piece (seasons parent their held-piece mesh here), if it has one. */
   get modelAlgaeGripScale(): [number, number, number] { return this.model?.algaeGripScale ?? [.94, 1.04, .68]; }
 
+  get modelAlgaeGripThroat(): boolean { return this.model?.algaeGripThroat ?? false; }
   get modelAlgaeAnchor(): THREE.Object3D | undefined { return this.model?.algaeAnchor; }
 
   get modelHeldAnchor(): THREE.Object3D | undefined {
@@ -822,7 +827,10 @@ export class Robot {
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.lastShotAngle || this.config.launcher.angle;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
-    const target = this.climbPhase === 'align' ? 1 : this.climbPhase === 'none' ? 0 : 0.25;
+    const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
+    const target = this.climbPhase === 'none' ? (this.climbReady && this.config.climber.maxLevel > 0 ? 1 : 0)
+      : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
+      : this.climbPhase === 'lower' ? 1 : .25;
     a.climb = a.dt > 0 ? target + (a.climb - target) * Math.exp(-6 * a.dt) : target;
     a.place = this.placeAnim;
     // Chassis-frame velocity for swerve module steering / wheel spin.
@@ -1262,8 +1270,12 @@ export class Robot {
   groundMouthContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
     const c = this.config;
     const { f, l } = this.toLocal(p);
-    const out = groundSideSign(c) * f - this.fp.length / 2;
-    return out > -0.06 && out < c.intake.reach + pieceRadius && Math.abs(l) < c.intake.width / 2;
+    const yaw=c.intake.groundYaw;
+    const along=yaw===undefined?groundSideSign(c)*f:f*Math.cos(yaw)+l*Math.sin(yaw);
+    const across=yaw===undefined?l:-f*Math.sin(yaw)+l*Math.cos(yaw);
+    const edge=yaw===undefined?this.fp.length/2:(Math.abs(Math.cos(yaw))*this.fp.length+Math.abs(Math.sin(yaw))*this.fp.width)/2;
+    const out=along-edge;
+    return out > -.06 && out < c.intake.reach+pieceRadius && Math.abs(across)<c.intake.width/2;
   }
 
   /**
@@ -1271,7 +1283,7 @@ export class Robot {
    * a "drive toward X" heading to arrive intake-first.
    */
   get intakeYawOffset(): number {
-    return groundSideSign(this.config) > 0 ? 0 : Math.PI;
+    return this.config.intake.groundYaw === undefined ? (groundSideSign(this.config) > 0 ? 0 : Math.PI) : -this.config.intake.groundYaw;
   }
 
   /**
@@ -1303,7 +1315,7 @@ export class Robot {
     const yaw = yawFromQuat(this.body.rotation());
     return {
       x: t.x, y: t.y, z: t.z, cos: Math.cos(yaw), sin: Math.sin(yaw), halfLength: this.fp.length / 2,
-      ground: ground ? { side: groundSideSign(c), reach: c.intake.reach, halfWidth: c.intake.width / 2, maxHeight: c.intake.maxHeight } : null,
+      ground: ground ? { yaw:c.intake.groundYaw,halfLength:c.intake.groundYaw===undefined?this.fp.length/2:(Math.abs(Math.cos(c.intake.groundYaw))*this.fp.length+Math.abs(Math.sin(c.intake.groundYaw))*this.fp.width)/2, side:c.intake.groundYaw===undefined?groundSideSign(c):1, reach: c.intake.reach, halfWidth: c.intake.width / 2, maxHeight: c.intake.maxHeight } : null,
       station: c.intake.station
         ? { side: stationSideSign(c), halfWidth: Math.max(c.intake.width, 0.5) / 2 + 0.04, minHeight: Math.max(0.25, c.height * 0.55), maxHeight: c.height + 0.35 }
         : null,
@@ -1859,7 +1871,8 @@ export class Robot {
     this.hopperFill.position.y = this.config.bumperTop + (hopperH * frac) / 2;
     this.turret.rotation.y = wrapAngle(this.turretYaw - yawFromQuat(r));
     const armBase = Math.max(0.05, this.config.height - this.config.bumperTop);
-    const armLen = this.climbPhase === 'none' ? armBase : armBase + Math.min(1.2, t.y + 0.3);
+    const deployment = this.climbPhase === 'none' ? (this.climbReady ? 1 : 0) : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * this.climbProgress : .25;
+    const armLen = armBase * (.25 + .75 * deployment);
     this.climberArm.scale.y = armLen;
     this.climberArm.position.y = this.config.bumperTop + armLen / 2;
     const lm = this.statusLight.material as THREE.MeshStandardMaterial;

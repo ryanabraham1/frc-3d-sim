@@ -85,10 +85,10 @@ export class ReefscapeRules implements SeasonRules {
   private readonly coralMat = new THREE.MeshStandardMaterial({ color: C.COLORS.coral, roughness: 0.65, side: THREE.DoubleSide });
   private readonly algaeMat = new THREE.MeshStandardMaterial({ color: C.COLORS.algae, roughness: 0.7 });
 
-  /** The head referee (shared calls: combat, tipping, collusion, launching at robots, ejecting pieces). */
+  /** The head referee (shared calls: tipping, collusion, launching at robots, ejecting pieces). */
   readonly ref: Referee;
   constructor(readonly ctx: SeasonContext, readonly refs: ReefscapeFieldRefs) {
-    this.ref = new Referee(ctx, { combat: 'G423', tip: 'G424', collusion: 'G426', launchAtRobot: 'G406', eject: 'G407' });
+    this.ref = new Referee(ctx, { tip: 'G424', collusion: 'G426', launchAtRobot: 'G406', eject: 'G407' });
     for (const robot of ctx.robots) {
       this.mechanisms.set(robot.id, { height: 0.45, level: robot.config.placement!.maxLevel, harvest: 0, forward: robot.footprint.length / 2 - 0.05, aligned: false, side: 0, handoff: 0 });
       const mast = new THREE.Group(); mast.name = 'reefscape-elevator';
@@ -102,6 +102,7 @@ export class ReefscapeRules implements SeasonRules {
       const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 0.06, 0.2), alu);
       beam.name = 'end-effector-arm'; carriage.add(beam);
       const coral = new THREE.Mesh(this.coralGeo, this.coralMat);
+      coral.userData.heldGamePiece=true;
       const algae = new THREE.Mesh(this.algaeGeo, this.algaeMat); algae.position.set(0.36, -0.24, 0);
       carriage.add(coral, algae); mast.add(carriage); robot.visual.add(mast);
       this.carriages.set(robot.id, carriage); this.heldVisuals.set(robot.id, { coral, algae });
@@ -930,6 +931,12 @@ export class ReefscapeRules implements SeasonRules {
     if (cage.occupied) { this.tell(robot, 'CAGE already occupied · try another of your cages'); return; }
     const p = C.cage(robot.alliance, cage.slot + 1);
     const yaw = C.sideYaw(robot.alliance, 0);
+    const live = this.refs.cages[robot.alliance][cage.slot].fieldPosition();
+    const reachNow = this.gripReach(robot);
+    const grab = {x:live.x-Math.cos(yaw)*reachNow,y:live.y-Math.sin(yaw)*reachNow};
+    if (Math.hypot(robot.pose.x-grab.x,robot.pose.y-grab.y)>.4 || Math.abs(wrapAngle(robot.pose.yaw-yaw))>Math.PI/6) {
+      this.tell(robot,'Line up square with the CAGE · move closer and face it'); return;
+    }
     // Chassis height when hanging: a shallow climb only needs to clear the carpet; a deep climb pulls higher.
     const lift = cage.depth === 'shallow' ? 0.15 : 0.28;
     // The climber grabs the cage where it hangs (swung or not), then robot and cage settle plumb under
@@ -1087,7 +1094,7 @@ export class ReefscapeRules implements SeasonRules {
         const orientation = new THREE.Quaternion().setFromUnitVectors(up, new THREE.Vector3(0, 0, 1));
         held.coral.quaternion.copy(anchor.getWorldQuaternion(this.tmpQ).invert().multiply(robot.visual.quaternion).multiply(orientation));
       }
-      animateAlgaeGrip(held.algae, held.algae.visible, robot.modelAlgaeGripScale, dt);
+      animateAlgaeGrip(held.algae, held.algae.visible, robot.modelAlgaeGripScale, dt, robot.modelAlgaeGripThroat);
       if (m.handoff > 0 && held.coral.visible) this.animateHandoff(robot, held.coral, m.handoff);
     }
     for (const mesh of this.scoredVisuals.values()) mesh.visible = false;

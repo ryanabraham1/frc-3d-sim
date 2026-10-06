@@ -66,6 +66,8 @@ export interface RobotConfig {
      * player feeds it (see `station`) — one of the main archetype trade-offs every season.
      */
     ground?: boolean;
+    /** Floor mouth yaw in robot coordinates; supports side-mounted CAD intakes. */
+    groundYaw?: number;
     /**
      * Which face of the chassis the floor intake is on. Default 'back': the scoring mechanism (launcher, elevator,
      * arm) faces front, and real robots put the intake on the opposite face so they can collect with their back to

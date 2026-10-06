@@ -156,7 +156,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     });
     for (const level of [1, 2]) it(`climbs and assesses ${a} ${level === 1 ? 'shallow' : 'deep'} cage`, () => {
       const config = cloneConfig(season.robotDefaults); config.climber.maxLevel = level;
-      const p = C.cage(a, 2); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }, 2, config);
+      const p = C.cage(a, 2); const sim = make(a, { x: p.x - Math.cos(C.sideYaw(a,0))*.75, y: p.y, yaw: C.sideYaw(a,0) }, 2, config);
       teleop(sim); sim.rules.requestClimb(sim.robot, level); run(sim, 6);
       expect(sim.robot.climbPhase).toBe('hanging');
       sim.rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
@@ -164,7 +164,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
       sim.rules.requestDescend(sim.robot); run(sim, 3); expect(sim.robot.isClimbing).toBe(false);
     });
   for (const a of ALLIANCES) it(`lets ${a} climb any matching alliance cage, scoring by that cage's depth`, () => {
-    const p = C.cage(a, 1); const sim = make(a, { x: p.x - 0.75, y: p.y, yaw: 0 }, 2); teleop(sim);
+    const p = C.cage(a, 1); const sim = make(a, { x: p.x - Math.cos(C.sideYaw(a,0))*.75, y: p.y, yaw: C.sideYaw(a,0) }, 2); teleop(sim);
     sim.rules.requestClimb(sim.robot, 2); run(sim, 6);
     expect(sim.robot.climbPhase).toBe('hanging');
     expect(sim.robot.climbSlot).toBe(0);
@@ -463,6 +463,13 @@ describe('2025 REEFSCAPE manual implementation', () => {
         expect(sim.robot.pose.x < C.FIELD_LENGTH / 2 - 0.3 || sim.robot.uprightness < 0.97).toBe(true);
       }
     }
+  });
+  it('requires a close, square cage approach before the grab animation begins',()=>{
+    const p=C.cage('blue',2),sim=make('blue',{x:p.x-1.1,y:p.y,yaw:0},2);teleop(sim);
+    sim.rules.requestClimb(sim.robot,2);expect(sim.robot.climbPhase).toBe('none');
+    sim.robot.resetTo({x:p.x-.55,y:p.y,yaw:Math.PI/2});sim.rules.requestClimb(sim.robot,2);expect(sim.robot.climbPhase).toBe('none');
+    sim.robot.resetTo({x:p.x-.55,y:p.y,yaw:0});sim.rules.requestClimb(sim.robot,2);expect(sim.robot.climbPhase).toBe('align');
+    run(sim,8);expect(sim.robot.climbPhase).toBe('hanging');
   });
   it('uses a configured cage rise time independently of shallow/deep point values', () => {
     for (const level of [1, 2]) {

@@ -9,7 +9,7 @@ import { handoffPoint } from '../src/engine/robot/handoff';
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
-import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS } from '../src/engine/robot/cadModels';
+import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2025_MODEL_IDS } from '../src/engine/robot/cadModels';
 await prepareCadModels();
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -60,7 +60,8 @@ function build() {
   const grid = document.querySelector('#grid')!;
   grid.innerHTML = '';
   const s = SEASONS.find(s => s.id === seasonSelect.value)!;
-  const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || CAD_MODEL_IDS.includes(t.config.model as typeof CAD_MODEL_IDS[number])).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
+  const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2025_MODEL_IDS];
+  const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || detailedIds.includes(t.config.model ?? '')).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
   for (const [index, entry] of configs.entries()) {
     const el = document.createElement('div'); el.className = 'card';
     const label = document.createElement('div'); label.className = 'label'; label.textContent = entry.name;
@@ -82,6 +83,7 @@ function build() {
     const camera = new THREE.PerspectiveCamera(35,1,0.01,40);
     const coral = s.gamePiece.shape === 'tube' ? new THREE.Mesh(coralGeometry(),new THREE.MeshStandardMaterial({ color:s.gamePiece.color,roughness:.6 })) : undefined;
     if (coral) { coral.visible=false; robot.visual.add(coral); }
+    if(coral)coral.userData.heldGamePiece=true;
     const algae = coral ? new THREE.Mesh(new THREE.SphereGeometry(.206,20,16),new THREE.MeshStandardMaterial({color:0x54cbbb,roughness:.7})) : undefined;
     if (algae) { algae.visible=false; robot.visual.add(algae); }
     items.push({scene,robot,physics,el,camera,t:0,next:0,coral,algae});
@@ -101,11 +103,13 @@ function frame(now: number) {
   for (const i of items) {
     const rect=i.el.getBoundingClientRect(); if(rect.bottom<0||rect.top>innerHeight||!rect.width) continue;
     const r=i.robot; r.enabled=pose.value !== 'idle' && pose.value !== 'cad';
-    r.climbPhase=pose.value==='climb'?'align':'none';
+    r.climbReady=pose.value==='endgame';
+    r.climbPhase=pose.value==='climb'?'align':pose.value==='hang'?'hanging':'none';
+    r.body.setTranslation({x:0,y:pose.value==='hang'?.28:.002,z:0},false);
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
     r.lastShotAngle = Number(hood.value);
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
-    r.placeAnim = {algae:pose.value==='algae',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:(pose.value==='score'||pose.value==='algae')&&r.config.placement?.scoreSide==='sides'?1:0};
+    r.placeAnim = {algae:pose.value==='algae'||pose.value==='both',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='both'?1:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:(pose.value==='score'||pose.value==='algae')&&r.config.placement?.scoreSide==='sides'?1:0};
     if (pose.value === 'flow' && i.coral) {
       // CORAL: collect → conveyor handoff → extend to L4 → retract, using the match's model path.
       i.t = (i.t + dt) % 6;
@@ -131,7 +135,7 @@ function frame(now: number) {
         i.next = i.t + 1 / Math.max(1, c.launcher.rate);
         r.held.pop();
       }
-    } else r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
+    } else r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='both'?(r.config.options?.dualPieceStorage||r.config.options?.coralBuffer?1:0):pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
     r.syncVisual(dt);
     if (i.coral) {
       const anchor = r.modelHeldAnchor, p = r.placeAnim!;
@@ -152,14 +156,19 @@ function frame(now: number) {
         }
       }
     }
+    if(pose.value==='both' && i.coral && r.config.options?.coralBufferLocation==='intake' && r.modelIntakeAnchor){
+      r.visual.updateMatrixWorld(true);i.coral.position.copy(r.visual.worldToLocal(r.modelIntakeAnchor.getWorldPosition(new THREE.Vector3())));
+      i.coral.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));
+    }
     if (i.algae) {
-      i.algae.visible=pose.value==='algae' && !!r.config.intake.secondary;
-      animateAlgaeGrip(i.algae,i.algae.visible,r.modelAlgaeGripScale,dt);
+      i.algae.visible=(pose.value==='algae'||pose.value==='both') && !!r.config.intake.secondary;
       if (i.algae.visible) {
         r.visual.updateMatrixWorld(true);
         const anchor=r.modelAlgaeAnchor ?? r.modelHeldAnchor;
         if (anchor) { if (i.algae.parent!==anchor) anchor.add(i.algae); i.algae.position.set(0,0,0); }
       }
+      animateAlgaeGrip(i.algae,i.algae.visible,r.modelAlgaeGripScale,dt,r.modelAlgaeGripThroat);
+
     }
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
     const scale=Math.max(pose.value==='algae'?2.6:1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='algae' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
