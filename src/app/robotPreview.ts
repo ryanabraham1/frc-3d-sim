@@ -27,8 +27,13 @@ interface Built {
 let rapier: Awaited<ReturnType<typeof loadRapier>> | null = null;
 let thumbRenderer: THREE.WebGLRenderer | null = null;
 let env: THREE.Texture | null = null;
+let initialization: Promise<void> | null = null;
 
-async function init(): Promise<void> {
+function init(): Promise<void> {
+  return initialization ??= initialize();
+}
+
+async function initialize(): Promise<void> {
   rapier ??= await loadRapier();
   if (!thumbRenderer) {
     thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -88,9 +93,10 @@ export function robotThumb(season: SeasonDefinition, config: RobotConfig, allian
   const key = `${season.id}|${config.model ?? 'generic'}|${config.teamNumber}|${alliance}|${w}x${h}`;
   const hit = thumbs.get(key);
   if (hit) return hit;
-  const p: Promise<string> = (queue = queue.then(async () => {
-      await init();
-      await prepareCadModels([config.model]);
+  // Fetch/decode independently: a slow CAD download must not hold up every card after it.
+  const ready = Promise.all([init(), prepareCadModels([config.model])]);
+  const p: Promise<string> = ready.then(() => {
+    const render = queue.then(() => {
       const b = build(season, config, alliance);
       const r = thumbRenderer!;
       r.setPixelRatio(Math.min(2, devicePixelRatio || 1));
@@ -101,7 +107,12 @@ export function robotThumb(season: SeasonDefinition, config: RobotConfig, allian
       const url = r.domElement.toDataURL('image/png');
       b.dispose();
       return url;
-    })) as Promise<string>;
+    });
+    // A failed thumbnail must not poison the shared rendering queue.
+    queue = render.catch(() => undefined);
+    return render;
+  });
+  void p.catch(() => { if (thumbs.get(key) === p) thumbs.delete(key); });
   thumbs.set(key, p);
   return p;
 }
@@ -122,11 +133,18 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
   let renderer: THREE.WebGLRenderer | null = null;
   let az = 0.9, tilt = 0.4, zoom = 1, dragging = false, last = 0, clock = 0;
   let cur = { config, alliance };
-  let wantRebuild = true;
+  let wantRebuild = false;
+  let revision = 0;
+  const prepareCurrent = async () => {
+    const requestedRevision = ++revision;
+    wantRebuild = false;
+    await prepareCadModels([cur.config.model]);
+    if (!disposed && requestedRevision === revision) wantRebuild = true;
+  };
 
   const start = async () => {
+    void prepareCurrent();
     await init();
-    await prepareCadModels();
     if (disposed) return;
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -182,7 +200,7 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
       if (renderer) h.replaceChildren(renderer.domElement);
       else if (!started) { started = true; void start(); }
     },
-    set(c, a) { cur = { config: c, alliance: a }; wantRebuild = true; },
+    set(c, a) { cur = { config: c, alliance: a }; if (started) void prepareCurrent(); },
     dispose() { disposed = true; built?.dispose(); renderer?.dispose(); },
   };
 }
