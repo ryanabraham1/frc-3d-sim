@@ -100,3 +100,17 @@ Climbers remain stowed during normal play, deploy in the last 30 seconds of tele
 
 - CORAL uses a tool-local axis for the supplied 2025 rigs, including sideways roller carries on 1778/581. A bounded seating fit preserves the rigid tube and hollow bore; it does not shrink CORAL.
 - Firefly118's separate `03_3000_CAGELATCH` is parented to its moving climber arm and folds inward during normal play. Deployed cage contacts are configured per robot; cage approaches and actual moving contact anchors replace the generic front attachment.
+
+## 2910 Re•Blitz — supplied Robot 2 assembly (2026)
+
+The user-supplied `12 - Robot 2 Top Level Assembly.glb` replaces the photo-fitted 581 donor shooter for the existing `reblitz-2910` ID. Original CAD remains outside shipped assets. Source coordinates map `(Y,Z,X)` to simulator `(X,Y,Z)` in meters. Frame rails measure 0.6985 m length and 0.6858 m width; the compact roof reaches 0.5461 m, represented by a 0.55 m collision envelope. Only former default saved dimensions migrate; custom dimensions and existing 40-FUEL / 33-FUEL/s tuning remain subject to the normal legal limits.
+
+Native geometry includes the hard containment roof, bent rear sheet, pocketed shooter supports, roller floor, pivoting intake, hood linkage and brass overspeed flywheel. Ordered groups are `hood` (`32-17`), `flywheel` (brass wheel), `intake` (Pivoting Intake Assembly), `hopper` (`62`), `feeder` (floor roller assemblies), and fixed `frame`. Simulator bumpers replace CAD bumper assemblies. Fasteners, bearing interiors, electrical detail and the static reference `Fuel` sphere are omitted. Lossless positions avoid distortion of the thin pocketed sheets; an additional bounded 0.5 mm reduction pass removes excess coplanar tessellation.
+
+Measured robot-local joints: intake bearing `[-0.27305,0.1698625,0]`, hood bearing `[0.282575,0.4699,0]`, brass flywheel center `[0.2651125,0.3726602,-0.3309938]`. Deployed intake roller center `[-0.610318,0.160655,0]`; capture remains on the rear face. Native CAD drivetrain is retained, with visually fixed swerve modules. No climber is added.
+
+The source supplies one extended pose. The 2.65 rad intake fold, 0.25 m hopper compression, hood angle mapping, flywheel speed and fuel transfer paths are fitted simulation estimates, not measured actuator travel. Hopper fill fits under the actual roof and along the extended containment. CAD-export mode preserves the transformed source pose; Previous models retains the lightweight procedural comparison.
+
+Reproduce with `npm run cad:prepare -- /path/to/downloads reblitz-2910`. The generated report records exact counts, size, bounds and omitted occurrences. Tests cover decoding, bounded reduction, finite motion throughout forward/reverse deployment, stationary frame, intake floor clearance, saved settings, retained capacity/rate, and actual rear pickup versus shooter-side rejection.
+
+Final asset: 89.65 MB / 4,603,004 triangles reduced to 6.68 MB / 487,204 triangles, with 964 occurrences omitted. Production build and 29 focused CAD/capacity/gameplay tests pass. Browser inspection covers source pose, stowed/deployed intake, both sides, low/high hood settings and full hopper; planar shading keeps the folded containment sheets readable.

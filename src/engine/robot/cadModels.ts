@@ -5,10 +5,10 @@ import type { ModelKit, RobotModel, RobotModelBuilder } from './models';
 import { getRobotEnvironment } from './models';
 import { buildReefscapeCad } from './reefscapeCadModels';
 import { cadHopper } from './cadHopper';
-import { build9470Cad, build6800Cad, build971Cad, build1114Cad } from './additionalCadModels';
+import { build9470Cad, build6800Cad, build971Cad, build1114Cad, build2910Cad } from './additionalCadModels';
 
 export const CAD_2025_MODEL_IDS = ['whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
-export const CAD_MODEL_IDS = ['toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
+export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
 const assets = new Map<string, THREE.Group>();
 const pending = new Map<string, Promise<void>>();
 let enabled = true;
@@ -50,6 +50,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   root.userData.cadModel = id;
   k.visual.add(root);
   if ((CAD_2025_MODEL_IDS as readonly string[]).includes(id)) return buildReefscapeCad(id,root,k,()=>animated);
+  if (id === 'reblitz-2910') return build2910Cad(root,k,()=>animated);
   if (id === 'simbot-tim-1114') return build1114Cad(root,k,()=>animated);
   if (id === 'ctrl-alt-defeat-9470') return build9470Cad(root,k,()=>animated,assets.has('intake-581-donor') ? ownedClone(assets.get('intake-581-donor')!.getObjectByName('intake')!) : undefined);
   if (id === 'downpour-6800') return build6800Cad(root,k,()=>animated);

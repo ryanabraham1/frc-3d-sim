@@ -159,3 +159,35 @@ export function build971Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):
       });
     }};
 }
+
+/** User's Robot 2 assembly: native roller floor, hard roof, pivoting rear intake,
+ * fixed wide shooter and overspeed flywheel. Source meters mapped Y/Z/X.
+ * Intake hinge and hood bearings are measured; actuator travel is estimated.
+ */
+export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):RobotModel {
+  const p=articulation(root);
+  const intake=p('intake',[-.27305,.1698625,0]);
+  const hood=p('hood',[.282575,.4699,0]);
+  const flywheel=p('flywheel',[.2651125,.3726602,-.3309938]);
+  const tip=new THREE.Object3D();tip.position.set(-.610318,.160655,0);
+  root.add(tip);root.updateMatrixWorld(true);intake.attach(tip);
+  const hopper=root.getObjectByName('hopper');
+  // Folded containment sheets have broad bounds; preserve their planar CAD faces.
+  hopper?.traverse(o=>{if(o instanceof THREE.Mesh)for(const material of (Array.isArray(o.material)?o.material:[o.material])){if(material instanceof THREE.MeshStandardMaterial){material.flatShading=true;material.needsUpdate=true;}}});
+  const pile=fuel(k,-.58,.02,.255,.525,.65,-.32);
+  let deploy=1,angle=0;
+  return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,
+    flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],
+      stow:pile.stow,feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;
+        return [new THREE.Vector3(-.20,.27,z),new THREE.Vector3(.05,.29,z),new THREE.Vector3(.24,.36,z),new THREE.Vector3(.32,.44,z)];}},
+    update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
+      if(!isAnimated())return;
+      // Source pickup is deployed. Fold upward and inward about its real bearing.
+      intake.rotation.z=-(1-deploy)*2.65;
+      // Fitted horizontal compression; source supplies the extended hopper pose only.
+      if(hopper)hopper.position.x=(1-deploy)*.25;
+      angle=ease(angle,s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.05:0,s.dt);
+      hood.rotation.z=angle;
+      flywheel.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?70:0)*s.dt;
+    }};
+}

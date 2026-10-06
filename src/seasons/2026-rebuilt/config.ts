@@ -104,6 +104,11 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
+  // Migrate only former 2910 size defaults; preserve custom dimensions and tuning.
+  if (c.model === 'reblitz-2910') {
+    if (Math.abs(c.frameLength-inch(27))<1e-6) c.frameLength=.6985;
+    if (Math.abs(c.height-inch(21))<1e-6) c.height=.55;
+  }
   c.intake.station ??= true;
   c.intake.groundSide ??= 'back';
   c.intake.stationSide ??= 'back';

@@ -1,0 +1,29 @@
+{
+  "id": "reblitz-2910",
+  "sourceFile": "12 - Robot 2 Top Level Assembly.glb",
+  "inputBytes": 89648584,
+  "outputBytes": 6676976,
+  "inputTriangles": 4603004,
+  "outputTriangles": 487204,
+  "omittedOccurrences": 964,
+  "bounds": {
+    "min": [
+      -0.6426898241043091,
+      -0.006349839270115121,
+      -0.3524250090122223
+    ],
+    "max": [
+      0.35208991169929504,
+      0.5461000204086304,
+      0.3524250090122223
+    ]
+  },
+  "groups": [
+    "hopper",
+    "frame",
+    "intake",
+    "feeder",
+    "hood",
+    "flywheel"
+  ]
+}

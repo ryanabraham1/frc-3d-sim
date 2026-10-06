@@ -8,6 +8,11 @@ import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer
 import { Matrix4 } from 'three';
 
 const specs = {
+  'reblitz-2910': {file:'12 - Robot 2 Top Level Assembly.glb',year:2026,axes:'yzx',groups:[
+    ['hood',/32-17 Hood Assembly/], ['flywheel',/Brass Flywheel/],
+    ['intake',/Pivoting Intake Assembly/], ['hopper',/62 - R2 Hopper/],
+    ['feeder',/32-03 Single Sprocket Hub Roller|32-07 Thin Aluminum Roller/],
+  ]},
   'whisper-1690': {file:'1690-25-0000 Post.glb',year:2025,axes:'identity',groups:[
     ['effector',/1690-25-5100/],['arm',/1690-2025-4140/],
     ['carriage',/1690-2025-4100|1690-25-1230/],['elevator-stage',/1690-25-1220/],
@@ -110,6 +115,7 @@ for (const id of ids) {
     const names = [n.getName()];
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
+    if (id === 'reblitz-2910' && /Bumper Assembly|Battery|RoboRIO|Radio|Power Distribution|PDH|PDP|(?:^|\/)Fuel(?:\/|$)/i.test(full)) {n.setMesh(null);omitted++;continue;}
     if(id==='whisper-1690' && /1690-25-1000-BasePart/.test(full)){n.setMesh(null);omitted++;continue;}
     if (['quixilver-604-2025','subzero-1778'].includes(id) && /Bumper|Battery|RoboRIO|PDH|Radio|Origin Cat|Reference Cube/i.test(full)) { n.setMesh(null); omitted++; continue; }
     if (id === 'zuma-581' && /581-25B0000|Battery|RoboRIO|PDH|Radio|Origin Cube/i.test(full)) { n.setMesh(null); omitted++; continue; }
@@ -222,9 +228,17 @@ for (const id of ids) {
     }
   };
   await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
+  // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
+  // A final bounded 0.5 mm pass reduces those faces without quantizing positions.
+  if (id === 'reblitz-2910') {
+    for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
+      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: .40, error: .0005 });
+    }
+    await doc.transform(prune());
+  }
   const outputTriangles = triangleCount();
   const bounds = getBounds(scene);
-  if (spec.year === 2025) {
+  if (spec.year === 2025 || id === 'reblitz-2910') {
     // Keep occurrence transforms lossless: these assemblies reuse curved parts
     // across differently transformed meshes, making per-mesh quantization unsafe.
     await io.write(`/tmp/${id}-reduced.glb`, doc);
