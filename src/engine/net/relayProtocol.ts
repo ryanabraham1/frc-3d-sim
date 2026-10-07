@@ -12,19 +12,72 @@ export const MAX_BINARY_BACKLOG = 16 * 1024;
 /** Room code alphabet: no I/O/0/1 to avoid confusion when read aloud. */
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const ROOM_CODE_LENGTH = 4;
+/** How long a dropped connection keeps its place in the room before the relay gives it up (ms). */
+export const RECONNECT_GRACE_MS = 30_000;
+/** Close code a client uses for a deliberate leave (anything else counts as a dropped connection). */
+export const CLOSE_LEAVE = 4000;
+export const MAX_TITLE_LENGTH = 32;
+/** Most public rooms returned by one `list`. */
+export const MAX_LISTED_ROOMS = 40;
+
+export type RoomVisibility = 'public' | 'private';
+/** What the room is doing: `lobby` rooms can be joined freely, the others are listed as in progress. */
+export type RoomState = 'lobby' | 'placing' | 'match';
+
+/** Room details the host publishes so the public list stays accurate (the relay never reads game data). */
+export interface RoomMeta {
+  visibility?: RoomVisibility;
+  title?: string;
+  /** Display label of the selected game, e.g. "2026 REBUILT". */
+  season?: string;
+  /** Seated drivers (not spectators). */
+  drivers?: number;
+  /** Driver stations in this game. */
+  seats?: number;
+  state?: RoomState;
+  bots?: boolean;
+}
+
+export interface RoomListing {
+  code: string;
+  title: string;
+  host: string;
+  season: string;
+  /** Everyone in the room, spectators included. */
+  players: number;
+  max: number;
+  drivers: number;
+  seats: number;
+  state: RoomState;
+  bots: boolean;
+}
 
 export type RelayRequest =
-  | { op: 'create'; name: string }
+  | { op: 'create'; name: string; meta?: RoomMeta }
   | { op: 'join'; room: string; name: string }
+  /** Resume a dropped connection (same peer id) within RECONNECT_GRACE_MS. */
+  | { op: 'rejoin'; room: string; token: string }
+  /** Ask for the public room list. */
+  | { op: 'list' }
+  /** Host only: update what the public list shows (and flip public/private). */
+  | { op: 'meta'; meta: RoomMeta }
+  /** Host only: remove a peer from the room; they cannot return while it exists. */
+  | { op: 'kick'; peerId: string }
   /** Client → always delivered to host. Host → `to` peer, or every client when omitted. */
   | { op: 'send'; data: unknown; to?: string };
 
 export type RelayEvent =
-  | { op: 'created'; room: string; peerId: string }
-  | { op: 'joined'; room: string; peerId: string; hostId: string }
+  | { op: 'created'; room: string; peerId: string; token: string }
+  | { op: 'joined'; room: string; peerId: string; hostId: string; token: string; resumed?: boolean }
+  | { op: 'rooms'; rooms: RoomListing[] }
   | { op: 'error'; message: string }
   | { op: 'peer-joined'; peerId: string; name: string }
   | { op: 'peer-left'; peerId: string }
+  /** A peer's connection dropped; it may still come back within the grace period. */
+  | { op: 'peer-lost'; peerId: string }
+  | { op: 'peer-back'; peerId: string }
+  | { op: 'host-lost' }
+  | { op: 'host-back' }
   | { op: 'room-closed'; reason: string }
   | { op: 'msg'; from: string; data: unknown };
 
@@ -36,4 +89,10 @@ export function cleanName(name: unknown): string {
   const s = typeof name === 'string' ? name : '';
   // eslint-disable-next-line no-control-regex
   return s.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24) || 'Player';
+}
+
+export function cleanTitle(title: unknown): string {
+  const s = typeof title === 'string' ? title : '';
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE_LENGTH);
 }

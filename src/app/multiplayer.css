@@ -347,3 +347,241 @@
   margin-top: 10px;
   color: #34d399;
 }
+
+/* ═════════════ Public / private lobbies, room browser, chat ═════════════ */
+.mp-big {
+  height: 64px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  font-size: 18px;
+}
+.mp-big small,
+.mp-vis .opt small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+.mp-vis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.mp-vis .opt {
+  height: auto;
+  padding: 8px 10px;
+  line-height: 1.25;
+}
+.mp-title {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 15px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.mp-invite {
+  background: rgba(79, 140, 255, 0.12);
+  border: 1px solid rgba(79, 140, 255, 0.45);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.rl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px 20px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.rl-empty {
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.5;
+  padding: 18px 8px;
+  font-size: 14px;
+}
+.rl-empty .mp-dot {
+  display: inline-block;
+  margin-right: 8px;
+}
+.rl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.rl-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.rl-main b,
+.rl-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rl-main span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rl-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rl-count b {
+  color: var(--text);
+  font-size: 14px;
+}
+.rl-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rl-badge.open {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.5);
+}
+.rl-badge.live {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+.rl-row .bbtn {
+  height: 38px;
+  padding: 0 16px;
+}
+
+.mp-room-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mp-vis-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+.mp-vis-badge.pub {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.5);
+}
+.mp-people {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 20px 18px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.mp-person {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+}
+.mp-person b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.mp-person i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--accent-bright);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0 5px;
+  margin-left: 4px;
+}
+.mp-person span {
+  color: var(--muted);
+  font-size: 13px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.mp-kick {
+  color: #ff6b6b;
+  font-size: 12px;
+}
+.mp-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 20px;
+  height: 170px;
+  overflow-y: auto;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.mp-line b {
+  color: var(--accent-bright);
+}
+.mp-line b.red {
+  color: var(--red);
+}
+.mp-line b.blue {
+  color: var(--blue);
+}
+.mp-line.sys {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+.mp-chat-send {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 18px;
+}
+.mp-chat-send input {
+  flex: 1;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  min-width: 0;
+}
+.mp-chat-send .bbtn {
+  height: 42px;
+}
+@media (max-width: 560px) {
+  .rl-row {
+    flex-wrap: wrap;
+  }
+  .rl-count {
+    align-items: flex-start;
+  }
+}
+
+.mp-pad > .mp-grow {
+  flex: none;
+  height: 48px;
+}
+.mp-big small,
+.mp-vis .opt small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: inherit;
+}
+.mp-big small {
+  font-size: 13px;
+}

@@ -6,6 +6,7 @@ import type { ScoreState } from '../match/scoreboard';
 import type { RobotConfig } from '../robot/config';
 import type { RobotCommand } from '../robot/robot';
 import type { StartSpot } from '../startPose';
+import type { RoomVisibility } from './relayProtocol';
 
 /**
  * Game-level multiplayer protocol (carried inside relay `send`/`msg` envelopes, see relayProtocol.ts),
@@ -39,9 +40,26 @@ export interface LobbyPlayer {
   autoPlan?: AutoPlan;
 }
 
+export interface ChatLine {
+  /** Sender's display name ('' = system line). */
+  from: string;
+  text: string;
+  /** Alliance colour of the sender's driver station, for tinting. */
+  alliance?: Alliance;
+}
+
+export const MAX_CHAT_LENGTH = 200;
+export const CHAT_HISTORY = 40;
+
 export interface LobbyState {
   room: string;
   hostId: string;
+  /** Public rooms appear in the server browser; private ones need the code or an invite link. */
+  visibility?: RoomVisibility;
+  /** Host-chosen room name shown in the public list. */
+  title?: string;
+  /** Recent lobby chat (oldest first). */
+  chat?: ChatLine[];
   seasonId: string;
   players: LobbyPlayer[];
   /** Human players act automatically for every alliance (otherwise drivers press H). */
@@ -132,7 +150,9 @@ export type ClientMsg =
   /** Human-player button (e.g. open the CHUTE) for the sender's alliance. `n` = button (1 default). */
   | { t: 'hp'; n?: number }
   /** A snapshot went missing (sequence gap, e.g. dropped by the relay for a slow link): send a keyframe. */
-  | { t: 'resync' };
+  | { t: 'resync' }
+  /** Lobby chat line. */
+  | { t: 'chat'; text: string };
 
 export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }

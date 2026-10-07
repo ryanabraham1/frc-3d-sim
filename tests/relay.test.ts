@@ -13,7 +13,7 @@ const sockets: WebSocket[] = [];
 
 beforeEach(async () => {
   server = createServer();
-  relay = attachRelay(server, { rejectOtherPaths: true });
+  relay = attachRelay(server, { rejectOtherPaths: true, reconnectGraceMs: 400, limits: { creates: 6, badJoins: 4 } });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}/ws`;
 });
@@ -127,5 +127,190 @@ describe('relay', () => {
       setTimeout(() => r('timeout'), 300);
     });
     expect(res).not.toBe('open');
+  });
+
+  describe('public and private rooms', () => {
+    it('lists only public rooms, with the host-published details', async () => {
+      const pub = await peer();
+      pub.send({ op: 'create', name: 'Pat', meta: { visibility: 'public', title: 'Fast <b>lobby</b>', season: '2026 REBUILT', drivers: 2, seats: 6, bots: true } });
+      const created = await pub.next('created');
+      const priv = await peer();
+      priv.send({ op: 'create', name: 'Quinn' });
+      const hidden = await priv.next('created');
+
+      const browser = await peer();
+      browser.send({ op: 'list' });
+      const { rooms } = await browser.next('rooms');
+      expect(rooms.map((r) => r.code)).toEqual([created.room]);
+      expect(rooms[0]).toMatchObject({ title: 'Fast blobby/b', host: 'Pat', season: '2026 REBUILT', players: 1, drivers: 2, state: 'lobby', bots: true });
+      expect(rooms.some((r) => r.code === hidden.room)).toBe(false);
+
+      // A private room is still joinable by its code, and the host can publish or hide it later.
+      browser.send({ op: 'join', room: hidden.room, name: 'Rae' });
+      await browser.next('joined');
+      priv.send({ op: 'meta', meta: { visibility: 'public', title: '', state: 'match' } });
+      const lister = await peer();
+      lister.send({ op: 'list' });
+      const after = (await lister.next('rooms')).rooms;
+      expect(after.map((r) => r.code).sort()).toEqual([created.room, hidden.room].sort());
+      const flipped = after.find((r) => r.code === hidden.room)!;
+      expect(flipped).toMatchObject({ title: "Quinn's room", players: 2, state: 'match' });
+      expect(after[0].code).toBe(created.room); // joinable rooms sort first
+      pub.send({ op: 'meta', meta: { visibility: 'private' } });
+      lister.send({ op: 'list' });
+      expect((await lister.next('rooms')).rooms.map((r) => r.code)).toEqual([hidden.room]);
+    });
+
+    it('only the host can change room details', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H', meta: { visibility: 'private' } });
+      const created = await host.next('created');
+      const guest = await peer();
+      guest.send({ op: 'join', room: created.room, name: 'G' });
+      await guest.next('joined');
+      guest.send({ op: 'meta', meta: { visibility: 'public' } });
+      const lister = await peer();
+      lister.send({ op: 'list' });
+      expect((await lister.next('rooms')).rooms).toEqual([]);
+      expect(relay.publicRoomCount()).toBe(0);
+    });
+  });
+
+  describe('dropped connections', () => {
+    it('holds a client seat and resumes it with the token', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const joined = await a.next('joined');
+      await host.next('peer-joined');
+
+      a.ws.terminate();
+      expect((await host.next('peer-lost')).peerId).toBe(joined.peerId);
+
+      const again = await peer();
+      again.send({ op: 'rejoin', room: created.room, token: joined.token });
+      const back = await again.next('joined');
+      expect(back).toMatchObject({ peerId: joined.peerId, resumed: true, hostId: created.peerId });
+      expect((await host.next('peer-back')).peerId).toBe(joined.peerId);
+      host.send({ op: 'send', data: 'hi', to: joined.peerId });
+      expect((await again.next('msg')).data).toBe('hi');
+      // No peer-left for the seat that came back.
+      await new Promise((r) => setTimeout(r, 500));
+      expect(host.events.some((e) => e.op === 'peer-left')).toBe(false);
+    });
+
+    it('frees the seat when the grace period runs out, and refuses a late rejoin', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const joined = await a.next('joined');
+      a.ws.terminate();
+      await host.next('peer-lost');
+      expect((await host.next('peer-left')).peerId).toBe(joined.peerId);
+      const late = await peer();
+      late.send({ op: 'rejoin', room: created.room, token: joined.token });
+      expect((await late.next('error')).message).toMatch(/no longer available/);
+    });
+
+    it('a deliberate leave frees the seat immediately', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const joined = await a.next('joined');
+      a.ws.close(4000, 'leave');
+      expect((await host.next('peer-left')).peerId).toBe(joined.peerId);
+      expect(host.events.some((e) => e.op === 'peer-lost')).toBe(false);
+    });
+
+    it('keeps the room when the host drops briefly, and closes it when they do not return', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      await a.next('joined');
+      host.ws.terminate();
+      await a.next('host-lost');
+      const hostAgain = await peer();
+      hostAgain.send({ op: 'rejoin', room: created.room, token: created.token });
+      expect((await hostAgain.next('joined')).peerId).toBe(created.peerId);
+      await a.next('host-back');
+      expect(relay.roomCount()).toBe(1);
+
+      hostAgain.ws.terminate();
+      await a.next('host-lost');
+      expect((await a.next('room-closed')).op).toBe('room-closed');
+      expect(relay.roomCount()).toBe(0);
+    });
+
+    it('rejects rejoin with a wrong token', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      await a.next('joined');
+      a.ws.terminate();
+      await host.next('peer-lost');
+      const thief = await peer();
+      thief.send({ op: 'rejoin', room: created.room, token: 'nope' });
+      expect((await thief.next('error')).message).toMatch(/no longer available/);
+    });
+  });
+
+  describe('moderation and limits', () => {
+    it('lets the host remove a player, who cannot come back', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const joined = await a.next('joined');
+      host.send({ op: 'kick', peerId: joined.peerId });
+      expect((await a.next('room-closed')).reason).toMatch(/removed/);
+      expect((await host.next('peer-left')).peerId).toBe(joined.peerId);
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      expect((await a.next('error')).message).toMatch(/removed/);
+    });
+
+    it('ignores a kick from a non-host', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const ja = await a.next('joined');
+      const b = await peer();
+      b.send({ op: 'join', room: created.room, name: 'B' });
+      await b.next('joined');
+      b.send({ op: 'kick', peerId: ja.peerId });
+      host.send({ op: 'send', data: 'sync' });
+      await a.next('msg');
+      expect(a.events.some((e) => e.op === 'room-closed')).toBe(false);
+    });
+
+    it('limits room creation and bad join guesses per IP', async () => {
+      const p = await peer();
+      for (let i = 0; i < 6; i++) {
+        p.send({ op: 'create', name: 'x' });
+        await p.next('created');
+      }
+      p.send({ op: 'create', name: 'x' });
+      expect((await p.next('error')).message).toMatch(/too quickly/);
+
+      const g = await peer();
+      for (let i = 0; i < 4; i++) {
+        g.send({ op: 'join', room: 'ZZZZ', name: 'g' });
+        expect((await g.next('error')).message).toMatch(/not found/);
+      }
+      g.send({ op: 'join', room: 'ZZZZ', name: 'g' });
+      expect((await g.next('error')).message).toMatch(/Too many attempts/);
+    });
   });
 });

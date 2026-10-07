@@ -95,4 +95,5 @@ lobby.onStart = (setup, role) => void startNetGame(setup, role);
 lobby.onToLobby = () => menu('multiplayer');
 // While a match is running, the Game shows its own "Disconnected" dialog; the menu re-renders itself.
 
-menu();
+// An invite link (?join=CODE) lands straight on the Multiplayer page and joins.
+menu(lobby.invite ? 'multiplayer' : undefined);

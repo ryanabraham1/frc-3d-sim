@@ -47,13 +47,20 @@ Text frames are JSON envelopes; binary frames are opaque.
 
 | Dir | Message |
 |---|---|
-| C→S | `{op:'create', name}` → `{op:'created', room, peerId}` (sender becomes host) |
-| C→S | `{op:'join', room, name}` → `{op:'joined', room, peerId, hostId}` or `{op:'error', message}`; host gets `{op:'peer-joined', peerId, name}` |
+| C→S | `{op:'create', name, meta?}` → `{op:'created', room, peerId, token}` (sender becomes host; `meta.visibility` defaults to private) |
+| C→S | `{op:'join', room, name}` → `{op:'joined', room, peerId, hostId, token}` or `{op:'error', message}`; host gets `{op:'peer-joined', peerId, name}` |
+| C→S | `{op:'rejoin', room, token}` → `{op:'joined', …, resumed:true}`; resumes a dropped connection (same peer id) within 30 s. Host gets `peer-back`, clients get `host-back` |
+| C→S | `{op:'list'}` → `{op:'rooms', rooms:[{code,title,host,season,players,max,drivers,seats,state,bots}]}` — public rooms only |
+| C→S | host: `{op:'meta', meta}` (visibility, title, season, drivers, state, bots) keeps the list accurate; `{op:'kick', peerId}` removes a peer (banned by IP for the room's lifetime) |
 | C→S | `{op:'send', data, to?}` — from a client always goes to host; from host goes to `to` or all clients. Receiver gets `{op:'msg', from, data}` |
 | C→S | binary — host only → forwarded to all clients |
 | S→C | `{op:'peer-left', peerId}` (to host); `{op:'room-closed', reason}` (to clients when host leaves) |
+| S→C | `{op:'peer-lost', peerId}` (to host) / `{op:'host-lost'}` (to clients): a socket dropped, the seat is held for the grace period; `peer-left` / `room-closed` follow only if it doesn't come back |
 
 Limits: 12 peers/room, 256 KB max frame, ping/pong keep-alive every 20 s, codes = 4 letters (no I/O).
+Per IP: 24 sockets, 8 room creations/min, 20 failed joins/min (stops code guessing). Set `TRUST_PROXY=1` behind a proxy so the
+real client IP is used (on by default on Render). A deliberate leave closes with code 4000 and frees the seat at once; any other
+close (network drop, sleep) is a drop and gets the 30 s grace.
 
 ### 2.2 Game protocol (`src/engine/net/protocol.ts`)
 
@@ -134,6 +141,23 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
 - [x] **M8** Own-robot client prediction with server reconciliation (`src/engine/net/prediction.ts`, `tests/prediction.test.ts`)
 - [x] **M9** Docs: README, PLAN.md, FRAMEWORK.md, memory; `render.yaml`; final test/typecheck/build
 
+## 2.5 Lobbies, discovery and reconnect
+
+- **Public vs private.** A room is private (code or invite link only) or public (listed in the *Public lobbies* browser).
+  The host can flip it any time in Match options and name the room. The list shows host, game, drivers seated, players and
+  whether the room is open, starting or in a match; the page polls it every 4 s over an idle relay socket that Create/Join then
+  reuse (no extra connect delay). `LobbyState.visibility/title/chat` are the lobby's copy; the host pushes `meta` to the relay
+  whenever they change (`LobbyController.pushMeta`).
+- **Quick play** joins the fullest open public lobby, or hosts a new public one when there is none.
+- **Invite links.** `?join=CODE` opens the Multiplayer page and joins (once a name is saved; otherwise it prefills the code).
+  *Copy invite link* in the lobby builds one.
+- **Reconnect.** `NetClient` resumes a dropped socket with its token for ~28 s (backoff 0.4 → 3 s). During the gap the host's robot
+  for that driver idles, the relay buffers nothing, and on return the host sends a keyframe and the lobby. A host blip keeps the
+  room and the running sim; clients see "host lost connection". Closing the tab (`pagehide`) is a deliberate leave.
+- **Lobby chat + moderation.** Host-relayed chat (last 40 lines, 200 chars, 400 ms per-player rate limit) and host *Remove*.
+- Tests: `tests/relay.test.ts` (listing, meta, rejoin, kick, rate limits) and `tests/lobby-online.test.ts` (the real
+  `LobbyController` + `NetClient` against a real relay).
+
 ## 2.4 Performance & lag (4+ players)
 
 Measured on 2026 REBUILT with 4 robots plowing through ~450 FUEL: the host spends ~5 ms per 90 Hz step
@@ -164,9 +188,10 @@ Debug: append `?perf&fps` for the CPU/network panel, or inspect `game.netStats()
   session as a starting point) so the relay can own the simulation.
 - Clients don't simulate game pieces; the own-robot prediction ignores FUEL contact (small corrections
   when plowing through balls). Other robots render ~100 ms in the past.
-- No reconnect-into-running-match; a dropped client rejoins for the next match.
-- No auth / rate limiting on the relay beyond frame size + room size limits. Fine for friends; add
-  per-IP limits before advertising a public server.
+- A client that closes the tab (or is away past the grace period) cannot rejoin a running match; it rejoins for the next one.
+  A brief network drop does resume mid-match.
+- Private room codes are 4 letters; the per-IP failed-join limit makes guessing impractical but there is no password. Chat is
+  lobby-only (not in the match HUD) and unmoderated beyond host *Remove*.
 - Relay protocol has no version field — bump `SNAPSHOT_KIND` / add one if the wire format changes.
 
 ## 7. Log

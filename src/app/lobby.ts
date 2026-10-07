@@ -3,11 +3,14 @@ import { fillBotStations } from '@engine/ai/matchSetup';
 import type { AiSkill, GameSettings } from '@engine/core/season';
 import { NetClient } from '@engine/net/netClient';
 import {
+  CHAT_HISTORY,
+  MAX_CHAT_LENGTH,
   SLOTS,
   slotAlliance,
   slotId,
   slotLabel,
   slotStation,
+  type ChatLine,
   type ClientMsg,
   type HostMsg,
   type LobbyPlayer,
@@ -16,7 +19,7 @@ import {
   type RobotSetup,
   type SlotId,
 } from '@engine/net/protocol';
-import { cleanName } from '@engine/net/relayProtocol';
+import { cleanName, cleanTitle, normalizeRoomCode, type RoomListing, type RoomMeta, type RoomVisibility } from '@engine/net/relayProtocol';
 import type { RobotConfig } from '@engine/robot/config';
 import { getSeason } from '@seasons/index';
 import { cloneConfig, footprint } from '@engine/robot/config';
@@ -60,7 +63,25 @@ export class LobbyController {
   wakeSeconds = 0;
   private waking: Promise<boolean> | null = null;
 
+  /** Public rooms from the relay (null until the first answer). */
+  rooms: RoomListing[] | null = null;
+  /** Visibility and name used for the next room this player creates. */
+  createVisibility: RoomVisibility = 'private';
+  createTitle = '';
+  /** Room code from an invite link (`?join=CODE`) that has not been used yet. */
+  invite: string | null = null;
+  /** Our connection dropped and is being resumed. */
+  reconnecting = false;
+  /** (Client) the host's connection dropped; waiting for them to return. */
+  hostAway = false;
+  private browseTimer: ReturnType<typeof setInterval> | null = null;
+  private browseMisses = 0;
+  private lastMeta = '';
+  private lastChatAt = new Map<string, number>();
+
   onChange: () => void = () => {};
+  /** Public room list changed (so the page can refresh just that list). */
+  onRooms: (rooms: RoomListing[]) => void = () => {};
   onStart: (setup: MatchSetup, role: 'host' | 'client') => void = () => {};
   onToLobby: () => void = () => {};
   onClosed: (reason: string) => void = () => {};
@@ -71,6 +92,37 @@ export class LobbyController {
   private autoStart: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
+    try {
+      const code = normalizeRoomCode(new URLSearchParams(location.search).get('join') ?? '');
+      if (code.length === 4) this.invite = code;
+    } catch {
+      /* no location (tests) */
+    }
+    this.client.on('rooms', ({ rooms }) => {
+      this.rooms = rooms;
+      this.onRooms(rooms);
+    });
+    this.client.on('reconnecting', () => {
+      this.reconnecting = true;
+      this.onChange();
+    });
+    this.client.on('reconnected', () => {
+      this.reconnecting = false;
+      this.hostAway = false;
+      if (this.isHost) {
+        this.lastMeta = '';
+        this.broadcastLobby();
+      } else this.onChange();
+    });
+    this.client.on('peer-back', () => this.broadcastLobby());
+    this.client.on('host-lost', () => {
+      this.hostAway = true;
+      this.onChange();
+    });
+    this.client.on('host-back', () => {
+      this.hostAway = false;
+      this.onChange();
+    });
     this.client.on('msg', ({ from, data }) => (this.client.isHost ? this.onClientMsg(from, data as ClientMsg) : this.onHostMsg(data as HostMsg)));
     this.client.on('peer-joined', ({ peerId, name }) => this.hostAddPlayer(peerId, name));
     this.client.on('peer-left', ({ peerId }) => this.hostRemovePlayer(peerId));
@@ -78,6 +130,10 @@ export class LobbyController {
       const was = this.status;
       this.status = 'idle';
       this.lobby = null;
+      this.reconnecting = false;
+      this.hostAway = false;
+      this.lastMeta = '';
+      this.lastChatAt.clear();
       this.choices.clear();
       this.lastSent = '';
       this.clearAutoStart();
@@ -95,31 +151,142 @@ export class LobbyController {
     return this.lobby?.players.find((p) => p.peerId === this.client.peerId) ?? null;
   }
 
-  async create(name: string): Promise<void> {
-    await this.connectThen(async () => {
-      await this.client.create(name);
-      const s = this.settings;
-      this.lobby = {
-        room: this.client.room,
-        hostId: this.client.peerId,
-        seasonId: s?.seasonId ?? '',
-        players: [{ peerId: this.client.peerId, name: cleanName(name), slot: null, team: s?.robot.teamNumber ?? 0, host: true }],
-        autoHumanPlayer: true,
-        manualAuto: false,
-        fillBots: true,
-        botDifficulty: 'normal',
-        inMatch: false,
-      };
-      if (s) this.applyChoice(this.client.peerId, { seasonId: s.seasonId, slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto });
-    });
+  /** Create a room (private unless `visibility` says otherwise). */
+  async create(name: string, visibility: RoomVisibility = this.createVisibility, title: string = this.createTitle): Promise<void> {
+    this.createVisibility = visibility;
+    this.createTitle = cleanTitle(title);
+    await this.connectThen(() => this.doCreate(name, visibility, this.createTitle));
   }
 
   async join(code: string, name: string): Promise<void> {
+    await this.connectThen(() => this.doJoin(code, name));
+  }
+
+  /**
+   * One click into a game: join the fullest open public lobby, or host a new public one if there is none.
+   */
+  async quickPlay(name: string): Promise<void> {
     await this.connectThen(async () => {
-      await this.client.join(code, name);
-      const s = this.settings;
-      this.syncMine(true, s ? slotId(s.alliance, s.station) : null);
+      const open = (await this.fetchRooms()).filter((r) => r.state === 'lobby' && r.players < r.max && r.drivers < r.seats);
+      // Prefer rooms that already have people in them.
+      open.sort((a, b) => b.players - a.players);
+      for (const r of open) {
+        try {
+          await this.doJoin(r.code, name);
+          return;
+        } catch {
+          /* filled up or closed since the list — try the next one */
+        }
+      }
+      await this.doCreate(name, 'public', this.createTitle);
     });
+  }
+
+  private async doCreate(name: string, visibility: RoomVisibility, title: string): Promise<void> {
+    const s = this.settings;
+    const season = s ? getSeason(s.seasonId) : null;
+    await this.client.create(name, { visibility, title, season: season ? `${season.year} ${season.name}` : '', drivers: 1, seats: SLOTS.length, state: 'lobby', bots: true });
+    this.rooms = null;
+    this.lastMeta = '';
+    this.lobby = {
+      room: this.client.room,
+      hostId: this.client.peerId,
+      visibility,
+      title,
+      chat: [],
+      seasonId: s?.seasonId ?? '',
+      players: [{ peerId: this.client.peerId, name: cleanName(name), slot: null, team: s?.robot.teamNumber ?? 0, host: true }],
+      autoHumanPlayer: true,
+      manualAuto: false,
+      fillBots: true,
+      botDifficulty: 'normal',
+      inMatch: false,
+    };
+    if (s) this.applyChoice(this.client.peerId, { seasonId: s.seasonId, slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto });
+  }
+
+  private async doJoin(code: string, name: string): Promise<void> {
+    await this.client.join(code, name);
+    this.rooms = null;
+    const s = this.settings;
+    this.syncMine(true, s ? slotId(s.alliance, s.station) : null);
+  }
+
+  /** Ask the relay for the public list and wait for the answer (empty if it doesn't come). */
+  private fetchRooms(): Promise<RoomListing[]> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        off();
+        resolve([]);
+      }, 3000);
+      const off = this.client.on('rooms', ({ rooms }) => {
+        clearTimeout(timer);
+        off();
+        resolve(rooms);
+      });
+      this.client.list();
+    });
+  }
+
+  /**
+   * Keep the public room list fresh while the Multiplayer page shows it. Opens an idle relay connection (reused
+   * by Create/Join, so they start instantly) and stops by itself once the list leaves the page.
+   */
+  browse(): void {
+    if (this.browseTimer || this.status !== 'idle') return;
+    const poll = async () => {
+      if (this.status === 'connecting') return;
+      if (this.status === 'lobby') return this.stopBrowse(false);
+      if (!document.querySelector('[data-mp="rooms"]')) {
+        if (++this.browseMisses >= 2) this.stopBrowse(true);
+        return;
+      }
+      this.browseMisses = 0;
+      try {
+        await this.client.ensureConnected(this.relayUrl);
+        this.client.list();
+      } catch {
+        if (this.rooms === null) this.onRooms([]);
+      }
+    };
+    this.browseTimer = setInterval(() => void poll(), 4000);
+    setTimeout(() => void poll(), 60); // after the page that called us is in the DOM
+  }
+
+  private stopBrowse(closeIdle: boolean): void {
+    if (this.browseTimer) clearInterval(this.browseTimer);
+    this.browseTimer = null;
+    this.browseMisses = 0;
+    if (closeIdle && this.status === 'idle' && !this.client.room) this.client.close();
+  }
+
+  /** The invite code to join automatically (clears it and tidies the address bar). */
+  takeInvite(): string | null {
+    const code = this.invite;
+    this.invite = null;
+    if (code) {
+      try {
+        const url = new URL(location.href);
+        url.searchParams.delete('join');
+        history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch {
+        /* ignore */
+      }
+    }
+    return code;
+  }
+
+  /** Shareable link that opens the site and joins this room. */
+  inviteLink(): string {
+    try {
+      const url = new URL(location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('join', this.lobby?.room ?? '');
+      return url.toString();
+    } catch {
+      return this.lobby?.room ?? '';
+    }
   }
 
   /**
@@ -163,15 +330,16 @@ export class LobbyController {
 
   private async connectThen(fn: () => Promise<void>): Promise<void> {
     this.error = '';
+    this.invite = null; // any explicit action replaces a pending invite
     this.status = 'connecting';
     this.onChange();
     try {
       if (this.serverState !== 'online' && !(await this.wake())) throw new Error('The multiplayer server did not respond. Try again in a moment.');
-      await this.client.connect(this.relayUrl);
+      await this.client.ensureConnected(this.relayUrl);
       await fn();
       this.status = 'lobby';
     } catch (e) {
-      this.client.close('Left the room');
+      if (this.client.room) this.client.close('Left the room');
       this.status = 'idle';
       this.error = (e as Error).message;
     }
@@ -206,6 +374,43 @@ export class LobbyController {
       const msg: ClientMsg = { t: 'lobby-set', seasonId: s.seasonId, slot, robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto };
       this.client.send(msg);
     }
+  }
+
+  /** Host: list the room in the public browser, or hide it behind its code. */
+  setVisibility(v: RoomVisibility): void {
+    if (!this.isHost || !this.lobby || this.lobby.visibility === v) return;
+    this.lobby.visibility = v;
+    this.createVisibility = v;
+    this.systemChat(v === 'public' ? 'Room is now public' : 'Room is now private');
+    this.broadcastLobby();
+  }
+
+  setTitle(title: string): void {
+    if (!this.isHost || !this.lobby) return;
+    const t = cleanTitle(title);
+    if (t === (this.lobby.title ?? '')) return;
+    this.lobby.title = t;
+    this.createTitle = t;
+    this.broadcastLobby();
+  }
+
+  /** Host: remove a player from the room (they can't rejoin while it exists). */
+  kick(peerId: string): void {
+    if (!this.isHost || !this.lobby || peerId === this.client.peerId) return;
+    const p = this.lobby.players.find((x) => x.peerId === peerId);
+    if (!p) return;
+    this.client.kick(peerId);
+    this.systemChat(`${p.name} was removed`);
+    // The relay confirms with peer-left, which drops them from the lobby; do it now so the UI doesn't lag.
+    this.hostRemovePlayer(peerId, false);
+  }
+
+  /** Say something in the lobby chat. */
+  sendChat(text: string): void {
+    const t = cleanChat(text);
+    if (!t || !this.lobby) return;
+    if (this.isHost) this.hostChat(this.client.peerId, t);
+    else this.client.send({ t: 'chat', text: t } satisfies ClientMsg);
   }
 
   setAutoHumanPlayer(v: boolean): void {
@@ -409,8 +614,58 @@ export class LobbyController {
 
   // ─────────────────────────── host side ───────────────────────────
 
+  private systemChat(text: string): void {
+    this.pushChat({ from: '', text });
+  }
+
+  private pushChat(line: ChatLine): void {
+    const lobby = this.lobby;
+    if (!lobby) return;
+    lobby.chat = [...(lobby.chat ?? []), line].slice(-CHAT_HISTORY);
+  }
+
+  private hostChat(from: string, raw: unknown): void {
+    const p = this.lobby?.players.find((x) => x.peerId === from);
+    const text = cleanChat(raw);
+    const now = Date.now();
+    if (!p || !text || now - (this.lastChatAt.get(from) ?? 0) < 400) return;
+    this.lastChatAt.set(from, now);
+    this.pushChat({ from: p.name, text, alliance: p.slot ? slotAlliance(p.slot) : undefined });
+    this.broadcastLobby();
+  }
+
+  /** Tell the relay what the public list should show (only when it changed). */
+  private pushMeta(): void {
+    const l = this.lobby;
+    if (!l || !this.isHost) return;
+    let season = '';
+    try {
+      const d = getSeason(l.seasonId);
+      season = `${d.year} ${d.name}`;
+    } catch {
+      /* unknown season */
+    }
+    const meta: RoomMeta = {
+      visibility: l.visibility ?? 'private',
+      title: l.title ?? '',
+      season,
+      drivers: l.players.filter((p) => p.slot).length,
+      seats: SLOTS.length,
+      state: l.inMatch ? 'match' : l.placing ? 'placing' : 'lobby',
+      bots: !!l.fillBots,
+    };
+    const key = JSON.stringify(meta);
+    if (key === this.lastMeta) return;
+    this.lastMeta = key;
+    this.client.setMeta(meta);
+  }
+
   private onClientMsg(from: string, m: ClientMsg): void {
     if (!this.lobby) return;
+    if (m?.t === 'chat') {
+      this.hostChat(from, m.text);
+      return;
+    }
     if (m?.t === 'place') {
       this.hostPlace(from, m.spot ?? null, !!m.ready);
       return;
@@ -453,14 +708,21 @@ export class LobbyController {
 
   private hostAddPlayer(peerId: string, name: string): void {
     if (!this.isHost || !this.lobby) return;
-    if (!this.lobby.players.some((p) => p.peerId === peerId)) this.lobby.players.push({ peerId, name, slot: null, team: 0, host: false });
+    if (!this.lobby.players.some((p) => p.peerId === peerId)) {
+      this.lobby.players.push({ peerId, name, slot: null, team: 0, host: false });
+      this.systemChat(`${name} joined`);
+    }
     this.broadcastLobby();
   }
 
-  private hostRemovePlayer(peerId: string): void {
+  private hostRemovePlayer(peerId: string, announce = true): void {
     if (!this.isHost || !this.lobby) return;
+    const gone = this.lobby.players.find((p) => p.peerId === peerId);
+    if (!gone) return;
+    if (announce) this.systemChat(`${gone.name} left`);
     this.lobby.players = this.lobby.players.filter((p) => p.peerId !== peerId);
     this.choices.delete(peerId);
+    this.lastChatAt.delete(peerId);
     this.broadcastLobby();
     this.scheduleAutoStart();
   }
@@ -473,6 +735,7 @@ export class LobbyController {
       const players = this.lobby.players.map(({ autoPlan, ...p }) => ({ ...p, ...(alliance && p.slot && slotAlliance(p.slot) === alliance ? { autoPlan } : {}) }));
       this.client.send({ t: 'lobby', lobby: { ...this.lobby, players } } satisfies HostMsg, viewer.peerId);
     }
+    this.pushMeta();
     this.onChange();
   }
 
@@ -502,4 +765,10 @@ export class LobbyController {
         break;
     }
   }
+}
+
+/** Chat text with control characters and markup stripped, capped at MAX_CHAT_LENGTH. */
+function cleanChat(raw: unknown): string {
+  // eslint-disable-next-line no-control-regex
+  return (typeof raw === 'string' ? raw : '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_CHAT_LENGTH);
 }

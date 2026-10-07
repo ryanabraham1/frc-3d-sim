@@ -1,7 +1,8 @@
 /**
  * Production server: serves the built static site (dist/) and the multiplayer relay at /ws on one port.
  *   npm run build && npm run serve          → http://localhost:8787
- * Env: PORT (default 8787), HOST (default 0.0.0.0), DIST (default ./dist).
+ * Env: PORT (default 8787), HOST (default 0.0.0.0), DIST (default ./dist),
+ * TRUST_PROXY (1 = read the client IP from X-Forwarded-For; defaults on when running on Render).
  * Runs directly with Node ≥ 22.18 / 23.6 (built-in TypeScript type stripping) — no build step.
  */
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -36,7 +37,7 @@ const server = createServer((req, res) => {
   if (url.pathname === '/healthz') {
     // CORS so a site hosted elsewhere (e.g. Vercel) can wake/check this relay.
     res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
-    res.end(`ok rooms=${relay.roomCount()}`);
+    res.end(`ok rooms=${relay.roomCount()} public=${relay.publicRoomCount()}`);
     return;
   }
   let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
@@ -59,7 +60,7 @@ const server = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
-const relay = attachRelay(server, { rejectOtherPaths: true, log: (m) => console.log(`[relay] ${m}`) });
+const relay = attachRelay(server, { rejectOtherPaths: true, trustProxy: (process.env.TRUST_PROXY ?? (process.env.RENDER ? '1' : '0')) === '1', log: (m) => console.log(`[relay] ${m}`) });
 
 server.listen(PORT, HOST, () => {
   console.log(`[serve] http://localhost:${PORT}  (relay at ws://localhost:${PORT}/ws)`);

@@ -79,6 +79,10 @@ export class HostSync {
     this.waitingFor = new Set(setup.peers.filter((p) => p !== client.peerId));
     this.offs.push(client.on('msg', ({ from, data }) => this.onMsg(from, data as ClientMsg)));
     this.offs.push(client.on('peer-left', ({ peerId }) => this.onPeerLeft(peerId)));
+    // A dropped driver's robot goes idle at once; when they resume they get a full keyframe.
+    this.offs.push(client.on('peer-lost', ({ peerId }) => this.onPeerLost(peerId)));
+    this.offs.push(client.on('peer-back', () => (this.forceKey = true)));
+    this.offs.push(client.on('reconnected', () => (this.forceKey = true)));
     this.readyTimer = setTimeout(() => this.fireReady(), readyTimeoutMs);
     queueMicrotask(() => this.checkReady());
   }
@@ -131,6 +135,11 @@ export class HostSync {
         this.forceKey = true;
         break;
     }
+  }
+
+  private onPeerLost(peerId: string): void {
+    const robot = this.robotForPeer(peerId);
+    if (robot) this.cmds.delete(robot.id);
   }
 
   private onPeerLeft(peerId: string): void {

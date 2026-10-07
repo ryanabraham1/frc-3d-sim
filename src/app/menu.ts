@@ -469,6 +469,9 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       name: el.querySelector<HTMLInputElement>('[data-mp="name"]')?.value,
       code: el.querySelector<HTMLInputElement>('[data-mp="code"]')?.value,
       url: el.querySelector<HTMLInputElement>('[data-mp="url"]')?.value,
+      title: el.querySelector<HTMLInputElement>('[data-mp="title"]')?.value,
+      'room-title': el.querySelector<HTMLInputElement>('[data-mp="room-title"]')?.value,
+      chat: el.querySelector<HTMLInputElement>('[data-mp="chat"]')?.value,
       focused: (document.activeElement as HTMLElement | null)?.dataset.mp,
     } : null;
     const titles: Record<Page, { h1: string; sub: string }> = {
@@ -517,7 +520,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     bind();
     mountPreviews();
     if (draft && page === 'multiplayer') {
-      for (const key of ['name', 'code', 'url'] as const) {
+      for (const key of ['name', 'code', 'url', 'title', 'room-title', 'chat'] as const) {
         const input = el.querySelector<HTMLInputElement>(`[data-mp="${key}"]`);
         if (input && draft[key] !== undefined) input.value = draft[key];
         if (input && draft.focused === key) input.focus();

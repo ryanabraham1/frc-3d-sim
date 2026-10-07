@@ -15,7 +15,7 @@ import { ClientSync } from '../net/clientSync';
 import { HostSync } from '../net/hostSync';
 import { Predictor } from '../net/prediction';
 import type { NetClient } from '../net/netClient';
-import type { HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
+import type { ClientMsg, HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
 import { slotId } from '../net/protocol';
 import { Ticker } from '../net/ticker';
 import { PhysicsWorld, RapierModule } from '../physics/world';
@@ -337,6 +337,20 @@ export class Game {
           if (this.state !== 'results') this.state = 'paused';
           this.hud.showModal('Disconnected', `<p>${reason}.</p>`, [{ label: 'Main menu', primary: true, onClick: () => this.callbacks.onExit() }]);
         }),
+      const netClient = this.net.client;
+      this.offs.push(
+        netClient.on('reconnecting', () => this.hud.toast('Connection lost — reconnecting…', 'warn')),
+        netClient.on('reconnected', () => {
+          this.hud.toast('Reconnected', 'info');
+          if (this.role === 'client') netClient.send({ t: 'resync' } satisfies ClientMsg);
+        }),
+        netClient.on('host-lost', () => this.hud.toast('The host lost connection — waiting for them to return…', 'warn')),
+        netClient.on('host-back', () => this.hud.toast('The host is back', 'info')),
+        netClient.on('peer-lost', ({ peerId }) => {
+          const rs = this.setup.robots.find((r) => r.peerId === peerId);
+          if (rs) this.hud.toast(`${rs.name} lost connection — waiting for them to return…`, 'warn');
+        }),
+      );
       );
     }
 

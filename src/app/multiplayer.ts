@@ -3,6 +3,8 @@ import type { AiSkill, GameSettings, SeasonDefinition } from '@engine/core/seaso
 import { SLOTS, slotAlliance, slotLabel, slotStation, type SlotId } from '@engine/net/protocol';
 import { footprint } from '@engine/robot/config';
 import { footprintPoly } from '@engine/startPose';
+import type { RoomListing, RoomVisibility } from '@engine/net/relayProtocol';
+import { MAX_TITLE_LENGTH } from '@engine/net/relayProtocol';
 import type { LobbyController } from './lobby';
 import { bindHeadingControls, bindPlacementMap, headingControls, placementMap, placementProblems, playerSpot, rotateSpot, syncHeadingControls, type MineState, type PlacedRobot } from './placement';
 import './multiplayer.css';
@@ -27,6 +29,41 @@ function saveName(n: string): void {
   }
 }
 
+const VIS_KEY = 'frc-sim-room-visibility';
+function loadVisibility(): RoomVisibility | null {
+  try {
+    const v = localStorage.getItem(VIS_KEY);
+    return v === 'public' || v === 'private' ? v : null;
+  } catch {
+    return null;
+  }
+}
+function saveVisibility(v: RoomVisibility): void {
+  try {
+    localStorage.setItem(VIS_KEY, v);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** The public room browser rows (also re-rendered in place when a fresh list arrives). */
+export function roomListHtml(rooms: RoomListing[] | null, busy: boolean): string {
+  if (rooms === null) return '<div class="rl-empty"><span class="mp-dot waking"></span>Looking for lobbies…</div>';
+  if (!rooms.length) return '<div class="rl-empty">No public lobbies right now.<br/>Create one, or press <b>Quick play</b> to host and wait for others.</div>';
+  return rooms
+    .map((r) => {
+      const full = r.players >= r.max;
+      const status = r.state === 'lobby' ? '<span class="rl-badge open">Open</span>' : r.state === 'placing' ? '<span class="rl-badge">Starting</span>' : '<span class="rl-badge live">In match</span>';
+      return `<div class="rl-row">
+        <div class="rl-main"><b>${esc(r.title)}</b><span>${esc(r.host)}${r.season ? ' · ' + esc(r.season) : ''}${r.bots ? ' · bots fill' : ''}</span></div>
+        <div class="rl-count" title="Drivers seated / players in room"><b>${r.drivers}/${r.seats}</b> drivers<span>${r.players} in room</span></div>
+        ${status}
+        <button class="bbtn ${r.state === 'lobby' && !full ? 'primary' : ''}" data-join-room="${esc(r.code)}" ${busy || full ? 'disabled' : ''}>${full ? 'Full' : r.state === 'match' ? 'Spectate' : 'Join'}</button>
+      </div>`;
+    })
+    .join('');
+}
+
 export interface MpPageCtx {
   s: GameSettings;
   season: SeasonDefinition;
@@ -35,12 +72,19 @@ export interface MpPageCtx {
   goto(page: 'play'): void;
 }
 
+let visibilityLoaded = false;
+
 export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; footer: string } {
   lobby.settings = ctx.s;
+  if (!visibilityLoaded) {
+    visibilityLoaded = true;
+    lobby.createVisibility = loadVisibility() ?? lobby.createVisibility;
+  }
   const err = lobby.error ? `<div class="mp-error">${esc(lobby.error)}</div>` : '';
 
   if (lobby.status !== 'lobby' || !lobby.lobby) {
     if (lobby.serverState === 'unknown') queueMicrotask(() => void lobby.wake());
+    if (lobby.serverState === 'online') queueMicrotask(() => lobby.browse());
     const busy = lobby.status === 'connecting';
     const server = {
       unknown: '<span class="mp-dot"></span>Checking server…',
@@ -48,6 +92,8 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
       online: '<span class="mp-dot on"></span>Server online',
       offline: '<span class="mp-dot off"></span>Server unreachable <button class="link" data-mp="retry">Retry</button>',
     }[lobby.serverState];
+    const vis = lobby.createVisibility;
+    const invite = lobby.invite;
     return {
       body: `
       <div class="mp-grid">
@@ -55,14 +101,20 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
           <div class="panel-head"><span>Play online</span></div>
           <div class="mp-pad">
             ${err}
+            ${invite ? `<div class="mp-invite">You were invited to room <b>${esc(invite)}</b>${loadName() ? ' — joining…' : ' — enter your name and press Join.'}</div>` : ''}
             <div class="mp-server">${server}</div>
             <label class="mp-field"><span>Your name</span><input data-mp="name" maxlength="24" placeholder="Driver name" value="${esc(loadName())}"/></label>
-            <div class="mp-row">
-              <button class="bbtn primary mp-grow" data-mp="create" ${busy ? 'disabled' : ''}>Create room</button>
+            <button class="bbtn primary mp-big" data-mp="quick" ${busy ? 'disabled' : ''}>Quick play<small>Join an open public lobby, or host one</small></button>
+            <div class="mp-or"><span>host your own</span></div>
+            <div class="seg mp-vis" role="group" aria-label="Room visibility">
+              <button class="opt ${vis === 'private' ? 'on' : ''}" data-vis="private">Private<small>Code or link only</small></button>
+              <button class="opt ${vis === 'public' ? 'on' : ''}" data-vis="public">Public<small>Listed for anyone</small></button>
             </div>
-            <div class="mp-or"><span>or join a friend</span></div>
+            <input class="mp-title" data-mp="title" maxlength="${MAX_TITLE_LENGTH}" placeholder="Room name (optional)" value="${esc(lobby.createTitle)}" aria-label="Room name"/>
+            <button class="bbtn mp-grow" data-mp="create" ${busy ? 'disabled' : ''}>Create ${vis} room</button>
+            <div class="mp-or"><span>or join with a code</span></div>
             <div class="mp-row">
-              <input class="mp-code" data-mp="code" aria-label="Room code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false"/>
+              <input class="mp-code" data-mp="code" aria-label="Room code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${esc(invite ?? '')}"/>
               <button class="bbtn mp-grow" data-mp="join" ${busy ? 'disabled' : ''}>Join</button>
             </div>
             ${busy ? `<div class="mp-hint">${lobby.serverState === 'waking' ? 'Connecting as soon as the server is up…' : 'Connecting…'}</div>` : ''}
@@ -72,15 +124,21 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
             </details>
           </div>
         </section>
-        <section class="panel mp-card">
-          <div class="panel-head"><span>How it works</span></div>
-          <ol class="mp-steps">
-            <li>One player <b>creates a room</b> and shares the 4-letter code.</li>
-            <li>Everyone picks a <b>driver station</b> (or spectates). Up to 6 drivers, 3 per alliance.</li>
-            <li>Your robot is the one set up on the <b>Single player</b> page — size, speed, launcher, climber and AUTO choice.</li>
-            <li>The host's computer runs the match; keep that tab open.</li>
-          </ol>
-        </section>
+        <div class="col">
+          <section class="panel mp-card">
+            <div class="panel-head"><span>Public lobbies</span><span class="dim" style="margin-left:auto">${lobby.serverState === 'online' ? 'updates live' : ''}</span></div>
+            <div class="rl-list" data-mp="rooms">${lobby.serverState === 'online' ? roomListHtml(lobby.rooms, busy) : '<div class="rl-empty">Connect to the server to see open lobbies.</div>'}</div>
+          </section>
+          <section class="panel mp-card">
+            <div class="panel-head"><span>How it works</span></div>
+            <ol class="mp-steps">
+              <li><b>Quick play</b> drops you into an open lobby, or hosts one if none exist.</li>
+              <li><b>Private</b> rooms are for friends: share the 4-letter code or an invite link.</li>
+              <li>Pick a <b>driver station</b> (or spectate). Up to 6 drivers, 3 per alliance; bots fill the rest.</li>
+              <li>The host's computer runs the match, so the host keeps their tab open. A dropped connection resumes on its own.</li>
+            </ol>
+          </section>
+        </div>
       </div>`,
       footer: `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button><span class="spacer"></span>`,
     };
@@ -104,14 +162,19 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   const r = ctx.s.robot;
   const routine = ctx.season.autoRoutines.find((x) => x.id === ctx.s.autoRoutine);
   const drivers = L.players.filter((p) => p.slot).length;
+  const isPublic = L.visibility === 'public';
 
   const body = `
     ${err}
     <div class="mp-room">
-      <div><div class="mp-room-label">Room code</div><div class="mp-room-code">${esc(L.room)}</div></div>
-      <button class="bbtn" data-mp="copy">Copy code</button>
-      <div class="mp-room-meta">${ctx.season.year} ${esc(ctx.season.name)} · ${L.players.length} player${L.players.length === 1 ? '' : 's'} · ${drivers} driving${L.inMatch ? ' · <b>match in progress</b>' : ''}</div>
+      <div><div class="mp-room-label">Room code · <span class="mp-vis-badge ${isPublic ? 'pub' : ''}">${isPublic ? 'Public' : 'Private'}</span></div><div class="mp-room-code">${esc(L.room)}</div></div>
+      <div class="mp-room-actions">
+        <button class="bbtn" data-mp="copy">Copy code</button>
+        <button class="bbtn" data-mp="copy-link">Copy invite link</button>
+      </div>
+      <div class="mp-room-meta">${L.title ? `<b>${esc(L.title)}</b> · ` : ''}${ctx.season.year} ${esc(ctx.season.name)} · ${L.players.length} player${L.players.length === 1 ? '' : 's'} · ${drivers} driving${L.inMatch ? ' · <b>match in progress</b>' : ''}</div>
     </div>
+    ${lobby.reconnecting ? '<div class="mp-error">Connection lost — reconnecting…</div>' : lobby.hostAway ? '<div class="mp-error">The host lost connection — waiting for them to return…</div>' : ''}
     <div class="mp-grid">
       <section class="panel">
         <div class="panel-head"><span>Driver stations</span></div>
@@ -124,6 +187,8 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
           ${me?.slot ? `<button class="opt" data-slot="">Spectate instead</button>` : ''}
         </div>
       </section>
+      ${peoplePanel(lobby, L)}
+      ${chatPanel(L)}
       <div class="col">
         <section class="panel">
           <div class="panel-head"><span>Your robot</span><button class="link" data-mp="edit">Edit on Single player page</button></div>
@@ -138,6 +203,14 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
         <section class="panel">
           <div class="panel-head"><span>Match options</span>${lobby.isHost ? '' : '<span class="dim" style="margin-left:auto">set by host</span>'}</div>
           <div class="mp-pad">
+            ${lobby.isHost ? `<div class="group"><div class="label">Who can find this room</div>
+              <div class="seg">
+                <button class="opt ${!isPublic ? 'on' : ''}" data-room-vis="private">Private</button>
+                <button class="opt ${isPublic ? 'on' : ''}" data-room-vis="public">Public</button>
+              </div>
+              <input class="mp-title" data-mp="room-title" maxlength="${MAX_TITLE_LENGTH}" placeholder="Room name shown in the public list" value="${esc(L.title ?? '')}" aria-label="Room name"/>
+              <div class="mp-hint">${isPublic ? 'Listed in the public lobby browser. Anyone can join.' : 'Hidden from the list. Players need the code or your invite link.'}</div>
+            </div>` : ''}
             <div class="group"><div class="label">AUTO control</div>
               <div class="seg">
                 <button class="opt ${L.manualAuto ? 'on' : ''}" data-auto-control="manual" ${lobby.isHost && !L.inMatch ? '' : 'disabled'}>Drive in AUTO</button>
@@ -170,6 +243,28 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
       ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>${L.manualAuto ? 'Set starting positions' : 'Plan autos &amp; positions'}</button>`
       : `<span class="mp-hint">${L.inMatch ? 'Match in progress — you’ll join the next one' : 'Waiting for the host to start…'}</span>`);
   return { body, footer };
+}
+
+function peoplePanel(lobby: LobbyController, L: NonNullable<LobbyController['lobby']>): string {
+  const rows = L.players
+    .map((p) => {
+      const mine = p.peerId === lobby.me?.peerId;
+      const seat = p.slot ? slotLabel(p.slot) : 'Spectating';
+      const kick = lobby.isHost && !mine ? `<button class="link mp-kick" data-kick="${esc(p.peerId)}" title="Remove from room">Remove</button>` : '';
+      return `<div class="mp-person"><b>${esc(p.name)}${p.host ? ' <i>host</i>' : ''}${mine ? ' <i>you</i>' : ''}</b><span>${seat}${p.team ? ' · Team ' + p.team : ''}</span>${kick}</div>`;
+    })
+    .join('');
+  return `<section class="panel"><div class="panel-head"><span>Players (${L.players.length})</span></div><div class="mp-people">${rows}</div></section>`;
+}
+
+function chatPanel(L: NonNullable<LobbyController['lobby']>): string {
+  const lines = (L.chat ?? [])
+    .map((c) => (c.from ? `<div class="mp-line"><b class="${c.alliance ?? ''}">${esc(c.from)}</b> ${esc(c.text)}</div>` : `<div class="mp-line sys">${esc(c.text)}</div>`))
+    .join('');
+  return `<section class="panel"><div class="panel-head"><span>Chat</span></div>
+    <div class="mp-chat-log" data-mp="chat-log">${lines || '<div class="mp-line sys">Say hi — coordinate stations and strategy here.</div>'}</div>
+    <div class="mp-chat-send"><input data-mp="chat" maxlength="200" placeholder="Message the room" autocomplete="off" aria-label="Chat message"/><button class="bbtn" data-mp="chat-send">Send</button></div>
+  </section>`;
 }
 
 // ───────────────────────────── placement phase ─────────────────────────────
@@ -296,8 +391,38 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
     };
   const retry = q('retry');
   if (retry) retry.onclick = () => void lobby.wake(true);
+  const title = q<HTMLInputElement>('title');
+  if (title) title.oninput = () => (lobby.createTitle = title.value);
+  el.querySelectorAll<HTMLElement>('[data-vis]').forEach(
+    (b) =>
+      (b.onclick = () => {
+        lobby.createVisibility = b.dataset.vis as RoomVisibility;
+        saveVisibility(lobby.createVisibility);
+        ctx.rerender();
+      }),
+  );
   const create = q('create');
-  if (create) create.onclick = () => void lobby.create(name());
+  if (create) create.onclick = () => void lobby.create(name(), lobby.createVisibility, title?.value ?? '');
+  const quick = q('quick');
+  if (quick) quick.onclick = () => void lobby.quickPlay(name());
+  const bindRooms = (box: HTMLElement) =>
+    box.querySelectorAll<HTMLElement>('[data-join-room]').forEach((b) => (b.onclick = () => void lobby.join(b.dataset.joinRoom!, name())));
+  const roomsBox = q('rooms');
+  if (roomsBox) {
+    bindRooms(roomsBox);
+    // A fresh list replaces just the rows, so typing in the form isn't disturbed.
+    lobby.onRooms = (rooms) => {
+      const box = el.querySelector<HTMLElement>('[data-mp="rooms"]');
+      if (!box || !el.isConnected) return;
+      box.innerHTML = roomListHtml(rooms, lobby.status === 'connecting');
+      bindRooms(box);
+    };
+  }
+  // Invite link (?join=CODE): join straight away when we already know the player's name.
+  if (lobby.invite && lobby.status === 'idle' && loadName()) {
+    const code = lobby.takeInvite()!;
+    void lobby.join(code, loadName());
+  }
   const code = q<HTMLInputElement>('code');
   const join = q('join');
   if (join && code) {
@@ -323,12 +448,37 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   el.querySelectorAll<HTMLElement>('[data-auto-control]').forEach(b => b.onclick = () => lobby.setManualAuto(b.dataset.autoControl === 'manual'));
   el.querySelectorAll<HTMLElement>('[data-bots]').forEach(b => b.onclick = () => lobby.setBots(b.dataset.bots === '1'));
   el.querySelectorAll<HTMLElement>('[data-bot-skill]').forEach(b => b.onclick = () => lobby.setBots(true, b.dataset.botSkill as AiSkill));
-  const copy = q('copy');
-  if (copy)
-    copy.onclick = () => {
-      void navigator.clipboard?.writeText(lobby.lobby?.room ?? '');
-      copy.textContent = 'Copied';
+  const copyTo = (btn: HTMLElement | null, text: () => string) => {
+    if (btn)
+      btn.onclick = () => {
+        void navigator.clipboard?.writeText(text());
+        btn.textContent = 'Copied';
+      };
+  };
+  copyTo(q('copy'), () => lobby.lobby?.room ?? '');
+  copyTo(q('copy-link'), () => lobby.inviteLink());
+  el.querySelectorAll<HTMLElement>('[data-room-vis]').forEach((b) => (b.onclick = () => lobby.setVisibility(b.dataset.roomVis as RoomVisibility)));
+  const roomTitle = q<HTMLInputElement>('room-title');
+  if (roomTitle) roomTitle.onchange = () => lobby.setTitle(roomTitle.value);
+  el.querySelectorAll<HTMLElement>('[data-kick]').forEach((b) => (b.onclick = () => lobby.kick(b.dataset.kick!)));
+  const chat = q<HTMLInputElement>('chat');
+  if (chat) {
+    const say = () => {
+      const text = chat.value.trim();
+      if (!text) return;
+      chat.value = '';
+      lobby.sendChat(text);
     };
+    chat.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        say();
+      }
+    };
+    q('chat-send')!.onclick = say;
+  }
+  const log = q('chat-log');
+  if (log) log.scrollTop = log.scrollHeight;
   const edit = q('edit');
   if (edit) edit.onclick = () => ctx.goto('play');
   const leave = q('leave');
