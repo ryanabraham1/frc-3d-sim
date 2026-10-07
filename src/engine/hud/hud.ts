@@ -35,13 +35,15 @@ export class Hud {
     this.root.className = 'hud';
     this.root.innerHTML = `
       <div class="hud-top">
-        <div class="hud-alliance red"><div class="hud-score" data-r="rs">0</div><div class="hud-slot" data-r="rslot"></div></div>
-        <div class="hud-center">
-          <div class="hud-period" data-r="period">PRE-MATCH</div>
-          <div class="hud-timer" data-r="timer">0:20</div>
-          <div class="hud-slot" data-r="cslot"></div>
-        </div>
-        <div class="hud-alliance blue"><div class="hud-score" data-r="bs">0</div><div class="hud-slot" data-r="bslot"></div></div>
+        <div class="hud-head"><div class="hud-period" data-r="period">PRE-MATCH</div></div>
+        <div class="hud-name blue">BLUE ALLIANCE</div>
+        <div class="hud-score blue" data-r="bs">0</div>
+        <div class="hud-center"><div class="hud-timer" data-r="timer">0:20</div></div>
+        <div class="hud-score red" data-r="rs">0</div>
+        <div class="hud-name red">RED ALLIANCE</div>
+        <div class="hud-sub blue hud-slot" data-r="bslot"></div>
+        <div class="hud-sub center hud-slot" data-r="cslot"></div>
+        <div class="hud-sub red hud-slot" data-r="rslot"></div>
       </div>
       <div class="hud-banner" data-r="banner"></div>
       <div class="hud-toasts" data-r="toasts"></div>
