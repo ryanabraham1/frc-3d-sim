@@ -2225,6 +2225,7 @@ export class Robot {
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
   syncVisual(frameDt?: number): void {
+    this.bay?.settle();
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
     const dt = frameDt ?? (this.lastSync < 0 ? 0 : clamp(now - this.lastSync, 0, 0.1));
     this.updateHopperEnvelope();

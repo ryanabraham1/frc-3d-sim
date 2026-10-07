@@ -321,12 +321,21 @@ export class StowBay {
     // A ball that is over a wall's top edge (open hopper) is an ordinary field ball again. A ball that is merely outside
     // the walls below the rim was left there by a wall that moved in (retracting extension, lowered roof): it is pushed
     // back inside, never dropped.
+    this.contain(cav, p, r);
+  }
+
+  /** Called once per rendered frame, after the physics steps: undo any pop through a wall before it is drawn. */
+  settle(): void {
+    if (this.cavity && this.stowed.size) { this.frame(); this.contain(this.cavity, new THREE.Vector3(), this.radius); }
+  }
+
+  private contain(cav: Cavity, p: THREE.Vector3, r: number): void {
     const cx = (cav.min.x + cav.max.x) / 2, cz = (cav.min.z + cav.max.z) / 2;
     const hx = (cav.max.x - cav.min.x) / 2 - r, hz = (cav.max.z - cav.min.z) / 2 - r;
     for (const i of [...this.stowed]) {
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
-      const outX = Math.abs(p.x - cx) > hx + r * 1.15, outZ = Math.abs(p.z - cz) > hz + r * 1.15;
+      const outX = Math.abs(p.x - cx) > hx + r * 1.05, outZ = Math.abs(p.z - cz) > hz + r * 1.05;
       const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > cav.max.y + (cav.open ? 0.6 : 0.02);
       if (!outX && !outZ && !outY) continue;
       if (cav.open && (outX || outZ) && p.y > cav.max.y - r * 0.5) {
