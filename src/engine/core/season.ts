@@ -55,7 +55,12 @@ export interface GameSettings {
   aiRadio?: 'all' | 'team' | 'off';
 }
 
-export type AiSkill = 'easy' | 'normal' | 'hard' | 'elite' | 'einstein';
+export type AiSkill = 'normal' | 'hard' | 'einstein';
+/** Saved settings and lobbies from before Easy and Elite were removed: Easy plays as Normal, Elite as Hard. */
+export function normalizeSkill(s: string | undefined | null): AiSkill | undefined {
+  if (s === undefined || s === null) return undefined;
+  return s === 'easy' ? 'normal' : s === 'elite' ? 'hard' : s === 'normal' || s === 'hard' || s === 'einstein' ? s : 'normal';
+}
 
 /** What a player tells an AI alliance. Unset fields fall back to the season's own plan ('auto'). */
 export interface AiTeamOrders {

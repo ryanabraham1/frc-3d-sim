@@ -9,8 +9,8 @@ import { aiRobotChoices } from './robots';
  * AI robots drive the same robots players get: no skill-based speed or accuracy edge. Skill is how they play
  * (pace, planning, defense on the driver), not better hardware. Kept as tables so tests and benchmarks share them.
  */
-export const AI_SPEED: Record<AiSkill, number> = { easy: 1, normal: 1, hard: 1, elite: 1, einstein: 1 };
-export const AI_AIM: Record<AiSkill, number> = { easy: 1, normal: 1, hard: 1, elite: 1, einstein: 1 };
+export const AI_SPEED: Record<AiSkill, number> = { normal: 1, hard: 1, einstein: 1 };
+export const AI_AIM: Record<AiSkill, number> = { normal: 1, hard: 1, einstein: 1 };
 
 /** Fill unoccupied driver stations without changing any human robot or network peer. */
 export function fillBotStations(setup: MatchSetup, s: GameSettings, season: SeasonDefinition): void {

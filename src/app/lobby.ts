@@ -222,7 +222,7 @@ export class LobbyController {
 
   setBots(fill: boolean, difficulty: AiSkill = this.lobby?.botDifficulty ?? 'normal'): void {
     if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.placing) return;
-    if (!['easy', 'normal', 'hard', 'elite', 'einstein'].includes(difficulty)) return;
+    if (!['normal', 'hard', 'einstein'].includes(difficulty)) return;
     this.lobby.fillBots = fill;
     this.lobby.botDifficulty = difficulty;
     this.broadcastLobby();

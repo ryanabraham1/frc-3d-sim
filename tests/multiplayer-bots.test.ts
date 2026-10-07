@@ -57,7 +57,7 @@ describe.each(SEASONS)('$name multiplayer bots', season => {
     expect(setup.botDifficulty).toBeUndefined();
     lobby.backToLobby();
     vi.spyOn(lobby, 'isHost', 'get').mockReturnValue(false);
-    lobby.setBots(true, 'elite');
+    lobby.setBots(true, 'einstein');
     expect(lobby.lobby!.fillBots).toBe(false);
   });
   it.each([true, false])('applies the host AUTO mode (%s) to every human and broadcasts it', manual => {

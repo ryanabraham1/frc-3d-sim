@@ -110,7 +110,7 @@ export const crescendo2024: SeasonDefinition = {
     if (role && byRole[role]) return byRole[role];
     // Benchmarked as full alliances (seeds 5-7, 2026-10-04): 2056 192, 1323 175, 4522 175, 4414 169, 1690 134. Hard fields
     // the two best; Normal the rest. Seeds 5-6: Hard 191/203, Normal 163/169.
-    const lineups: Record<string, string[]> = { easy: ['pivot', 'lowkey-2056', 'pivot'], normal: ['tidepod-4414', 'axl-4522', 'doppler-1690'], hard: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'], elite: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'], einstein: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'] };
+    const lineups: Record<string, string[]> = { normal: ['tidepod-4414', 'axl-4522', 'doppler-1690'], hard: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'], einstein: ['lowkey-2056', 'madtown-2024-1323', 'lowkey-2056'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   aiCanPlay: (c) => !c.launcher.turret && c.intake.ground !== false,

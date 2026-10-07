@@ -118,11 +118,11 @@ export const rebuilt2026: SeasonDefinition = {
     if (role && byRole[role]) return byRole[role];
     // Real 2026 robots; station 3 (the Hard defender) gets 1690's spiked-tread pusher.
     // Benchmarked (seeds 5-7): Hard averaged 1040 points, Normal 515.
-    const lineups: Record<string, string[]> = { easy: ['outpost', 'fixed', 'turret'], normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], elite: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'] };
+    const lineups: Record<string, string[]> = { normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   botRobotConfig(difficulty) {
-    return rebuiltRobotPresets().find((p) => p.id === (difficulty === 'easy' ? 'outpost' : difficulty === 'normal' ? 'fixed' : 'turret'))!.config;
+    return rebuiltRobotPresets().find((p) => p.id === (difficulty === 'normal' ? 'fixed' : 'turret'))!.config;
   },
   createBotPilot(ctx, rules, robot) { return createRebuiltBot(ctx, rules as RebuiltRules, robot); },
   aiStrategies: REBUILT_AI_STRATEGIES,

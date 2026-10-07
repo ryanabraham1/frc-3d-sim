@@ -97,12 +97,12 @@ export const reefscape2025: SeasonDefinition = {
     if (role && byRole[role]) return byRole[role];
     // Real 2025 robots (generic archetypes on Easy). As full alliances (seeds 5-7, 2026-10-04) the real robots score
     // 256-267 once floor-pickup robots take CORAL off the carpet; 1778 200. Hard's lineup also wins AUTO (56 vs 42-49).
-    const lineups: Record<string, string[]> = { easy: ['trough', 'mid-elevator', 'funnel-l4'], normal: ['subzero-1778', 'lightning-2056', 'whisper-1690'], hard: ['spectre-2910', 'undertow-254', 'firefly-118'], elite: ['spectre-2910', 'undertow-254', 'firefly-118'], einstein: ['spectre-2910', 'undertow-254', 'firefly-118'] };
+    const lineups: Record<string, string[]> = { normal: ['subzero-1778', 'lightning-2056', 'whisper-1690'], hard: ['spectre-2910', 'undertow-254', 'firefly-118'], einstein: ['spectre-2910', 'undertow-254', 'firefly-118'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   aiStrategies: REEFSCAPE_AI_STRATEGIES,
   aiRoles: REEFSCAPE_AI_ROLES,
-  botRobotConfig(difficulty) { return difficulty === 'hard' || difficulty === 'elite' || difficulty === 'einstein' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
+  botRobotConfig(difficulty) { return difficulty !== 'normal' ? reefscapeRobotPresets().find((p) => p.id === 'all-rounder')!.config : this.robotDefaults; },
   createBotPilot(ctx, rules, robot) { return createReefscapeBot(ctx, rules as ReefscapeRules, robot); },
   createHud(ctx, rules, slots) { return new ReefscapeHud(ctx, rules as ReefscapeRules, slots); },
   touchLabels: { shoot: 'CORAL', pass: 'ALGAE' },

@@ -7,7 +7,7 @@ const season = SEASONS.find((s) => s.id === '2026-rebuilt')!;
 const CLIMB = new Set(['depot-climb', 'shoot-climb']);
 
 it('2026 AI alliances give the AUTO climb only to robots that can climb, at most two each', () => {
-  for (const skill of ['easy', 'normal', 'hard', 'elite', 'einstein'] as const) {
+  for (const skill of ['normal', 'hard', 'einstein'] as const) {
     const setup = localSetup({ ...defaultSettings(season), aiDifficulty: skill, aiAlly: { skill } }, season);
     for (const alliance of ['blue', 'red'] as const) {
       const bots = setup.robots.filter((r) => r.alliance === alliance && r.id !== 0);

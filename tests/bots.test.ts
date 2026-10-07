@@ -43,7 +43,7 @@ describe.each(SEASONS)('$name AI', (season) => {
   it('difficulty changes opponents (lineup and skill) while preserving teammates and player', () => {
     const settings = defaultSettings(season);
     const same = Object.fromEntries([1, 2, 3].map((k) => [k, season.robotPresets![0].id]));
-    const easy = localSetup({ ...settings, aiDifficulty: 'easy', aiOpponent: { archetypes: same } }, season);
+    const easy = localSetup({ ...settings, aiDifficulty: 'normal', aiOpponent: { archetypes: same } }, season);
     const hard = localSetup({ ...settings, aiDifficulty: 'hard', aiOpponent: { archetypes: same } }, season);
     const enemy = easy.robots.findIndex((r) => r.alliance !== settings.alliance);
     // Difficulty is how the AI plays, never better hardware: the same robot has the same stats at every skill.
@@ -263,7 +263,7 @@ it('teammates follow the player’s orders and every season offers strategies an
     expect(season.aiStrategies!.length).toBeGreaterThan(2);
     expect(season.aiRoles!.length).toBeGreaterThan(1);
     const preset = season.robotPresets!.at(-1)!;
-    const settings = { ...defaultSettings(season), aiAlly: { skill: 'elite' as const, archetypes: { 1: preset.id, 3: preset.id } } };
+    const settings = { ...defaultSettings(season), aiAlly: { skill: 'einstein' as const, archetypes: { 1: preset.id, 3: preset.id } } };
     const elite = localSetup(settings, season), normal = localSetup({ ...settings, aiAlly: { archetypes: { 1: preset.id, 3: preset.id } } }, season);
     // AI robots get the same hardware players do: skill changes how they play, not the robot.
     expect(elite.robots[1].config.maxSpeed).toBe(normal.robots[1].config.maxSpeed);

@@ -152,7 +152,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
               </div>
               <div class="mp-hint">For duos against bots, choose two stations on the same alliance. Bots fill the other stations when the match starts.</div>
             </div>
-            ${L.fillBots ? `<div class="group"><div class="label">Bot difficulty</div><div class="seg">${(['easy', 'normal', 'hard', 'elite', 'einstein'] as const).map(skill => `<button class="opt ${(L.botDifficulty ?? 'normal') === skill ? 'on' : ''}" data-bot-skill="${skill}" ${lobby.isHost ? '' : 'disabled'}>${skill[0].toUpperCase() + skill.slice(1)}</button>`).join('')}</div></div>` : ''}
+            ${L.fillBots ? `<div class="group"><div class="label">Bot difficulty</div><div class="seg">${(['normal', 'hard', 'einstein'] as const).map(skill => `<button class="opt ${(L.botDifficulty ?? 'normal') === skill ? 'on' : ''}" data-bot-skill="${skill}" ${lobby.isHost ? '' : 'disabled'}>${skill[0].toUpperCase() + skill.slice(1)}</button>`).join('')}</div></div>` : ''}
             <div class="group"><div class="label">Human players</div>
               <div class="seg">
                 <button class="opt ${L.autoHumanPlayer ? 'on' : ''}" data-hp="1" ${lobby.isHost ? '' : 'disabled'}>Automatic</button>

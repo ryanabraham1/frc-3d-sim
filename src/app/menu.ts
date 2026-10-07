@@ -1,6 +1,6 @@
 import { autoPlanner, bindAutoPlanner, loadAutoPlan, autoPlannerDragging } from './autoPlanner';
 import type { CameraMode } from '@engine/camera/cameras';
-import type { GameSettings, SeasonDefinition } from '@engine/core/season';
+import { normalizeSkill, type GameSettings, type SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { ACTIONS, codeLabel, keybinds, SLOTS, type ActionId } from '@engine/input/keybinds';
 import { cloneConfig, DEFAULT_WHEEL_COF, footprint, RobotConfig } from '@engine/robot/config';
@@ -26,7 +26,13 @@ type PlayTab = 'match' | 'ai' | 'robot';
 function load(): Partial<GameSettings> | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Partial<GameSettings>) : null;
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as Partial<GameSettings>;
+    // Easy and Elite no longer exist: Easy plays as Normal, Elite as Hard.
+    if (saved.aiDifficulty) saved.aiDifficulty = normalizeSkill(saved.aiDifficulty);
+    if (saved.aiAlly?.skill) saved.aiAlly.skill = normalizeSkill(saved.aiAlly.skill);
+    if (saved.aiOpponent?.skill) saved.aiOpponent.skill = normalizeSkill(saved.aiOpponent.skill);
+    return saved;
   } catch {
     return null;
   }
@@ -250,14 +256,12 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     s.startSpot = checkStartSpot(area, fit, fp.length, fp.width).ok ? fit : null;
   };
 
-  const SKILLS = ['easy', 'normal', 'hard', 'elite', 'einstein'] as const;
+  const SKILLS = ['normal', 'hard', 'einstein'] as const;
   const skillLabel = (d: string) => d[0].toUpperCase() + d.slice(1);
   const skillHint: Record<string, string> = {
-    easy: 'Slower driving, looser aim, simple cycles without the alliance plan.',
     normal: 'Runs the alliance plan and strategy switching at a moderate pace.',
-    hard: 'Competitive real-team robots driven at full speed with the full alliance plan and endgame climbs.',
-    elite: 'Hard plus the fastest re-planning: plays the strongest plan the benchmarks found.',
-    einstein: 'Championship level: Elite play, and the nearest opponent hunts you down whenever you are loaded and about to score.',
+    hard: 'Competitive real-team robots driven at full speed with the full alliance plan, fast re-planning and endgame climbs.',
+    einstein: 'Championship level: Hard play, and the nearest opponent hunts you down whenever you are loaded and about to score.',
   };
   /** Opponent difficulty, then your teammates: skill, alliance strategy, and a role per driver station (yours included). */
   const aiGroups = () => {

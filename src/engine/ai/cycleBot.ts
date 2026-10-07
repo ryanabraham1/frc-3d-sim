@@ -45,11 +45,10 @@ export class CycleBot implements AutoPilot {
   /** Shared alliance brain: roles, plan blackboard, rescues and radio. */
   readonly team: TeamBrain;
   readonly skill: AiSkill;
-  /** Hard or Elite: competitive builds and the most aggressive plan. */
+  /** Hard or Einstein: competitive builds and the most aggressive plan. */
   readonly hard: boolean;
   /** Normal and above: runs the alliance plan (Easy just cycles). */
   readonly smart: boolean;
-  readonly elite: boolean;
   /** Einstein: defends the human driver when they're about to score (see the season bots). */
   readonly hunter: boolean;
 
@@ -59,8 +58,7 @@ export class CycleBot implements AutoPilot {
     this.previous = robot.pose;
     this.team = TeamBrain.for(ctx, robot.alliance);
     this.skill = this.team.skill;
-    this.hard = this.skill === 'hard' || this.skill === 'elite' || this.skill === 'einstein';
-    this.elite = this.skill === 'elite' || this.skill === 'einstein';
+    this.hard = this.skill !== 'normal';
     this.hunter = !!SKILL[this.skill].hunter;
     this.smart = SKILL[this.skill].smart;
     this.pace = SKILL[this.skill].pace;
