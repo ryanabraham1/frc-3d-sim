@@ -68,8 +68,8 @@ describe('elo', () => {
   });
 
   it('hides the rank until placement is done', () => {
-    expect(visibleRank(1500, 2)).toBeNull();
-    expect(visibleRank(1500, 5)!.label).toBe('Champion I');
+    expect(visibleRank(1300, 2)).toBeNull();
+    expect(visibleRank(1300, 5)!.label).toBe('Champion III');
   });
 
   it('maps ratings onto the ladder with divisions', () => {
@@ -79,11 +79,11 @@ describe('elo', () => {
     expect(rankFor(950).label).toBe('Gear II');
     expect(rankFor(1049).label).toBe('Gear III');
     expect(rankFor(1050).label).toBe('Piston I');
-    expect(rankFor(100).label).toBe('Rookie');
-    expect(rankFor(749).label).toBe('Rookie');
+    expect(rankFor(1200).label).toBe('Champion I');
     expect(rankFor(750).label).toBe('Bolt I');
-    expect(rankFor(1650).label).toBe('Apex');
-    expect(rankFor(1900).points).toBe(250);
+    expect(rankFor(100).label).toBe('Bolt I'); // the floor of the ladder
+    expect(rankFor(1350).label).toBe('Apex');
+    expect(rankFor(1600).points).toBe(250);
   });
 
   it('reports progress and the next rank', () => {
@@ -91,14 +91,15 @@ describe('elo', () => {
     expect(r).toMatchObject({ points: 25, next: 'Gear III' });
     expect(r.progress).toBeCloseTo(0.5);
     expect(rankFor(1040).next).toBe('Piston I');
-    expect(rankFor(1640).next).toBe('Apex');
+    expect(rankFor(1340).next).toBe('Apex');
     expect(rankFor(2000).next).toBeNull();
+    expect(rankFor(100).progress).toBe(0);
   });
 
   it('orders ranks so promotions compare higher', () => {
-    const ords = [0, 750, 800, 900, 1049, 1050, 1500, 1649, 1650].map((r) => rankFor(r).ordinal);
-    expect(ords).toEqual([...ords].sort((a, b) => a - b));
-    expect(new Set(ords).size).toBe(ords.length);
+    const ords = [0, 750, 800, 900, 1049, 1050, 1200, 1349, 1350].map((r) => rankFor(r).ordinal);
+    expect(ords.slice(1)).toEqual(ords.slice(1).sort((a, b) => a - b));
+    expect(new Set(ords.slice(1)).size).toBe(ords.length - 1);
   });
 
   it('applies changes to a stored record', () => {

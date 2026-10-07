@@ -22,19 +22,16 @@ Each mode has its own Elo. Everything is layered on the multiplayer relay ([MULT
 
 ## Rank ladder
 
-Eight tiers, each with three divisions (I–III, 50 rating points apiece) except the open-ended ends. A new player (1000) starts at
-Gear III. Defined in `rankFor` (`src/engine/net/ranked.ts`), drawn by `src/app/rankEmblem.ts`.
+Five tiers, each with three divisions (I–III, 50 rating points apiece) except open-ended Apex. A new player (1000) starts at
+Gear III; anything below 750 is Bolt I. Defined in `rankFor` (`src/engine/net/ranked.ts`), drawn by `src/app/rankEmblem.ts`.
 
 | Tier | From | Emblem |
 |---|---|---|
-| Rookie | 0 | hex nut |
-| Bolt | 750 | lightning bolt |
-| Gear | 900 | gear |
-| Piston | 1050 | piston (glow) |
-| Servo | 1200 | dial + wings |
-| Titan | 1350 | shield + wings |
-| Champion | 1500 | star + wings + crown |
-| Apex | 1650 | burst + rotating rays (no divisions; shows points over the line) |
+| Bolt | 750 | notched shield, lightning bolt |
+| Gear | 900 | stepped plate, gear |
+| Piston | 1050 | winged crest, piston (glow) |
+| Champion | 1200 | spiked crown, star |
+| Apex | 1350 | swept blades, burst + rotating rays (no divisions; shows points over the line) |
 
 Emblems are inline SVG with a light sweep, a glow that pulses from Piston up, and a pop-in; a rank-up shows a particle burst on the
 Ranked page (`prefers-reduced-motion` turns it all off). Placement matches (first 5) show an unranked badge and a progress bar.

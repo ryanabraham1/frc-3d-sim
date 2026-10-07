@@ -1,7 +1,7 @@
 import { PLACEMENT_GAMES, rankFor, type RankInfo, type TierId } from '@engine/net/ranked';
 
 /**
- * Rank emblems: inline SVG badges, one per tier (nut, bolt, gear, piston, servo, shield, star, flame) that grow
+ * Rank emblems: inline SVG badges, one per tier (bolt, gear, piston, star, burst) that grow
  * more elaborate up the ladder, with three pips for the division. Animation lives in multiplayer.css
  * (.rk-emblem …): a light sweep, a glow that pulses on the top tiers, rotating rays on Apex and a pop-in.
  */
@@ -37,14 +37,11 @@ function sym(right: [number, number][]): [number, number][] {
   return [...right.map(([dx, y]) => [CX + dx, y] as [number, number]), ...left.map(([dx, y]) => [CX + dx, y] as [number, number])];
 }
 
-/** One distinct outline per tier: plain shield → stepped plate → winged crest → gem → spiked crown → radiant burst. */
+/** One distinct outline per tier: notched shield → stepped plate → winged crest → spiked crown → radiant burst. */
 const SILHOUETTE: Record<TierId, [number, number][]> = {
-  rookie: [[0, 12], [32, 20], [34, 58], [20, 90], [0, 104]],
   bolt: [[0, 10], [16, 16], [36, 10], [38, 56], [24, 88], [0, 106]],
   gear: [[0, 8], [20, 8], [28, 18], [42, 18], [42, 52], [34, 60], [34, 74], [18, 96], [0, 108]],
   piston: [[0, 2], [12, 14], [22, 6], [36, 18], [62, 10], [52, 36], [40, 46], [42, 64], [22, 94], [0, 110]],
-  servo: [[0, 6], [30, 16], [36, 38], [56, 26], [50, 66], [32, 88], [0, 112]],
-  titan: [[0, 0], [24, 22], [48, 46], [26, 86], [0, 116]],
   champion: [[0, 0], [8, 18], [17, 3], [27, 24], [42, 10], [43, 42], [56, 38], [46, 74], [24, 98], [0, 112]],
   apex: [[0, -4], [10, 14], [22, 2], [30, 24], [60, 4], [52, 38], [64, 60], [44, 82], [24, 100], [0, 118]],
 };
@@ -53,8 +50,6 @@ const SILHOUETTE: Record<TierId, [number, number][]> = {
 function motif(id: TierId, fill: string, ink: string): string {
   const g = (inner: string, y = 0) => `<g transform="translate(${CX} ${CY + y}) scale(.62) translate(${-CX} ${-CY})">${inner}</g>`;
   switch (id) {
-    case 'rookie':
-      return g(`<polygon points="${pts(Array.from({ length: 6 }, (_, i) => polar(20, -90 + i * 60)))}" fill="${fill}"/><circle cx="${CX}" cy="${CY}" r="8" fill="${ink}"/>`);
     case 'bolt':
       return g(`<polygon points="66,30 46,60 57,60 51,88 74,52 62,52" fill="${fill}"/>`);
     case 'gear': {
@@ -69,10 +64,6 @@ function motif(id: TierId, fill: string, ink: string): string {
     }
     case 'piston':
       return g(`<rect x="52" y="30" width="16" height="28" rx="2" fill="${fill}"/><rect x="40" y="52" width="40" height="26" rx="6" fill="${fill}"/><rect x="45" y="60" width="30" height="3" fill="${ink}"/><rect x="45" y="67" width="30" height="3" fill="${ink}"/>`);
-    case 'servo':
-      return g(`<circle cx="${CX}" cy="${CY}" r="25" fill="${fill}"/><circle cx="${CX}" cy="${CY}" r="19" fill="${ink}"/><polygon points="${CX - 3},${CY + 4} ${CX + 15},${CY - 16} ${CX + 4},${CY + 12}" fill="${fill}"/>`);
-    case 'titan':
-      return g(`<path d="M${CX - 22} ${CY - 20} L${CX} ${CY - 6} L${CX + 22} ${CY - 20} L${CX + 22} ${CY - 4} L${CX} ${CY + 14} L${CX - 22} ${CY - 4}Z" fill="${fill}"/><path d="M${CX - 22} ${CY + 2} L${CX} ${CY + 20} L${CX + 22} ${CY + 2} L${CX + 22} ${CY + 14} L${CX} ${CY + 32} L${CX - 22} ${CY + 14}Z" fill="${fill}"/>`, -4);
     case 'champion':
       return g(`<polygon points="${star(27, 12)}" fill="${fill}"/>`);
     case 'apex':
@@ -96,10 +87,10 @@ export function emblemSvg(rank: RankInfo | null, opts: EmblemOptions = {}): stri
   const cls = `rk-emblem ${rank ? `tier-${rank.tier.id}` : 'unranked'} ${opts.pop ? 'pop' : ''}`;
   const h = Math.round(size * 1.08);
   if (!rank) {
-    return `<svg class="${cls}" width="${size}" height="${h}" viewBox="0 0 120 130" role="img" aria-label="Unranked"><polygon points="${pts(sym(SILHOUETTE.rookie))}" fill="#15151f" stroke="#6c6b7a" stroke-width="3" stroke-dasharray="7 6"/><text x="${CX}" y="${CY + 16}" text-anchor="middle" font-size="42" font-weight="800" fill="#8d8c9c" font-family="Barlow Condensed, sans-serif">?</text></svg>`;
+    return `<svg class="${cls}" width="${size}" height="${h}" viewBox="0 0 120 130" role="img" aria-label="Unranked"><polygon points="${pts(sym(SILHOUETTE.bolt))}" fill="#15151f" stroke="#6c6b7a" stroke-width="3" stroke-dasharray="7 6"/><text x="${CX}" y="${CY + 16}" text-anchor="middle" font-size="42" font-weight="800" fill="#8d8c9c" font-family="Barlow Condensed, sans-serif">?</text></svg>`;
   }
   const c = rank.tier.color;
-  const top = rank.tierIndex; // 0 rookie … 7 apex
+  const top = rank.tierIndex; // 0 bolt … 4 apex
   const outline = pts(sym(SILHOUETTE[rank.tier.id]));
   const ink = '#0d0d15';
   // Metallic body: bright crown, saturated middle, deep base — plus a darker inset for the bevel.
@@ -130,7 +121,7 @@ export function emblemSvg(rank: RankInfo | null, opts: EmblemOptions = {}): stri
         })
         .join('')
     : '';
-  const glow = top >= 3 ? ' glow' : '';
+  const glow = top >= 2 ? ' glow' : '';
   return `<svg class="${cls}${glow}" style="--tier:${c}" width="${size}" height="${h}" viewBox="0 -8 120 138" role="img" aria-label="${rank.label}">
     <defs>${defs}</defs>
     ${rays}

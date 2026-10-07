@@ -72,7 +72,7 @@ function meCardHtml(lobby: LobbyController): string {
   const rank = visibleRank(mine.rating, mine.games);
   const info = rank ?? rankFor(mine.rating);
   const bar = rank
-    ? `<div class="rk-bar" style="--tier:${rank.tier.color};--p:${rank.progress}"><i></i></div><div class="rk-bar-text">${rank.next ? `${rank.division ? `${rank.points}/50` : `${mine.rating}/750`} · next <b>${esc(rank.next)}</b>` : `Apex · +${rank.points} over the line`}</div>`
+    ? `<div class="rk-bar" style="--tier:${rank.tier.color};--p:${rank.progress}"><i></i></div><div class="rk-bar-text">${rank.next ? `${rank.points}/50 · next <b>${esc(rank.next)}</b>` : `Apex · +${rank.points} over the line`}</div>`
     : `<div class="rk-bar placing" style="--p:${mine.games / PLACEMENT_GAMES}"><i></i></div><div class="rk-bar-text">Play ${PLACEMENT_GAMES - mine.games} more match${PLACEMENT_GAMES - mine.games === 1 ? '' : 'es'} to reveal your rank</div>`;
   return `<div class="rk-me" style="--tier:${info.tier.color}">
     ${emblemSvg(rank, { size: 104 })}

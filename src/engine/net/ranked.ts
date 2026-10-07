@@ -43,28 +43,25 @@ export const avg = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a 
 
 // ───────────────────────────── rank ladder ─────────────────────────────
 
-export type TierId = 'rookie' | 'bolt' | 'gear' | 'piston' | 'servo' | 'titan' | 'champion' | 'apex';
+export type TierId = 'bolt' | 'gear' | 'piston' | 'champion' | 'apex';
 
 export interface Tier {
   id: TierId;
   name: string;
-  /** Lowest rating in the tier. */
+  /** Lowest rating in the tier (Bolt also holds everything below it). */
   min: number;
   color: string;
-  /** Three divisions (I–III) of DIVISION_POINTS each; Rookie and Apex are open-ended. */
+  /** Three divisions (I–III) of DIVISION_POINTS each; Apex is open-ended. */
   divisions: boolean;
 }
 
 /** Ladder from the bottom up. A new player (1000) starts at Gear III. */
 export const TIERS: readonly Tier[] = [
-  { id: 'rookie', name: 'Rookie', min: 0, color: '#9aa3b2', divisions: false },
   { id: 'bolt', name: 'Bolt', min: 750, color: '#d9894b', divisions: true },
   { id: 'gear', name: 'Gear', min: 900, color: '#c7d0dd', divisions: true },
   { id: 'piston', name: 'Piston', min: 1050, color: '#f4c542', divisions: true },
-  { id: 'servo', name: 'Servo', min: 1200, color: '#35d3c3', divisions: true },
-  { id: 'titan', name: 'Titan', min: 1350, color: '#6c8cff', divisions: true },
-  { id: 'champion', name: 'Champion', min: 1500, color: '#c26bff', divisions: true },
-  { id: 'apex', name: 'Apex', min: 1650, color: '#ff5d73', divisions: false },
+  { id: 'champion', name: 'Champion', min: 1200, color: '#c26bff', divisions: true },
+  { id: 'apex', name: 'Apex', min: 1350, color: '#ff5d73', divisions: false },
 ];
 export const DIVISION_POINTS = 50;
 const ROMAN = ['', 'I', 'II', 'III'];
@@ -72,54 +69,43 @@ const ROMAN = ['', 'I', 'II', 'III'];
 export interface RankInfo {
   tier: Tier;
   tierIndex: number;
-  /** 1–3, or 0 for Rookie and Apex. */
+  /** 1–3, or 0 for Apex. */
   division: 0 | 1 | 2 | 3;
-  /** "Gear III", "Rookie", "Apex". */
+  /** "Gear III", "Apex". */
   label: string;
-  /** Rating points into the current division (Apex: points above the Apex line; Rookie: 0). */
+  /** Rating points into the current division (Apex: points above the Apex line). */
   points: number;
   /** 0–1 progress toward the next division/tier (1 for Apex). */
   progress: number;
   /** Name of the next rank, or null at the top. */
   next: string | null;
-  /** Position on the whole ladder (0 = Rookie … 19 = Apex), for comparing ranks. */
+  /** Position on the whole ladder (0 = Bolt I … 12 = Apex), for comparing ranks. */
   ordinal: number;
 }
 
-/** Where a rating sits on the ladder. */
+/** Where a rating sits on the ladder. Anything below Bolt's line is Bolt I. */
 export function rankFor(rating: number): RankInfo {
   let tierIndex = 0;
   TIERS.forEach((t, i) => {
     if (rating >= t.min) tierIndex = i;
   });
   const tier = TIERS[tierIndex];
-  const label = (d: number) => (d ? `${tier.name} ${ROMAN[d]}` : tier.name);
   if (!tier.divisions) {
-    const top = tier.id === 'apex';
-    return {
-      tier,
-      tierIndex,
-      division: 0,
-      label: tier.name,
-      points: top ? rating - tier.min : 0,
-      progress: top ? 1 : Math.max(0, Math.min(1, rating / TIERS[1].min)),
-      next: top ? null : `${TIERS[1].name} I`,
-      ordinal: top ? 1 + (TIERS.length - 2) * 3 : 0,
-    };
+    return { tier, tierIndex, division: 0, label: tier.name, points: rating - tier.min, progress: 1, next: null, ordinal: tierIndex * 3 };
   }
-  const into = rating - tier.min;
+  const into = Math.max(0, rating - tier.min);
   const division = (Math.min(2, Math.floor(into / DIVISION_POINTS)) + 1) as 1 | 2 | 3;
-  const points = into - (division - 1) * DIVISION_POINTS;
+  const points = Math.min(into - (division - 1) * DIVISION_POINTS, DIVISION_POINTS);
   const nextTier = TIERS[tierIndex + 1];
   return {
     tier,
     tierIndex,
     division,
-    label: label(division),
-    points: Math.min(points, DIVISION_POINTS),
-    progress: Math.min(1, points / DIVISION_POINTS),
+    label: `${tier.name} ${ROMAN[division]}`,
+    points,
+    progress: points / DIVISION_POINTS,
     next: division < 3 ? `${tier.name} ${ROMAN[division + 1]}` : nextTier.divisions ? `${nextTier.name} I` : nextTier.name,
-    ordinal: 1 + (tierIndex - 1) * 3 + (division - 1),
+    ordinal: tierIndex * 3 + (division - 1),
   };
 }
 
