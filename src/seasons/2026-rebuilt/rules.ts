@@ -1,3 +1,4 @@
+import { fuelInsideHubThroat } from './hubStructure';
 import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
@@ -364,17 +365,16 @@ export class RebuiltRules implements SeasonRules {
     const pid = this.periodId;
     if (pid && pid !== 'done') this.grace.update(t, pid, this.firstInactive);
 
-    const inner = C.HUB_SIZE / 2 - C.HUB_WALL - 0.01;
     for (let i = 0; i < pool.count; i++) {
       if (pool.state[i] !== 'field') continue;
       const w = pool.position(i);
       const f = frame.toField(w);
 
-      // HUB sensor array: FUEL inside the cup.
+      // Collect below the funnel, leaving panel impacts and rebounds in the physics simulation.
       if (f.z > C.HUB_CUP_FLOOR - 0.02 && f.z < C.HUB_RIM_HEIGHT - 0.01) {
         for (const a of ALLIANCES) {
           const hc = this.refs.hubs[a].center;
-          if (Math.abs(f.x - hc.x) < inner && Math.abs(f.y - hc.y) < inner) {
+          if (fuelInsideHubThroat(f.x - hc.x, f.y - hc.y, f.z, pool.radius)) {
             this.scoreFuel(a, i);
             break;
           }
@@ -565,9 +565,7 @@ export class RebuiltRules implements SeasonRules {
   aimTarget(robot: Robot): AimTarget | null {
     const hc = this.refs.hubs[robot.alliance].center;
     const point = this.ctx.frame.toWorld(hc.x, hc.y, C.HUB_RIM_HEIGHT + 0.02);
-    // The physical rim is the square cup wall (the hex funnel is visual only). Along the approach
-    // direction the wall's outer edge is half/max(|cos|,|sin|) from center — up to √2× further at a
-    // corner. The piece must be above rim + radius over the whole wall top, outer to inner edge.
+    // Conservatively clear the funnel mouth before descending into its physical panels.
     const p = robot.pose;
     const ang = Math.atan2(p.y - hc.y, p.x - hc.x);
     const k = 1 / Math.max(Math.abs(Math.cos(ang)), Math.abs(Math.sin(ang)), 1e-6);

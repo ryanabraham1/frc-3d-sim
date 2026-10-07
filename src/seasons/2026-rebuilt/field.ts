@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildHubFunnelAndNet } from './hubStructure';
 import type { Alliance, FieldPoint } from '@engine/coords';
 import { FieldBuilder, Vec3 } from '@engine/field/builder';
 import { addAprilTags, AprilTagLayout } from '@engine/field/apriltags';
@@ -171,7 +172,7 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   // Solid lower body
   b.box([c.x, c.y, C.HUB_CUP_FLOOR / 2], [C.HUB_SIZE, C.HUB_SIZE, C.HUB_CUP_FLOOR], body);
   // Cup walls above the internal floor
-  const cupH = C.HUB_RIM_HEIGHT - C.HUB_CUP_FLOOR;
+  const cupH = inch(2);
   const zc = C.HUB_CUP_FLOOR + cupH / 2;
   const w = C.HUB_WALL;
   const wallMat = { color: col, metalness: 0.2, roughness: 0.6 };
@@ -182,14 +183,7 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   // Inner floor (sensor array) — slightly lighter
   b.box([c.x, c.y, C.HUB_CUP_FLOOR + 0.005], [C.HUB_SIZE - 2 * w, C.HUB_SIZE - 2 * w, 0.01], { color: 0x444c58, collide: false });
 
-  // Hexagonal opening funnel (visual)
-  const hex = new THREE.Mesh(
-    new THREE.CylinderGeometry(C.HUB_OPENING_HEX / Math.sqrt(3), C.HUB_OPENING_HEX / Math.sqrt(3) + 0.03, inch(4), 6, 1, true),
-    new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide }),
-  );
-  b.frame.toWorld(c.x, c.y, C.HUB_RIM_HEIGHT + inch(2), hex.position);
-  hex.rotation.y = Math.PI / 6;
-  b.root.add(hex);
+  buildHubFunnelAndNet(b, a, c);
 
   // Light bars along the top edges
   const lights = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: col, emissiveIntensity: 0.1 });
@@ -198,21 +192,6 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   b.box([c.x + hs, c.y, C.HUB_RIM_HEIGHT + lb / 2], [lb, C.HUB_SIZE, lb], { material: lights, collide: false });
   b.box([c.x, c.y - hs, C.HUB_RIM_HEIGHT + lb / 2], [C.HUB_SIZE, lb, lb], { material: lights, collide: false });
   b.box([c.x, c.y + hs, C.HUB_RIM_HEIGHT + lb / 2], [C.HUB_SIZE, lb, lb], { material: lights, collide: false });
-
-  // Net on the neutral-zone side (stops FUEL launched from prohibited areas)
-  const nx = c.x + dir(a) * (hs + inch(1));
-  b.box([nx, c.y, C.HUB_RIM_HEIGHT + C.HUB_NET_HEIGHT / 2], [inch(1), C.HUB_SIZE + inch(6), C.HUB_NET_HEIGHT], {
-    color: C.COLORS.net,
-    opacity: 0.35,
-    collide: 'pieces',
-    castShadow: false,
-  });
-  for (const s of [-1, 1]) {
-    b.cylinder([nx, c.y + s * (hs + inch(3)), C.HUB_RIM_HEIGHT], [nx, c.y + s * (hs + inch(3)), C.HUB_RIM_HEIGHT + C.HUB_NET_HEIGHT], inch(0.75), {
-      color: C.COLORS.alu,
-      collide: false,
-    });
-  }
 
   // Exit openings at the base (neutral-zone face)
   const ex = c.x + dir(a) * (hs + 0.003);
