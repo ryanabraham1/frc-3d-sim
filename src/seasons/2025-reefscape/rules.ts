@@ -224,7 +224,8 @@ export class ReefscapeRules implements SeasonRules {
    */
   netPose(robot: Robot): { x: number; y: number; yaw: number; reachable: boolean; side: number } | null {
     if (!robot.config.options?.net || !robot.config.intake.secondary) return null;
-    const a = robot.alliance, n = C.netCenter(robot.alliance), toward = C.sideYaw(a, 0);
+    const n = C.netCenter(robot.alliance);
+    const toward = robot.pose.x <= n.x ? 0 : Math.PI;
     const side = this.sideToward(robot, toward);
     const land = C.NET_HEIGHT + C.ALGAE_RADIUS + 0.02, g = 9.81, up = NET_OUTTAKE.up;
     const flight = (up + Math.sqrt(up * up + 2 * g * (NET_RELEASE_HEIGHT - land))) / g;
@@ -359,11 +360,10 @@ export class ReefscapeRules implements SeasonRules {
     const face = C.nearestFace(harvestAlliance, robot.pose);
     const reef = C.reefCenter(harvestAlliance);
     const nearReef = Math.hypot(robot.pose.x - reef.x, robot.pose.y - reef.y) < C.REEF_APOTHEM - 0.07 + robot.config.frameLength / 2 + mechanism.reach + C.ALGAE_RADIUS;
-    // A robot that can't store ALGAE (no ALGAE intake, or one already held) can still use its
-    // elevator/intake to dislodge it onto the carpet, as CORAL-only robots did to open L2/L3.
+    // Empty CORAL-only robots can dislodge ALGAE, but carrying ALGAE blocks further removal.
     const canHold = robot.config.intake.secondary && robot.config.intake.enabled && algae === undefined && robot.capacityLeft > 0;
     const hasTool = robot.config.intake.secondary || mechanism.enabled;
-    const harvest = cmd.intake && !cmd.shoot && hasTool && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && nearReef && this.reefAlgae(harvestAlliance, face);
+    const harvest = algae === undefined && cmd.intake && !cmd.shoot && hasTool && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && nearReef && this.reefAlgae(harvestAlliance, face);
     if (harvest && canHold) m.algae = true;
     if (harvest) desiredHeight = C.LEVEL_HEIGHTS[face % 2 === 0 ? 3 : 2] + 0.08;
     m.height += clamp(desiredHeight - m.height, -mechanism.liftSpeed * dt, mechanism.liftSpeed * dt);

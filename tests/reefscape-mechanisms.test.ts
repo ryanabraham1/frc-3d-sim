@@ -227,6 +227,29 @@ describe('2025 ALGAE NET from a raised elevator', () => {
     expect(sim2.robot.held.includes(126)).toBe(true);
   });
 
+  for (const a of ['blue', 'red'] as Alliance[]) for (const direction of [-1, 1]) {
+    it(`${a}: scores its NET from the ${direction < 0 ? 'left' : 'right'} side of the BARGE`, () => {
+      const n = C.netCenter(a);
+      const sim = make(a, { x: n.x + direction * 2.2, y: n.y, yaw: direction < 0 ? 0 : Math.PI }, preset('all-rounder'));
+      teleop(sim); load(sim, 126);
+      run(sim, 4, { ...IDLE_COMMAND, shoot: true });
+      expect(sim.robot.held.includes(126)).toBe(false);
+      expect(sim.ctx.score.counter(a, 'net')).toBe(1);
+    });
+  }
+
+  for (const a of ['blue', 'red'] as Alliance[]) {
+    it(`${a}: cannot remove reef ALGAE while already carrying ALGAE`, () => {
+      const sim = make(a, season.testing!.scoringSpots(a)[0], preset('all-rounder'));
+      sim.rules.stage(); teleop(sim);
+      for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
+      load(sim, 140);
+      run(sim, 3, { ...IDLE_COMMAND, intake: true });
+      expect(rulesOf(sim).reefAlgae(a, 0)).toBe(true);
+      expect(sim.robot.held).toEqual([140]);
+    });
+  }
+
   it('physical: outtaking from the wrong distance misses the NET', () => {
     for (const [offset, expected] of [[0, 1], [-0.75, 0]] as const) {
       const config = preset('all-rounder'); config.autoAlign = false;
