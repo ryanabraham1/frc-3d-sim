@@ -154,7 +154,8 @@ export class Robot {
   get intakeRoom(): number {
     // The shot blocker folds over the intake side: the intake can't run while it's up or moving.
     if (this.blockerDeploy > 0) return 0;
-    let room = this.capacityLeft + (this.openHopper && this.fuelPiles.length ? 1 : 0);
+    // An open-top hopper lets one FUEL ride on top: at most capacity + 1 held, never an extra one per capture.
+    let room = Math.max(0, this.hopperCapacity + (this.openHopper && this.fuelPiles.length ? 1 : 0) - this.held.length);
     if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
       let n = this.held.length;
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
@@ -1692,6 +1693,28 @@ export class Robot {
     return out;
   }
 
+  /** `simulateFlight` for one distance without allocating: height at horizontal distance `d`, or null if it never got there. */
+  private flightHeightAt(fromY: number, angle: number, speed: number, d: number): number | null {
+    const dt = this.physics.dt;
+    const k = 1 / (1 + dt * this._projectile.airDamping);
+    let x = 0;
+    let y = fromY;
+    let vx = speed * Math.cos(angle);
+    let vy = speed * Math.sin(angle);
+    for (let i = 0; i < 3000; i++) {
+      const px = x;
+      const py = y;
+      vy -= G * dt;
+      vx *= k;
+      vy *= k;
+      x += vx * dt;
+      y += vy * dt;
+      if (x >= d) return py + (y - py) * ((d - px) / Math.max(1e-9, x - px));
+      if (y < -0.5 || vx < 1e-3) break;
+    }
+    return null;
+  }
+
   /**
    * Solve launch speed + hood angle so the piece passes through target.point, clears every obstacle
    * (`clearHeight` at `clearRadius` before the target, plus `clearances`) and is DESCENDING at the
@@ -1709,7 +1732,7 @@ export class Robot {
     const ordered = obstacles.filter((q) => d - q.distance > 0).sort((a, b) => b.distance - a.distance);
     const dists = [...ordered.map((q) => d - q.distance), d];
 
-    const errAt = (angle: number, v: number) => (this.simulateFlight(from.y, angle, v, [d])[0]?.y ?? -10) - target.point.y;
+    const errAt = (angle: number, v: number) => (this.flightHeightAt(from.y, angle, v, d) ?? -10) - target.point.y;
     /** Speed that puts the piece at the target height at distance d (secant search on the drag model). */
     const speedFor = (angle: number): number | null => {
       const denom = 2 * Math.cos(angle) ** 2 * (d * Math.tan(angle) - h);
@@ -1761,6 +1784,23 @@ export class Robot {
   /** Shared moving-shot target for actuator tracking and release readiness. */
   private solveMovingShot(pos: THREE.Vector3, target: AimTarget): { speed: number; angle: number; yaw: number; clear: boolean } {
     const c = this.config.launcher, rv = this.body.linvel();
+    // Aiming the turret and releasing the shot solve the same problem within one step (and the robot often barely
+    // moves between steps): reuse the answer when every input is identical.
+    const key = [pos.x, pos.y, pos.z, target.point.x, target.point.y, target.point.z, rv.x, rv.z, target.clearHeight ?? NaN, target.clearRadius ?? NaN,
+      target.minEntryAngle ?? NaN, target.preferredAngle ?? NaN, target.allowRising ? 1 : 0, c.minAngle, c.maxAngle, c.minSpeed, c.maxSpeed, c.manualSpeed, c.angle,
+      this._projectile.airDamping, this.physics.dt, target.clearances?.length ?? -1, target.ceilings?.length ?? -1];
+    for (const q of target.clearances ?? []) key.push(q.distance, q.height);
+    for (const q of target.ceilings ?? []) key.push(q.distance, q.height);
+    const hit = this.movingShotCache;
+    if (hit && hit.key.length === key.length && hit.key.every((v, i) => v === key[i] || (v !== v && key[i] !== key[i]))) return hit.value;
+    const value = this.solveMovingShotUncached(pos, target, rv);
+    this.movingShotCache = { key, value };
+    return value;
+  }
+  private movingShotCache: { key: number[]; value: { speed: number; angle: number; yaw: number; clear: boolean } } | null = null;
+
+  private solveMovingShotUncached(pos: THREE.Vector3, target: AimTarget, rv: { x: number; y: number; z: number }): { speed: number; angle: number; yaw: number; clear: boolean } {
+    const c = this.config.launcher;
     const lead: AimTarget = { ...target, point: target.point.clone() };
     let speed = c.manualSpeed, angle = c.angle, clear = true;
     let yaw = Math.atan2(-(lead.point.z-pos.z), lead.point.x-pos.x);
