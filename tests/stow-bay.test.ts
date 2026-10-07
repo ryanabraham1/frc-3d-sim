@@ -106,7 +106,7 @@ it('shooting takes the ball nearest the launcher and that ball leaves, the rest 
   } finally { sim.dispose(); }
 });
 
-it('every 2026 robot with a hopper holds its full rated load as real bodies and loses none at rest', async () => {
+it('every 2026 robot with a hopper holds its full rated load and loses none at rest', async () => {
   await RAPIER.init();
   const robots = [season().robotDefaults, ...season().teamRobots!.map(t => t.config)];
   let withBay = 0;
@@ -120,9 +120,61 @@ it('every 2026 robot with a hopper holds its full rated load as real bodies and 
       const cap = r.config.hopperCapacity;
       sim.load(cap);
       run(sim, 150);
-      expect([config.model, r.held.length, r.bay.stowed.size]).toEqual([config.model, cap, cap]);
+      expect([config.model, r.held.length, r.bay.count]).toEqual([config.model, cap, cap]);
       expect(sim.pool.indices('field').length).toBe(0);
     } finally { sim.dispose(); }
   }
   expect(withBay).toBeGreaterThanOrEqual(15);
+}, 120000);
+
+it('a deep pile simulates only its top layers; the buried ones ride the chassis and come back when the pile is used up', async () => {
+  await RAPIER.init();
+  const sim = make(undefined, 0);
+  try {
+    const r = sim.robot, bay = r.bay!;
+    sim.load(60);
+    run(sim, 200);
+    // The lower layers are buried, nothing is lost, and every ball is still inside the hopper.
+    expect(bay.count).toBe(60);
+    expect(r.held.length).toBe(60);
+    expect(bay.buriedCount).toBeGreaterThan(0);
+    expect(bay.stowed.size).toBeLessThan(60);
+    expect(bay.stowed.size).toBeGreaterThanOrEqual(8);
+    const cav = r.fuelCavity()!;
+    for (const i of r.held) {
+      const p = local(sim, i);
+      expect(p.x).toBeGreaterThan(cav.min.x - 0.02); expect(p.x).toBeLessThan(cav.max.x + 0.02);
+      expect(p.y).toBeGreaterThan(cav.min.y - 0.02);
+    }
+    // Driving carries the buried layers with the robot: they stay at the same spot in the hopper.
+    const before = r.held.map(i => local(sim, i));
+    run(sim, 90, { ...IDLE_COMMAND, vx: 1.5 });
+    const after = r.held.map(i => local(sim, i));
+    const drift = Math.max(...before.map((b, k) => Math.hypot(b.x - after[k].x, b.z - after[k].z)));
+    expect(drift).toBeLessThan(0.3);
+    // Shooting everything wakes the buried layers as the live ones run out: every ball leaves, none is stranded.
+    run(sim, 900, { ...IDLE_COMMAND, shoot: true });
+    expect(r.held.length).toBe(0);
+    expect(bay.count).toBe(0);
+  } finally { sim.dispose(); }
+}, 120000);
+
+it('a ball taken in on top of a buried pile lands above the raised floor and stays in the hopper', async () => {
+  await RAPIER.init();
+  const sim = make(undefined, 0);
+  try {
+    const r = sim.robot, bay = r.bay!;
+    sim.load(38);
+    run(sim, 200);
+    expect(bay.buriedCount).toBeGreaterThan(0);
+    const side = r.fuelIntakeSide(), t = r.body.translation();
+    const idx = sim.pool.indices('reserve')[0];
+    sim.pool.placeWorld(idx, new THREE.Vector3(t.x + side * (r.config.frameLength / 2 + 0.2), 0.08, t.z), undefined);
+    run(sim, 150, { ...IDLE_COMMAND, intake: true });
+    expect(r.held).toContain(idx);
+    expect(bay.count).toBe(r.held.length);
+    const cav = r.fuelCavity()!, p = local(sim, idx);
+    expect(p.x).toBeGreaterThan(cav.min.x - 0.02); expect(p.x).toBeLessThan(cav.max.x + 0.02);
+    expect(p.y).toBeGreaterThan(cav.min.y);
+  } finally { sim.dispose(); }
 }, 120000);

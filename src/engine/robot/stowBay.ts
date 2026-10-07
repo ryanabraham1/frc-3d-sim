@@ -29,6 +29,23 @@ const FEED_TIMEOUT = 1.2;
 export class StowBay {
   /** Held pieces that are inside the cavity. */
   readonly stowed = new Set<number>();
+  /** Balls held in this hopper: the live (simulated) ones plus the buried lower layers. */
+  get count(): number { return this.stowed.size + this.buried.size; }
+  /** Balls in the buried lower layers (not simulated). */
+  get buriedCount(): number { return this.buried.size; }
+  /**
+   * Balls in the lower layers of a deep pile. They are not simulated: their bodies are switched off and ride the chassis
+   * rigidly at the spot they settled in (robot frame), while the floor is raised under the balls that are still live.
+   * Ball-to-ball contacts are the whole cost of a full hopper, and nothing below the top layers can move anyway.
+   */
+  private readonly buried = new Map<number, THREE.Vector3>();
+  /** How far the floor slab is raised over the cavity floor to stand in for the buried layers (m). */
+  private floorLift = 0;
+  private lastCheck = 0;
+  private lastVel = new THREE.Vector3();
+  /** Simulated balls per hopper above which the deepest full layer is buried, and below which a layer is woken. */
+  static ACTIVE_MAX = 26;
+  static ACTIVE_MIN = 8;
   /** Balls being pulled in: elapsed time, the model's intake lane (robot frame) and the waypoint they are heading for. */
   private readonly feeding = new Map<number, { t: number; pts: THREE.Vector3[]; k: number }>();
   /** The model's own meshes in the hopper region as static trimesh colliders (re-posed when their node moves). */
@@ -111,7 +128,7 @@ export class StowBay {
     const shiftX = (((j + layer) % 2) * 0.5) * d, shiftZ = (layer % 2) * row / 3;
     this.v.set(
       Math.min(cav.min.x + rc + c * d + shiftX, cav.max.x - rc),
-      cav.min.y + rc + layer * layerH,
+      cav.min.y + this.floorLift + rc + layer * layerH,
       Math.min(cav.min.z + rc + j * row + shiftZ, cav.max.z - rc),
     );
     this.place(i, this.v);
@@ -133,17 +150,84 @@ export class StowBay {
   forget(i: number): void {
     this.stowed.delete(i);
     this.feeding.delete(i);
+    if (this.buried.delete(i) && !this.buried.size) this.floorLift = 0;
   }
 
   /** Release every held ball back to the reserve (robot reset). */
   clear(): void {
-    for (const i of [...this.stowed, ...this.feeding.keys()]) this.pool.reserve(i);
+    for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.reserve(i);
     this.stowed.clear();
+    this.buried.clear();
+    this.floorLift = 0;
     this.feeding.clear();
+  }
+
+  /**
+   * Bury the lowest full layer(s) of a deep pile, or wake the top buried layer when the live pile has been used up.
+   * Called every few steps, never while the chassis is being thrown around.
+   */
+  private rebalance(): void {
+    const r = this.radius * GamePiecePool.STOWED_SCALE;
+    this.frame();
+    if (this.stowed.size > StowBay.ACTIVE_MAX + 6) {
+      const rows = [...this.stowed].map(i => ({ i, y: this.toLocal(this.pool.bodies[i].translation(), this.v).y })).sort((a, b) => a.y - b.y);
+      const need = this.stowed.size - StowBay.ACTIVE_MAX;
+      // Cut at a layer boundary: everything within half a ball of the n-th lowest goes, so no half-buried layer is left.
+      const cut = rows[need - 1].y + r * 0.5;
+      const gone = rows.filter(row => row.y <= cut);
+      if (this.stowed.size - gone.length < StowBay.ACTIVE_MIN + 4) return;
+      for (const { i } of gone) {
+        const body = this.pool.bodies[i];
+        this.buried.set(i, this.toLocal(body.translation(), new THREE.Vector3()));
+        this.stowed.delete(i);
+        body.setLinvel({ x: 0, y: 0, z: 0 }, false);
+        body.setEnabled(false);
+      }
+      this.floorLift = Math.max(this.floorLift, this.buriedTop() + r * 0.7 - (this.cavity?.min.y ?? 0));
+    } else if (this.stowed.size < StowBay.ACTIVE_MIN && this.buried.size) {
+      this.wakeLayer();
+    }
+  }
+
+  /** Local height of the highest buried ball centre. */
+  private buriedTop(): number {
+    let top = -Infinity;
+    for (const l of this.buried.values()) top = Math.max(top, l.y);
+    return top;
+  }
+
+  /** Switch the top buried layer back on, where it is, and lower the floor under it. */
+  private wakeLayer(all = false): void {
+    if (!this.buried.size) return;
+    const r = this.radius * GamePiecePool.STOWED_SCALE;
+    const top = this.buriedTop(), lin = this.robot.body.linvel();
+    this.frame();
+    for (const [i, local] of [...this.buried]) {
+      if (!all && local.y < top - r * 0.5) continue;
+      this.buried.delete(i);
+      const world = this.toWorld(local, this.v), body = this.pool.bodies[i];
+      body.setEnabled(true);
+      body.setTranslation({ x: world.x, y: world.y, z: world.z }, true);
+      body.setLinvel({ x: lin.x, y: lin.y, z: lin.z }, true);
+      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      this.stowed.add(i);
+    }
+    this.floorLift = this.buried.size ? this.buriedTop() + r * 0.7 - (this.cavity?.min.y ?? 0) : 0;
+  }
+
+  /** The buried layers move with the chassis exactly (their bodies are off, so nothing else moves them). */
+  private carryBuried(): void {
+    if (!this.buried.size) return;
+    this.frame();
+    for (const [i, local] of this.buried) {
+      const w = this.toWorld(local, this.v);
+      this.pool.bodies[i].setTranslation({ x: w.x, y: w.y, z: w.z }, false);
+    }
   }
 
   /** Robot-frame positions of the balls in the hopper (the net drapes over them). */
   forEachLocal(cb: (x: number, y: number, z: number) => void): void {
+    for (const l of this.buried.values()) cb(l.x, l.y, l.z);
     if (!this.stowed.size) return;
     this.frame();
     const p = new THREE.Vector3();
@@ -155,6 +239,7 @@ export class StowBay {
 
   /** The ball nearest the launcher exit (robot frame): the one that gets shot. -1 when none is inside. */
   pickForLaunch(exit: THREE.Vector3): number {
+    if (!this.stowed.size && this.buried.size) this.wakeLayer(true);
     this.frame();
     let best = -1, d = Infinity;
     const p = new THREE.Vector3();
@@ -194,6 +279,14 @@ export class StowBay {
     this.cavity = cav;
     this.syncWalls(cav);
     this.syncCad(cav);
+    this.carryBuried();
+    if (++this.lastCheck >= 10) {
+      this.lastCheck = 0;
+      // Rebalance only while the chassis is calm: a hit or a hard turn should slosh the whole pile.
+      const v = this.robot.body.linvel(), calm = Math.hypot(v.x - this.lastVel.x, v.z - this.lastVel.z) < 0.5;
+      this.lastVel.set(v.x, v.y, v.z);
+      if (calm || !this.buried.size) this.rebalance();
+    }
     if (!this.stowed.size && !this.feeding.size) return;
     this.frame();
     const r = this.radius, p = new THREE.Vector3(), target = new THREE.Vector3(), vel = new THREE.Vector3();
@@ -234,7 +327,7 @@ export class StowBay {
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
       const outX = Math.abs(p.x - cx) > hx + r * 1.15, outZ = Math.abs(p.z - cz) > hz + r * 1.15;
-      const outY = p.y < cav.min.y - 0.02 || p.y > cav.max.y + (cav.open ? 0.6 : 0.02);
+      const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > cav.max.y + (cav.open ? 0.6 : 0.02);
       if (!outX && !outZ && !outY) continue;
       if (cav.open && (outX || outZ) && p.y > cav.max.y - r * 0.5) {
         this.stats.released++;
@@ -245,7 +338,7 @@ export class StowBay {
         this.robot.noteLaunch(i);
         continue;
       }
-      p.set(cx + THREE.MathUtils.clamp(p.x - cx, -hx, hx), THREE.MathUtils.clamp(p.y, cav.min.y + r, cav.max.y - r), cz + THREE.MathUtils.clamp(p.z - cz, -hz, hz));
+      p.set(cx + THREE.MathUtils.clamp(p.x - cx, -hx, hx), THREE.MathUtils.clamp(p.y, floor + r, Math.max(floor + r, cav.max.y - r)), cz + THREE.MathUtils.clamp(p.z - cz, -hz, hz));
       const lin = this.robot.body.linvel();
       this.toWorld(p, this.v);
       body.setTranslation({ x: this.v.x, y: this.v.y, z: this.v.z }, true);
@@ -259,7 +352,7 @@ export class StowBay {
     const x = side > 0 ? cav.max.x - r * 1.4 : cav.min.x + r * 1.4;
     const zHalf = (cav.max.z - cav.min.z) / 2 - r * 1.2, zc = (cav.min.z + cav.max.z) / 2;
     const z = THREE.MathUtils.clamp(from.z, zc - zHalf, zc + zHalf);
-    let y = cav.min.y + r * 1.2;
+    let y = cav.min.y + this.floorLift + r * 1.2;
     const p = new THREE.Vector3();
     for (const i of this.stowed) {
       this.toLocal(this.pool.bodies[i].translation(), p);
@@ -338,7 +431,7 @@ export class StowBay {
 
   /** Floor, sides and roof follow the live hopper bounds. */
   private syncWalls(cav: Cavity): void {
-    const key = [cav.min.x, cav.min.y, cav.min.z, cav.max.x, cav.max.y, cav.max.z, cav.open ? 1 : 0].map(n => n.toFixed(4)).join(',');
+    const key = [cav.min.x, cav.min.y, cav.min.z, cav.max.x, cav.max.y, cav.max.z, cav.open ? 1 : 0, this.floorLift].map(n => n.toFixed(4)).join(',');
     if (key === this.key) return;
     this.key = key;
     const R = this.robot.physics.R, world = this.robot.physics.world;
@@ -347,7 +440,7 @@ export class StowBay {
     // Side slabs span from just under the floor up to the rim, so an open hopper's wall top is exactly cav.max.y.
     const wy = sy + WALL / 2, wcy = cy - WALL / 2;
     const slabs = [
-      { h: [sx + WALL, WALL / 2, sz + WALL], at: [cx, cav.min.y - WALL / 2, cz] },
+      { h: [sx + WALL, WALL / 2, sz + WALL], at: [cx, cav.min.y + this.floorLift - WALL / 2, cz] },
       { h: [WALL / 2, wy, sz + WALL], at: [cav.min.x - WALL / 2, wcy, cz] },
       { h: [WALL / 2, wy, sz + WALL], at: [cav.max.x + WALL / 2, wcy, cz] },
       { h: [sx + WALL, wy, WALL / 2], at: [cx, wcy, cav.min.z - WALL / 2] },
