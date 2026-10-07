@@ -419,7 +419,7 @@ export class LobbyController {
       seasonId: season.id,
       players,
       autoHumanPlayer: true,
-      manualAuto: true,
+      manualAuto: false,
       fillBots: false,
       inMatch: false,
       ranked: { mode: ev.mode, phase: 'draft', draft: createDraft(ev.mode, rankedPoolIds(season)), turnMs: 0 },
@@ -471,7 +471,7 @@ export class LobbyController {
     for (const p of lobby.players) {
       const entry = p.slot && pool.get(picks.get(p.slot) ?? '');
       if (!entry) continue;
-      this.choices.set(p.peerId, { seasonId: lobby.seasonId, slot: p.slot, robot: cloneConfig(entry.config), autoRoutine: season.autoRoutines[0].id, manualAuto: true });
+      this.choices.set(p.peerId, { seasonId: lobby.seasonId, slot: p.slot, robot: cloneConfig(entry.config), autoRoutine: season.autoRoutines[0].id, manualAuto: false });
       p.team = entry.config.teamNumber;
       this.refreshDims(p.peerId);
     }
