@@ -53,7 +53,7 @@ export function defaultSettings(season: SeasonDefinition): GameSettings {
     station: 2,
     robot: cloneConfig(season.robotDefaults),
     autoRoutine: season.autoRoutines[0]?.id ?? 'none',
-    manualAuto: false,
+    manualAuto: true,
     camera: 'driver',
     autoHumanPlayer: true,
     autoIntake: true,
