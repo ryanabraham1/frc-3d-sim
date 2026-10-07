@@ -153,6 +153,19 @@ export class StowBay {
     if (this.buried.delete(i) && !this.buried.size) this.floorLift = 0;
   }
 
+  /** Stop simulating the hopper: every ball stays held (just a count again) and its body is switched off. */
+  park(): void {
+    for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.parkHeld(i);
+    this.stowed.clear();
+    this.buried.clear();
+    this.feeding.clear();
+    this.floorLift = 0;
+    for (const w of this.walls) this.robot.physics.world.removeCollider(w, false);
+    this.walls = [];
+    if (this.cad) for (const c of this.cad) this.robot.physics.world.removeCollider(c.collider, false);
+    this.cad = null;
+  }
+
   /** Release every held ball back to the reserve (robot reset). */
   clear(): void {
     for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.reserve(i);

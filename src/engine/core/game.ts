@@ -23,6 +23,8 @@ import { Rng } from '../random';
 import { OcclusionFader } from '../render/occlusionFader';
 import { Renderer } from '../render/renderer';
 import { footprint, sanitizeConfig } from '../robot/config';
+import { StowBay } from '../robot/stowBay';
+import { QUALITY, QualityGovernor, resolveTier, type QualityProfile } from './quality';
 import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
 import { resolveStartPose } from '../startPose';
 import { clamp, formatClock } from '../units';
@@ -203,7 +205,13 @@ export class Game {
     if (this.role === 'local') this.simSpeed = clamp(Number(new URLSearchParams(location.search).get('speed')) || 1, 0.25, 3);
     this.setup = net?.setup ?? localSetup(settings, season);
     this.frame = new FieldFrame(season.fieldLength, season.fieldWidth);
-    this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, { shadows: settings.shadows });
+    this.quality = QUALITY[resolveTier()];
+    StowBay.ACTIVE_MAX = this.quality.activeMax;
+    this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, {
+      shadows: settings.shadows && this.quality.shadows,
+      pixelRatioCap: this.quality.pixelRatioCap,
+      minPixelRatio: this.quality.minPixelRatio,
+    });
     this.physics = new PhysicsWorld(R, 1 / 90);
     this.builder = new FieldBuilder(this.physics, this.renderer.scene, this.frame);
     this.rng = new Rng(this.setup.seed);
@@ -229,7 +237,9 @@ export class Game {
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
       robot.controller = rs.bot ? 'bot' : 'player';
       season.configureRobot?.(robot);
-      if (this.role !== 'client') robot.attachPool(this.pool); // held FUEL stays real physics bodies (host / solo)
+      // Held FUEL becomes real physics bodies only where it is worth the step time (see QualityProfile); everyone else
+      // draws the visual particle pile, which is also what every multiplayer client sees.
+      if (this.wantsRealHopper(rs, net)) robot.attachPool(this.pool);
       if (season.pieceFlow !== false) {
         const piece = this.pool.mesh;
         const round = season.gamePiece.shape !== 'ring' && season.gamePiece.shape !== 'tube';
@@ -430,6 +440,32 @@ export class Game {
     return this.simLoad < 0.5 ? 1000 / 30 - 4 : 1000 / 20 - 4;
   }
 
+  /** Device quality tier in effect (set once; the governor only sheds work from it). */
+  readonly quality: QualityProfile;
+  private readonly governor = new QualityGovernor();
+
+  /**
+   * Real-body hopper for this robot? Never on a client (the host sends a count, not the balls). On a host, never for a
+   * remote driver's robot: its hopper is invisible to the physics that matter, so it is drawn, not simulated.
+   */
+  private wantsRealHopper(rs: RobotSetup, net?: GameNet): boolean {
+    if (this.role === 'client') return false;
+    const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
+    const mode = this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
+    if (mode === 'none') return false;
+    if (this.role === 'host' && rs.peerId && rs.peerId !== net!.client.peerId) return false;
+    return mode === 'all' || rs.id === mine?.id;
+  }
+
+  /** The machine can't keep up: turn the farthest-from-the-player real hoppers into particle piles, the player's last. */
+  private shedHopperPhysics(): boolean {
+    const live = this.robots.filter((r) => r.bay);
+    const victim = live.find((r) => r !== this.player) ?? live[0];
+    if (!victim) return false;
+    victim.detachPool(this.pool);
+    return true;
+  }
+
   /** Input + simulation (host/local) or input + command send (client). */
   private tick(now: number): void {
     const started = performance.now();
@@ -524,7 +560,11 @@ export class Game {
       const fps = this.fpsFrames / this.fpsAcc;
       this.hud.setFps(fps);
       // A host capping its own frame rate for the simulation's sake isn't a slow GPU.
-      if (this.role !== 'host' || this.hostFrameInterval() === 0) this.renderer.adaptQuality(fps);
+      const uncapped = this.role !== 'host' || this.hostFrameInterval() === 0;
+      if (uncapped) this.renderer.adaptQuality(fps);
+      const shed = this.governor.update(this.role === 'client' ? 0 : this.simLoad, uncapped ? fps : 0);
+      if (shed === 'hopper') this.shedHopperPhysics();
+      else if (shed === 'shadows' && this.renderer.atMinPixelRatio) this.renderer.disableShadows();
       this.fpsAcc = 0;
       this.fpsFrames = 0;
     }
@@ -991,6 +1031,9 @@ export class Game {
       jitterMs: Math.round((this.clientSync?.jitter ?? 0) * 1000),
       hostSimLoad: Math.round(this.simLoad * 100) / 100,
       pixelRatio: this.renderer.currentPixelRatio,
+      tier: ['low', 'medium', 'high'].indexOf(this.quality.tier),
+      realHoppers: this.robots.filter((r) => r.bay).length,
+      shadows: Number(this.renderer.shadowsOn),
       simTime: this.simTime,
     };
   }

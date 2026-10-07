@@ -310,6 +310,14 @@ export class GamePiecePool {
     this.changed.add(i);
   }
 
+  /** A held piece leaves its robot's physics hopper but stays held: back to a plain (disabled) held body. */
+  parkHeld(i: number): void {
+    this.leaveBay(i);
+    this.bodies[i].setLinvel({ x: 0, y: 0, z: 0 }, false);
+    this.bodies[i].setEnabled(false);
+    this.shown[i] = 0;
+  }
+
   hold(i: number, ownerId: number): void {
     const bay = this.bays.get(ownerId);
     if (bay) {

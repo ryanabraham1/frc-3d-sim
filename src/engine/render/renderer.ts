@@ -8,11 +8,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 const ARENA_DARK = 0x0c0e13;
 
 /** Dynamic resolution never renders below this many device pixels per CSS pixel. */
-const MIN_PIXEL_RATIO = 0.75;
+const DEFAULT_MIN_PIXEL_RATIO = 0.75;
 
 export interface RendererOptions {
   shadows?: boolean;
   pixelRatioCap?: number;
+  minPixelRatio?: number;
 }
 
 /** Owns the Three.js renderer, scene, main camera, lights and a generic arena backdrop. */
@@ -21,8 +22,9 @@ export class Renderer {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   private readonly onResize = () => this.resize();
-  /** Highest pixel ratio used (device ratio, capped); `adaptQuality` works between MIN_PIXEL_RATIO and this. */
+  /** Highest pixel ratio used (device ratio, capped); `adaptQuality` works between the floor and this. */
   private readonly maxPixelRatio: number;
+  private readonly minPixelRatio: number;
   private pixelRatio: number;
   private slowWindows = 0;
   private fastWindows = 0;
@@ -36,6 +38,7 @@ export class Renderer {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     // 1.5 looks the same as 2 on high-DPI screens with antialiasing, at ~56% of the pixels.
     this.maxPixelRatio = Math.min(window.devicePixelRatio || 1, opts.pixelRatioCap ?? 1.5);
+    this.minPixelRatio = Math.min(opts.minPixelRatio ?? DEFAULT_MIN_PIXEL_RATIO, this.maxPixelRatio);
     this.pixelRatio = this.maxPixelRatio;
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -215,9 +218,9 @@ export class Renderer {
   adaptQuality(fps: number): void {
     if (fps < 45) {
       this.fastWindows = 0;
-      if (++this.slowWindows >= 2 && this.pixelRatio > MIN_PIXEL_RATIO) {
+      if (++this.slowWindows >= 2 && this.pixelRatio > this.minPixelRatio) {
         this.slowWindows = 0;
-        this.setPixelRatio(Math.max(MIN_PIXEL_RATIO, this.pixelRatio - 0.25));
+        this.setPixelRatio(Math.max(this.minPixelRatio, this.pixelRatio - 0.25));
       }
     } else if (fps > 57) {
       this.slowWindows = 0;
@@ -229,6 +232,27 @@ export class Renderer {
       this.slowWindows = 0;
       this.fastWindows = 0;
     }
+  }
+
+  /** Drop shadows for good (sustained low frame rate): the shadow pass redraws every caster. */
+  disableShadows(): void {
+    if (!this.renderer.shadowMap.enabled) return;
+    this.renderer.shadowMap.enabled = false;
+    this.scene.traverse((o) => {
+      const light = o as THREE.DirectionalLight;
+      if (light.isDirectionalLight) light.castShadow = false;
+      const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      for (const m of Array.isArray(mat) ? mat : mat ? [mat] : []) m.needsUpdate = true;
+    });
+  }
+
+  get shadowsOn(): boolean {
+    return this.renderer.shadowMap.enabled;
+  }
+
+  /** True once dynamic resolution has hit its floor. */
+  get atMinPixelRatio(): boolean {
+    return this.pixelRatio <= this.minPixelRatio;
   }
 
   get currentPixelRatio(): number {

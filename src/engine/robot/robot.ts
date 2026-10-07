@@ -768,6 +768,18 @@ export class Robot {
     pool.bays.set(this.id, this.bay);
   }
 
+  /**
+   * Go back to the visual-only particle pile (what multiplayer replicas draw) while keeping every held FUEL held. Used to
+   * shed physics on a slow host; the pile is filled from the held count on the next visual sync.
+   */
+  detachPool(pool: GamePiecePool): void {
+    if (!this.bay) return;
+    this.bay.park();
+    pool.bays.delete(this.id);
+    this.bay = null;
+    for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
+  }
+
   /** Which end of the robot the intake delivers to (the hopper mouth): -1 back, +1 front. */
   fuelIntakeSide(): number {
     const c = this.config;

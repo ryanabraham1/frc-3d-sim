@@ -1,5 +1,6 @@
 import { autoPlanner, bindAutoPlanner, loadAutoPlan, autoPlannerDragging } from './autoPlanner';
 import type { CameraMode } from '@engine/camera/cameras';
+import { detectTier, qualityPref, setQualityPref, type QualityPref } from '@engine/core/quality';
 import { normalizeSkill, type GameSettings, type SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { ACTIONS, codeLabel, keybinds, SLOTS, type ActionId } from '@engine/input/keybinds';
@@ -324,6 +325,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
           ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, '', 'wide')}
           ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
           ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
+          ${group('Graphics quality', `<div class="seg">${(['auto', 'low', 'medium', 'high'] as const).map((q) => opt(`data-quality="${q}"`, q[0].toUpperCase() + q.slice(1), qualityPref() === q)).join('')}</div>`, `Auto picked ${detectTier()} for this device. Lower settings simulate less (hoppers) and draw less; applies to the next match.`, 'wide')}
           ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${[{ id: 'custom', label: 'My planned auto' }, ...season.autoRoutines].map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
         </div>
       </section>`;
@@ -620,6 +622,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-radio]').forEach((b) => (b.onclick = () => ((s.aiRadio = b.dataset.radio as GameSettings['aiRadio']), render())));
     all('[data-ai]').forEach((b) => (b.onclick = () => ((s.aiOpponents = b.dataset.ai === '1'), render())));
     all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
+    all('[data-quality]').forEach((b) => (b.onclick = () => (setQualityPref(b.dataset.quality as QualityPref), render())));
     all('[data-toggle]').forEach(
       (b) =>
         (b.onclick = () => {
