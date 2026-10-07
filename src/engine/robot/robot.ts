@@ -451,7 +451,12 @@ export class Robot {
         const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
-      p.setXYZ(i, px, y, pz);
+      const maximum = c.hopperExpansion?.fullHeight ?? c.height;
+      y = Math.min(y, maximum);
+      // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
+      const previous = p.getY(i);
+      const shown = previous === 0 || dt <= 0 ? y : lerp(previous, y, 1 - Math.exp(-(y > previous ? 18 : 8) * Math.min(dt,.1)));
+      p.setXYZ(i, px, shown, pz);
     }
     p.needsUpdate = true; net.geometry.computeBoundingSphere();
   }
@@ -750,17 +755,44 @@ export class Robot {
   /** One conserved load across main and deployed extension bins. */
   private distributeFuel(): void {
     if (!this.fuelPiles.length) return;
-    const bins = this.fuelPiles.filter(b => b.userData.fuelRequestedFill > 0);
-    const slots = bins.reduce((n, b) => n + b.userData.fuelSlots, 0);
+    const bins = this.fuelPiles.filter(b => b.userData.fuelRequestedFill > 0) as THREE.InstancedMesh[];
     const load = Math.max(0, this.held.length - this.piecesInTransit);
-    let remaining = Math.min(load, this.config.hopperCapacity);
-    const total = remaining;
-    for (let i = 0; i < bins.length; i++) {
-      const n = Math.min(bins[i].userData.fuelSlots, i === bins.length - 1 ? remaining : Math.round(total * bins[i].userData.fuelSlots / slots));
-      bins[i].userData.setFuelCount?.(n + (i === 0 && this.openHopper && load > total ? 1 : 0));
-      remaining -= n;
+    // Retracting sections drain their existing particles into the main cavity in the same world positions.
+    for (const source of this.fuelPiles as THREE.InstancedMesh[]) {
+      if (bins.includes(source)) continue;
+      const surface = source.userData.fuelSurface?.();
+      if (load && bins.length && surface) for (let i = 0; i < surface.count; i++) {
+        const point = bins[0].worldToLocal(source.localToWorld(new THREE.Vector3().fromArray(surface.positions, i * 3)));
+        bins[0].userData.receiveFuel(point);
+      }
+      source.userData.setFuelCount?.(0);
     }
-
+    if (!bins.length) return;
+    const counts = bins.map(b => b.count);
+    let current = counts.reduce((n,c) => n+c,0);
+    if (current === 0 && load > 1) {
+      // Preloads have no intake history. Allocate once; subsequent shots retain particle identities.
+      const slots = bins.reduce((n,b) => n+b.userData.fuelSlots,0);
+      let remaining = load;
+      for (let i=0; i<bins.length; i++) {
+        counts[i] = Math.min(bins[i].userData.fuelSlots, i===bins.length-1 ? remaining : Math.round(load*bins[i].userData.fuelSlots/slots));
+        remaining -= counts[i];
+      }
+      current = counts.reduce((n,c)=>n+c,0);
+    }
+    while (current < load) {
+      let i = bins.findIndex((b,j) => b.userData.fuelPendingArrival && counts[j] < b.userData.fuelSlots);
+      if (i<0) i=bins.findIndex((b,j)=>counts[j]<b.userData.fuelSlots);
+      if (i<0 && this.openHopper && counts[0]===bins[0].userData.fuelSlots) i=0;
+      if (i<0) break;
+      counts[i]++; current++; bins[i].userData.fuelPendingArrival = false;
+    }
+    while (current > load) {
+      const i=counts.findIndex(n=>n>0);
+      if(i<0)break;
+      counts[i]--;current--;
+    }
+    bins.forEach((b,i)=>b.userData.setFuelCount(counts[i]));
   }
 
   /** True when the loose FUEL sits in a bin with no lid: nets / covers (and non-FUEL robots) keep it in. */
@@ -789,6 +821,7 @@ export class Robot {
     });
     this.visual.userData.fuelCadContacts = cad || this.fuelPiles.length > 0;
     for (const pile of this.fuelPiles) {
+      pile.userData.fuelManagedCount = true;
       pile.userData.setFuelOpen?.(open);
       pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
@@ -804,20 +837,8 @@ export class Robot {
     const idx = this.held[this.held.length - 1];
     if (idx === undefined || idx < 0) return; // replicas hold placeholders: only the host spills real pieces
     this.held.pop();
-    const c = this.config, r = this._projectile.radius;
     this.visual.updateMatrixWorld(true);
     const local = this.visual.worldToLocal(mesh.localToWorld(new THREE.Vector3(x, y, z)));
-    // The chassis is a solid box in the physics world: put the ball on the nearest face instead of inside it.
-    const hx = c.frameLength / 2 - 0.01, hz = c.frameWidth / 2 - 0.01;
-    if (Math.abs(local.x) < hx && Math.abs(local.z) < hz && local.y > c.bumperTop && local.y < c.height) {
-      const gap = [c.height - local.y, hx - local.x, hx + local.x, hz - local.z, hz + local.z];
-      const face = gap.indexOf(Math.min(...gap)), pad = r * 1.05;
-      if (face === 0) local.y = c.height + pad;
-      else if (face === 1) local.x = hx + pad;
-      else if (face === 2) local.x = -hx - pad;
-      else if (face === 3) local.z = hz + pad;
-      else local.z = -hz - pad;
-    }
     const pos = this.visual.localToWorld(local);
     const t = this.body.translation(), lin = this.body.linvel(), ang = this.body.angvel();
     const arm = pos.clone().sub(new THREE.Vector3(t.x, t.y, t.z));
@@ -933,9 +954,9 @@ export class Robot {
   /** Select the active bin nearest the intake path (including deployed hopper extensions). */
   private fuelEntry(hint: THREE.Vector3): THREE.Vector3 | null {
     let best: THREE.Vector3 | null = null, distance = Infinity;
-    const active = this.fuelPiles.some(p => p.visible);
+    const active = this.fuelPiles.some(p => p.userData.fuelRequestedFill > 0);
     for (const pile of this.fuelPiles) {
-      if (active ? !pile.visible : pile !== this.fuelPiles[0]) continue;
+      if (active ? !(pile.userData.fuelRequestedFill > 0) : pile !== this.fuelPiles[0]) continue;
       const local = pile.worldToLocal(this.visual.localToWorld(hint.clone()));
       const entry: THREE.Vector3 = pile.userData.fuelEntry(local);
       this.visual.worldToLocal(pile.localToWorld(entry));
@@ -947,21 +968,22 @@ export class Robot {
 
   private receiveFuel(position: THREE.Vector3): void {
     let best: THREE.Object3D | null = null, entry: THREE.Vector3 | null = null, distance = Infinity;
-    const active = this.fuelPiles.some(p => p.visible);
+    const active = this.fuelPiles.some(p => p.userData.fuelRequestedFill > 0);
     for (const pile of this.fuelPiles) {
-      if (active ? !pile.visible : pile !== this.fuelPiles[0]) continue;
+      if (active ? !(pile.userData.fuelRequestedFill > 0) : pile !== this.fuelPiles[0]) continue;
       const local = pile.worldToLocal(this.visual.localToWorld(position.clone()));
       const nearby: THREE.Vector3 = pile.userData.fuelEntry(local);
       const d = nearby.distanceToSquared(local);
       if (d < distance) { best = pile; entry = local; distance = d; }
     }
-    if (best && entry) best.userData.receiveFuel(entry);
+    if (best && entry) { best.userData.receiveFuel(entry); best.userData.fuelPendingArrival = true; }
   }
 
   /** Advance the team model's animation (called from syncVisual, once per rendered frame). */
   private animateModel(frameDt?: number, simulation = false): void {
     if (!simulation && frameDt === undefined && this.scoringSimulated && this.netAct === null && Math.abs(this.anim.fill - Math.min(1, (this.held.length - this.piecesInTransit) / Math.max(1,this.config.hopperCapacity))) < 1e-6) {
       const dt = frameDt ?? this.physics.dt;
+      this.distributeFuel();
       for (const animate of this.fuelAnimations) animate({ ...this.anim, dt });
       return;
     }

@@ -102,7 +102,7 @@ it('continues an incoming ball from the intake endpoint, then rolls into a new r
   const old=mesh.count;
   const entry=mesh.userData.fuelEntry(new THREE.Vector3(-0.23,0.35,0.18)) as THREE.Vector3;
   mesh.userData.receiveFuel(entry);
-  fill.set((old+1)/mesh.instanceMatrix.count);
+  fill.set((old+1)/(mesh.userData.fuelSlots as number));
   const matrix=new THREE.Matrix4(),pos=new THREE.Vector3();
   mesh.getMatrixAt(old,matrix);pos.setFromMatrixPosition(matrix);
   expect(pos.distanceTo(entry)).toBeLessThan(1e-6);

@@ -444,7 +444,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   return { set(f) {
     mesh.userData.fuelRequestedFill = f;
     const n = Math.min(count, Math.round(THREE.MathUtils.clamp(f, 0, 1) * count));
-    setCount(pile.open && n === count && mesh.count > count ? mesh.count : n);
+    if (!mesh.userData.fuelManagedCount) setCount(pile.open && n === count && mesh.count > count ? mesh.count : n);
   } };
 }
 

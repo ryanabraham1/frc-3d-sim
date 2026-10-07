@@ -185,7 +185,10 @@ export class FuelPile {
     const p = this.positions, v = this.velocity, rim = this.bin.y0 + this.bin.height;
     for (let i = this.count - 1; i >= 0; i--) {
       const j = i * 3;
-      if (p[j + 1] <= rim + this.radius * 0.2) continue;
+      const outside = Math.abs(p[j] - this.bin.x) > this.bin.length / 2 + this.radius * 0.2 || Math.abs(p[j + 2]) > this.bin.width / 2 + this.radius * 0.2;
+      const overturned = this.upY < 0 && p[j + 1] > rim + this.radius * 2;
+      if (!outside && !overturned) continue;
+      if (p[j + 1] < rim - this.radius && !outside) continue;
       escape?.(p[j], p[j + 1], p[j + 2], v[j], v[j + 1], v[j + 2]);
       const last = (this.count - 1) * 3;
       for (let k = 0; k < 3; k++) { p[j + k] = p[last + k]; v[j + k] = v[last + k]; }
@@ -197,11 +200,13 @@ export class FuelPile {
     const b = this.bin, j = i * 3, p = this.positions, v = this.velocity;
     const r = this.radius * this.seeds[i].s, ry = r * (this.seeds[i].sy ?? 0.94);
     const minX = b.x - b.length / 2 + r, maxX = b.x + b.length / 2 - r, minZ = -b.width / 2 + r, maxZ = b.width / 2 - r;
-    const x = THREE.MathUtils.clamp(p[j], minX, maxX), z = THREE.MathUtils.clamp(p[j + 2], minZ, maxZ);
-    if ((p[j] < minX && v[j] < 0) || (p[j] > maxX && v[j] > 0)) v[j] *= -0.08;
-    if ((p[j + 2] < minZ && v[j + 2] < 0) || (p[j + 2] > maxZ && v[j + 2] > 0)) v[j + 2] *= -0.08;
+    // Above the lip there is no side wall. Pair contacts can roll the ball across the rim continuously.
+    const overLip = this.open && (p[j + 1] > b.y0 + b.height || Math.abs(p[j] - b.x) > b.length / 2 || Math.abs(p[j + 2]) > b.width / 2);
+    const x = overLip ? p[j] : THREE.MathUtils.clamp(p[j], minX, maxX), z = overLip ? p[j + 2] : THREE.MathUtils.clamp(p[j + 2], minZ, maxZ);
+    if (!overLip && ((p[j] < minX && v[j] < 0) || (p[j] > maxX && v[j] > 0))) v[j] *= -0.08;
+    if (!overLip && ((p[j + 2] < minZ && v[j + 2] < 0) || (p[j + 2] > maxZ && v[j + 2] > 0))) v[j + 2] *= -0.08;
     p[j] = x; p[j + 2] = z;
-    if (b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
+    if (!overLip && b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
     const floor = b.y0 + ry, roof = Math.min(b.y0 + b.height, b.ceiling?.(p[j], p[j + 2]) ?? Infinity) - ry;
     if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.85; v[j + 2] *= 0.85; }
     // Uncovered bins have no lid: only the rim (see releaseOverRim) ends a ball's climb.
