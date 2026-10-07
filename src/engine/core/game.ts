@@ -330,13 +330,6 @@ export class Game {
     }
 
     if (this.net) {
-      this.offs.push(
-        this.net.client.on('closed', ({ reason }) => {
-          if (this.disposed) return;
-          this.clientModal = 'closed';
-          if (this.state !== 'results') this.state = 'paused';
-          this.hud.showModal('Disconnected', `<p>${reason}.</p>`, [{ label: 'Main menu', primary: true, onClick: () => this.callbacks.onExit() }]);
-        }),
       const netClient = this.net.client;
       this.offs.push(
         netClient.on('reconnecting', () => this.hud.toast('Connection lost — reconnecting…', 'warn')),
@@ -351,6 +344,13 @@ export class Game {
           if (rs) this.hud.toast(`${rs.name} lost connection — waiting for them to return…`, 'warn');
         }),
       );
+      this.offs.push(
+        this.net.client.on('closed', ({ reason }) => {
+          if (this.disposed) return;
+          this.clientModal = 'closed';
+          if (this.state !== 'results') this.state = 'paused';
+          this.hud.showModal('Disconnected', `<p>${reason}.</p>`, [{ label: 'Main menu', primary: true, onClick: () => this.callbacks.onExit() }]);
+        }),
       );
     }
 
