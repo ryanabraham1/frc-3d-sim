@@ -67,6 +67,19 @@ describe('CAD mechanism paths', () => {
     expect(k.config.launcher.minAngle).toBe(k.config.launcher.maxAngle);
   });
 
+  it('Skyfall carries its hooks on the arm and reverses the feed path for AMP', () => {
+    const k=kit(2024,'skyfall-1114'),model=robotModelBuilder('skyfall-1114')!(k);
+    settle(model,state({climb:1}));
+    expect(local(k,model.climbAnchor!).y).toBeGreaterThan(1);
+    const hook=k.visual.getObjectByName('skyfall-climb-hook-1')!;
+    expect(hook.parent?.name).toBe('skyfall-shooter-arm');
+    settle(model,state({amp:true}));
+    expect(model.flow!.feed!()[1].y).toBeGreaterThan(.7);
+    settle(model,state({aiming:true,hood:.9}));
+    const feed=model.flow!.feed!();
+    expect(feed[1].x).toBeGreaterThan(feed[0].x);
+  });
+
   for (const id of ['doppler-1690','axl-4522','skyfall-1114','typhoon-2910','titan-581','roti-5940','presto-6328']) {
     it(`${id}: pitching shooter follows the solved elevation`, () => {
       const k = kit(2024,id), model = robotModelBuilder(id)!(k);

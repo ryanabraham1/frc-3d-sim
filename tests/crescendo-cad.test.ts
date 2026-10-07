@@ -14,6 +14,24 @@ describe('supplied CRESCENDO CAD',()=>{
     const visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
     const model=cadRobotModelBuilder(id)!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:config.intake.groundSide==='front'?1:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
     const root=visual.getObjectByName(`cad-${id}`)!;expect(root).toBeTruthy();
+    if (id === 'typhoon-2910') {
+      turret.rotation.y=0; model.update({...idle,enabled:true,aiming:true,hood:.7});
+      const path=model.flow!.feed!();
+      expect(path[1].x).toBeGreaterThan(path[0].x);
+      expect(path[1].y).toBeGreaterThan(path[0].y);
+      expect(root.getObjectByName('cad-shooter-pivot')!.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(.1397-.05193045,.28691241,0))).toBeLessThan(.001);
+    }
+    if (id === 'snoopy-6036') {
+      const assembly = root.getObjectByName('cad-turret-pivot')!;
+      const shooter = root.getObjectByName('cad-shooter-pivot')!;
+      turret.rotation.y = -.8; model.update({...idle,enabled:true,aiming:true});
+      const first = shooter.getWorldPosition(new THREE.Vector3());
+      turret.rotation.y = .9; model.update({...idle,enabled:true,aiming:true});
+      expect(assembly.rotation.y).toBeCloseTo(.9);
+      expect(shooter.getWorldPosition(new THREE.Vector3()).distanceTo(first)).toBeGreaterThan(.15);
+      model.update({...idle,enabled:true,intaking:true});
+      expect(assembly.rotation.y).toBeCloseTo(0);
+    }
     const frame=root.getObjectByName('frame')!;const original=frame.matrix.clone();
     for(let i=0;i<=60;i++){
       turret.rotation.y=(i/60-.5)*Math.PI*2;

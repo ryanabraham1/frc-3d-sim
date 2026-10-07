@@ -81,17 +81,17 @@ export function buildSkyfall1114(k: ModelKit): RobotModel {
   const held=pivot(arm,.08,-.013); held.name='skyfall-note-throat';
   const ampExit=pivot(arm,rear,-.018);
   const struts=[-1,1].map(sign=>({sign,body:link(k.visual,.009,black),rod:link(k.visual,.004,silver)}));
-  let angle=0;
+  let angle=0, amping=false;
   return { replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'], heldAnchor:held,
     climbAnchor: pivot(arm,rear-.16,-.30), lightAt:[px,py+.1,0],
     flow:{ intake:()=>[...underBumperEntry(k,.025),new THREE.Vector3(-L*.15,bt+.13,0),flowAt(k,arm,rear,-.03,0)],
-      feed:()=>[flowAt(k,held),flowAt(k,ampExit)] },
+      feed:()=>[flowAt(k,held),amping?flowAt(k,ampExit):flowAt(k,arm,nose+.10,-.04,0)] },
     update(s) {
-      base.update(s); intake.update(s);
+      base.update(s); intake.update(s); amping=!!s.amp;
       // CAD horizontal datum is the intake hard stop (-45.27° encoder); outlet angle is fitted.
       const datum=45.27*Math.PI/180;
-      const target=s.climb>.5 ? Math.PI/2+datum : s.climb>.1 ? (-39*Math.PI/180+datum)
-        : s.amp ? (23.5*Math.PI/180+datum) : s.enabled&&(s.aiming||s.firing>0) ? THREE.MathUtils.clamp(s.hood-datum,-.35,.65) : 0;
+      const target=s.climb>.5 ? -(Math.PI/2+datum) : s.climb>.1 ? (-39*Math.PI/180+datum)
+        : s.amp ? -(23.5*Math.PI/180+datum) : s.enabled&&(s.aiming||s.firing>0) ? THREE.MathUtils.clamp(s.hood-datum,-.35,.65) : 0;
       angle=s.dt===0?target:approach(angle,target,6,s.dt); arm.rotation.z=angle;
       held.rotation.z=datum;
       for(const r of rollers) spin(r,s.enabled&&(s.intaking||s.firing>0)?-32:0,s.dt);

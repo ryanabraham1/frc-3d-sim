@@ -75,7 +75,9 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
         return;
       }
       let targetY:number,targetPhi:number;
-      if(p.handoff){targetY=.31+length;targetPhi=-Math.PI/2;}
+      const floorAlgae=id==='quixilver-604-2025'&&s.intaking&&parked&&!p.handoff;
+      if(floorAlgae){targetY=.70;targetPhi=-.60;}
+      else if(p.handoff){targetY=.31+length;targetPhi=-Math.PI/2;}
       else if(parked){targetY=id==='quixilver-604-2025'?.808:.38;targetPhi=1.22;}
       else {
         const reach=THREE.MathUtils.clamp(p.forward-f.shoulder[0],.02,length);
@@ -86,7 +88,7 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       carriage.position.y=yc-f.shoulder[1];
       if(stage)stage.position.y=id==='quixilver-604-2025'?carriage.position.y:Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
       arm.quaternion.copy(q.setFromAxisAngle(axis,phi)).multiply(neutral);
-      const toolAngle=parked||p.handoff?0:p.level===4?-1.1:p.level===1?0:-.5;
+      const toolAngle=floorAlgae?-.35:parked||p.handoff?0:p.level===4?-1.1:p.level===1?0:-.5;
       wrist.quaternion.copy(arm.quaternion).invert().multiply(q.setFromAxisAngle(axis,toolAngle));
       if(id!=='whisper-1690')wrist.quaternion.multiply(neutral);
       deploy=p.handoff?1-transferFold(p.handoff):ease(deploy,s.intaking?1:0,s.dt);

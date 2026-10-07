@@ -30,6 +30,7 @@ const requestedSeason = new URLSearchParams(location.search).get('season');
 if (SEASONS.some(s => s.id === requestedSeason)) seasonSelect.value = requestedSeason!;
 const pose = document.querySelector<HTMLSelectElement>('#pose')!;
 const hood = document.querySelector<HTMLSelectElement>('#hood')!;
+const turretYaw = document.querySelector<HTMLSelectElement>('#turretYaw')!;
 let reverse = false;
 let red = false;
 let focus = -1;
@@ -113,6 +114,9 @@ function frame(now: number) {
     r.ampDeploy = seasonSelect.value === '2024-crescendo' ? pose.value === 'score' : null;
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
     r.lastShotAngle = Number(hood.value);
+    // Exercise the same relative turret target used by gameplay instead of leaving every preview at yaw zero.
+    r.turretYaw = r.config.launcher.turret && ['aim','score','flow'].includes(pose.value)
+      ? turretYaw.value === 'sweep' ? Math.sin(now / 2200) * Math.PI * .8 : Number(turretYaw.value) : 0;
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
     r.placeAnim = {algae:pose.value==='algae'||pose.value==='both',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='both'?1:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:(pose.value==='score'||pose.value==='algae')&&r.config.placement?.scoreSide==='sides'?1:0};
     if (pose.value === 'transfer') {

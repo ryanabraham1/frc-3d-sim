@@ -25,7 +25,10 @@ export function buildSnoopyCad(root: THREE.Group, k: ModelKit, animated: () => b
       const goal = s.climb > .5 ? .31*Math.PI*2 : s.climb > 0 ? (s.firing > 0 ? .14 : .001)*Math.PI*2
         : amp ? .27*Math.PI*2 : s.aiming || s.firing > 0 ? s.hood : 0;
       pitch = active ? actuator(pitch,goal-sourcePitch,3.5,s.dt) : 0;
-      yaw = active ? actuator(yaw,s.climb > 0 ? Math.PI : s.intaking ? 0 : k.turret.rotation.y,5,s.dt) : sourceYaw;
+      const yawGoal = s.climb > 0 ? Math.PI : s.intaking ? 0 : k.turret.rotation.y;
+      const yawError = Math.atan2(Math.sin(yawGoal-yaw),Math.cos(yawGoal-yaw));
+      yaw = active ? actuator(yaw,yaw+yawError,5,s.dt) : sourceYaw;
+      yaw = Math.atan2(Math.sin(yaw),Math.cos(yaw));
       shooter.rotation.z = pitch; turret.rotation.y = yaw;
     },
   };

@@ -44,6 +44,16 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
     model.update({...idle,climb:.25});visual.updateMatrixWorld(true);
     expect(model.climbAnchor!.getWorldPosition(new THREE.Vector3()).distanceTo(deployed),'cage contact follows arm-driven pull-in').toBeGreaterThan(.2);
   }
+  if(id==='quixilver-604-2025') {
+    expect(config.options?.algaeGround).toBe(true);
+    expect(config.intake.ground).toBe(false);
+    model.update({...idle,intaking:true,enabled:true});visual.updateMatrixWorld(true);
+    const pickup=model.algaeAnchor!.getWorldPosition(new THREE.Vector3());
+    expect(pickup.x).toBeGreaterThan(config.frameLength/2);
+    expect(pickup.y).toBeLessThan(.5);
+    expect(new THREE.Box3().setFromObject(root,true).min.y).toBeGreaterThan(-.04);
+    model.update(idle);
+  }
   const initial=model.heldAnchor!.getWorldPosition(new THREE.Vector3());
   const fixed=root.getObjectByName('frame')!.matrixWorld.clone();
   const poses=[{height:.45,forward:.3,level:1},{height:1.75,forward:.7,level:4},{height:2.03,forward:.45,level:3,algae:true},{height:.45,forward:.3,level:1,handoff:.5}];

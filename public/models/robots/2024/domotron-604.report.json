@@ -2,10 +2,10 @@
   "id": "domotron-604",
   "sourceFile": "2024 FRC604.glb",
   "inputBytes": 217026868,
-  "outputBytes": 18534828,
+  "outputBytes": 18515696,
   "inputTriangles": 85732082,
-  "outputTriangles": 1179020,
-  "omittedOccurrences": 351,
+  "outputTriangles": 1177681,
+  "omittedOccurrences": 352,
   "bounds": {
     "min": [
       -0.3746500015258789,
