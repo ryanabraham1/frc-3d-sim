@@ -699,9 +699,10 @@ export class Game {
         const p = pool.position(i);
         for (let k = 0; k < zones.length; k++) {
           const { r, z } = zones[k];
-          if (this.robots.some(other => other !== r && other.shieldsPiece(p, pool.radius))) continue;
           if (r.justLaunched(i)) continue;
+          // Cheap zone test first; the shield test reads other robots' poses through WASM.
           if (intakeZoneContains(z, p, pool.radius, 0.4)) {
+            if (this.robots.some(other => other !== r && other.shieldsPiece(p, pool.radius))) continue;
             r.noteCapture(p);
             pool.hold(i, r.id);
             r.held.push(i);

@@ -1,7 +1,7 @@
 import { aroundCircles, clusterCounts, CycleBot } from '@engine/ai/cycleBot';
 import { dist, routeThroughBands } from '@engine/ai/steering';
 import { TeamBrain } from '@engine/ai/team';
-import type { FieldPoint } from '@engine/coords';
+import type { FieldPoint, FieldPose } from '@engine/coords';
 import type { AiChoice, SeasonContext } from '@engine/core/season';
 import { IDLE_COMMAND, type Robot, type RobotCommand } from '@engine/robot/robot';
 import { clamp } from '@engine/units';
@@ -72,6 +72,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const plan = team.memo<RebuiltPlan>('rebuilt', () => ({ announced: '' }));
   const enemy = r.alliance === 'blue' ? 'red' : 'blue';
   const fromWall = (x: number) => (r.alliance === 'blue' ? x : C.FIELD_LENGTH - x);
+  // Reading a pose goes through WASM; a bot's own pose can't change while it thinks, so read it once per think().
+  let poseCache: FieldPose | null = null;
+  const myPose = (): FieldPose => (poseCache ??= r.pose);
   const half = Math.max(r.footprint.width, r.footprint.length) / 2;
   const speed = () => r.config.maxSpeed * bot.pace * 0.8;
   const laneY = (k: number) => [1.35, C.FIELD_WIDTH - 1.35, C.FIELD_WIDTH / 2 + 1.75][k % 3];
@@ -79,7 +82,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   // Shooting spot inside the ALLIANCE ZONE, ~2-3 m from the HUB (best accuracy), on our own lane when far away.
   const shootSpot = (): FieldPoint => {
     if (chassisAim) return stanceSpot();
-    const p = r.pose;
+    const p = myPose();
     const y = clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
     return { x: side(r.alliance, 2.7, 0).x, y };
   };
@@ -87,7 +90,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const tower = { ...towerCenter, r: Math.hypot(C.TOWER_DEPTH, C.TOWER_WIDTH) / 2 + half * 0.7 };
   // Crossing a hub row costs time; a robot too tall for the TRENCH has to go over a BUMP, which costs more.
   const rowCost = () => r.clearanceHeight > C.TRENCH_CLEARANCE ? 2.5 : 1.2;
-  const travelTime = (goal: FieldPoint) => dist(r.pose, goal) / Math.max(1, speed()) + (routeThroughBands(r.pose, goal, BANDS, half, r.clearanceHeight) !== goal ? rowCost() : 0.3);
+  const travelTime = (goal: FieldPoint) => dist(myPose(), goal) / Math.max(1, speed()) + (routeThroughBands(myPose(), goal, BANDS, half, r.clearanceHeight) !== goal ? rowCost() : 0.3);
   /** Our TOWER climb spot: each teammate claims a different one so nobody races a teammate for it. */
   const mySlot = (): { idx: number; pose: { x: number; y: number; yaw: number }; dist: number } | null => {
     const claims = team.memo('towerClaims', () => new Map<number, number>());
@@ -95,15 +98,15 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const takenByOther = (i: number) => team.members.some((o) => o !== r && (o.climbSlot === i || claims.get(o.id) === i));
     let idx = claims.get(r.id);
     if (idx === undefined || takenByOther(idx)) {
-      const free = slots.map((p, i) => ({ i, d: dist(r.pose, p) })).filter(({ i }) => !takenByOther(i)).sort((a, b) => a.d - b.d);
+      const free = slots.map((p, i) => ({ i, d: dist(myPose(), p) })).filter(({ i }) => !takenByOther(i)).sort((a, b) => a.d - b.d);
       if (!free.length) return null;
       idx = free[0].i;
     }
-    return { idx, pose: slots[idx], dist: dist(r.pose, slots[idx]) };
+    return { idx, pose: slots[idx], dist: dist(myPose(), slots[idx]) };
   };
   const claimSlot = (idx: number) => team.memo('towerClaims', () => new Map<number, number>()).set(r.id, idx);
   const inZone = () => rules.inAllianceZone(r);
-  const insideZone = () => fromWall(r.pose.x) < C.ALLIANCE_ZONE_DEPTH - half - 0.05;
+  const insideZone = () => fromWall(myPose().x) < C.ALLIANCE_ZONE_DEPTH - half - 0.05;
 
   // Fuel on the carpet, scanned once per tick for the whole alliance.
   const fuel = () => team.memo('fuelScan', () => ({ t: -1, pts: [] as { i: number; p: FieldPoint }[] }));
@@ -144,31 +147,39 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   let chase: { p: FieldPoint; best: number; since: number } | null = null;
   const isBlocked = (p: FieldPoint) => blocked.some((b) => b.until > ctx.clock.elapsed && dist(b.p, p) < 0.6);
   /** Nearest worthwhile FUEL under `filter`, spreading teammates over different patches. */
-  const canRaid = (p:FieldPoint) => !rules.hubActive(r.alliance) && rules.secondsUntilActive(r.alliance) > (dist(r.pose,p)+dist(p,shootSpot()))/Math.max(1,r.config.maxSpeed*.65)+8;
+  const canRaid = (p:FieldPoint) => !rules.hubActive(r.alliance) && rules.secondsUntilActive(r.alliance) > (dist(myPose(),p)+dist(p,shootSpot()))/Math.max(1,r.config.maxSpeed*.65)+8;
   const nearestFuel = (filter: (p: FieldPoint) => boolean, maxCost = Infinity): FieldPoint | null => {
     const mates = team.members.filter((o) => o !== r && o.capacityLeft > 0 && !o.isClimbing);
+    // Poses are read through WASM: take each once instead of once per FUEL.
+    const me = myPose();
+    const matePoses = mates.map((m) => m.pose);
+    const raidWindow = rules.hubActive(r.alliance) ? -Infinity : rules.secondsUntilActive(r.alliance);
+    const spot = raidWindow > 8 ? shootSpot() : me;
+    const raidSpeed = Math.max(1, r.config.maxSpeed * 0.65);
+    const raidable = (p: FieldPoint) => raidWindow > (dist(me, p) + dist(p, spot)) / raidSpeed + 8;
     let best: FieldPoint | null = null, cost = maxCost;
-    const candidates=scanFuel().filter(({p})=>filter(p) && (fromWall(p.x)<=C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH-.3 || canRaid(p)) && !isBlocked(p) && !nearTower(p));
+    const candidates=scanFuel().filter(({p})=>filter(p) && (fromWall(p.x)<=C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH-.3 || raidable(p)) && !isBlocked(p) && !nearTower(p));
     const density=clusterCounts(candidates.map(({p})=>p),1.2);
     for (const [idx,{p}] of candidates.entries()) {
       // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
       const inRow = Math.abs(fromWall(p.x) - C.HUB_CENTER.x) < C.HUB_SIZE / 2 + 0.3;
       if (inTrench(p)) continue; // FUEL under a TRENCH jams robots that go in after it
-      let c = dist(r.pose, p) + (inRow ? 1.5 : 0) - .4*Math.min(density[idx]-1,r.capacityLeft-1,12);
-      for (const m of mates) if (dist(m.pose, p) + 0.4 < dist(r.pose, p)) c += 2.5;
+      const mine = dist(me, p);
+      let c = mine + (inRow ? 1.5 : 0) - .4*Math.min(density[idx]-1,r.capacityLeft-1,12);
+      for (const mp of matePoses) if (dist(mp, p) + 0.4 < mine) c += 2.5;
       if (c < cost) { cost = c; best = p; }
     }
     return best;
   };
   const trackChase = (p: FieldPoint) => {
-    const d = dist(r.pose, p), t = ctx.clock.elapsed;
+    const d = dist(myPose(), p), t = ctx.clock.elapsed;
     if (!chase || dist(chase.p, p) > 0.5 || d < chase.best - 0.25) chase = { p, best: d, since: t };
     else if (t - chase.since > 1.8) { blocked.push({ p, until: t + 6 }); chase = null; }
     if (blocked.length > 40) blocked.splice(0, blocked.length - 40);
   };
   const collect = (p: FieldPoint, extra?: Partial<RobotCommand>): RobotCommand => {
     trackChase(p);
-    const yaw = dist(r.pose, p) < 3 ? Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.intakeYawOffset : undefined;
+    const yaw = dist(myPose(), p) < 3 ? Math.atan2(p.y - myPose().y, p.x - myPose().x) + r.intakeYawOffset : undefined;
     return { ...bot.driveTo(p, yaw,undefined,.3), intake: r.capacityLeft > 0, ...extra };
   };
 
@@ -182,7 +193,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     // Angle around the HUB on the wall side, from where the robot is; teammates already there push it round.
     const off = (a: number) => wrap(a - towardWall);
     const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-    let a = towardWall + clamp(off(Math.atan2(r.pose.y - hubP.y, r.pose.x - hubP.x)), -0.8, 0.8);
+    let a = towardWall + clamp(off(Math.atan2(myPose().y - hubP.y, myPose().x - hubP.x)), -0.8, 0.8);
     const spotAt = (ang: number) => {
       // Far enough that the whole bumper stays inside the ALLIANCE ZONE (the HUB straddles the zone line).
       const minD = (C.ALLIANCE_ZONE_DEPTH - C.HUB_CENTER.x) * -1 + half + 0.12;
@@ -200,13 +211,13 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const stanceCommand = (live: boolean): RobotCommand => {
     const spot = stanceSpot();
     const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x);
-    const there = dist(r.pose, spot) < 0.3;
+    const there = dist(myPose(), spot) < 0.3;
     const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
     cmd.intake = r.capacityLeft > 0;
     // Fire once planted (auto-align squares the chassis and holds the first shot until aligned). Once a burst is going
     // the robot keeps firing wherever it points, so a driver lets off the trigger while the robot is being shoved or
     // swung around (it would only spray FUEL) and fires again when it settles.
-    const settled = r.speed < 0.4 && Math.abs(r.body.angvel().y) < 1.2 && !(r.inBurst && Math.abs(Math.atan2(Math.sin(face - r.pose.yaw), Math.cos(face - r.pose.yaw))) > 0.1);
+    const settled = r.speed < 0.4 && Math.abs(r.body.angvel().y) < 1.2 && !(r.inBurst && Math.abs(Math.atan2(Math.sin(face - myPose().yaw), Math.cos(face - myPose().yaw))) > 0.1);
     cmd.shoot = inZone() && live && r.held.length > 0 && settled && (there || insideZone());
     return cmd;
   };
@@ -215,7 +226,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     if (chassisAim && r.held.length > 0) return stanceCommand(active);
     // In the zone with FUEL: shoot, and keep scooping up FUEL lying in the zone (fed stockpile, misses).
     const zoneFuel = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7, 4) : null;
-    const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(insideZone() && inZone() ? r.pose : shootSpot());
+    const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(insideZone() && inZone() ? myPose() : shootSpot());
     if (!zoneFuel && insideZone()) { cmd.vx *= 0.5; cmd.vy *= 0.5; }
     cmd.intake = r.capacityLeft > 0;
     cmd.shoot = inZone() && active && r.held.length > 0;
@@ -228,31 +239,31 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const lane = side(r.alliance, C.CENTER_X - 1.6, 0).x;
     const cmd = p ? collect(p) : bot.driveTo({ x: lane, y: myLane() });
     cmd.intake = r.capacityLeft > 0;
-    cmd.pass = !inZone() && r.held.length > keep && fromWall(r.pose.x) > C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE / 2 + 0.8 && Math.abs(r.pose.y - C.HUB_CENTER.y) > 0.9;
+    cmd.pass = !inZone() && r.held.length > keep && fromWall(myPose().x) > C.ALLIANCE_ZONE_DEPTH + C.HUB_SIZE / 2 + 0.8 && Math.abs(myPose().y - C.HUB_CENTER.y) > 0.9;
     return cmd;
   };
 
   let defending = 0, retreatUntil = 0;
   const defendCommand = (dt: number, prefer?: Robot | null): RobotCommand | null => {
     const targets = ctx.robots.filter((o) => o.alliance === enemy && !o.isClimbing && !o.tippedOver && o.held.length > 0);
-    targets.sort((a, b) => Number(b === prefer) - Number(a === prefer) || Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || b.held.length * b.config.launcher.rate - a.held.length * a.config.launcher.rate || dist(r.pose, a.pose) - dist(r.pose, b.pose));
+    targets.sort((a, b) => Number(b === prefer) - Number(a === prefer) || Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || b.held.length * b.config.launcher.rate - a.held.length * a.config.launcher.rate || dist(myPose(), a.pose) - dist(myPose(), b.pose));
     const target = targets[0];
     if (!target) return null;
     team.say(r, `Defending ${team.label(target).replace('You', 'the driver')}`, `defend:${r.id}:${target.id}`, 15);
     const p = target.pose, v = target.fieldVelocity;
-    if (dist(r.pose, p) < 1.25) defending += dt; else defending = Math.max(0, defending - dt);
+    if (dist(myPose(), p) < 1.25) defending += dt; else defending = Math.max(0, defending - dt);
     // Break contact before a 5-count pin (G418) and come back.
     if (defending > 1.8) { retreatUntil = ctx.clock.elapsed + 1.6; defending = 0; }
     if (ctx.clock.elapsed < retreatUntil) {
-      const away = Math.atan2(r.pose.y - p.y, r.pose.x - p.x);
-      return bot.driveTo({ x: r.pose.x + Math.cos(away) * 1.5, y: clamp(r.pose.y + Math.sin(away) * 1.5, 0.8, C.FIELD_WIDTH - 0.8) });
+      const away = Math.atan2(myPose().y - p.y, myPose().x - p.x);
+      return bot.driveTo({ x: myPose().x + Math.cos(away) * 1.5, y: clamp(myPose().y + Math.sin(away) * 1.5, 0.8, C.FIELD_WIDTH - 0.8) });
     }
     team.pushing(r);
     // Get between the shooter and its HUB, then lean on it.
     const hub = rules.hubCenter(enemy);
-    const k = dist(r.pose, p) > 2 ? 0.35 : 0;
+    const k = dist(myPose(), p) > 2 ? 0.35 : 0;
     const goal = { x: p.x + (hub.x - p.x) * k + v.vx * 0.3, y: p.y + (hub.y - p.y) * k + v.vy * 0.3 };
-    return bot.driveTo(goal, Math.atan2(p.y - r.pose.y, p.x - r.pose.x), target);
+    return bot.driveTo(goal, Math.atan2(p.y - myPose().y, p.x - myPose().x), target);
   };
 
   const climbTime = () => {
@@ -271,6 +282,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
 
   let raidReturning=false;
   const think = (dt: number): RobotCommand => {
+    poseCache = null;
     if (r.isClimbing) return { ...IDLE_COMMAND };
     if (bot.smart) announce();
     const role = bot.role;
@@ -291,7 +303,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
         team.say(r, `Climbing to LEVEL ${r.config.climber.maxLevel}`, `climb:${r.id}`, 30);
         // Line up in front of the slot first so the approach doesn't wedge against the TOWER's side.
         const pre = { x: slot.pose.x - Math.cos(slot.pose.yaw) * 0.8, y: slot.pose.y - Math.sin(slot.pose.yaw) * 0.8 };
-        const lined = dist(r.pose, pre) < 0.35 || slot.dist < 0.75;
+        const lined = dist(myPose(), pre) < 0.35 || slot.dist < 0.75;
         const cmd = bot.driveTo(lined ? slot.pose : pre, slot.pose.yaw);
         cmd.shoot = inZone() && r.held.length > 0 && slot.dist > 0.5;
         if (slot.dist < 0.75 && (r.held.length === 0 || remaining < r.config.climber.secondsPerLevel * r.config.climber.maxLevel + 1.5)) cmd.climb = r.config.climber.maxLevel;
@@ -314,12 +326,12 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     }
 
     if(bot.hard && !active && role !== 'defender' && untilActive > toSpot+3 && remaining>30) {
-      if(r.held.length>=12 && fromWall(r.pose.x)>C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH) raidReturning=true;
+      if(r.held.length>=12 && fromWall(myPose().x)>C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH) raidReturning=true;
       if(!r.held.length) raidReturning=false;
       if(raidReturning) {
         const goal=side(r.alliance,C.ALLIANCE_ZONE_DEPTH+C.HUB_SIZE/2+1.3,myLane());
         const cmd=bot.driveTo(goal); cmd.intake=r.capacityLeft>0;
-        cmd.pass=!inZone() && dist(r.pose,goal)<.9; return cmd;
+        cmd.pass=!inZone() && dist(myPose(),goal)<.9; return cmd;
       }
       const raid=r.capacityLeft>0 ? nearestFuel(p=>fromWall(p.x)>C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH && canRaid(p),3) : null;
       if(raid) return collect(raid);
@@ -370,8 +382,8 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     onStuck: () => { if (chase) blocked.push({ p: chase.p, until: ctx.clock.elapsed + 8 }); chase = null; },
     release: () => r.climbPhase === 'hanging' && ctx.clock.driveRemaining > 40,
     route: (goal) => {
-      const via = routeThroughBands(r.pose, goal, openBands(), half, r.clearanceHeight, bot.hard);
-      return via === goal ? aroundCircles(r.pose, goal, [tower]) : via;
+      const via = routeThroughBands(myPose(), goal, openBands(), half, r.clearanceHeight, bot.hard);
+      return via === goal ? aroundCircles(myPose(), goal, [tower]) : via;
     },
     score: () => shootingCommand(rules.hubActive(r.alliance)),
   });

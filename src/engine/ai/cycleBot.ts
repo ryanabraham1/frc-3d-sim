@@ -333,21 +333,24 @@ const CLUSTER_CAP = 12;
 
 /** For each point, how many points (itself included) lie within `radius`, using a uniform grid. */
 export function clusterCounts(points: FieldPoint[], radius: number): number[] {
-  const cells = new Map<string, number[]>();
-  const key = (cx: number, cy: number) => `${cx},${cy}`;
+  const cells = new Map<number, number[]>();
+  // Numeric cell keys: string keys allocated on every lookup and dominated the bots' per-step cost.
+  const key = (cx: number, cy: number) => (cx + 32768) * 65536 + (cy + 32768);
   points.forEach((p, k) => {
     const id = key(Math.floor(p.x / radius), Math.floor(p.y / radius));
-    let list = cells.get(id);
-    if (!list) cells.set(id, (list = []));
-    list.push(k);
+    const list = cells.get(id);
+    if (list) list.push(k);
+    else cells.set(id, [k]);
   });
   const r2 = radius * radius;
   return points.map((p) => {
     const cx = Math.floor(p.x / radius), cy = Math.floor(p.y / radius);
     let n = 0;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const k of cells.get(key(cx + dx, cy + dy)) ?? []) {
-        const q = points[k];
+      const list = cells.get(key(cx + dx, cy + dy));
+      if (!list) continue;
+      for (let i = 0; i < list.length; i++) {
+        const q = points[list[i]];
         if ((q.x - p.x) ** 2 + (q.y - p.y) ** 2 <= r2) n++;
       }
     }
