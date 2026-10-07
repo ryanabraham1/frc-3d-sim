@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import { RankedService } from './ranked.ts';
 import { createRankedStore, type RankedStore } from './rankedStore.ts';
 import {
+  cleanClientId,
   cleanName,
   cleanTitle,
   CLOSE_LEAVE,
@@ -42,6 +43,10 @@ interface Peer {
   /** Secret that lets this peer resume after a dropped connection. */
   token: string;
   ip: string;
+  /** Per-tab id from the client (empty if it sent none). */
+  clientId: string;
+  /** Membership events a dropped connection missed; replayed when it resumes. */
+  missed: RelayEvent[];
   /** Connection dropped; waiting for a `rejoin` until `lostTimer` fires. */
   lost: boolean;
   lostTimer: ReturnType<typeof setTimeout> | null;
@@ -153,8 +158,11 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
   };
   server.on('upgrade', onUpgrade);
 
+  const MEMBERSHIP = new Set(['peer-joined', 'peer-left', 'peer-lost', 'peer-back']);
   const send = (p: Peer, ev: RelayEvent) => {
     if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(ev));
+    // A host that is briefly offline must still learn who came and went while it was away.
+    else if (p.lost && MEMBERSHIP.has(ev.op) && p.missed.length < 100) p.missed.push(ev);
   };
 
   const newCode = (): string => {
@@ -281,9 +289,22 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     }, grace);
   };
 
+  /** The same tab joining again replaces the seat its previous page left behind (dropped but not yet expired). */
+  const replaceStale = (p: Peer, target?: Room) => {
+    if (!p.clientId) return;
+    for (const o of [...byId.values()]) {
+      if (o === p || o.clientId !== p.clientId || !o.room) continue;
+      const inTarget = target && o.room === target;
+      if (!o.lost && !inTarget) continue; // a live seat elsewhere is left alone (leave() handles moving rooms)
+      if (o.room.host === o) continue; // never evict a room's host this way
+      send(o, { op: 'room-closed', reason: 'You joined again from this tab' });
+      leave(o, 'replaced');
+    }
+  };
+
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage, ip: string) => {
     connCount.set(ip, (connCount.get(ip) ?? 0) + 1);
-    let peer: Peer = { id: `p${nextPeer++}`, name: 'Player', ws, room: null, token: randomUUID(), ip, lost: false, lostTimer: null };
+    let peer: Peer = { id: `p${nextPeer++}`, name: 'Player', ws, room: null, token: randomUUID(), ip, clientId: '', missed: [], lost: false, lostTimer: null };
     byId.set(peer.id, peer);
     const alive = ws as WebSocket & { __alive?: boolean };
     alive.__alive = true;
@@ -325,6 +346,8 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
           record(hits.creates, ip);
           leave(peer, 'host left');
           peer.name = cleanName(req.name);
+          peer.clientId = cleanClientId(req.client);
+          replaceStale(peer);
           const code = newCode();
           const r: Room = {
             code,
@@ -355,6 +378,8 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
           if (r.peers.size >= MAX_PEERS_PER_ROOM) return send(peer, { op: 'error', message: `Room ${code} is full` });
           leave(peer, 'host left');
           peer.name = cleanName(req.name);
+          peer.clientId = cleanClientId(req.client);
+          replaceStale(peer, r);
           r.peers.set(peer.id, peer);
           peer.room = r;
           send(peer, { op: 'joined', room: code, peerId: peer.id, hostId: r.host.id, token: peer.token });
@@ -376,9 +401,16 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
           byId.delete(peer.id); // the placeholder made for this socket
           peer = ghost;
           send(peer, { op: 'joined', room: r.code, peerId: peer.id, hostId: r.host.id, token: peer.token, resumed: true });
+          for (const ev of peer.missed.splice(0)) send(peer, ev);
           if (r.host === peer) {
             for (const o of r.peers.values()) if (o !== peer) send(o, { op: 'host-back' });
           } else send(r.host, { op: 'peer-back', peerId: peer.id });
+          break;
+        }
+        case 'forget': {
+          const r = rooms.get(normalizeRoomCode(String(req.room ?? '')));
+          const ghost = r && [...r.peers.values()].find((p) => p.lost && p.token === req.token && r.host !== p);
+          if (ghost) leave(ghost, 'left');
           break;
         }
         case 'list':

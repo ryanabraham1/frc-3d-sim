@@ -313,4 +313,85 @@ describe('relay', () => {
       expect((await g.next('error')).message).toMatch(/Too many attempts/);
     });
   });
+
+  describe('ghost seats', () => {
+    it('a host that was offline is told who joined and left meanwhile when it resumes', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const ja = await a.next('joined');
+      await host.next('peer-joined');
+
+      host.ws.terminate();
+      await a.next('host-lost');
+      const b = await peer();
+      b.send({ op: 'join', room: created.room, name: 'B' });
+      const jb = await b.next('joined');
+      a.ws.close(4000, 'leave'); // leaves while the host is away
+
+      const again = await peer();
+      again.send({ op: 'rejoin', room: created.room, token: created.token });
+      await again.next('joined');
+      expect((await again.next('peer-joined')).peerId).toBe(jb.peerId);
+      expect((await again.next('peer-left')).peerId).toBe(ja.peerId);
+    });
+
+    it('joining again from the same tab replaces the seat the old page left behind', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const old = await peer();
+      old.send({ op: 'join', room: created.room, name: 'Me', client: 'tab-abcdefgh' });
+      const first = await old.next('joined');
+      await host.next('peer-joined');
+      old.ws.terminate(); // dropped, not left: the relay holds the seat
+      await host.next('peer-lost');
+
+      const fresh = await peer();
+      fresh.send({ op: 'join', room: created.room, name: 'Me', client: 'tab-abcdefgh' });
+      const second = await fresh.next('joined');
+      expect(second.peerId).not.toBe(first.peerId);
+      expect((await host.next('peer-left')).peerId).toBe(first.peerId);
+      expect((await host.next('peer-joined')).peerId).toBe(second.peerId);
+    });
+
+    it('different tabs are different people', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      for (const client of ['tab-aaaaaaaa', 'tab-bbbbbbbb']) {
+        const p = await peer();
+        p.send({ op: 'join', room: created.room, name: 'Same', client });
+        await p.next('joined');
+      }
+      await host.next('peer-joined');
+      await host.next('peer-joined');
+      expect(host.events.some((e) => e.op === 'peer-left')).toBe(false);
+    });
+
+    it('a seat abandoned while offline is freed with forget', async () => {
+      const host = await peer();
+      host.send({ op: 'create', name: 'H' });
+      const created = await host.next('created');
+      const a = await peer();
+      a.send({ op: 'join', room: created.room, name: 'A' });
+      const ja = await a.next('joined');
+      await host.next('peer-joined');
+      a.ws.terminate();
+      await host.next('peer-lost');
+      const later = await peer();
+      later.send({ op: 'forget', room: created.room, token: ja.token });
+      expect((await host.next('peer-left')).peerId).toBe(ja.peerId);
+      // A wrong token frees nothing.
+      const b = await peer();
+      b.send({ op: 'join', room: created.room, name: 'B' });
+      await b.next('joined');
+      await host.next('peer-joined');
+      later.send({ op: 'forget', room: created.room, token: 'nope' });
+      await new Promise((r) => setTimeout(r, 60));
+      expect(host.events.some((e) => e.op === 'peer-left')).toBe(false);
+    });
+  });
 });

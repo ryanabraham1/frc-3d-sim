@@ -1,6 +1,6 @@
 import { Emitter } from '../core/events';
 import type { Outcome, RankedMode } from './ranked';
-import { CLOSE_LEAVE, RECONNECT_GRACE_MS, RELAY_PATH, type RelayEvent, type RelayRequest, type RoomListing, type RoomMeta } from './relayProtocol';
+import { cleanClientId, CLOSE_LEAVE, RECONNECT_GRACE_MS, RELAY_PATH, type RelayEvent, type RelayRequest, type RoomListing, type RoomMeta } from './relayProtocol';
 
 type Ev<K extends RelayEvent['op']> = Omit<Extract<RelayEvent, { op: K }>, 'op'>;
 
@@ -52,6 +52,22 @@ export class NetClient extends Emitter<NetClientEvents> {
   /** True while a dropped connection is being resumed. */
   reconnecting = false;
   private token = '';
+  /** A seat I abandoned while offline; the relay is told at the next chance. */
+  private forget: { room: string; token: string } | null = null;
+  /** Per-tab identity so a fresh join replaces a ghost left by this tab's previous page. */
+  private readonly clientId: string = (() => {
+    const fresh = () => Array.from({ length: 16 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    try {
+      const KEY = 'frc-sim-tab';
+      const saved = cleanClientId(sessionStorage.getItem(KEY));
+      if (saved) return saved;
+      const id = fresh();
+      sessionStorage.setItem(KEY, id);
+      return id;
+    } catch {
+      return fresh();
+    }
+  })();
   private connecting: Promise<void> | null = null;
   private url = '';
   private ws: WebSocket | null = null;
@@ -134,6 +150,7 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.closedReason = null;
     this.url = url;
     await this.openSocket(url, timeoutMs);
+    this.flushForget();
   }
 
   /** Reuse the open socket if it is already on `url` and idle; otherwise connect (concurrent callers share one attempt). */
@@ -197,7 +214,16 @@ export class NetClient extends Emitter<NetClientEvents> {
     while (this.closedReason === null && performance.now() < deadline) {
       try {
         await this.openSocket(this.url, 6000);
+        // Left while this attempt was connecting: don't take the seat back.
+        if (this.closedReason !== null) {
+          this.ws?.close(CLOSE_LEAVE, 'leave');
+          return;
+        }
         const ev = await this.request({ op: 'rejoin', room: this.room, token: this.token });
+        if (this.closedReason !== null) {
+          this.ws?.close(CLOSE_LEAVE, 'leave');
+          return;
+        }
         if (ev.op !== 'joined') throw new RelayError('Unexpected relay reply');
         this.hostId = ev.hostId;
         this.reconnecting = false;
@@ -216,7 +242,7 @@ export class NetClient extends Emitter<NetClientEvents> {
   }
 
   async create(name: string, meta?: RoomMeta): Promise<void> {
-    const ev = await this.request({ op: 'create', name, meta });
+    const ev = await this.request({ op: 'create', name, meta, client: this.clientId });
     if (ev.op !== 'created') throw new Error('Unexpected relay reply');
     this.room = ev.room;
     this.peerId = ev.peerId;
@@ -225,7 +251,7 @@ export class NetClient extends Emitter<NetClientEvents> {
   }
 
   async join(room: string, name: string): Promise<void> {
-    const ev = await this.request({ op: 'join', room, name });
+    const ev = await this.request({ op: 'join', room, name, client: this.clientId });
     if (ev.op !== 'joined') throw new Error('Unexpected relay reply');
     this.room = ev.room;
     this.peerId = ev.peerId;
@@ -290,9 +316,20 @@ export class NetClient extends Emitter<NetClientEvents> {
   close(reason = 'Left the room'): void {
     const ws = this.ws;
     this.closedReason = reason;
-    // Mid-reconnect there is no live room to leave: stop retrying and report once.
-    if (this.reconnecting) this.finish(reason);
+    // Mid-reconnect there is no live room to leave: stop retrying, remember to free the seat, report once.
+    if (this.reconnecting) {
+      if (this.room && this.token) this.forget = { room: this.room, token: this.token };
+      this.finish(reason);
+      this.flushForget();
+    }
     ws?.close(CLOSE_LEAVE, 'leave');
+  }
+
+  /** Tell the relay to free a seat abandoned while offline (needs an open socket). */
+  private flushForget(): void {
+    if (!this.forget || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.raw({ op: 'forget', ...this.forget });
+    this.forget = null;
   }
 
   private raw(req: RelayRequest): void {

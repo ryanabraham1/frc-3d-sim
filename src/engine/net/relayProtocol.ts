@@ -56,8 +56,11 @@ export interface RoomListing {
 }
 
 export type RelayRequest =
-  | { op: 'create'; name: string; meta?: RoomMeta }
-  | { op: 'join'; room: string; name: string }
+  /** `client` is a per-tab id: a new join from the same tab replaces any ghost the old page left behind. */
+  | { op: 'create'; name: string; meta?: RoomMeta; client?: string }
+  | { op: 'join'; room: string; name: string; client?: string }
+  /** Give up a seat I couldn't tell the relay about (I left while reconnecting). */
+  | { op: 'forget'; room: string; token: string }
   /** Resume a dropped connection (same peer id) within RECONNECT_GRACE_MS. */
   | { op: 'rejoin'; room: string; token: string }
   /** Ask for the public room list. */
@@ -124,6 +127,11 @@ export type RelayEvent =
   | { op: 'host-back' }
   | { op: 'room-closed'; reason: string }
   | { op: 'msg'; from: string; data: unknown };
+
+/** Per-tab client ids: short and boring, or dropped. */
+export function cleanClientId(id: unknown): string {
+  return typeof id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(id) ? id : '';
+}
 
 export function normalizeRoomCode(code: string): string {
   return code.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, ROOM_CODE_LENGTH);
