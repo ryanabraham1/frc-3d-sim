@@ -153,6 +153,11 @@ export class Game {
   private last = 0;
   private lastDraw = 0;
   private acc = 0;
+  /**
+   * Simulation speed (1 = real time). Players always run at 1; the sim is optimised to sustain 1.5 so a slower
+   * machine still has headroom, and `?speed=1.5` (single player only) runs it that fast to check. Not synced.
+   */
+  simSpeed = 1;
   private time = 0;
   /** Host sim time (s) — advances only while stepping. */
   private simTime = 0;
@@ -193,6 +198,7 @@ export class Game {
   ) {
     this.net = net ?? null;
     this.role = net?.role ?? 'local';
+    if (this.role === 'local') this.simSpeed = clamp(Number(new URLSearchParams(location.search).get('speed')) || 1, 0.25, 3);
     this.setup = net?.setup ?? localSetup(settings, season);
     this.frame = new FieldFrame(season.fieldLength, season.fieldWidth);
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, { shadows: settings.shadows });
@@ -221,6 +227,7 @@ export class Game {
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
       robot.controller = rs.bot ? 'bot' : 'player';
       season.configureRobot?.(robot);
+      if (this.role !== 'client') robot.attachPool(this.pool); // held FUEL stays real physics bodies (host / solo)
       if (season.pieceFlow !== false) {
         const piece = this.pool.mesh;
         const round = season.gamePiece.shape !== 'ring' && season.gamePiece.shape !== 'tube';
@@ -443,9 +450,10 @@ export class Game {
     if (this.state === 'countdown' || this.state === 'running') {
       const t0 = performance.now();
       const fixed = this.physics.dt;
-      this.acc += dt;
+      this.acc += dt * this.simSpeed;
+      const maxSteps = Math.ceil(5 * Math.max(1, this.simSpeed));
       let steps = 0;
-      while (this.acc >= fixed && steps < 5) {
+      while (this.acc >= fixed && steps < maxSteps) {
         this.step(fixed, inp);
         this.acc -= fixed;
         steps++;
@@ -460,7 +468,7 @@ export class Game {
         this.stepsSinceSnap %= SNAPSHOT_EVERY_STEPS;
         this.hostSync.sendSnapshot(this.simTime);
       }
-      if (steps === 5) this.acc = 0;
+      if (steps === maxSteps) this.acc = 0;
       this.simBusyMs += performance.now() - t0;
     } else if (this.hostSync && now - this.lastIdleSnap > 200) {
       // Waiting / paused / results: keep clients in sync at a low rate.

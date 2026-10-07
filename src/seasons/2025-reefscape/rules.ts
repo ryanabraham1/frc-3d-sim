@@ -1,6 +1,7 @@
 import { fitCoralInTool } from './coralVisual';
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
+import { bodiesTouching, colliderTouchesBody } from '@engine/physics/contacts';
 import { ALLIANCES, opponent, type Alliance } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
 import type { PeriodChange } from '@engine/match/clock';
@@ -532,11 +533,7 @@ export class ReefscapeRules implements SeasonRules {
     const body = this.ctx.pool.bodies[i];
     for (const r of this.ctx.robots) {
       if (r.alliance !== a) continue;
-      for (let k = 0; k < body.numColliders(); k++) for (let j = 0; j < r.body.numColliders(); j++) {
-        let hit = false;
-        this.ctx.physics.world.contactPair(body.collider(k), r.body.collider(j), (mf) => { if (mf.numContacts() > 0) hit = true; });
-        if (hit) return true;
-      }
+      if (bodiesTouching(this.ctx.physics.world, body, r.body)) return true;
     }
     return false;
   }
@@ -998,11 +995,8 @@ export class ReefscapeRules implements SeasonRules {
 
   /** Real collider contact between a robot (including its raised elevator) and a swinging cage. */
   private touchesCage(r: Robot, a: Alliance, slot: number): boolean {
-    let contact = false;
-    for (const cageCollider of this.refs.cages[a][slot].colliders) for (let i = 0; i < r.body.numColliders() && !contact; i++) {
-      this.ctx.physics.world.contactPair(r.body.collider(i), cageCollider, (manifold) => { if (manifold.numContacts() > 0) contact = true; });
-    }
-    return contact;
+    for (const cageCollider of this.refs.cages[a][slot].colliders) if (colliderTouchesBody(this.ctx.physics.world, cageCollider, r.body.handle)) return true;
+    return false;
   }
 
   private enforceCageContact(): void {

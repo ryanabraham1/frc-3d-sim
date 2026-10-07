@@ -42,7 +42,8 @@ describe('AI plays each robot archetype the way it is built', () => {
   it.each(['overload-254', 'limestone-1678', 'big-hopper'])('2026 %s scores from a planted stance', (id) => {
     const res = solo('2026-rebuilt', id, 120);
     expect(res.scored / Math.max(1, res.shots)).toBeGreaterThan(0.75);
-    expect(res.scored).toBeGreaterThan(200);
+    // Open-top hoppers keep intaking when full and lose the extras over the rim (real physics), so a little below 200.
+    expect(res.scored).toBeGreaterThan(175);
   }, 300_000);
 
   // Floor-pickup robots (no station intake) take the human player's CORAL off the carpet instead of waiting forever.

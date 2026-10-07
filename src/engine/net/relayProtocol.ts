@@ -4,6 +4,8 @@
  * sent by the room host (forwarded to every other peer). Shared by the server and the browser client.
  */
 
+import type { Outcome, RankedMode, Team } from './ranked';
+
 export const RELAY_PATH = '/ws';
 export const MAX_PEERS_PER_ROOM = 12;
 export const MAX_FRAME_BYTES = 256 * 1024;
@@ -63,13 +65,54 @@ export type RelayRequest =
   | { op: 'meta'; meta: RoomMeta }
   /** Host only: remove a peer from the room; they cannot return while it exists. */
   | { op: 'kick'; peerId: string }
+  /** Join the ranked queue. `secret` is the device's private key; the relay only stores its hash. */
+  | { op: 'queue'; mode: RankedMode; name: string; secret: string }
+  | { op: 'unqueue' }
+  /** Fetch this player's ratings (registers them on first use). */
+  | { op: 'profile'; name: string; secret: string }
+  | { op: 'leaderboard'; mode: RankedMode; secret?: string }
+  /** Ranked room member: the result as they saw it. The relay needs the host and the other drivers to agree. */
+  | { op: 'result'; winner: Outcome; red: number; blue: number }
   /** Client → always delivered to host. Host → `to` peer, or every client when omitted. */
   | { op: 'send'; data: unknown; to?: string };
+
+export interface RatingSummary {
+  rating: number;
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  peak: number;
+}
+
+export interface LeaderEntry extends RatingSummary {
+  name: string;
+  /** This row is the requesting player. */
+  me?: boolean;
+}
+
+export interface RankedRosterEntry {
+  peerId: string;
+  name: string;
+  team: Team;
+  rating: number;
+  games: number;
+}
 
 export type RelayEvent =
   | { op: 'created'; room: string; peerId: string; token: string }
   | { op: 'joined'; room: string; peerId: string; hostId: string; token: string; resumed?: boolean }
   | { op: 'rooms'; rooms: RoomListing[] }
+  | { op: 'queued'; mode: RankedMode; waiting: number }
+  /** Periodic queue size while searching. */
+  | { op: 'queue-status'; mode: RankedMode; waiting: number }
+  | { op: 'unqueued'; reason: string }
+  /** A ranked match was formed and this peer is already seated in its room (the host is `hostId`). */
+  | { op: 'matched'; room: string; peerId: string; hostId: string; token: string; mode: RankedMode; team: Team; roster: RankedRosterEntry[] }
+  | { op: 'profile'; persistent: boolean; name: string; ratings: Record<RankedMode, RatingSummary> }
+  | { op: 'leaderboard'; mode: RankedMode; rows: LeaderEntry[] }
+  /** Result of a ranked match for this player. `status` void = no rating change. */
+  | { op: 'rating'; mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: 'win' | 'loss' | 'draw' | 'abandon' | 'none'; reason?: string }
   | { op: 'error'; message: string }
   | { op: 'peer-joined'; peerId: string; name: string }
   | { op: 'peer-left'; peerId: string }

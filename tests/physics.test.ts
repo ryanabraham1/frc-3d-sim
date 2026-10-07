@@ -194,7 +194,7 @@ for (const season of SEASONS) {
       const before = sim.robot.pose;
       sim.run(2, { ...IDLE_COMMAND, vx: 2, shoot: true, pass: false });
       expect(Math.hypot(sim.robot.pose.x - before.x, sim.robot.pose.y - before.y), 'a tipped robot drove').toBeLessThan(0.3);
-      expect(sim.robot.held.length, 'a tipped robot fired').toBe(1);
+      expect(sim.fired, 'a tipped robot fired').toBe(0);
       expect(sim.robot.tippedOver, 'righted too early').toBe(true);
       expect(sim.robot.rightingIn).toBeGreaterThan(1);
       sim.run(2.5);

@@ -82,6 +82,10 @@ function ringGeometry(s: Omit<GamePieceSpec, 'variants'>): THREE.BufferGeometry 
 /** Fixed-size pool of game pieces (spheres, tubes or rings), one InstancedMesh per piece type. */
 export class GamePiecePool {
   readonly bodies: RAPIER.RigidBody[] = [];
+  /** Per owner robot: hopper that keeps held pieces as real physics bodies (see robot/stowBay.ts). */
+  readonly bays = new Map<number, { accept(i: number): void; forget(i: number): void }>();
+  /** Held pieces that are real bodies inside a hopper (drawn from their body, like field pieces). */
+  private readonly stowed: boolean[] = [];
   readonly state: PieceState[] = [];
   /** Robot id holding the piece, or -1. */
   readonly owner: number[] = [];
@@ -172,6 +176,7 @@ export class GamePiecePool {
         }
         this.bodies.push(body);
         this.state.push('reserve');
+        this.stowed.push(false);
         this.owner.push(-1);
         this.tag.push(null);
         this.airborne.push(false);
@@ -191,6 +196,7 @@ export class GamePiecePool {
       physics.world.createCollider(col, body);
       this.bodies.push(body);
       this.state.push('reserve');
+      this.stowed.push(false);
       this.owner.push(-1);
       this.tag.push(null);
       this.airborne.push(false);
@@ -211,6 +217,7 @@ export class GamePiecePool {
 
   /** Put piece i on the field at a WORLD position with optional WORLD velocity. */
   placeWorld(i: number, pos: THREE.Vector3, vel?: THREE.Vector3): void {
+    this.leaveBay(i);
     const b = this.bodies[i];
     b.setEnabled(true);
     b.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
@@ -239,7 +246,80 @@ export class GamePiecePool {
     for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);
   }
 
+  /** Forget a piece's hopper: it is a normal collidable field piece again (position and velocity untouched). */
+  private leaveBay(i: number): void {
+    const owner = this.owner[i];
+    if (owner >= 0) this.bays.get(owner)?.forget(i);
+    if (!this.stowed[i]) return;
+    this.stowed[i] = false;
+    this.setGroups(i, GROUPS.piece);
+    this.setColliderRadius(i, this.colliderRadius);
+    this.setColliderMass(i, this.specs[i].mass);
+    this.airborne[i] = false;
+    this.bodies[i].setLinearDamping(this.specs[i].groundDamping ?? 0.5);
+  }
+
+  /** Held balls are a touch smaller than field balls (foam and net compress them): 40+ real-size FUEL fit a hopper rated for them. */
+  static readonly STOWED_SCALE = 0.93;
+  /**
+   * Held balls weigh a tenth of a field ball to the chassis: a full hopper of real-mass balls sits high on the robot and
+   * its sloshing would tip it over when it hits a pile or a wall (the rated robot mass already includes its load).
+   */
+  static readonly STOWED_MASS = 0.1;
+  private setColliderMass(i: number, mass: number): void {
+    const shape = this.specs[i].shape;
+    if (shape === 'tube' || shape === 'ring') return;
+    this.bodies[i].collider(0).setMass(mass);
+  }
+
+  private setColliderRadius(i: number, radius: number): void {
+    const shape = this.specs[i].shape;
+    if (shape === 'tube' || shape === 'ring') return;
+    this.bodies[i].collider(0).setRadius(radius);
+  }
+
+  private setGroups(i: number, groups: number): void {
+    const b = this.bodies[i];
+    for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);
+  }
+
+  /** Keep a held piece's body live inside a hopper with these collision groups (GROUPS.feeding / GROUPS.stowed). */
+  setStowed(i: number, groups: number): void {
+    const b = this.bodies[i];
+    if (!this.stowed[i]) {
+      this.stowed[i] = true;
+      b.setLinearDamping(0.35);
+      this.setColliderRadius(i, this.colliderRadius * GamePiecePool.STOWED_SCALE);
+      this.setColliderMass(i, this.specs[i].mass * GamePiecePool.STOWED_MASS);
+    }
+    b.setEnabled(true);
+    this.setGroups(i, groups);
+    b.wakeUp();
+    this.shown[i] = 0;
+  }
+
+  isStowed(i: number): boolean { return this.stowed[i]; }
+
+  /** A piece that rolled out of a hopper becomes an ordinary field piece, exactly where it is and moving as it was. */
+  releaseToField(i: number): void {
+    this.leaveBay(i);
+    this.state[i] = 'field';
+    this.owner[i] = -1;
+    this.tag[i] = null;
+    this.shown[i] = 0;
+    this.changed.add(i);
+  }
+
   hold(i: number, ownerId: number): void {
+    const bay = this.bays.get(ownerId);
+    if (bay) {
+      this.state[i] = 'held';
+      this.owner[i] = ownerId;
+      this.shown[i] = 0;
+      this.changed.add(i);
+      bay.accept(i);
+      return;
+    }
     this.bodies[i].setEnabled(false);
     this.state[i] = 'held';
     this.owner[i] = ownerId;
@@ -247,6 +327,7 @@ export class GamePiecePool {
   }
 
   reserve(i: number, tag: string | null = null): void {
+    this.leaveBay(i);
     this.bodies[i].setEnabled(false);
     this.state[i] = 'reserve';
     this.owner[i] = -1;
@@ -326,7 +407,7 @@ export class GamePiecePool {
     let dirty = false;
     for (let i = 0; i < this.bodies.length; i++) {
       const mesh = this.meshes[this.meshIndex[i]];
-      if (this.state[i] !== 'field') {
+      if (this.state[i] !== 'field' && !this.stowed[i]) {
         if (this.shown[i] !== 2) {
           mesh.setMatrixAt(i, HIDDEN);
           this.shown[i] = 2;

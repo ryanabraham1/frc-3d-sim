@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
+import { RankedService } from './ranked.ts';
+import { createRankedStore, type RankedStore } from './rankedStore.ts';
 import {
   cleanName,
   cleanTitle,
@@ -82,6 +84,10 @@ export interface RelayOptions {
   trustProxy?: boolean;
   /** Per-IP limits; 0 disables a limit. */
   limits?: Partial<RelayLimits>;
+  /** Ranked rating storage (default: Supabase when configured by env, else in memory). */
+  rankedStore?: RankedStore;
+  /** Test hooks for the ranked service. */
+  ranked?: { tickMs?: number; reportWindowMs?: number };
 }
 
 export interface RelayLimits {
@@ -91,9 +97,11 @@ export interface RelayLimits {
   creates: number;
   /** Failed joins/rejoins per IP per minute (stops guessing private room codes). */
   badJoins: number;
+  /** Ranked queue/profile/leaderboard requests per IP per minute. */
+  ranked: number;
 }
 
-const DEFAULT_LIMITS: RelayLimits = { connections: 24, creates: 8, badJoins: 20 };
+const DEFAULT_LIMITS: RelayLimits = { connections: 24, creates: 8, badJoins: 20, ranked: 40 };
 const WINDOW_MS = 60_000;
 const SEATS_DEFAULT = 6;
 
@@ -108,7 +116,8 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
 
   // Sliding one-minute counters per IP.
   const connCount = new Map<string, number>();
-  const hits = { creates: new Map<string, number[]>(), badJoins: new Map<string, number[]>() };
+  const hits = { creates: new Map<string, number[]>(), badJoins: new Map<string, number[]>(), ranked: new Map<string, number[]>() };
+  const byId = new Map<string, Peer>();
   const recent = (m: Map<string, number[]>, ip: string): number[] => {
     const now = Date.now();
     const list = (m.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
@@ -157,6 +166,47 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     throw new Error('no free room codes');
   };
 
+  const store = opts.rankedStore ?? createRankedStore();
+  const ranked = new RankedService({
+    store,
+    log,
+    tickMs: opts.ranked?.tickMs,
+    reportWindowMs: opts.ranked?.reportWindowMs,
+    send: (id, ev) => {
+      const p = byId.get(id);
+      if (p) send(p, ev);
+    },
+    isOpen: (id) => byId.get(id)?.ws.readyState === WebSocket.OPEN,
+    seat: (hostId, memberIds) => {
+      const host = byId.get(hostId);
+      const members = memberIds.map((id) => byId.get(id));
+      if (!host || members.some((p) => !p || p.ws.readyState !== WebSocket.OPEN)) return null;
+      const code = newCode();
+      const r: Room = {
+        code,
+        host,
+        peers: new Map(),
+        visibility: 'private',
+        title: 'Ranked match',
+        season: '',
+        drivers: members.length,
+        seats: 6,
+        state: 'lobby',
+        bots: false,
+        banned: new Set(),
+      };
+      const tokens = new Map<string, string>();
+      for (const p of members as Peer[]) {
+        leave(p, 'host left');
+        r.peers.set(p.id, p);
+        p.room = r;
+        tokens.set(p.id, p.token);
+      }
+      rooms.set(code, r);
+      return { code, tokens };
+    },
+  });
+
   const applyMeta = (r: Room, m: RoomMeta | undefined) => {
     if (!m || typeof m !== 'object') return;
     if (m.visibility === 'public' || m.visibility === 'private') r.visibility = m.visibility;
@@ -199,7 +249,9 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     if (!room) return;
     p.room = null;
     room.peers.delete(p.id);
+    ranked.peerLeft(p.id);
     if (room.host === p) {
+      ranked.roomClosed(room.code);
       rooms.delete(room.code);
       for (const o of room.peers.values()) {
         if (o.lostTimer) clearTimeout(o.lostTimer);
@@ -211,6 +263,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     } else {
       send(room.host, { op: 'peer-left', peerId: p.id });
     }
+    if (p.ws.readyState !== WebSocket.OPEN) byId.delete(p.id);
   };
 
   /** The socket died without a deliberate leave: hold the seat for a while. */
@@ -231,6 +284,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage, ip: string) => {
     connCount.set(ip, (connCount.get(ip) ?? 0) + 1);
     let peer: Peer = { id: `p${nextPeer++}`, name: 'Player', ws, room: null, token: randomUUID(), ip, lost: false, lostTimer: null };
+    byId.set(peer.id, peer);
     const alive = ws as WebSocket & { __alive?: boolean };
     alive.__alive = true;
     ws.on('pong', () => (alive.__alive = true));
@@ -319,6 +373,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
           ghost.ws = ws;
           ghost.ip = ip;
           if (old !== ws) old.terminate();
+          byId.delete(peer.id); // the placeholder made for this socket
           peer = ghost;
           send(peer, { op: 'joined', room: r.code, peerId: peer.id, hostId: r.host.id, token: peer.token, resumed: true });
           if (r.host === peer) {
@@ -328,6 +383,23 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
         }
         case 'list':
           send(peer, { op: 'rooms', rooms: listing() });
+          break;
+        case 'queue':
+        case 'profile':
+        case 'leaderboard':
+          if (exceeded(hits.ranked, ip, limits.ranked)) return send(peer, { op: 'error', message: 'Too many ranked requests — slow down' });
+          record(hits.ranked, ip);
+          if (req.op === 'queue') {
+            if (peer.room) return send(peer, { op: 'error', message: 'Leave your room before searching for a ranked match' });
+            void ranked.queue(peer.id, req.mode, req.name, req.secret);
+          } else if (req.op === 'profile') void ranked.profile(peer.id, req.secret, req.name);
+          else void ranked.leaderboard(peer.id, req.mode, req.secret);
+          break;
+        case 'unqueue':
+          ranked.unqueue(peer.id);
+          break;
+        case 'result':
+          ranked.result(peer.id, req);
           break;
         case 'meta':
           if (room && room.host === peer) applyMeta(room, req.meta);
@@ -362,8 +434,10 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
       if (n > 0) connCount.set(ip, n);
       else connCount.delete(ip);
       if (peer.ws !== ws) return; // superseded by a rejoin
+      ranked.peerGone(peer.id);
       if (code === CLOSE_LEAVE) leave(peer, 'host left');
       else drop(peer);
+      if (!peer.room) byId.delete(peer.id);
     });
     ws.on('error', () => ws.terminate());
   });
@@ -388,6 +462,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(ping);
+        ranked.close();
         server.off('upgrade', onUpgrade);
         for (const r of rooms.values()) for (const p of r.peers.values()) if (p.lostTimer) clearTimeout(p.lostTimer);
         rooms.clear();

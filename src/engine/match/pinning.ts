@@ -1,3 +1,4 @@
+import { bodiesTouching } from '../physics/contacts';
 import { Alliance, opponent } from '../coords';
 import type { SeasonContext } from '../core/season';
 import { collisionGroups, Group, type PhysicsWorld } from '../physics/world';
@@ -217,12 +218,14 @@ export class PinTracker {
 }
 
 export function robotsTouching(physics: PhysicsWorld, r: Robot, o: Robot): boolean {
-  let hit = false;
-  for (let i = 0; i < r.body.numColliders() && !hit; i++) for (let j = 0; j < o.body.numColliders() && !hit; j++) {
-    physics.world.contactPair(r.body.collider(i), o.body.collider(j), (m) => { if (m.numContacts() > 0) hit = true; });
-  }
-  return hit;
+  // Robots this far apart can't be in contact whatever their CAD parts do.
+  const a = r.body.translation(), b = o.body.translation();
+  if (Math.hypot(a.x - b.x, a.z - b.z) > TOUCH_MAX_CENTRE_DISTANCE) return false;
+  return bodiesTouching(physics.world, r.body, o.body);
 }
+
+/** Robot centres further apart than this (m) can't touch (an FRC robot is ~1 m across, plus extended mechanisms). */
+const TOUCH_MAX_CENTRE_DISTANCE = 4;
 
 /** How close (m) a wall, FIELD element or robot has to be to a robot's bumpers to count as holding it. */
 export const PIN_REACH = 0.04;

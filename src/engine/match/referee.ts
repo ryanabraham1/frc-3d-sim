@@ -2,6 +2,7 @@ import { Alliance, opponent } from '../coords';
 import type { SeasonContext } from '../core/season';
 import type { Robot } from '../robot/robot';
 import type { CardKind, FoulKind, FoulRecord } from './scoreboard';
+import { bodiesTouching } from '../physics/contacts';
 import { robotsTouching } from './pinning';
 
 /**
@@ -220,14 +221,7 @@ export class Referee {
       return Math.abs(l.f) <= r.footprint.length / 2 + pad && Math.abs(l.l) <= r.footprint.width / 2 + pad && l.h <= r.config.height + pad;
     };
     const touches = (i: number, r: Robot) => {
-      const piece = pool.bodies[i];
-      let hit = false;
-      for (let c = 0; c < piece.numColliders() && !hit; c++) {
-        for (let k = 0; k < r.body.numColliders() && !hit; k++) {
-          physics.world.contactPair(piece.collider(c), r.body.collider(k), (m) => { if (m.numContacts() > 0) hit = true; });
-        }
-      }
-      return hit;
+      return bodiesTouching(physics.world, pool.bodies[i], r.body);
     };
     for (let i = 0; i < pool.count; i++) {
       if (pool.state[i] !== 'field') continue;

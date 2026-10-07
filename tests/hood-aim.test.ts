@@ -62,6 +62,7 @@ it('a chassis-aimed shooter keeps firing off target once a burst is under way, s
 it.each([4414, 1323, 5940, 3476])('team %s keeps releasing fuel while driving and turning after acquiring aim', (team) => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: C.HUB_CENTER.x - 3, y: C.HUB_CENTER.y, yaw: 0 } });
+  sim.pool.bays.clear(); sim.robot.bay = null; // the chassis is teleported without stepping the world: test the shooter, not the hopper
   sims.push(sim);
   sim.load(c.hopperCapacity);
   const r = sim.robot;

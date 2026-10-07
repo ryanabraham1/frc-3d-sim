@@ -4,6 +4,7 @@ import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/seas
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
+import { bodiesTouching } from '@engine/physics/contacts';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch } from '@engine/units';
 import { convexOverlap } from '@engine/zones';
@@ -719,9 +720,7 @@ export class CrescendoRules implements SeasonRules {
           const spot = C.wingSpikes(opp)[i % 3];
           const q = this.ctx.frame.toField(pool.position(i));
           if (Math.hypot(q.x - spot.x, q.y - spot.y) > 0.08) continue;
-          let hit = false;
-          for (let k = 0; k < r.body.numColliders() && !hit; k++) physics.world.contactPair(r.body.collider(k), pool.bodies[i].collider(0), (m) => { if (m.numContacts() > 0) hit = true; });
-          if (hit) call(`G405n:${r.id}:${i}`, () => this.foul(r, 'major', 'G405', 'AUTO contact with a NOTE staged in the opponent WING'));
+          if (bodiesTouching(physics.world, r.body, pool.bodies[i])) call(`G405n:${r.id}:${i}`, () => this.foul(r, 'major', 'G405', 'AUTO contact with a NOTE staged in the opponent WING'));
         }
       }
       for (const o of robots) {

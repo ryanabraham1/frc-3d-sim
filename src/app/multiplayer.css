@@ -350,11 +350,14 @@
 
 /* ═════════════ Public / private lobbies, room browser, chat ═════════════ */
 .mp-big {
-  height: 64px;
+  height: auto;
+  min-height: 68px;
+  padding: 12px 18px;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  font-size: 18px;
+  gap: 4px;
+  line-height: 1.1;
+  font-size: 22px;
 }
 .mp-big small,
 .mp-vis .opt small {
@@ -584,4 +587,24 @@
 }
 .mp-big small {
   font-size: 13px;
+}
+
+/* Subtitles inside buttons use the body font, not the condensed button face. */
+.mp-big small,
+.mp-vis .opt small {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  line-height: 1.2;
+  white-space: normal;
+}
+.mp-big small {
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.9;
+}
+.mp-vis .opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
 }

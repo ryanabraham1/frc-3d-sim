@@ -20,6 +20,9 @@ export const Group = {
   PIECE_ONLY: 1 << 3,
   /** Field elements that only stop robots (e.g. invisible no-drive walls). */
   ROBOT_ONLY: 1 << 4,
+  /** A game piece held inside a robot's hopper: it only touches other held pieces and that hopper's walls. */
+  STOWED: 1 << 5,
+  STOW_WALL: 1 << 6,
   ALL: 0xffff,
 } as const;
 
@@ -31,6 +34,10 @@ export const GROUPS = {
   field: collisionGroups(Group.FIELD, Group.ROBOT | Group.PIECE),
   pieceOnly: collisionGroups(Group.PIECE_ONLY, Group.PIECE),
   robotOnly: collisionGroups(Group.ROBOT_ONLY, Group.ROBOT),
+  stowed: collisionGroups(Group.STOWED, Group.STOWED | Group.STOW_WALL),
+  /** Being pulled in by the intake rollers: passes the hopper wall, still bumps other held pieces. */
+  feeding: collisionGroups(Group.STOWED, Group.STOWED),
+  stowWall: collisionGroups(Group.STOW_WALL, Group.STOWED),
   robot: collisionGroups(Group.ROBOT, Group.FIELD | Group.ROBOT | Group.PIECE | Group.ROBOT_ONLY),
   // Pieces always collide with each other, including mid-air (real physics — user decision 2026-09-29).
   piece: collisionGroups(Group.PIECE, Group.FIELD | Group.ROBOT | Group.PIECE | Group.PIECE_ONLY),

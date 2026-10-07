@@ -73,6 +73,7 @@ it('runs actual 2026 CAD piles through optimized Robot render animation', async 
     await decodeCadModel(id,bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
     const config=cloneConfig(season.teamRobots!.find(t=>t.id===id)!.config);
     const sim=new HeadlessSim(season,RAPIER,{robot:config,alliance:'blue',pose:{x:2,y:2,yaw:0}});
+    sim.pool.bays.clear(); sim.robot.bay = null; // visual particle-pile path (multiplayer replicas, gallery)
     try {
       sim.robot.optimizeVisual();sim.load(15);sim.robot.enabled=true;
       for(let i=0;i<120;i++)sim.robot.syncVisual(1/60);

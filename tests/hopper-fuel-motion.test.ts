@@ -59,6 +59,7 @@ it('animates default and team 2026 hoppers through the robot render loop after o
   const season=SEASONS.find(s=>s.year===2026)!;
   for(const config of [season.robotDefaults,season.teamRobots!.find(t=>t.team===254)!.config]) {
     const sim=new HeadlessSim(season,RAPIER,{robot:cloneConfig(config),alliance:'blue',pose:{x:2,y:2,yaw:0}});
+    sim.pool.bays.clear(); sim.robot.bay = null; // visual particle-pile path (multiplayer replicas, gallery)
     try {
       const robot=sim.robot;
       robot.optimizeVisual();
@@ -120,6 +121,7 @@ it('rearranges fuel when the real chassis collides with a field wall', async () 
   await RAPIER.init();
   const season=SEASONS.find(s=>s.year===2026)!;
   const sim=new HeadlessSim(season,RAPIER,{robot:cloneConfig(season.robotDefaults),alliance:'blue',pose:{x:3,y:1.8,yaw:0}});
+  sim.pool.bays.clear(); sim.robot.bay = null; // visual particle-pile path (multiplayer replicas, gallery)
   try {
     sim.load(20);const r=sim.robot;
     r.enabled=true;

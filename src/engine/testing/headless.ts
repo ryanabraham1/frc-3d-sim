@@ -48,6 +48,7 @@ export class HeadlessSim {
     this.robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
     this.robot.controller = 'player';
     season.configureRobot?.(this.robot);
+    this.robot.attachPool(this.pool);
     this.rng = new Rng(opts.seed ?? 1);
     const settings: GameSettings = {
       seasonId: season.id,
@@ -84,6 +85,7 @@ export class HeadlessSim {
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
       robot.controller = 'bot';
       season.configureRobot?.(robot);
+      robot.attachPool(this.pool);
       this.ctx.robots.push(robot);
     }
     season.buildField(this.ctx);

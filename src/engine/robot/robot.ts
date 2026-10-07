@@ -13,6 +13,8 @@ import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 import { PieceFlow } from './pieceFlow';
 import { FuelContacts } from './fuelContacts';
+import { StowBay, type Cavity } from './stowBay';
+import type { GamePiecePool } from '../gamepiece/pool';
 import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
@@ -155,7 +157,7 @@ export class Robot {
     // The shot blocker folds over the intake side: the intake can't run while it's up or moving.
     if (this.blockerDeploy > 0) return 0;
     // An open-top hopper lets one FUEL ride on top: at most capacity + 1 held, never an extra one per capture.
-    let room = Math.max(0, this.hopperCapacity + (this.openHopper && this.fuelPiles.length ? 1 : 0) - this.held.length);
+    let room = Math.max(0, this.hopperCapacity + (this.openHopper && this.fuelPiles.length ? (this.bay ? Robot.OVERFLOW_ROOM : 1) : 0) - this.held.length);
     if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
       let n = this.held.length;
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
@@ -427,7 +429,8 @@ export class Robot {
     // No decorative balls or preset net load points.
     this.visual.updateMatrixWorld(true);
     const point = new THREE.Vector3();
-    for (const mesh of this.fuelPiles) {
+    this.bay?.forEachLocal((x, y, z) => tops.push({ x, z, y: y + Robot.NET_FUEL_R }));
+    for (const mesh of this.bay ? [] : this.fuelPiles) {
       const surface = mesh.userData.fuelSurface?.();
       if (!surface || !mesh.visible) continue;
       for (let i = 0; i < surface.count; i++) {
@@ -753,9 +756,56 @@ export class Robot {
     this.wireFuelPiles();
   }
 
+  /** FUEL an uncovered hopper keeps taking after it is brim-full: the rest roll over the rim (see StowBay). */
+  private static readonly OVERFLOW_ROOM = 4;
+  /** Held FUEL as real physics bodies in the hopper (host / single-player). Null: the visual-only particle pile draws the load. */
+  bay: StowBay | null = null;
+
+  /** Make held FUEL the pool's own bodies. Skipped on multiplayer replicas and for robots with no FUEL hopper. */
+  attachPool(pool: GamePiecePool): void {
+    if (this.bay || !this.fuelPiles.length) return;
+    this.bay = new StowBay(this, pool);
+    pool.bays.set(this.id, this.bay);
+  }
+
+  /** Which end of the robot the intake delivers to (the hopper mouth): -1 back, +1 front. */
+  fuelIntakeSide(): number {
+    const c = this.config;
+    return c.intake.enabled && c.intake.ground !== false ? groundSideSign(c) : stationSideSign(c);
+  }
+
+  private relativeMatrix(o: THREE.Object3D): THREE.Matrix4 {
+    const m = o.matrix.clone();
+    for (let p = o.parent; p && p !== this.visual; p = p.parent) m.premultiply(p.matrix);
+    return m;
+  }
+
+  /** Box in the robot frame that the active FUEL bins (main plus deployed extensions) enclose. */
+  fuelCavity(): Cavity | null {
+    const active = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0);
+    const bins = active.length ? active : this.fuelPiles.slice(0, 1);
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity), max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    const v = new THREE.Vector3();
+    for (const pile of bins) {
+      const b = pile.userData.fuelBin as { x: number; y0: number; length: number; width: number; height: number } | undefined;
+      if (!b) continue;
+      const m = this.relativeMatrix(pile);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (const y of [b.y0, b.y0 + b.height]) {
+        v.set(b.x + sx * b.length / 2, y, sz * b.width / 2).applyMatrix4(m);
+        min.min(v); max.max(v);
+      }
+    }
+    return Number.isFinite(min.x) ? { min, max, open: this.openHopper } : null;
+  }
+
   /** One conserved load across main and deployed extension bins. */
   private distributeFuel(): void {
     if (!this.fuelPiles.length) return;
+    if (this.bay) {
+      // The pool's own bodies are the load: the particle piles stay empty.
+      for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
+      return;
+    }
     const bins = this.fuelPiles.filter(b => b.userData.fuelRequestedFill > 0) as THREE.InstancedMesh[];
     const load = Math.max(0, this.held.length - this.piecesInTransit);
     // Retracting sections drain their existing particles into the main cavity in the same world positions.
@@ -1833,6 +1883,12 @@ export class Robot {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
     }
+    if (this.bay) {
+      // The ball physically nearest the launcher is the one that leaves (the pool pops the last held piece).
+      const exit = this.launcherExit(0), pick = this.bay.pickForLaunch(new THREE.Vector3(exit.forward, exit.up, -exit.side));
+      const k = pick >= 0 ? this.held.lastIndexOf(pick) : -1;
+      if (k >= 0) { this.held.splice(k, 1); this.held.push(pick); }
+    }
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
     // A multi-exit dumper alternates between its exits, so shots leave as several parallel streams.
@@ -1903,6 +1959,7 @@ export class Robot {
     }
     this.updateClimb(dt);
     this.updateTipped(dt);
+    this.bay?.update(dt);
   }
 
   // ───────────────────────── climbing (simplified, kinematic) ─────────────────────────
@@ -2062,6 +2119,7 @@ export class Robot {
     this.fireCooldown = 0;
     this.exitIndex = 0;
     this.flowFeedIndex = 0;
+    this.bay?.clear();
     this.held.length = 0;
     this.flow?.clear(0);
     this.blockerDeploy = 0;
@@ -2080,43 +2138,9 @@ export class Robot {
     const c = this.config;
     const model = this.model;
     const pieceR = this._projectile.halfHeight ?? this._projectile.radius;
-    const L = this.fp.length;
-    const hopperH = Math.max(0.08, c.height - c.bumperTop - 0.08);
-    const hasGround = c.intake.enabled && c.intake.ground !== false;
-    const side = hasGround ? groundSideSign(c) : stationSideSign(c);
     const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
-    const stow = (): THREE.Vector3 => {
-      const s = model?.flow?.stow?.();
-      if (s) return s;
-      if (model?.heldAnchor) return pointIn(this.visual, model.heldAnchor, 0, 0, 0);
-      // Hopper: pieces land on the pile (its height follows the fill), spread across the bin.
-      const fill = clamp(this.held.length / Math.max(1, c.hopperCapacity), 0, 1);
-      return v(-c.frameLength * 0.1 + (Math.random() - 0.5) * c.frameLength * 0.4, c.bumperTop + pieceR + hopperH * fill * 0.85,
-        (Math.random() - 0.5) * c.frameWidth * 0.5);
-    };
     this.flow = new PieceFlow(this.visual, make, {
-      intake: (from) => {
-        const custom = model?.flow?.intake?.();
-        // Keep the pickup lane instead of snapping captured balls sideways to a randomized intake path.
-        if (custom && from && this.fuelPiles.length) {
-          const lane = clamp(from.z, -c.intake.width * 0.42, c.intake.width * 0.42);
-          for (let i = 0; i < custom.length; i++) custom[i].z = lerp(lane, custom[i].z, i / custom.length);
-        }
-        const hint = custom?.[custom.length - 1] ?? v(side * c.frameLength * 0.3, c.bumperTop + pieceR, from?.z ?? 0);
-        const end = this.fuelEntry(hint) ?? stow();
-        if (custom) return [...custom, end];
-        const pts: THREE.Vector3[] = [];
-        if (hasGround) {
-          // Over (or under) the bumper on the intake rollers, then up into the robot.
-          pts.push(model?.intakeAnchor ? pointIn(this.visual, model.intakeAnchor, 0, 0, 0) : v(side * (L / 2 - c.bumperThickness * 0.5), c.bumperTop + pieceR * 0.6, 0));
-          pts.push(v(side * L * 0.22, Math.max(end.y, c.bumperTop + pieceR) + pieceR * 1.2, end.z * 0.5));
-        } else {
-          // Station funnel: drop in over the top.
-          pts.push(v(side * (L / 2 - 0.05), Math.max(end.y + 0.1, c.height * 0.85), 0));
-        }
-        pts.push(end);
-        return pts;
-      },
+      intake: (from) => this.intakePath(from ?? null),
       arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
       feed: c.launcher.enabled && c.hopperCapacity > 1 ? () => {
         // Host follows the actual exit; replicas/gallery alternate their visual feed stream.
@@ -2130,6 +2154,48 @@ export class Robot {
     }, roll, pieceR, roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
+  /**
+   * The model's intake lane for a ball taken at robot-frame `from`: waypoints over the rollers into the hopper, ending
+   * just inside the bin. Used by the intake token animation (replicas) and by the real-body pull (StowBay).
+   */
+  intakePath(from: THREE.Vector3 | null): THREE.Vector3[] {
+    const c = this.config, model = this.model;
+    const pieceR = this._projectile.halfHeight ?? this._projectile.radius;
+    const L = this.fp.length;
+    const hopperH = Math.max(0.08, c.height - c.bumperTop - 0.08);
+    const hasGround = c.intake.enabled && c.intake.ground !== false;
+    const side = hasGround ? groundSideSign(c) : stationSideSign(c);
+    const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const stow = (): THREE.Vector3 => {
+      const s = model?.flow?.stow?.();
+      if (s) return s;
+      if (model?.heldAnchor) return pointIn(this.visual, model.heldAnchor, 0, 0, 0);
+      const fill = clamp(this.held.length / Math.max(1, c.hopperCapacity), 0, 1);
+      return v(-c.frameLength * 0.1 + (Math.random() - 0.5) * c.frameLength * 0.4, c.bumperTop + pieceR + hopperH * fill * 0.85,
+        (Math.random() - 0.5) * c.frameWidth * 0.5);
+    };
+    const custom = model?.flow?.intake?.();
+    // Keep the pickup lane instead of snapping captured balls sideways to a randomized intake path.
+    if (custom && from && this.fuelPiles.length) {
+      const lane = clamp(from.z, -c.intake.width * 0.42, c.intake.width * 0.42);
+      for (let i = 0; i < custom.length; i++) custom[i].z = lerp(lane, custom[i].z, i / custom.length);
+    }
+    const hint = custom?.[custom.length - 1] ?? v(side * c.frameLength * 0.3, c.bumperTop + pieceR, from?.z ?? 0);
+    const end = this.fuelEntry(hint) ?? stow();
+    if (custom) return [...custom, end];
+    const pts: THREE.Vector3[] = [];
+    if (hasGround) {
+      // Over (or under) the bumper on the intake rollers, then up into the robot.
+      pts.push(model?.intakeAnchor ? pointIn(this.visual, model.intakeAnchor, 0, 0, 0) : v(side * (L / 2 - c.bumperThickness * 0.5), c.bumperTop + pieceR * 0.6, 0));
+      pts.push(v(side * L * 0.22, Math.max(end.y, c.bumperTop + pieceR) + pieceR * 1.2, end.z * 0.5));
+    } else {
+      // Station funnel: drop in over the top.
+      pts.push(v(side * (L / 2 - 0.05), Math.max(end.y + 0.1, c.height * 0.85), 0));
+    }
+    pts.push(end);
+    return pts;
+  }
+
   /** Show the intake capture zone on the carpet under this robot (the driver's own robot; off for everyone else). */
   showIntakeGuide(on: boolean): void {
     for (const o of this.intakeGuide) o.visible = on;
@@ -2137,7 +2203,7 @@ export class Robot {
 
   /** A piece was just captured at this world position (animates it into the robot when piece flow is on). */
   noteCapture(world: { x: number; y: number; z: number }): void {
-    this.flow?.noteCapture(world);
+    if (!this.bay) this.flow?.noteCapture(world);
   }
 
   /** Held pieces still animating into the robot (not yet drawn in the hopper / held position). */
