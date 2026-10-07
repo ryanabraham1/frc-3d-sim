@@ -1,5 +1,6 @@
 import { beforeAll, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
+import * as THREE from 'three';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { cloneConfig } from '../src/engine/robot/config';
 import { intakeZoneContains } from '../src/engine/robot/robot';
@@ -61,5 +62,32 @@ it('a back-mounted ground intake takes pieces behind the robot and ignores ones 
   expect(r.intakeContains(at(-(half + 0.05)), 0.075)).toBe(true);
   expect(r.intakeContains(at(half + 0.05), 0.075)).toBe(false);
   expect(r.intakeYawOffset).toBeCloseTo(Math.PI);
+  sim.dispose();
+});
+
+it('protects balls at a short robot shooter while allowing balls outside its chassis', () => {
+  const season = SEASONS.find(s => s.year === 2026)!;
+  const cfg = cloneConfig(season.robotDefaults);
+  cfg.height = 0.55;
+  const sim = new HeadlessSim(season, RAPIER, { robot: cfg, alliance: 'blue', pose: { x: 5, y: 4, yaw: Math.PI / 2 } });
+  const r = sim.robot, t = r.body.translation();
+  expect(r.shieldsPiece({ x: t.x, y: t.y + cfg.height, z: t.z }, 0.075)).toBe(true);
+  expect(r.shieldsPiece({ x: t.x, y: t.y + cfg.height + 0.2, z: t.z }, 0.075)).toBe(false);
+  expect(r.shieldsPiece({ x: t.x + r.footprint.width, y: t.y + cfg.height, z: t.z }, 0.075)).toBe(false);
+  sim.dispose();
+});
+
+it('prefers a higher shot arc while still reaching the target on descent', () => {
+  const season = SEASONS.find(s => s.year === 2026)!;
+  const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: 5, y: 4, yaw: 0 } });
+  const from = new THREE.Vector3(0, 0.6, 0);
+  const target = { point: new THREE.Vector3(4, 1.8, 0) };
+  const low = sim.robot.solveShot(from, target)!;
+  const high = sim.robot.solveShot(from, { ...target, preferredAngle: Math.PI / 3 })!;
+  expect(high.clear).toBe(true);
+  expect(high.angle).toBeGreaterThan(low.angle);
+  const arrival = sim.robot.simulateFlight(from.y, high.angle, high.speed, [4])[0]!;
+  expect(arrival.y).toBeCloseTo(target.point.y, 1);
+  expect(arrival.vy).toBeLessThan(0);
   sim.dispose();
 });

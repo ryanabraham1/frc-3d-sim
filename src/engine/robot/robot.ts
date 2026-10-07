@@ -52,6 +52,8 @@ export interface AimTarget {
   allowRising?: boolean;
   /** With allowRising: the lowest acceptable flight-path angle at the target (radians; negative = slightly descending). */
   minEntryAngle?: number;
+  /** Preferred launch elevation, subject to speed, hood and clearance limits. */
+  preferredAngle?: number;
 }
 
 /** A robot's capture zones frozen at one pose (see Robot.intakeZone). */
@@ -1389,6 +1391,14 @@ export class Robot {
     return { f: v.x, l: -v.z, h: v.y };
   }
 
+  /** Protect airborne pieces at a neighboring chassis / shooter from intake overlap. */
+  shieldsPiece(p: { x: number; y: number; z: number }, radius: number): boolean {
+    const { f, l, h } = this.toLocal(p);
+    return Math.abs(f) < this.fp.length / 2 + radius
+      && Math.abs(l) < this.fp.width / 2 + radius
+      && h > this.config.bumperTop - radius && h < this.config.height + radius;
+  }
+
   /** Is a world-space point inside this robot's GROUND intake capture zone? (false without a ground intake) */
   intakeContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
     const c = this.config;
@@ -1642,6 +1652,7 @@ export class Robot {
 
     const step = Math.PI / 180;
     let fallback: { speed: number; angle: number; clear: boolean } | null = null;
+    let lowestClear: { speed: number; angle: number; clear: boolean } | null = null;
     for (let th = c.minAngle; th <= c.maxAngle + 1e-9; th += step) {
       const v = speedFor(th);
       if (v === null || v > c.maxSpeed || v < c.minSpeed * 0.5) continue;
@@ -1649,13 +1660,15 @@ export class Robot {
         fallback = { speed: clamp(v, c.minSpeed, c.maxSpeed), angle: th, clear: false }; // steepest reachable so far
         continue;
       }
-      // Lowest angle that clears, plus a margin for launch noise (if that still clears).
+      lowestClear ??= { speed: clamp(v, c.minSpeed, c.maxSpeed), angle: th, clear: true };
+      if (target.preferredAngle !== undefined && th + step < Math.min(c.maxAngle, target.preferredAngle)) continue;
+      // Add a margin for launch noise if the resulting trajectory still clears.
       const withMargin = Math.min(c.maxAngle, th + 4 * step);
       const v2 = speedFor(withMargin);
       if (v2 !== null && v2 <= c.maxSpeed && clears(withMargin, v2)) return { speed: clamp(v2, c.minSpeed, c.maxSpeed), angle: withMargin, clear: true };
       return { speed: clamp(v, c.minSpeed, c.maxSpeed), angle: th, clear: true };
     }
-    return fallback;
+    return lowestClear ?? fallback;
   }
 
   /**

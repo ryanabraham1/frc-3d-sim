@@ -694,6 +694,7 @@ export class Game {
         const p = pool.position(i);
         for (let k = 0; k < zones.length; k++) {
           const { r, z } = zones[k];
+          if (this.robots.some(other => other !== r && other.shieldsPiece(p, pool.radius))) continue;
           if (r.justLaunched(i)) continue;
           if (intakeZoneContains(z, p, pool.radius, 0.4)) {
             r.noteCapture(p);

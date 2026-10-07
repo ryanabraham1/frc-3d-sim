@@ -573,6 +573,7 @@ export class RebuiltRules implements SeasonRules {
     const top = C.HUB_RIM_HEIGHT + r + 0.02;
     return {
       point,
+      preferredAngle: Math.PI / 3,
       clearances: [
         { distance: (C.HUB_SIZE / 2) * k + r, height: top },
         { distance: (C.HUB_SIZE / 2 - C.HUB_WALL) * k, height: top },
