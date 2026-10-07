@@ -1,4 +1,4 @@
-import { fuelInsideHubThroat } from './hubStructure';
+import { fuelInsideHubThroat, HUB_SENSOR_FLOOR_Z } from './hubStructure';
 import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
@@ -371,7 +371,7 @@ export class RebuiltRules implements SeasonRules {
       const f = frame.toField(w);
 
       // Collect below the funnel, leaving panel impacts and rebounds in the physics simulation.
-      if (f.z > C.HUB_CUP_FLOOR - 0.02 && f.z < C.HUB_RIM_HEIGHT - 0.01) {
+      if (f.z > HUB_SENSOR_FLOOR_Z - 0.02 && f.z < C.HUB_RIM_HEIGHT - 0.01) {
         for (const a of ALLIANCES) {
           const hc = this.refs.hubs[a].center;
           if (fuelInsideHubThroat(f.x - hc.x, f.y - hc.y, f.z, pool.radius)) {

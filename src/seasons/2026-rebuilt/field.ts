@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildHubFunnelAndNet } from './hubStructure';
+import { buildHubFunnelAndNet, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } from './hubStructure';
 import type { Alliance, FieldPoint } from '@engine/coords';
 import { FieldBuilder, Vec3 } from '@engine/field/builder';
 import { addAprilTags, AprilTagLayout } from '@engine/field/apriltags';
@@ -170,10 +170,10 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   const col = C.COLORS[a];
   const body = { color: 0x2e3440, metalness: 0.3, roughness: 0.6 };
   // Solid lower body
-  b.box([c.x, c.y, C.HUB_CUP_FLOOR / 2], [C.HUB_SIZE, C.HUB_SIZE, C.HUB_CUP_FLOOR], body);
+  b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z / 2], [C.HUB_SIZE, C.HUB_SIZE, HUB_SENSOR_FLOOR_Z], body);
   // Cup walls above the internal floor
-  const cupH = inch(2);
-  const zc = C.HUB_CUP_FLOOR + cupH / 2;
+  const cupH = HUB_THROAT_Z - HUB_SENSOR_FLOOR_Z;
+  const zc = HUB_SENSOR_FLOOR_Z + cupH / 2;
   const w = C.HUB_WALL;
   const wallMat = { color: col, metalness: 0.2, roughness: 0.6 };
   b.box([c.x - hs + w / 2, c.y, zc], [w, C.HUB_SIZE, cupH], wallMat);
@@ -181,7 +181,7 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   b.box([c.x, c.y - hs + w / 2, zc], [C.HUB_SIZE - 2 * w, w, cupH], wallMat);
   b.box([c.x, c.y + hs - w / 2, zc], [C.HUB_SIZE - 2 * w, w, cupH], wallMat);
   // Inner floor (sensor array) — slightly lighter
-  b.box([c.x, c.y, C.HUB_CUP_FLOOR + 0.005], [C.HUB_SIZE - 2 * w, C.HUB_SIZE - 2 * w, 0.01], { color: 0x444c58, collide: false });
+  b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z + 0.005], [C.HUB_SIZE - 2 * w, C.HUB_SIZE - 2 * w, 0.01], { color: 0x444c58, collide: false });
 
   buildHubFunnelAndNet(b, a, c);
 

@@ -9,10 +9,12 @@ const inch = (n: number) => n * 0.0254;
  * Unspecified throat/net dimensions are visual approximations. */
 export const HUB_THROAT_RADIUS = C.HUB_OPENING_HEX / Math.sqrt(3) * 0.70;
 export const HUB_THROAT_Z = C.HUB_CUP_FLOOR + inch(2);
+// Leave enough depth beneath the throat for the entire 5.9-inch FUEL to enter.
+export const HUB_SENSOR_FLOOR_Z = C.HUB_CUP_FLOOR - inch(6);
 
 /** Only collect FUEL once it has cleared the sloped panels into the throat. */
 export function fuelInsideHubThroat(x: number, y: number, z: number, radius: number): boolean {
-  if (z < C.HUB_CUP_FLOOR - 0.02 || z > HUB_THROAT_Z + radius) return false;
+  if (z - radius < HUB_SENSOR_FLOOR_Z - 0.02 || z + radius > HUB_THROAT_Z - 0.005) return false;
   const clearance = HUB_THROAT_RADIUS * Math.sqrt(3) / 2 - radius;
   for (let i = 0; i < 6; i++) {
     const angle = Math.PI / 3 + i * Math.PI / 3;

@@ -25,12 +25,14 @@ it('both hubs have an open funnel and three valid net collision surfaces', () =>
   }
 });
 
-it('leaves rim and panel impacts unscored until FUEL reaches the throat', async () => {
+it('leaves rim and panel impacts unscored until the entire FUEL clears the throat', async () => {
   const { fuelInsideHubThroat, HUB_THROAT_Z } = await import('../src/seasons/2026-rebuilt/hubStructure');
   const radius = 0.075;
   expect(fuelInsideHubThroat(0, 0, C.HUB_RIM_HEIGHT - 0.02, radius)).toBe(false);
   expect(fuelInsideHubThroat(0.4, 0, HUB_THROAT_Z + radius, radius)).toBe(false);
-  expect(fuelInsideHubThroat(0, 0, HUB_THROAT_Z, radius)).toBe(true);
+  expect(fuelInsideHubThroat(0, 0, HUB_THROAT_Z, radius)).toBe(false);
+  expect(fuelInsideHubThroat(0, 0, HUB_THROAT_Z - radius + 0.001, radius)).toBe(false);
+  expect(fuelInsideHubThroat(0, 0, HUB_THROAT_Z - radius - 0.006, radius)).toBe(true);
 });
 
 it('a falling off-center shot rebounds inward from a funnel panel', () => {
@@ -50,5 +52,32 @@ it('a falling off-center shot rebounds inward from a funnel panel', () => {
     if (radialVelocity < -0.4 && -0.857 * radialVelocity + 0.515 * velocity.y > 0.1) inwardBounce = true;
   }
   expect(inwardBounce).toBe(true);
+  physics.free();
+});
+
+it('a complete ball can enter below the throat before contacting the internal floor', async () => {
+  const { fuelInsideHubThroat, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } = await import('../src/seasons/2026-rebuilt/hubStructure');
+  const physics = new PhysicsWorld(RAPIER);
+  const frame = new FieldFrame(C.FIELD_LENGTH, C.FIELD_WIDTH);
+  const b = new FieldBuilder(physics, new THREE.Scene(), frame);
+  buildHubFunnelAndNet(b, 'blue', C.HUB_CENTER);
+  b.box([C.HUB_CENTER.x, C.HUB_CENTER.y, HUB_SENSOR_FLOOR_Z / 2], [C.HUB_SIZE, C.HUB_SIZE, HUB_SENSOR_FLOOR_Z]);
+  const radius = 0.075;
+  const p = frame.toWorld(C.HUB_CENTER.x, C.HUB_CENTER.y, C.HUB_RIM_HEIGHT + 0.2);
+  const ball = physics.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(p.x, p.y, p.z).setCcdEnabled(true));
+  physics.world.createCollider(RAPIER.ColliderDesc.ball(radius).setCollisionGroups(GROUPS.piece), ball);
+  let collected = false;
+  for (let i = 0; i < 180; i++) {
+    physics.step();
+    const f = frame.toField(ball.translation());
+    const inside = fuelInsideHubThroat(f.x - C.HUB_CENTER.x, f.y - C.HUB_CENTER.y, f.z, radius);
+    if (f.z + radius > HUB_THROAT_Z) expect(inside).toBe(false);
+    if (inside) {
+      expect(f.z + radius).toBeLessThan(HUB_THROAT_Z);
+      collected = true;
+      break;
+    }
+  }
+  expect(collected).toBe(true);
   physics.free();
 });
