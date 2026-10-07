@@ -96,7 +96,10 @@ export class FuelPile {
     if (!n) { this.arrivals.length = 0; this.kickX = this.kickZ = this.kickTurn = 0; }
   }
 
-  /** Returns true only when matrices need uploading (at most 30 Hz, zero while sleeping). */
+  /**
+   * Returns true only when matrices need uploading (zero while sleeping). Steps every drawn frame: a 30 Hz pile riding a
+   * 60 Hz chassis visibly stuttered. At most two substeps, so a slow frame can't snowball into a slower one.
+   */
   step(s: RobotAnimState, escape?: (x: number, y: number, z: number, vx: number, vy: number, vz: number) => void): boolean {
     const dt = THREE.MathUtils.clamp(s.dt, 0, 0.1);
     if (dt <= 0) return false;
@@ -118,7 +121,7 @@ export class FuelPile {
     }
     this.previousX = s.vx; this.previousZ = s.vz; this.previousOmega = s.omega; this.sampled = true;
     this.pending += dt;
-    if (this.pending < 1 / 30) return false;
+    if (this.pending < 1 / 150) return false;
     const time = Math.min(this.pending, 0.1); this.pending = 0;
     if (!this.awake) return false;
     const p = this.positions, v = this.velocity;
@@ -130,7 +133,7 @@ export class FuelPile {
     this.kickX = this.kickZ = this.kickTurn = 0;
     if (this.lift > 0) { for (let i = 0; i < this.count; i++) v[i * 3 + 1] += this.lift; this.lift = 0; }
     this.before.set(p);
-    const steps = Math.ceil(time * 60), h = time / steps;
+    const steps = Math.min(2, Math.ceil(time * 60)), h = time / steps;
     for (let sub = 0; sub < steps; sub++) {
       for (let i = 0; i < this.count; i++) {
         const j = i * 3, oldX = p[j], oldZ = p[j + 2];

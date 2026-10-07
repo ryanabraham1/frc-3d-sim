@@ -104,6 +104,12 @@ const G = 9.81;
 const BURST_HOLD_S = 0.6;
 
 export class Robot {
+  /**
+   * Visual FUEL (hopper particle piles and intake flow tokens) collides with the robot's real CAD triangles. Off in the
+   * game: per-ball BVH queries against every nearby CAD mesh cost 10-120 ms per robot per frame and built BVH trees
+   * mid-match. The piles stay inside their bin bounds; the robot gallery can turn this back on for close-up inspection.
+   */
+  static CAD_FUEL_CONTACTS = false;
   readonly body: RAPIER.RigidBody;
   readonly visual = new THREE.Group();
   /** Indices into the game piece pool. */
@@ -886,7 +892,7 @@ export class Robot {
     for (const pile of this.fuelPiles) {
       pile.userData.fuelManagedCount = true;
       pile.userData.setFuelOpen?.(open);
-      pile.userData.bindFuelContacts?.(this.visual, true);
+      if (Robot.CAD_FUEL_CONTACTS) pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
     }
   }
@@ -2163,7 +2169,7 @@ export class Robot {
         const top = ex.up - pieceR - 0.04;
         return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, 0), v(ex.forward - 0.1, (c.bumperTop + top) / 2, 0), v(ex.forward, top, -ex.side)];
       } : undefined,
-    }, roll, pieceR, roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
+    }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
   /**
@@ -2236,7 +2242,26 @@ export class Robot {
   }
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
-  syncVisual(frameDt?: number): void {
+  private readonly prevPos = new THREE.Vector3();
+  private readonly prevQuat = new THREE.Quaternion();
+  private hasPrevPose = false;
+
+  /** Remember the chassis pose before a physics step (see syncVisual's `alpha`). */
+  capturePrevPose(): void {
+    const t = this.body.translation(), r = this.body.rotation();
+    this.prevPos.set(t.x, t.y, t.z);
+    this.prevQuat.set(r.x, r.y, r.z, r.w);
+    this.hasPrevPose = true;
+  }
+
+  /** Where the robot is drawn this frame (the interpolated pose, not the latest physics step): the camera follows this. */
+  get visualPose(): FieldPose {
+    const f = this.frame.toField(this.visual.position);
+    return { x: f.x, y: f.y, yaw: yawFromQuat(this.visual.quaternion) };
+  }
+
+  /** `alpha`: how far the clock is between the previous physics step and the latest (1 = draw the latest). */
+  syncVisual(frameDt?: number, alpha = 1): void {
     this.bay?.settle();
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
     const dt = frameDt ?? (this.lastSync < 0 ? 0 : clamp(now - this.lastSync, 0, 0.1));
@@ -2247,6 +2272,12 @@ export class Robot {
     const r = this.body.rotation();
     this.visual.position.set(t.x, t.y, t.z);
     this.visual.quaternion.set(r.x, r.y, r.z, r.w);
+    // Render interpolation: physics runs at a fixed 90 Hz but frames don't line up with its steps, so drawing the latest
+    // step makes the robot (and the camera chasing it) advance in uneven jumps. Blend from the pose before that step.
+    if (alpha < 1 && this.hasPrevPose && this.prevPos.distanceToSquared(this.visual.position) < 1) {
+      this.visual.position.lerpVectors(this.prevPos, this.visual.position, alpha);
+      this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
+    }
     this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null);
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);

@@ -108,6 +108,11 @@ export class GamePiecePool {
   private readonly tmpQ = new THREE.Quaternion();
   private readonly tmpP = new THREE.Vector3();
   private readonly one = new THREE.Vector3(1, 1, 1);
+  private readonly prevP = new THREE.Vector3();
+  private readonly prevQ = new THREE.Quaternion();
+  /** Pose of each moving piece before the latest physics step (x y z qx qy qz qw), for render interpolation. */
+  private prevPose = new Float32Array(0);
+  private prevOk = new Uint8Array(0);
 
   constructor(
     readonly physics: PhysicsWorld,
@@ -139,6 +144,8 @@ export class GamePiecePool {
     }
     this.mesh = this.meshes[0];
     this.shown = new Uint8Array(spec.count);
+    this.prevPose = new Float32Array(spec.count * 7);
+    this.prevOk = new Uint8Array(spec.count);
 
     for (let i = 0; i < spec.count; i++) {
       const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
@@ -411,7 +418,20 @@ export class GamePiecePool {
     }
   }
 
-  syncVisuals(): void {
+  /** Before each physics step: remember where every moving piece is (sleeping pieces are drawn where they are). */
+  capturePrevPoses(): void {
+    const pp = this.prevPose;
+    for (let i = 0; i < this.bodies.length; i++) {
+      const b = this.bodies[i];
+      if ((this.state[i] !== 'field' && !this.stowed[i]) || b.isSleeping()) { this.prevOk[i] = 0; continue; }
+      const t = b.translation(), r = b.rotation(), k = i * 7;
+      pp[k] = t.x; pp[k + 1] = t.y; pp[k + 2] = t.z; pp[k + 3] = r.x; pp[k + 4] = r.y; pp[k + 5] = r.z; pp[k + 6] = r.w;
+      this.prevOk[i] = 1;
+    }
+  }
+
+  /** `alpha`: how far the clock is between the previous physics step and the latest (1 = draw the latest). */
+  syncVisuals(alpha = 1): void {
     let dirty = false;
     for (let i = 0; i < this.bodies.length; i++) {
       const mesh = this.meshes[this.meshIndex[i]];
@@ -432,6 +452,15 @@ export class GamePiecePool {
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
       this.tmpQ.set(r.x, r.y, r.z, r.w);
+      if (alpha < 1 && this.prevOk[i] && this.shown[i] === 1) {
+        const pp = this.prevPose, k = i * 7;
+        this.prevP.set(pp[k], pp[k + 1], pp[k + 2]);
+        // A piece that jumped (launched from a robot, reset, handed off) is drawn where it is, not streaked.
+        if (this.prevP.distanceToSquared(this.tmpP) < 0.25) {
+          this.tmpP.lerpVectors(this.prevP, this.tmpP, alpha);
+          this.tmpQ.slerpQuaternions(this.prevQ.set(pp[k + 3], pp[k + 4], pp[k + 5], pp[k + 6]), this.tmpQ, alpha);
+        }
+      }
       this.tmpM.compose(this.tmpP, this.tmpQ, this.one);
       mesh.setMatrixAt(i, this.tmpM);
       this.shown[i] = 1;

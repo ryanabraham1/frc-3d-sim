@@ -73,6 +73,12 @@ export class RebuiltRules implements SeasonRules {
   private g403Contacts = new Set<string>();
   /** G408: FUEL the HUB just released that nothing has touched yet. */
   private hubDrops = new Map<number, { t: number; grounded: boolean }>();
+  /** G408: pool indices of FUEL the HUB released moments ago that has not yet touched the carpet (bots keep clear of it). */
+  freshHubFuel(): number[] {
+    const out: number[] = [];
+    for (const [idx, d] of this.hubDrops) if (!d.grounded) out.push(idx);
+    return out;
+  }
   /** G408: a robot's current run of catches, and how many strategic instances it has been called for. */
   private catches = new Map<number, { count: number; last: number; called: boolean }>();
   private strategicCatches = new Map<number, number>();

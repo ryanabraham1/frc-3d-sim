@@ -409,6 +409,7 @@ export class Game {
       this.perfPanel.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:1000;pointer-events:none;background:#000c;color:#fff;padding:8px;font:11px monospace';
       this.renderer.container.appendChild(this.perfPanel);
     }
+    this.renderer.prewarm();
     this.last = this.lastDraw = performance.now();
     if (this.role !== 'local') {
       // Multiplayer ticks run off a worker timer, not rAF. Host: the simulation must keep running when its
@@ -496,6 +497,8 @@ export class Game {
       const maxSteps = Math.ceil(5 * Math.max(1, this.simSpeed));
       let steps = 0;
       while (this.acc >= fixed && steps < maxSteps) {
+        for (const r of this.robots) r.capturePrevPose();
+        this.pool.capturePrevPoses();
         this.step(fixed, inp);
         this.acc -= fixed;
         steps++;
@@ -533,13 +536,15 @@ export class Game {
       this.syncClientState();
     }
     this.rules.updateVisuals(dt, this.time);
+    // Host / solo: draw between the last two fixed physics steps (clients draw their own interpolated snapshots).
+    const alpha = this.role === 'client' ? 1 : clamp(this.acc / this.physics.dt, 0, 1);
     for (const r of this.robots) {
       r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= 30;
-      r.syncVisual();
+      r.syncVisual(undefined, alpha);
     }
-    this.pool.syncVisuals();
+    this.pool.syncVisuals(alpha);
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
-    this.camera.update(dt, this.player?.pose ?? null, undefined, this.player?.elevation ?? 0);
+    this.camera.update(dt, this.player?.visualPose ?? null, undefined, this.player?.visual.position.y ?? 0);
     const fadeStart = performance.now();
     this.updateFader(dt);
     this.timings.faderMs += (performance.now() - fadeStart - this.timings.faderMs) * 0.05;

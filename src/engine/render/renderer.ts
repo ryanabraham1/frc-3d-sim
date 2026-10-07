@@ -273,6 +273,15 @@ export class Renderer {
   }
   private frame = 0;
 
+  /**
+   * Compile every material's shader now, including what the first frame can't see. Otherwise WebGL compiles each
+   * one the first time it's drawn: a 300-400 ms freeze on the first frame and more hitches as robots come into view.
+   */
+  prewarm(): void {
+    this.scene.updateMatrixWorld();
+    this.renderer.compile(this.scene, this.camera);
+  }
+
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
     this.scene.traverse((obj) => {

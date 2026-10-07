@@ -208,12 +208,14 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     }
     return spotAt(a);
   };
+  // G408: don't run the intake while FUEL the HUB just released is rolling at us (a catch is a foul).
+  const hubFuelNear = (): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < 2.6);
   const stanceCommand = (live: boolean): RobotCommand => {
     const spot = stanceSpot();
     const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x);
     const there = dist(myPose(), spot) < 0.3;
     const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
-    cmd.intake = r.capacityLeft > 0;
+    cmd.intake = r.capacityLeft > 0 && !hubFuelNear();
     // Fire once planted (auto-align squares the chassis and holds the first shot until aligned). Once a burst is going
     // the robot keeps firing wherever it points, so a driver lets off the trigger while the robot is being shoved or
     // swung around (it would only spray FUEL) and fires again when it settles.
@@ -228,7 +230,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const zoneFuel = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7, 4) : null;
     const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(insideZone() && inZone() ? myPose() : shootSpot());
     if (!zoneFuel && insideZone()) { cmd.vx *= 0.5; cmd.vy *= 0.5; }
-    cmd.intake = r.capacityLeft > 0;
+    cmd.intake = r.capacityLeft > 0 && !hubFuelNear();
     cmd.shoot = inZone() && active && r.held.length > 0;
     return cmd;
   };

@@ -43,7 +43,7 @@ it('keeps incoming and agitated balls inside the roof and shaped footprint at bo
       expect(pos.x<0.15 || Math.abs(pos.z)>0.12).toBe(true);
     }
   }
-  expect(mesh.instanceMatrix.version-version).toBeLessThanOrEqual(60);
+  expect(mesh.instanceMatrix.version-version).toBeLessThanOrEqual(120); // at most once per drawn frame
   fill.set(0);const empty=mesh.instanceMatrix.version;
   for(let i=0;i<120;i++) step(s);
   expect(mesh.count).toBe(0);
