@@ -65,6 +65,32 @@ function lastResultHtml(lobby: LobbyController): string {
   return `${card}<div class="rk-rankup ${move}" style="--tier:${to.tier.color}">${burst}${emblemSvg(to, { size: 92, pop: true })}<div><b>${heading}</b><span>${line}</span></div></div>`;
 }
 
+/** All-time record across modes, plus rank and leaderboard position in each. */
+function statsPanelHtml(lobby: LobbyController): string {
+  const profile = lobby.ranked.profile;
+  if (!profile) return '<div class="rl-empty"><span class="mp-dot waking"></span>Loading your stats…</div>';
+  const modes = RANKED_MODES.map((m) => ({ m, r: profile.ratings[m], st: profile.standings?.[m] }));
+  const total = modes.reduce((t, { r }) => ({ games: t.games + r.games, wins: t.wins + r.wins, losses: t.losses + r.losses, draws: t.draws + r.draws }), { games: 0, wins: 0, losses: 0, draws: 0 });
+  if (!total.games) return '<div class="rl-empty">No ranked matches yet.<br/>Your record and rank show up here after your first one.</div>';
+  const pct = (w: number, g: number) => (g ? `${Math.round((w / g) * 100)}%` : '—');
+  const best = modes.filter(({ r }) => r.games > 0).sort((a, b) => b.r.peak - a.r.peak)[0];
+  const bestRank = visibleRank(best.r.peak, best.r.games);
+  const rows = modes
+    .map(({ m, r, st }) => {
+      if (!r.games) return `<tr class="idle"><td>${MODE_LABEL[m]}</td><td colspan="4" class="dim">Not played</td></tr>`;
+      return `<tr><td>${MODE_LABEL[m]}</td><td>${rankChip(r.rating, r.games, 22)}<br/><span class="dim">${r.rating}</span></td><td>${st ? `<b>#${st.rank}</b> <span class="dim">of ${st.total}</span>` : '<span class="dim">—</span>'}</td><td>${r.wins}-${r.losses}-${r.draws}</td><td>${pct(r.wins, r.games)}</td></tr>`;
+    })
+    .join('');
+  return `<div class="rk-stats">
+    <div class="rk-stat"><b>${total.games}</b><span>matches</span></div>
+    <div class="rk-stat"><b>${total.wins}</b><span>wins</span></div>
+    <div class="rk-stat"><b>${total.losses}</b><span>losses</span></div>
+    <div class="rk-stat"><b>${pct(total.wins, total.games)}</b><span>win rate</span></div>
+    <div class="rk-stat wide"><b>${best.r.peak}</b><span>peak · ${MODE_LABEL[best.m]}${bestRank ? ` · ${esc(bestRank.label)}` : ''}</span></div>
+  </div>
+  <table class="rk-board rk-modes-table"><thead><tr><th>Mode</th><th>Rank</th><th>Position</th><th>W-L-D</th><th>Win%</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function meCardHtml(lobby: LobbyController): string {
   const R = lobby.ranked;
   const mine = R.profile?.ratings[R.mode];
@@ -120,6 +146,10 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
         </div>
       </section>
       <div class="col">
+        <section class="panel mp-card">
+          <div class="panel-head"><span>Your all-time stats</span></div>
+          <div class="rl-list" data-mp="stats">${online ? statsPanelHtml(lobby) : '<div class="rl-empty">Connect to see your stats.</div>'}</div>
+        </section>
         <section class="panel mp-card">
           <div class="panel-head"><span>${MODE_LABEL[R.mode]} leaderboard</span></div>
           <div class="rl-list" data-mp="leaderboard">${online ? leaderboardHtml(lobby) : '<div class="rl-empty">Connect to see the leaderboard.</div>'}</div>

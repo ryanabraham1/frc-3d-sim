@@ -113,7 +113,7 @@ export type RelayEvent =
   | { op: 'unqueued'; reason: string }
   /** A ranked match was formed and this peer is already seated in its room (the host is `hostId`). */
   | { op: 'matched'; room: string; peerId: string; hostId: string; token: string; mode: RankedMode; team: Team; roster: RankedRosterEntry[] }
-  | { op: 'profile'; persistent: boolean; name: string; ratings: Record<RankedMode, RatingSummary> }
+  | { op: 'profile'; persistent: boolean; name: string; ratings: Record<RankedMode, RatingSummary>; /** Leaderboard position per mode played. */ standings?: Partial<Record<RankedMode, { rank: number; total: number }>> }
   | { op: 'leaderboard'; mode: RankedMode; rows: LeaderEntry[]; /** The requester's standing (if they have played). */ you?: { rank: number; total: number; rating: number; games: number } }
   /** Result of a ranked match for this player. `status` void = no rating change. */
   | { op: 'rating'; mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: 'win' | 'loss' | 'draw' | 'abandon' | 'none'; reason?: string }

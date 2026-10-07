@@ -97,7 +97,7 @@ export class LobbyController {
     searching: boolean;
     searchStartedAt: number;
     waiting: number;
-    profile: { persistent: boolean; name: string; ratings: Record<RankedMode, { rating: number; games: number; wins: number; losses: number; draws: number; peak: number }> } | null;
+    profile: { persistent: boolean; name: string; ratings: Record<RankedMode, { rating: number; games: number; wins: number; losses: number; draws: number; peak: number }>; standings?: Partial<Record<RankedMode, { rank: number; total: number }>> } | null;
     leaderboard: LeaderEntry[] | null;
     /** My place on the board (null until I've played). */
     standing: { rank: number; total: number; rating: number; games: number } | null;
@@ -166,6 +166,8 @@ export class LobbyController {
       this.onChange();
     });
     this.client.on('relay-error', ({ message }) => {
+      // A throttled background refresh isn't a reason to abandon a search.
+      if (message.startsWith('Too many ranked requests')) return;
       this.ranked.searching = false;
       this.error = message;
       this.onChange();
@@ -187,6 +189,8 @@ export class LobbyController {
       const prior = this.ranked.profile?.ratings[r.mode];
       const counted = r.status !== 'void' && r.result !== 'none';
       const games = prior?.games ?? 0;
+      // Refresh my standing (leaderboard position) once the result is in.
+      setTimeout(() => this.pollRanked(true), 500);
       this.ranked.lastResult = { ...r, rankBefore: visibleRank(r.before, games), rankAfter: visibleRank(r.after, games + (counted ? 1 : 0)) };
       if (this.ranked.profile) {
         const row = this.ranked.profile.ratings[r.mode];
@@ -341,9 +345,11 @@ export class LobbyController {
   }
 
   /** Ask the relay for my ratings and the current leaderboard. */
-  pollRanked(): void {
-    if (!this.client.open) return;
-    this.client.profile(this.playerName || 'Player', this.rankedSecret());
+  pollRanked(force = false): void {
+    // Searching needs no polling (and the relay's queue request should be the only traffic that matters).
+    if (!this.client.open || this.ranked.searching) return;
+    // Ratings only change after a match, so they are fetched once per visit (and after each match), not on every poll.
+    if (force || !this.ranked.profile) this.client.profile(this.playerName || 'Player', this.rankedSecret());
     this.client.leaderboard(this.ranked.mode, this.rankedSecret());
   }
 

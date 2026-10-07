@@ -208,6 +208,23 @@ describe('ranked relay', () => {
     await queue(again, 'Again');
   });
 
+  it('profiles carry my leaderboard position per mode', async () => {
+    const a = await peer('a');
+    a.send({ op: 'profile', name: 'Ann', secret: a.secret });
+    const first = await a.next('profile');
+    expect(first.standings).toEqual({}); // nothing played yet
+    const { playerIdFor } = await import('../server/ranked');
+    const me = playerIdFor(a.secret);
+    await store.touchPlayer('rival', 'Rival');
+    const win = (id: string, after: number) => store.saveMatch({ mode: '2v2', season: 's', outcome: 'red', redScore: 0, blueScore: 0, status: 'final', players: [] }, [{ playerId: id, before: after - 10, after, delta: 10, result: 'win' }]);
+    await win('rival', 1100);
+    await win(me, 1050);
+    a.send({ op: 'profile', name: 'Ann', secret: a.secret });
+    const prof = await a.next('profile');
+    expect(prof.standings).toEqual({ '2v2': { rank: 2, total: 2 } });
+    expect(prof.ratings['2v2']).toMatchObject({ rating: 1050, games: 1, wins: 1 });
+  });
+
   it('serves a leaderboard that marks the requester', async () => {
     const a = await peer('a');
     await store.touchPlayer('x', 'Xavier');
@@ -217,5 +234,47 @@ describe('ranked relay', () => {
     const lb = await a.next('leaderboard');
     expect(lb.rows.map((r) => r.name)).toEqual(['Xavier']);
     expect(lb.rows[0].me).toBeUndefined();
+  });
+});
+
+describe('ranked rate limits with the default limits', () => {
+  it('two players behind one IP can poll their profile and still queue and match', async () => {
+    const s2 = createServer();
+    const r2 = attachRelay(s2, { rejectOtherPaths: true, rankedStore: new MemoryStore(), ranked: { tickMs: 40 } }); // default limits
+    await new Promise<void>((r) => s2.listen(0, '127.0.0.1', r));
+    const u2 = `ws://127.0.0.1:${(s2.address() as AddressInfo).port}/ws`;
+    const mk = async (letter: string) => {
+      const ws = new WebSocket(u2);
+      sockets.push(ws);
+      const events: RelayEvent[] = [];
+      ws.on('message', (d, bin) => {
+        if (!bin) events.push(JSON.parse(d.toString()));
+      });
+      await new Promise((r) => ws.once('open', r));
+      return { ws, events, secret: letter.repeat(32), send: (o: unknown) => ws.send(JSON.stringify(o)) };
+    };
+    try {
+      const a = await mk('a');
+      const b = await mk('b');
+      // What the Ranked page does for a couple of minutes: profile + leaderboard every 5 s, from each browser.
+      for (let i = 0; i < 24; i++) {
+        for (const p of [a, b]) {
+          p.send({ op: 'profile', name: 'x', secret: p.secret });
+          p.send({ op: 'leaderboard', mode: '1v1', secret: p.secret });
+        }
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      a.send({ op: 'queue', mode: '1v1', name: 'A', secret: a.secret });
+      b.send({ op: 'queue', mode: '1v1', name: 'B', secret: b.secret });
+      await new Promise((r) => setTimeout(r, 400));
+      expect(a.events.some((e) => e.op === 'error')).toBe(false);
+      expect(b.events.some((e) => e.op === 'error')).toBe(false);
+      expect(a.events.some((e) => e.op === 'matched')).toBe(true);
+      expect(b.events.some((e) => e.op === 'matched')).toBe(true);
+    } finally {
+      await r2.close();
+      s2.closeAllConnections();
+      await new Promise<void>((r) => s2.close(() => r()));
+    }
   });
 });

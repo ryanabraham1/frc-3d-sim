@@ -102,11 +102,13 @@ export interface RelayLimits {
   creates: number;
   /** Failed joins/rejoins per IP per minute (stops guessing private room codes). */
   badJoins: number;
-  /** Ranked queue/profile/leaderboard requests per IP per minute. */
+  /** Ranked queue requests per IP per minute. */
   ranked: number;
+  /** Ranked profile/leaderboard reads per IP per minute (the Ranked page polls; several browsers can share an IP). */
+  rankedReads: number;
 }
 
-const DEFAULT_LIMITS: RelayLimits = { connections: 24, creates: 8, badJoins: 20, ranked: 40 };
+const DEFAULT_LIMITS: RelayLimits = { connections: 24, creates: 8, badJoins: 20, ranked: 30, rankedReads: 240 };
 const WINDOW_MS = 60_000;
 const SEATS_DEFAULT = 6;
 
@@ -121,7 +123,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
 
   // Sliding one-minute counters per IP.
   const connCount = new Map<string, number>();
-  const hits = { creates: new Map<string, number[]>(), badJoins: new Map<string, number[]>(), ranked: new Map<string, number[]>() };
+  const hits = { creates: new Map<string, number[]>(), badJoins: new Map<string, number[]>(), ranked: new Map<string, number[]>(), rankedReads: new Map<string, number[]>() };
   const byId = new Map<string, Peer>();
   const recent = (m: Map<string, number[]>, ip: string): number[] => {
     const now = Date.now();
@@ -419,8 +421,12 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
         case 'queue':
         case 'profile':
         case 'leaderboard':
-          if (exceeded(hits.ranked, ip, limits.ranked)) return send(peer, { op: 'error', message: 'Too many ranked requests — slow down' });
-          record(hits.ranked, ip);
+          {
+            const bucket = req.op === 'queue' ? hits.ranked : hits.rankedReads;
+            const limit = req.op === 'queue' ? limits.ranked : limits.rankedReads;
+            if (exceeded(bucket, ip, limit)) return send(peer, { op: 'error', message: req.op === 'queue' ? 'Too many searches — wait a moment' : 'Too many ranked requests — slow down' });
+            record(bucket, ip);
+          }
           if (req.op === 'queue') {
             if (peer.room) return send(peer, { op: 'error', message: 'Leave your room before searching for a ranked match' });
             void ranked.queue(peer.id, req.mode, req.name, req.secret);

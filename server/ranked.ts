@@ -137,7 +137,16 @@ export class RankedService {
     const clean = cleanName(name);
     try {
       const ratings = await this.ratingsFor(playerId, clean);
-      this.deps.send(peerId, { op: 'profile', persistent: this.deps.store.persistent, name: clean, ratings });
+      // Where I stand on each mode's leaderboard (only modes I've played).
+      const standings: Partial<Record<RankedMode, { rank: number; total: number }>> = {};
+      await Promise.all(
+        (['1v1', '2v2', '3v3'] as const).map(async (m) => {
+          if (ratings[m].games < LEADERBOARD_MIN_GAMES) return;
+          const st = await this.deps.store.rankOf(playerId, m, LEADERBOARD_MIN_GAMES);
+          if (st) standings[m] = { rank: st.rank, total: st.total };
+        }),
+      );
+      this.deps.send(peerId, { op: 'profile', persistent: this.deps.store.persistent, name: clean, ratings, standings });
     } catch (e) {
       this.log(`profile failed: ${(e as Error).message}`);
       this.deps.send(peerId, { op: 'error', message: 'Ratings are unavailable right now' });
