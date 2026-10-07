@@ -63,6 +63,7 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise
   const gen = generation;
   app.innerHTML = '<div class="loading">LOADING FIELD + PHYSICS…</div>';
   const settings = { ...lobby.settings!, seasonId: setup.seasonId, seed: setup.seed };
+  const ranked = !!lobby.lobby?.ranked;
   const { R, Game, getSeason } = await loadEngine(settings, setup);
   if (gen !== generation) return;
   if (!lobby.client.connected) return menu('multiplayer');
@@ -74,11 +75,11 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise
     {
       onExit: () => {
         lobby.leave();
-        menu('multiplayer');
+        menu(ranked ? 'ranked' : 'multiplayer');
       },
       onRestart: () => {},
-      onPlayAgain: () => { lobby.backToLobby(); lobby.beginPlacement(); },
-      onBackToLobby: () => lobby.backToLobby(),
+      ...(ranked ? {} : { onPlayAgain: () => { lobby.backToLobby(); lobby.beginPlacement(); }, onBackToLobby: () => lobby.backToLobby() }),
+      onResults: (res, scores) => lobby.reportResult(res.winner, scores.red, scores.blue),
     },
     { role, client: lobby.client, setup },
   );
@@ -86,13 +87,13 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise
   (window as unknown as { game: Game }).game = game;
 }
 
-function menu(page?: 'multiplayer'): void {
+function menu(page?: 'multiplayer' | 'ranked'): void {
   stopGame();
   showMenu(app, (s) => void startGame(s), { lobby, page });
 }
 
 lobby.onStart = (setup, role) => void startNetGame(setup, role);
-lobby.onToLobby = () => menu('multiplayer');
+lobby.onToLobby = () => menu(lobby.lobby?.ranked ? 'ranked' : 'multiplayer');
 // While a match is running, the Game shows its own "Disconnected" dialog; the menu re-renders itself.
 
 // An invite link (?join=CODE) lands straight on the Multiplayer page and joins.

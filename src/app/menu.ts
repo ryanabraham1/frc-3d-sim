@@ -20,7 +20,7 @@ const LBF = 4.4482216;
 const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
-type Page = 'play' | 'controls' | 'rules' | 'multiplayer';
+type Page = 'play' | 'controls' | 'rules' | 'multiplayer' | 'ranked';
 type PlayTab = 'match' | 'ai' | 'robot';
 
 function load(): Partial<GameSettings> | null {
@@ -465,7 +465,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     sanitizeSpot();
     if (lobby) lobby.settings = s;
     // A relay wake/status update can arrive while the user is typing. Keep the form draft and focus.
-    const draft = page === 'multiplayer' ? {
+    const online = page === 'multiplayer' || page === 'ranked';
+    const draft = online ? {
       name: el.querySelector<HTMLInputElement>('[data-mp="name"]')?.value,
       code: el.querySelector<HTMLInputElement>('[data-mp="code"]')?.value,
       url: el.querySelector<HTMLInputElement>('[data-mp="url"]')?.value,
@@ -479,11 +480,12 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
       rules: { h1: `${season.name} rules`, sub: season.summary },
       multiplayer: { h1: 'Multiplayer', sub: '' },
+      ranked: { h1: 'Ranked', sub: '' },
     };
     // Multiplayer page content lives in multiplayer.ts; the lobby re-renders it on every lobby change.
     const mp =
-      page === 'multiplayer' && lobby
-        ? (save(s), multiplayerPage(lobby, { s, season, rerender: render, goto: (p) => ((page = p), render()) }))
+      online && lobby
+        ? (save(s), multiplayerPage(lobby, { s, season, page: page as 'multiplayer' | 'ranked', rerender: render, goto: (p) => ((page = p), render()) }))
         : null;
     const t = titles[page];
     // innerHTML below rebuilds the scroll container; keep the user's place when changing a setting on the same page.
@@ -496,7 +498,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     el.innerHTML = `
       <header class="topbar">
         <span class="brand">FRC Sim</span><span class="brand-sep"></span>
-        <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select></label>
+        <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch || lobby.lobby.ranked) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select></label>
         <div class="team-chip"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i>Team ${s.robot.teamNumber}</div>
       </header>
       <main class="main">
@@ -507,7 +509,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${
           mp
             ? mp.footer
-            : `${page === 'play' ? tab('controls', 'Controls') + tab('rules', 'Rules') + (lobby ? tab('multiplayer', 'Multiplayer') : '') : `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button>`}
+            : `${page === 'play' ? tab('controls', 'Controls') + tab('rules', 'Rules') + (lobby ? tab('multiplayer', 'Multiplayer') + tab('ranked', 'Ranked') : '') : `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button>`}
         <span class="spacer"></span>
         ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}`
         }
@@ -519,7 +521,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     }
     bind();
     mountPreviews();
-    if (draft && page === 'multiplayer') {
+    if (draft && online) {
       for (const key of ['name', 'code', 'url', 'title', 'room-title', 'chat'] as const) {
         const input = el.querySelector<HTMLInputElement>(`[data-mp="${key}"]`);
         if (input && draft[key] !== undefined) input.value = draft[key];
@@ -660,7 +662,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     }
     const startBtn = el.querySelector<HTMLButtonElement>('[data-k="start"]');
     if (startBtn) startBtn.onclick = start;
-    if (page === 'multiplayer' && lobby) bindMultiplayer(el, lobby, { s, season, rerender: render, goto: (p) => ((page = p), render()) });
+    if ((page === 'multiplayer' || page === 'ranked') && lobby) bindMultiplayer(el, lobby, { s, season, page: page as 'multiplayer' | 'ranked', rerender: render, goto: (p) => ((page = p), render()) });
   };
 
   if (lobby)

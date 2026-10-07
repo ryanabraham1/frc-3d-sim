@@ -19,6 +19,20 @@ import {
   type RobotSetup,
   type SlotId,
 } from '@engine/net/protocol';
+import {
+  createDraft,
+  draftAct,
+  draftAuto,
+  draftDone,
+  draftPicks,
+  isRankedMode,
+  RANKED_SEASON_ID,
+  turnSeconds,
+  type Outcome,
+  type RankedMode,
+} from '@engine/net/ranked';
+import type { LeaderEntry } from '@engine/net/relayProtocol';
+import { rankedPool, rankedPoolIds } from './rankedPool';
 import { cleanName, cleanTitle, normalizeRoomCode, type RoomListing, type RoomMeta, type RoomVisibility } from '@engine/net/relayProtocol';
 import type { RobotConfig } from '@engine/robot/config';
 import { getSeason } from '@seasons/index';
@@ -74,6 +88,21 @@ export class LobbyController {
   reconnecting = false;
   /** (Client) the host's connection dropped; waiting for them to return. */
   hostAway = false;
+  /** Ranked play: search state, my ratings, the leaderboard and the last match's rating change. */
+  ranked: {
+    mode: RankedMode;
+    searching: boolean;
+    searchStartedAt: number;
+    waiting: number;
+    profile: { persistent: boolean; name: string; ratings: Record<RankedMode, { rating: number; games: number; wins: number; losses: number; draws: number; peak: number }> } | null;
+    leaderboard: LeaderEntry[] | null;
+    lastResult: { mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: string; reason?: string } | null;
+  } = { mode: '2v2', searching: false, searchStartedAt: 0, waiting: 0, profile: null, leaderboard: null, lastResult: null };
+  /** Name used for ranked (kept in step with the page's name field). */
+  playerName = '';
+  private turnTimer: ReturnType<typeof setTimeout> | null = null;
+  private turnDeadline = 0;
+  private placeTimer: ReturnType<typeof setTimeout> | null = null;
   private browseTimer: ReturnType<typeof setInterval> | null = null;
   private browseMisses = 0;
   private lastMeta = '';
@@ -115,6 +144,50 @@ export class LobbyController {
       } else this.onChange();
     });
     this.client.on('peer-back', () => this.broadcastLobby());
+    this.client.on('queued', ({ waiting }) => {
+      this.ranked.waiting = waiting;
+      this.onChange();
+    });
+    this.client.on('queue-status', ({ waiting }) => {
+      this.ranked.waiting = waiting;
+      const el = typeof document !== 'undefined' ? document.querySelector<HTMLElement>('[data-mp="queue-count"]') : null;
+      if (el) el.textContent = String(waiting);
+    });
+    this.client.on('unqueued', ({ reason }) => {
+      this.ranked.searching = false;
+      if (reason !== 'Search cancelled') this.error = reason;
+      this.onChange();
+    });
+    this.client.on('relay-error', ({ message }) => {
+      this.ranked.searching = false;
+      this.error = message;
+      this.onChange();
+    });
+    this.client.on('profile', (p) => {
+      this.ranked.profile = p;
+      this.onChange();
+    });
+    this.client.on('leaderboard', ({ mode, rows }) => {
+      if (mode !== this.ranked.mode) return;
+      this.ranked.leaderboard = rows;
+      this.onChange();
+    });
+    this.client.on('rating', (r) => {
+      this.ranked.lastResult = r;
+      if (this.ranked.profile) {
+        const row = this.ranked.profile.ratings[r.mode];
+        if (r.status !== 'void' && r.result !== 'none') {
+          row.rating = r.after;
+          row.games++;
+          row.peak = Math.max(row.peak, r.after);
+          if (r.result === 'win') row.wins++;
+          else if (r.result === 'draw') row.draws++;
+          else row.losses++;
+        }
+      }
+      this.onChange();
+    });
+    this.client.on('matched', (ev) => this.onMatched(ev));
     this.client.on('host-lost', () => {
       this.hostAway = true;
       this.onChange();
@@ -133,6 +206,8 @@ export class LobbyController {
       this.reconnecting = false;
       this.hostAway = false;
       this.lastMeta = '';
+      this.ranked.searching = false;
+      this.clearRankedTimers();
       this.lastChatAt.clear();
       this.choices.clear();
       this.lastSent = '';
@@ -212,6 +287,183 @@ export class LobbyController {
     this.syncMine(true, s ? slotId(s.alliance, s.station) : null);
   }
 
+  // ─────────────────────────── ranked ───────────────────────────
+
+  /** Private device key: the relay stores only its hash, so a rating follows this browser. */
+  rankedSecret(): string {
+    const KEY = 'frc-sim-ranked-secret';
+    try {
+      const saved = localStorage.getItem(KEY);
+      if (saved && /^[0-9a-f]{32,128}$/.test(saved)) return saved;
+      const fresh = Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem(KEY, fresh);
+      return fresh;
+    } catch {
+      return (this.memorySecret ??= Array.from({ length: 48 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
+    }
+  }
+  private memorySecret: string | null = null;
+
+  setRankedMode(mode: RankedMode): void {
+    if (!isRankedMode(mode) || this.ranked.searching || this.ranked.mode === mode) return;
+    this.ranked.mode = mode;
+    this.ranked.leaderboard = null;
+    this.pollRanked();
+    this.onChange();
+  }
+
+  /** Ask the relay for my ratings and the current leaderboard. */
+  pollRanked(): void {
+    if (!this.client.open) return;
+    this.client.profile(this.playerName || 'Player', this.rankedSecret());
+    this.client.leaderboard(this.ranked.mode, this.rankedSecret());
+  }
+
+  async findMatch(name: string): Promise<void> {
+    if (this.ranked.searching || this.status !== 'idle') return;
+    this.error = '';
+    this.ranked.lastResult = null;
+    this.playerName = cleanName(name);
+    try {
+      if (this.serverState !== 'online' && !(await this.wake())) throw new Error('The multiplayer server did not respond. Try again in a moment.');
+      await this.client.ensureConnected(this.relayUrl);
+    } catch (e) {
+      this.error = (e as Error).message;
+      this.onChange();
+      return;
+    }
+    this.ranked.searching = true;
+    this.ranked.searchStartedAt = Date.now();
+    this.ranked.waiting = 1;
+    this.client.queue(this.ranked.mode, this.playerName, this.rankedSecret());
+    this.onChange();
+  }
+
+  cancelSearch(): void {
+    if (!this.ranked.searching) return;
+    this.ranked.searching = false;
+    this.client.unqueue();
+    this.onChange();
+  }
+
+  /** Both the host and clients report what they saw; the relay applies the rating only if they agree. */
+  reportResult(winner: Outcome, red: number, blue: number): void {
+    if (this.lobby?.ranked) this.client.reportResult(winner, red, blue);
+  }
+
+  private clearRankedTimers(): void {
+    if (this.turnTimer) clearTimeout(this.turnTimer);
+    if (this.placeTimer) clearTimeout(this.placeTimer);
+    this.turnTimer = this.placeTimer = null;
+  }
+
+  private onMatched(ev: { room: string; peerId: string; hostId: string; mode: RankedMode; roster: { peerId: string; name: string; team: 'red' | 'blue'; rating: number; games: number }[] }): void {
+    this.ranked.searching = false;
+    this.ranked.mode = ev.mode;
+    this.ranked.lastResult = null;
+    this.status = 'lobby';
+    this.rooms = null;
+    this.lobby = null;
+    this.error = '';
+    if (ev.peerId === ev.hostId) this.hostRankedRoom(ev);
+    // Everyone else waits for the host's first lobby message.
+    this.onChange();
+  }
+
+  /** Host: seat the matched drivers and open the ban/pick draft. */
+  private hostRankedRoom(ev: { room: string; peerId: string; mode: RankedMode; roster: { peerId: string; name: string; team: 'red' | 'blue'; rating: number; games: number }[] }): void {
+    const season = getSeason(RANKED_SEASON_ID);
+    const used = { red: 0, blue: 0 };
+    const players: LobbyPlayer[] = ev.roster.map((r) => ({
+      peerId: r.peerId,
+      name: r.name,
+      slot: slotId(r.team, ++used[r.team]),
+      team: 0,
+      host: r.peerId === ev.peerId,
+      rating: r.rating,
+      games: r.games,
+    }));
+    this.choices.clear();
+    this.lastMeta = '';
+    this.lobby = {
+      room: ev.room,
+      hostId: ev.peerId,
+      visibility: 'private',
+      title: 'Ranked match',
+      chat: [],
+      seasonId: season.id,
+      players,
+      autoHumanPlayer: true,
+      manualAuto: true,
+      fillBots: false,
+      inMatch: false,
+      ranked: { mode: ev.mode, phase: 'draft', draft: createDraft(ev.mode, rankedPoolIds(season)), turnMs: 0 },
+    };
+    this.systemChat(`${ev.mode} ranked match — ban and pick your robots`);
+    this.startTurn();
+    this.broadcastLobby();
+  }
+
+  private startTurn(): void {
+    const r = this.lobby?.ranked;
+    if (this.turnTimer) clearTimeout(this.turnTimer);
+    this.turnTimer = null;
+    if (!r || r.phase !== 'draft') return;
+    if (draftDone(r.draft)) return this.finishDraft();
+    const ms = turnSeconds(r.draft) * 1000;
+    this.turnDeadline = Date.now() + ms;
+    r.turnMs = ms;
+    // A little slack so a pick sent right at the buzzer still counts.
+    this.turnTimer = setTimeout(() => {
+      draftAuto(r.draft);
+      this.startTurn();
+      this.broadcastLobby();
+    }, ms + 300);
+  }
+
+  private hostDraft(peerId: string, id: unknown): void {
+    const r = this.lobby?.ranked;
+    const p = this.lobby?.players.find((x) => x.peerId === peerId);
+    if (!r || r.phase !== 'draft' || !p?.slot || typeof id !== 'string') return;
+    const err = draftAct(r.draft, p.slot, id);
+    if (err) {
+      if (peerId === this.client.peerId) this.error = err;
+      else this.client.send({ t: 'notice', message: err } satisfies HostMsg, peerId);
+      return this.onChange();
+    }
+    this.startTurn();
+    this.broadcastLobby();
+  }
+
+  /** Draft over: everyone gets their pick, then the placement phase (with a deadline) starts. */
+  private finishDraft(): void {
+    const lobby = this.lobby;
+    const r = lobby?.ranked;
+    if (!lobby || !r) return;
+    const season = getSeason(lobby.seasonId);
+    const pool = new Map(rankedPool(season).map((e) => [e.id, e]));
+    const picks = draftPicks(r.draft);
+    for (const p of lobby.players) {
+      const entry = p.slot && pool.get(picks.get(p.slot) ?? '');
+      if (!entry) continue;
+      this.choices.set(p.peerId, { seasonId: lobby.seasonId, slot: p.slot, robot: cloneConfig(entry.config), autoRoutine: season.autoRoutines[0].id, manualAuto: true });
+      p.team = entry.config.teamNumber;
+      this.refreshDims(p.peerId);
+    }
+    r.phase = 'placing';
+    this.systemChat('Draft complete — choose your starting positions');
+    this.beginPlacement();
+    if (this.lobby?.ranked?.phase === 'placing') {
+      // Anyone still undecided when time runs out is locked in where they stand.
+      this.placeTimer = setTimeout(() => {
+        const l = this.lobby;
+        if (!l?.placing) return;
+        for (const p of l.players) if (p.slot && !p.ready) this.hostPlace(p.peerId, p.spot ?? null, true);
+      }, 75_000);
+    }
+    this.broadcastLobby();
+  }
+
   /** Ask the relay for the public list and wait for the answer (empty if it doesn't come). */
   private fetchRooms(): Promise<RoomListing[]> {
     return new Promise((resolve) => {
@@ -237,19 +489,21 @@ export class LobbyController {
     const poll = async () => {
       if (this.status === 'connecting') return;
       if (this.status === 'lobby') return this.stopBrowse(false);
-      if (!document.querySelector('[data-mp="rooms"]')) {
+      const onRanked = !!document.querySelector('[data-mp="ranked-page"]');
+      if (!onRanked && !document.querySelector('[data-mp="rooms"]')) {
         if (++this.browseMisses >= 2) this.stopBrowse(true);
         return;
       }
       this.browseMisses = 0;
       try {
         await this.client.ensureConnected(this.relayUrl);
-        this.client.list();
+        if (onRanked) this.pollRanked();
+        else this.client.list();
       } catch {
         if (this.rooms === null) this.onRooms([]);
       }
     };
-    this.browseTimer = setInterval(() => void poll(), 4000);
+    this.browseTimer = setInterval(() => void poll(), 5000);
     setTimeout(() => void poll(), 60); // after the page that called us is in the DOM
   }
 
@@ -257,6 +511,7 @@ export class LobbyController {
     if (this.browseTimer) clearInterval(this.browseTimer);
     this.browseTimer = null;
     this.browseMisses = 0;
+    if (closeIdle && this.ranked.searching) this.cancelSearch();
     if (closeIdle && this.status === 'idle' && !this.client.room) this.client.close();
   }
 
@@ -363,7 +618,7 @@ export class LobbyController {
    */
   syncMine(force = false, slot?: SlotId | null): void {
     const s = this.settings;
-    if (!s || !this.client.connected) return;
+    if (!s || !this.client.connected || this.lobby?.ranked) return;
     const choice: PlayerChoice = { seasonId: s.seasonId, robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto };
     const key = JSON.stringify(choice);
     if (!force && slot === undefined && key === this.lastSent) return;
@@ -413,6 +668,13 @@ export class LobbyController {
     else this.client.send({ t: 'chat', text: t } satisfies ClientMsg);
   }
 
+  /** Ranked draft: ban or pick a robot on my turn. */
+  draft(id: string): void {
+    if (!this.lobby?.ranked) return;
+    if (this.isHost) this.hostDraft(this.client.peerId, id);
+    else this.client.send({ t: 'draft', id } satisfies ClientMsg);
+  }
+
   setAutoHumanPlayer(v: boolean): void {
     if (!this.isHost || !this.lobby) return;
     this.lobby.autoHumanPlayer = v;
@@ -438,7 +700,7 @@ export class LobbyController {
   }
 
   setSeason(id: string): void {
-    if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.seasonId === id) return;
+    if (!this.isHost || !this.lobby || this.lobby.ranked || this.lobby.inMatch || this.lobby.seasonId === id) return;
     if (getSeason(id).id !== id) return;
     this.lobby.seasonId = id;
     // A start spot belongs to one season's field.
@@ -596,6 +858,8 @@ export class LobbyController {
     }
     lobby.inMatch = true;
     lobby.placing = false;
+    if (lobby.ranked) lobby.ranked.phase = 'playing';
+    this.clearRankedTimers();
     this.clearAutoStart();
     for (const p of lobby.players) p.ready = false;
     this.broadcastLobby();
@@ -666,6 +930,11 @@ export class LobbyController {
       this.hostChat(from, m.text);
       return;
     }
+    if (m?.t === 'draft') {
+      this.hostDraft(from, m.id);
+      return;
+    }
+    if (this.lobby.ranked && m?.t === 'lobby-set') return; // ranked robots and seats come from the draft
     if (m?.t === 'place') {
       this.hostPlace(from, m.spot ?? null, !!m.ready);
       return;
@@ -729,6 +998,7 @@ export class LobbyController {
 
   private broadcastLobby(): void {
     if (!this.lobby) return;
+    if (this.lobby.ranked?.phase === 'draft') this.lobby.ranked.turnMs = Math.max(0, this.turnDeadline - Date.now());
     for (const viewer of this.lobby.players) {
       if (viewer.peerId === this.client.peerId) continue;
       const alliance = viewer.slot ? slotAlliance(viewer.slot) : null;

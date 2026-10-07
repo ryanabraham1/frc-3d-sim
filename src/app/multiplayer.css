@@ -608,3 +608,282 @@
   justify-content: center;
   gap: 2px;
 }
+
+/* ═════════════ Ranked ═════════════ */
+.rk-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.rk-modes .opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  height: auto;
+  padding: 8px 6px;
+}
+.rk-modes .opt small {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.rk-me {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.rk-rating {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 56px;
+  line-height: 1;
+  color: var(--accent-bright);
+}
+.rk-tier {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: var(--tier, var(--muted));
+  border: 1px solid var(--tier, var(--border));
+}
+.rk-tier.unranked {
+  color: var(--muted);
+  border-color: var(--border);
+}
+.rk-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.rk-search > div {
+  display: flex;
+  flex-direction: column;
+}
+.rk-search span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.rk-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+}
+.rk-result.up {
+  border-color: rgba(52, 211, 153, 0.5);
+  background: rgba(52, 211, 153, 0.08);
+}
+.rk-result.down {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.08);
+}
+.rk-result span {
+  color: var(--muted);
+}
+.rk-board {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.rk-board th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0 8px 6px;
+}
+.rk-board td {
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.rk-board tr.me td {
+  background: var(--accent-soft);
+}
+.rk-board i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--accent-bright);
+}
+.rk-found {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--muted);
+}
+.rk-found h2 {
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 36px;
+  margin: 12px 0 4px;
+}
+
+/* Draft */
+.rk-draft {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.rk-turn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.rk-turn.mine {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.rk-banner {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 28px;
+}
+.rk-clock {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 40px;
+  color: var(--accent-bright);
+  white-space: nowrap;
+}
+.rk-teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.rk-team h3 {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 20px;
+}
+.rk-team.red h3 {
+  color: var(--red);
+}
+.rk-team.blue h3 {
+  color: var(--blue);
+}
+.rk-seat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.rk-seat.red {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.rk-seat.blue {
+  border-color: rgba(79, 140, 255, 0.4);
+}
+.rk-seat.active {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+.rk-seat .who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rk-seat .who span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rk-seat .picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.chip {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chip.pick {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.5);
+}
+.chip.ban {
+  color: #ff6b6b;
+  border-color: rgba(239, 68, 68, 0.45);
+  text-decoration: line-through;
+}
+.rk-pool {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.rk-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  min-height: 96px;
+}
+.rk-card b {
+  font-size: 16px;
+}
+.rk-card-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent-bright);
+}
+.rk-card-sum,
+.rk-card-state {
+  font-size: 12px;
+  color: var(--muted);
+}
+.rk-card.go {
+  cursor: pointer;
+  border-color: var(--accent);
+}
+.rk-card.go:hover {
+  background: var(--accent-soft);
+}
+.rk-card.go.banning:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: var(--red);
+}
+.rk-card.banned {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.rk-card.taken {
+  opacity: 0.6;
+}
+.rk-card[disabled] {
+  cursor: default;
+}
+@media (max-width: 700px) {
+  .rk-teams {
+    grid-template-columns: 1fr;
+  }
+}

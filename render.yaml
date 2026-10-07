@@ -12,3 +12,9 @@ services:
       # server/*.ts runs via Node's built-in TypeScript type stripping (Node >= 22.18).
       - key: NODE_VERSION
         value: "24"
+      # Ranked ratings (docs/RANKED.md). Set these in the Render dashboard for THIS web service only.
+      # The service key has full database access: never put it on the static site or prefix it VITE_.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false

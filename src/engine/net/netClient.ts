@@ -1,5 +1,8 @@
 import { Emitter } from '../core/events';
+import type { Outcome, RankedMode } from './ranked';
 import { CLOSE_LEAVE, RECONNECT_GRACE_MS, RELAY_PATH, type RelayEvent, type RelayRequest, type RoomListing, type RoomMeta } from './relayProtocol';
+
+type Ev<K extends RelayEvent['op']> = Omit<Extract<RelayEvent, { op: K }>, 'op'>;
 
 export interface NetClientEvents {
   /** JSON game message from another peer (clients only ever hear from the host). */
@@ -17,6 +20,15 @@ export interface NetClientEvents {
   'host-back': Record<string, never>;
   /** Public room list (reply to `list()`). */
   rooms: { rooms: RoomListing[] };
+  queued: Ev<'queued'>;
+  'queue-status': Ev<'queue-status'>;
+  unqueued: Ev<'unqueued'>;
+  matched: Ev<'matched'>;
+  profile: Ev<'profile'>;
+  leaderboard: Ev<'leaderboard'>;
+  rating: Ev<'rating'>;
+  /** Relay error not tied to a pending create/join (e.g. a refused ranked search). */
+  'relay-error': { message: string };
   /** Our connection dropped; trying to resume the same seat. */
   reconnecting: Record<string, never>;
   /** Resumed after a drop. */
@@ -226,6 +238,27 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.raw({ op: 'list' });
   }
 
+  queue(mode: RankedMode, name: string, secret: string): void {
+    this.raw({ op: 'queue', mode, name, secret });
+  }
+
+  unqueue(): void {
+    this.raw({ op: 'unqueue' });
+  }
+
+  profile(name: string, secret: string): void {
+    this.raw({ op: 'profile', name, secret });
+  }
+
+  leaderboard(mode: RankedMode, secret?: string): void {
+    this.raw({ op: 'leaderboard', mode, secret });
+  }
+
+  /** Ranked: report the match result as this player saw it. */
+  reportResult(winner: Outcome, red: number, blue: number): void {
+    this.raw({ op: 'result', winner, red, blue });
+  }
+
   /** Host: publish what the public room list shows (and flip public/private). */
   setMeta(meta: RoomMeta): void {
     this.raw({ op: 'meta', meta });
@@ -298,7 +331,24 @@ export class NetClient extends Emitter<NetClientEvents> {
         if (this.pending) {
           this.pending.reject(new RelayError(ev.message));
           this.pending = null;
-        }
+        } else this.emit('relay-error', { message: ev.message });
+        break;
+      case 'queued':
+      case 'queue-status':
+      case 'unqueued':
+      case 'profile':
+      case 'leaderboard':
+      case 'rating': {
+        const { op, ...rest } = ev;
+        (this.emit as (t: string, p: unknown) => void).call(this, op, rest);
+        break;
+      }
+      case 'matched':
+        this.room = ev.room;
+        this.peerId = ev.peerId;
+        this.hostId = ev.hostId;
+        this.token = ev.token;
+        this.emit('matched', ev);
         break;
       case 'rooms':
         this.emit('rooms', { rooms: ev.rooms });

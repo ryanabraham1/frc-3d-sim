@@ -6,6 +6,7 @@ import { footprintPoly } from '@engine/startPose';
 import type { RoomListing, RoomVisibility } from '@engine/net/relayProtocol';
 import { MAX_TITLE_LENGTH } from '@engine/net/relayProtocol';
 import type { LobbyController } from './lobby';
+import { bindRanked, rankedDraftPage, rankedLandingPage, rankedWaitingPage } from './ranked';
 import { bindHeadingControls, bindPlacementMap, headingControls, placementMap, placementProblems, playerSpot, rotateSpot, syncHeadingControls, type MineState, type PlacedRobot } from './placement';
 import './multiplayer.css';
 
@@ -68,6 +69,8 @@ export interface MpPageCtx {
   s: GameSettings;
   season: SeasonDefinition;
   rerender(): void;
+  /** Which tab is showing (Ranked and Multiplayer share this machinery). */
+  page?: 'multiplayer' | 'ranked';
   /** Switch menu page (e.g. to edit the robot on the Single player page). */
   goto(page: 'play'): void;
 }
@@ -81,6 +84,12 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     lobby.createVisibility = loadVisibility() ?? lobby.createVisibility;
   }
   const err = lobby.error ? `<div class="mp-error">${esc(lobby.error)}</div>` : '';
+
+  // Ranked: matched players see the draft (then the shared placement screen); the landing page otherwise.
+  if (lobby.status === 'lobby' && !lobby.lobby && lobby.client.room) return rankedWaitingPage();
+  if (lobby.lobby?.ranked && lobby.status === 'lobby') {
+    if (!lobby.lobby.placing) return rankedDraftPage(lobby, ctx);
+  } else if (ctx.page === 'ranked' && lobby.status !== 'lobby') return rankedLandingPage(lobby, ctx);
 
   if (lobby.status !== 'lobby' || !lobby.lobby) {
     if (lobby.serverState === 'unknown') queueMicrotask(() => void lobby.wake());
@@ -345,7 +354,10 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
         </section>
       </div>
     </div>${planner}`;
-  const footer = lobby.isHost
+  const ranked = !!L.ranked;
+  const footer = ranked
+    ? `<button class="bbtn" data-mp="leave">Leave match (counts as a loss)</button><span class="spacer"></span><span class="mp-hint">${allReady ? 'Starting…' : 'Starting positions lock in automatically when time runs out'}</span>`
+    : lobby.isHost
     ? `<button class="bbtn" data-mp="cancel-place">Back to lobby</button><span class="spacer"></span><span class="mp-hint">${allReady ? '' : 'The match starts when every driver locks in'}</span><button class="bbtn primary" data-mp="start-now" ${allReady ? '' : 'disabled'}>Start match</button>`
     : `<button class="bbtn" data-mp="leave">Leave room</button><span class="spacer"></span><span class="mp-hint">${allReady ? 'Starting…' : 'Waiting for every driver to lock in…'}</span>`;
   return { body, footer };
@@ -376,6 +388,7 @@ function bindPlacement(el: HTMLElement, lobby: LobbyController, ctx: MpPageCtx):
 }
 
 export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: MpPageCtx): void {
+  bindRanked(el, lobby);
   const q = <T extends HTMLElement>(k: string) => el.querySelector<T>(`[data-mp="${k}"]`);
   const name = () => {
     const n = (q<HTMLInputElement>('name')?.value ?? '').trim() || 'Player';

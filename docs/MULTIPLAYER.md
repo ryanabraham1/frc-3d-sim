@@ -158,6 +158,8 @@ Legend: `[x]` done · `[~]` partial · `[ ]` todo
 - Tests: `tests/relay.test.ts` (listing, meta, rejoin, kick, rate limits) and `tests/lobby-online.test.ts` (the real
   `LobbyController` + `NetClient` against a real relay).
 
+**Ranked** (queue, Elo, ban/pick draft) is documented in [RANKED.md](RANKED.md).
+
 ## 2.4 Performance & lag (4+ players)
 
 Measured on 2026 REBUILT with 4 robots plowing through ~450 FUEL: the host spends ~5 ms per 90 Hz step

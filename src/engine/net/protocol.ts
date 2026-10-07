@@ -6,6 +6,7 @@ import type { ScoreState } from '../match/scoreboard';
 import type { RobotConfig } from '../robot/config';
 import type { RobotCommand } from '../robot/robot';
 import type { StartSpot } from '../startPose';
+import type { DraftState, RankedMode } from './ranked';
 import type { RoomVisibility } from './relayProtocol';
 
 /**
@@ -38,6 +39,19 @@ export interface LobbyPlayer {
   ready?: boolean;
   /** Only included for teammates during planning. */
   autoPlan?: AutoPlan;
+  /** Ranked: rating and games played in this mode when the match was made. */
+  rating?: number;
+  games?: number;
+}
+
+/** Ranked match state carried in the lobby. */
+export interface RankedLobby {
+  mode: RankedMode;
+  /** `draft` (bans and picks) → `placing` (start positions) → `playing`. */
+  phase: 'draft' | 'placing' | 'playing';
+  draft: DraftState;
+  /** Milliseconds left on the current turn when the host sent this (clients count down from receipt). */
+  turnMs: number;
 }
 
 export interface ChatLine {
@@ -58,6 +72,8 @@ export interface LobbyState {
   visibility?: RoomVisibility;
   /** Host-chosen room name shown in the public list. */
   title?: string;
+  /** Present for ranked matches: drivers are fixed, robots come from the draft. */
+  ranked?: RankedLobby;
   /** Recent lobby chat (oldest first). */
   chat?: ChatLine[];
   seasonId: string;
@@ -152,7 +168,9 @@ export type ClientMsg =
   /** A snapshot went missing (sequence gap, e.g. dropped by the relay for a slow link): send a keyframe. */
   | { t: 'resync' }
   /** Lobby chat line. */
-  | { t: 'chat'; text: string };
+  | { t: 'chat'; text: string }
+  /** Ranked draft: ban or pick this robot id on my turn. */
+  | { t: 'draft'; id: string };
 
 export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }

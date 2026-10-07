@@ -56,6 +56,8 @@ export interface GameCallbacks {
   onPlayAgain?: () => void;
   /** Multiplayer host: everyone back to the lobby. */
   onBackToLobby?: () => void;
+  /** Multiplayer: the match ended (host and clients both call this once). Used to report ranked results. */
+  onResults?: (res: MatchResults, scores: Record<Alliance, number>) => void;
 }
 
 const PRE_MATCH_COUNTDOWN = 3;
@@ -343,6 +345,10 @@ export class Game {
         netClient.on('reconnected', () => {
           this.hud.toast('Reconnected', 'info');
           if (this.role === 'client') netClient.send({ t: 'resync' } satisfies ClientMsg);
+        }),
+        netClient.on('rating', (r) => {
+          if (r.status === 'void') this.hud.toast(`Ranked: match voided${r.reason ? ' — ' + r.reason : ''}`, 'warn');
+          else this.hud.toast(`Ranked: ${r.before} → ${r.after} (${r.delta > 0 ? '+' : ''}${r.delta})`, r.delta >= 0 ? 'good' : 'warn');
         }),
         netClient.on('host-lost', () => this.hud.toast('The host lost connection — waiting for them to return…', 'warn')),
         netClient.on('host-back', () => this.hud.toast('The host is back', 'info')),
@@ -826,6 +832,7 @@ export class Game {
     if (st === 'results' && cs.results && this.clientModal !== 'results' && this.clientModal !== 'closed') {
       this.clientModal = 'results';
       this.results = cs.results;
+      this.callbacks.onResults?.(cs.results, { red: this.score.total('red'), blue: this.score.total('blue') });
       this.hud.showModal('Match Results', Hud.resultsHtml(cs.results, { red: this.score.total('red'), blue: this.score.total('blue') }) + '<p class="dim">Waiting for the host…</p>', [
         { label: 'Leave room', onClick: () => this.callbacks.onExit() },
       ]);
@@ -954,11 +961,13 @@ export class Game {
     const html = Hud.resultsHtml(res, { red: this.score.total('red'), blue: this.score.total('blue') });
     if (this.role === 'host') {
       this.hostSync?.requestKeyframe();
-      this.hud.showModal('Match Results', html, [
+      this.callbacks.onResults?.(res, { red: this.score.total('red'), blue: this.score.total('blue') });
+      // Ranked rooms have no rematch: the room ends when the host leaves.
+      this.hud.showModal('Match Results', html, this.callbacks.onPlayAgain ? [
         { label: 'Play again', primary: true, onClick: () => this.callbacks.onPlayAgain?.() },
         { label: 'Back to lobby', onClick: () => this.callbacks.onBackToLobby?.() },
         { label: 'Close room', onClick: () => this.callbacks.onExit() },
-      ]);
+      ] : [{ label: 'Leave', primary: true, onClick: () => this.callbacks.onExit() }]);
       return;
     }
     this.hud.showModal('Match Results', html, [
