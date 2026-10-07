@@ -28,10 +28,29 @@ describe('supplied CRESCENDO CAD',()=>{
       const first = shooter.getWorldPosition(new THREE.Vector3());
       turret.rotation.y = .9; model.update({...idle,enabled:true,aiming:true});
       expect(assembly.rotation.y).toBeCloseTo(.9);
+      turret.rotation.y=0; model.update({...idle,enabled:true,aiming:true,hood:.7});
+      const path=model.flow!.feed!();
+      expect(path[1].x).toBeGreaterThan(path[0].x);
+      expect(path[1].y).toBeGreaterThan(path[0].y);
+      const direction=path[1].clone().sub(path[0]);
+      expect(Math.atan2(direction.y,direction.x)).toBeCloseTo(.7,2);
+      turret.rotation.y=.9; model.update({...idle,enabled:true,aiming:true});
       expect(shooter.getWorldPosition(new THREE.Vector3()).distanceTo(first)).toBeGreaterThan(.15);
+      model.update({...idle,enabled:true,intaking:true,aiming:true});
+      expect(assembly.rotation.y).toBeCloseTo(.9);
+      model.update({...idle,enabled:true,intaking:true,firing:1});
+      expect(assembly.rotation.y).toBeCloseTo(.9);
       model.update({...idle,enabled:true,intaking:true});
       expect(assembly.rotation.y).toBeCloseTo(0);
+      model.update({...idle,enabled:true});
+      expect(assembly.rotation.y).toBeCloseTo(0);
     }
+    // A midfield feed uses the same shooter geometry at its pass elevation;
+    // it must not trigger this robot's separate AMP mechanism deployment.
+    model.update({...idle,enabled:true,aiming:true,amp:false,hood:.5});visual.updateMatrixWorld(true);
+    const speakerPivot=root.getObjectByName('cad-shooter-pivot')!.matrixWorld.clone();
+    model.update({...idle,enabled:true,aiming:true,passing:true,amp:false,hood:.5});visual.updateMatrixWorld(true);
+    expect(root.getObjectByName('cad-shooter-pivot')!.matrixWorld.equals(speakerPivot)).toBe(true);
     const frame=root.getObjectByName('frame')!;const original=frame.matrix.clone();
     for(let i=0;i<=60;i++){
       turret.rotation.y=(i/60-.5)*Math.PI*2;

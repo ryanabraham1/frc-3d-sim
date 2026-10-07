@@ -112,10 +112,10 @@ function frame(now: number) {
     r.climbPhase=pose.value==='climb'?'align':pose.value==='hang'?'hanging':'none';
     r.body.setTranslation({x:0,y:pose.value==='hang'?.28:.002,z:0},false);
     r.ampDeploy = seasonSelect.value === '2024-crescendo' ? pose.value === 'score' : null;
-    r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score',shoot:pose.value==='aim'};
-    r.lastShotAngle = Number(hood.value);
+    r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score'||pose.value==='pass',shoot:pose.value==='aim'};
+    r.lastShotAngle = pose.value==='pass' ? .5 : Number(hood.value);
     // Exercise the same relative turret target used by gameplay instead of leaving every preview at yaw zero.
-    r.turretYaw = r.config.launcher.turret && ['aim','score','flow'].includes(pose.value)
+    r.turretYaw = r.config.launcher.turret && ['aim','pass','score','flow'].includes(pose.value)
       ? turretYaw.value === 'sweep' ? Math.sin(now / 2200) * Math.PI * .8 : Number(turretYaw.value) : 0;
     r.blockerDeploy=pose.value==='score'?1:0; // shot blocker (1323) out in the extended pose
     r.placeAnim = {algae:pose.value==='algae'||pose.value==='both',height:pose.value==='algae'?2.03:pose.value==='score'?1.75:0.45,forward:pose.value==='algae'?.45:pose.value==='score'?0.7:0.3,level:pose.value==='both'?1:pose.value==='score'?4:r.config.placement?.maxLevel ?? 1,side:(pose.value==='score'||pose.value==='algae')&&r.config.placement?.scoreSide==='sides'?1:0};
