@@ -21,8 +21,8 @@ export const TIMELINE: MatchPeriod[] = [
 
 /**
  * SHOT ACCURACY. The menu's "Accuracy %" is the share of shots that go IN from a typical scoring range
- * (REBUILT_ACCURACY_RANGE), measured through the real Rapier loop (HeadlessSim, 3 m, 6 bearings x 100 shots, all
- * robot types) -- not an abstract spread number. Each FUEL leaves with its own random yaw/pitch error (sigma = the
+ * (REBUILT_ACCURACY_RANGE), measured through the real Rapier loop (HeadlessSim, 3 m, 6 bearings x 100 shots,
+ * default turret) -- not an abstract spread number. Each FUEL leaves with its own random yaw/pitch error (sigma = the
  * table's angle, in radians) plus a speed error of 1.25x that; the spread of the stream then makes some shots clip
  * the rim or land beside the opening, and it grows with distance (closer shots hit more often, farther ones less).
  * tests/rebuilt-accuracy.test.ts re-measures this, so retuning the physics fails it until the table is recalibrated.
@@ -32,8 +32,9 @@ export const REBUILT_DEFAULT_ACCURACY = 83;
 const SPEED_ERROR_RATIO = 1.25;
 /** [accuracy %, 1-sigma launch angle (rad)], measured at REBUILT_ACCURACY_RANGE; ordered by falling accuracy. */
 const ACCURACY_TABLE: [number, number][] = [
-  [100, 0.01], [99, 0.016], [95, 0.02], [90, 0.025], [84, 0.03], [74, 0.035], [67, 0.04], [58, 0.05], [51, 0.06],
-  [40, 0.07], [35, 0.085], [31, 0.1], [21, 0.13], [14, 0.17], [8, 0.22], [0, 0.3],
+  [100, 0.002], [99, 0.006], [95, 0.01], [91, 0.016], [89, 0.02], [82, 0.025], [80, 0.03],
+  [71, 0.04], [65, 0.05], [60, 0.06], [54, 0.07], [45, 0.085], [34, 0.1], [24, 0.13],
+  [19, 0.17], [11, 0.22], [4, 0.3], [0, 0.5],
 ];
 
 /** Launch-angle sigma (rad) that makes `acc`% of shots go in at REBUILT_ACCURACY_RANGE. */

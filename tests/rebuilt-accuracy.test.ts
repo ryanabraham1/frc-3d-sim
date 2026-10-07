@@ -70,3 +70,17 @@ describe('2026 shot accuracy is a hit rate', () => {
     expect(hitRate(100, REBUILT_ACCURACY_RANGE, 50)).toBeGreaterThanOrEqual(98);
   });
 });
+
+// A perfect trajectory must pass through the physical throat, not rebound off the
+// far funnel panel after merely crossing the center of the rim.
+it('zero-error shots enter the throat from every calibration bearing', () => {
+  for (const deg of [-75, -50, -25, 25, 50, 75]) {
+    const a = deg*Math.PI/180, robot = cloneConfig(season.robotDefaults);
+    robot.launcher.spread = robot.launcher.speedError = 0;
+    const result = runShotTrial(season, RAPIER, { label: 'throat', robot, alliance: 'blue',
+      pose: { x: C.HUB_CENTER.x-3*Math.cos(a), y: C.HUB_CENTER.y-3*Math.sin(a), yaw: 0 }, shots: 10 });
+    expect(result.fired).toBe(10);
+    expect(result.entered).toBe(result.fired);
+    expect(result.allClear).toBe(true);
+  }
+});

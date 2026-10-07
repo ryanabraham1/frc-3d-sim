@@ -102,6 +102,8 @@ describe('2026 REBUILT robot archetypes', () => {
     for (const aim of ['align', 'driver']) {
       const cfg = preset('fixed');
       rebuiltRobotOptions.find((o) => o.id === 'aim')!.set(cfg, aim);
+      // Isolate chassis alignment from random shot spread (calibrated separately).
+      cfg.launcher.spread = cfg.launcher.speedError = 0;
       const sim = make('blue', pose, cfg);
       sim.rules.stage();
       expect(sim.robot.held).toHaveLength(8);

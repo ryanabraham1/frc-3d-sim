@@ -1,4 +1,4 @@
-import { fuelInsideHubThroat, HUB_SENSOR_FLOOR_Z } from './hubStructure';
+import { fuelInsideHubThroat, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } from './hubStructure';
 import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
@@ -564,8 +564,10 @@ export class RebuiltRules implements SeasonRules {
 
   aimTarget(robot: Robot): AimTarget | null {
     const hc = this.refs.hubs[robot.alliance].center;
-    const point = this.ctx.frame.toWorld(hc.x, hc.y, C.HUB_RIM_HEIGHT + 0.02);
-    // Conservatively clear the funnel mouth before descending into its physical panels.
+    const point = this.ctx.frame.toWorld(hc.x, hc.y, HUB_THROAT_Z);
+    // Aim through the narrower throat, not just the rim plane: a shot centered at
+    // the rim keeps moving sideways as it descends and can rebound off a funnel panel.
+    // The clearance checks still keep the incoming ball above the mouth.
     const p = robot.pose;
     const ang = Math.atan2(p.y - hc.y, p.x - hc.x);
     const k = 1 / Math.max(Math.abs(Math.cos(ang)), Math.abs(Math.sin(ang)), 1e-6);
