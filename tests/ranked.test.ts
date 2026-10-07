@@ -15,7 +15,8 @@ import {
   kFactor,
   matchWindow,
   rateMatch,
-  tierOf,
+  rankFor,
+  visibleRank,
   type RankedParticipant,
 } from '../src/engine/net/ranked';
 
@@ -66,11 +67,38 @@ describe('elo', () => {
     expect(rateMatch([P('a', 'red', 100, 0), P('b', 'blue', 1500, 0)], 'blue')[0].after).toBe(100);
   });
 
-  it('shows no tier until placement is done', () => {
-    expect(tierOf(1500, 2)).toBeNull();
-    expect(tierOf(1500, 5)!.id).toBe('diamond');
-    expect(tierOf(850, 9)!.id).toBe('bronze');
-    expect(tierOf(1750, 9)!.id).toBe('master');
+  it('hides the rank until placement is done', () => {
+    expect(visibleRank(1500, 2)).toBeNull();
+    expect(visibleRank(1500, 5)!.label).toBe('Champion I');
+  });
+
+  it('maps ratings onto the ladder with divisions', () => {
+    expect(rankFor(1000).label).toBe('Gear III'); // new players start here
+    expect(rankFor(900).label).toBe('Gear I');
+    expect(rankFor(949).label).toBe('Gear I');
+    expect(rankFor(950).label).toBe('Gear II');
+    expect(rankFor(1049).label).toBe('Gear III');
+    expect(rankFor(1050).label).toBe('Piston I');
+    expect(rankFor(100).label).toBe('Rookie');
+    expect(rankFor(749).label).toBe('Rookie');
+    expect(rankFor(750).label).toBe('Bolt I');
+    expect(rankFor(1650).label).toBe('Apex');
+    expect(rankFor(1900).points).toBe(250);
+  });
+
+  it('reports progress and the next rank', () => {
+    const r = rankFor(975);
+    expect(r).toMatchObject({ points: 25, next: 'Gear III' });
+    expect(r.progress).toBeCloseTo(0.5);
+    expect(rankFor(1040).next).toBe('Piston I');
+    expect(rankFor(1640).next).toBe('Apex');
+    expect(rankFor(2000).next).toBeNull();
+  });
+
+  it('orders ranks so promotions compare higher', () => {
+    const ords = [0, 750, 800, 900, 1049, 1050, 1500, 1649, 1650].map((r) => rankFor(r).ordinal);
+    expect(ords).toEqual([...ords].sort((a, b) => a - b));
+    expect(new Set(ords).size).toBe(ords.length);
   });
 
   it('applies changes to a stored record', () => {
@@ -200,5 +228,40 @@ describe('memory store', () => {
     expect(rows.map((r) => r.name)).toEqual(['A', 'B'].filter((n) => rows.some((r) => r.name === n)));
     expect(rows[0].name).toBe('A');
     expect((await s.getRating('b', '1v1')).losses).toBe(7);
+  });
+});
+
+import { censorText, isBadText, nameProblem } from '../src/engine/net/nameFilter';
+import { cleanName, cleanTitle } from '../src/engine/net/relayProtocol';
+
+describe('name filter', () => {
+  it('catches profanity through case, leetspeak, spacing and stretching', () => {
+    for (const bad of ['fuck', 'FUCK', 'f.u.c.k', 'f u c k', 'fuuuuck', 'sh1t', '$h!t', 'b!tch', 'n1gg3r', 'xX_fuck_Xx', 'ass', 'a$$ hat']) {
+      expect(isBadText(bad), bad).toBe(true);
+    }
+  });
+
+  it('leaves ordinary names alone (including the classic false positives)', () => {
+    for (const ok of ['Scunthorpe', 'Grape', 'Class', 'Assistant', 'Cocktail', 'Dickens', 'Essex', 'Team 254', 'Hello World', 'Passion', 'Bassist', 'Analyst', 'Sussex']) {
+      expect(isBadText(ok), ok).toBe(false);
+    }
+  });
+
+  it('refuses a bad name with a message and allows an empty one', () => {
+    expect(nameProblem('fuckface')).toMatch(/isn’t allowed/);
+    expect(nameProblem('Driver 1323')).toBeNull();
+    expect(nameProblem('')).toBeNull();
+  });
+
+  it('is enforced by the relay helpers regardless of the client', () => {
+    expect(cleanName('Sh1thead')).toBe('Player');
+    expect(cleanName('  Alice  ')).toBe('Alice');
+    expect(cleanTitle('fuck this room')).toBe('');
+    expect(cleanTitle('Friendly practice')).toBe('Friendly practice');
+  });
+
+  it('censors words in chat but keeps the rest', () => {
+    expect(censorText('well that was shit lol')).toBe('well that was **** lol');
+    expect(censorText('good game everyone')).toBe('good game everyone');
   });
 });

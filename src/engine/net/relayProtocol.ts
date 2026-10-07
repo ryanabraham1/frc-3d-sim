@@ -4,6 +4,7 @@
  * sent by the room host (forwarded to every other peer). Shared by the server and the browser client.
  */
 
+import { isBadText } from './nameFilter.ts';
 import type { Outcome, RankedMode, Team } from './ranked';
 
 export const RELAY_PATH = '/ws';
@@ -110,7 +111,7 @@ export type RelayEvent =
   /** A ranked match was formed and this peer is already seated in its room (the host is `hostId`). */
   | { op: 'matched'; room: string; peerId: string; hostId: string; token: string; mode: RankedMode; team: Team; roster: RankedRosterEntry[] }
   | { op: 'profile'; persistent: boolean; name: string; ratings: Record<RankedMode, RatingSummary> }
-  | { op: 'leaderboard'; mode: RankedMode; rows: LeaderEntry[] }
+  | { op: 'leaderboard'; mode: RankedMode; rows: LeaderEntry[]; /** The requester's standing (if they have played). */ you?: { rank: number; total: number; rating: number; games: number } }
   /** Result of a ranked match for this player. `status` void = no rating change. */
   | { op: 'rating'; mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: 'win' | 'loss' | 'draw' | 'abandon' | 'none'; reason?: string }
   | { op: 'error'; message: string }
@@ -131,11 +132,14 @@ export function normalizeRoomCode(code: string): string {
 export function cleanName(name: unknown): string {
   const s = typeof name === 'string' ? name : '';
   // eslint-disable-next-line no-control-regex
-  return s.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24) || 'Player';
+  const clean = s.replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 24) || 'Player';
+  // Enforced here so every path (lobby, ranked, relay) refuses a bad name, whatever the client sent.
+  return isBadText(clean) ? 'Player' : clean;
 }
 
 export function cleanTitle(title: unknown): string {
   const s = typeof title === 'string' ? title : '';
   // eslint-disable-next-line no-control-regex
-  return s.replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE_LENGTH);
+  const clean = s.replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE_LENGTH);
+  return isBadText(clean) ? '' : clean;
 }

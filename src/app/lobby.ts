@@ -26,6 +26,8 @@ import {
   draftDone,
   draftPicks,
   isRankedMode,
+  visibleRank,
+  type RankInfo,
   RANKED_SEASON_ID,
   turnSeconds,
   type Outcome,
@@ -33,6 +35,7 @@ import {
 } from '@engine/net/ranked';
 import type { LeaderEntry } from '@engine/net/relayProtocol';
 import { rankedPool, rankedPoolIds } from './rankedPool';
+import { censorText, nameProblem } from '@engine/net/nameFilter';
 import { cleanName, cleanTitle, normalizeRoomCode, type RoomListing, type RoomMeta, type RoomVisibility } from '@engine/net/relayProtocol';
 import type { RobotConfig } from '@engine/robot/config';
 import { getSeason } from '@seasons/index';
@@ -96,8 +99,10 @@ export class LobbyController {
     waiting: number;
     profile: { persistent: boolean; name: string; ratings: Record<RankedMode, { rating: number; games: number; wins: number; losses: number; draws: number; peak: number }> } | null;
     leaderboard: LeaderEntry[] | null;
-    lastResult: { mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: string; reason?: string } | null;
-  } = { mode: '2v2', searching: false, searchStartedAt: 0, waiting: 0, profile: null, leaderboard: null, lastResult: null };
+    /** My place on the board (null until I've played). */
+    standing: { rank: number; total: number; rating: number; games: number } | null;
+    lastResult: { mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: string; reason?: string; rankBefore: RankInfo | null; rankAfter: RankInfo | null } | null;
+  } = { mode: '2v2', searching: false, searchStartedAt: 0, waiting: 0, profile: null, leaderboard: null, standing: null, lastResult: null };
   /** Name used for ranked (kept in step with the page's name field). */
   playerName = '';
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -164,16 +169,23 @@ export class LobbyController {
       this.onChange();
     });
     this.client.on('profile', (p) => {
+      // Polled every few seconds: only redraw (and replay animations) when something changed.
+      const same = JSON.stringify(this.ranked.profile) === JSON.stringify(p);
       this.ranked.profile = p;
-      this.onChange();
+      if (!same) this.onChange();
     });
-    this.client.on('leaderboard', ({ mode, rows }) => {
+    this.client.on('leaderboard', ({ mode, rows, you }) => {
       if (mode !== this.ranked.mode) return;
+      const same = JSON.stringify([this.ranked.leaderboard, this.ranked.standing]) === JSON.stringify([rows, you ?? null]);
       this.ranked.leaderboard = rows;
-      this.onChange();
+      this.ranked.standing = you ?? null;
+      if (!same) this.onChange();
     });
     this.client.on('rating', (r) => {
-      this.ranked.lastResult = r;
+      const prior = this.ranked.profile?.ratings[r.mode];
+      const counted = r.status !== 'void' && r.result !== 'none';
+      const games = prior?.games ?? 0;
+      this.ranked.lastResult = { ...r, rankBefore: visibleRank(r.before, games), rankAfter: visibleRank(r.after, games + (counted ? 1 : 0)) };
       if (this.ranked.profile) {
         const row = this.ranked.profile.ratings[r.mode];
         if (r.status !== 'void' && r.result !== 'none') {
@@ -227,13 +239,24 @@ export class LobbyController {
   }
 
   /** Create a room (private unless `visibility` says otherwise). */
+  /** Refuse a name the filter rejects (the relay enforces this too, so a bypass just becomes "Player"). */
+  private badName(name: string): boolean {
+    const problem = nameProblem(name);
+    if (!problem) return false;
+    this.error = problem;
+    this.onChange();
+    return true;
+  }
+
   async create(name: string, visibility: RoomVisibility = this.createVisibility, title: string = this.createTitle): Promise<void> {
+    if (this.badName(name)) return;
     this.createVisibility = visibility;
     this.createTitle = cleanTitle(title);
     await this.connectThen(() => this.doCreate(name, visibility, this.createTitle));
   }
 
   async join(code: string, name: string): Promise<void> {
+    if (this.badName(name)) return;
     await this.connectThen(() => this.doJoin(code, name));
   }
 
@@ -241,6 +264,7 @@ export class LobbyController {
    * One click into a game: join the fullest open public lobby, or host a new public one if there is none.
    */
   async quickPlay(name: string): Promise<void> {
+    if (this.badName(name)) return;
     await this.connectThen(async () => {
       const open = (await this.fetchRooms()).filter((r) => r.state === 'lobby' && r.players < r.max && r.drivers < r.seats);
       // Prefer rooms that already have people in them.
@@ -308,6 +332,7 @@ export class LobbyController {
     if (!isRankedMode(mode) || this.ranked.searching || this.ranked.mode === mode) return;
     this.ranked.mode = mode;
     this.ranked.leaderboard = null;
+    this.ranked.standing = null;
     this.pollRanked();
     this.onChange();
   }
@@ -320,7 +345,7 @@ export class LobbyController {
   }
 
   async findMatch(name: string): Promise<void> {
-    if (this.ranked.searching || this.status !== 'idle') return;
+    if (this.ranked.searching || this.status !== 'idle' || this.badName(name)) return;
     this.error = '';
     this.ranked.lastResult = null;
     this.playerName = cleanName(name);
@@ -1040,5 +1065,5 @@ export class LobbyController {
 /** Chat text with control characters and markup stripped, capped at MAX_CHAT_LENGTH. */
 function cleanChat(raw: unknown): string {
   // eslint-disable-next-line no-control-regex
-  return (typeof raw === 'string' ? raw : '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_CHAT_LENGTH);
+  return censorText((typeof raw === 'string' ? raw : '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_CHAT_LENGTH));
 }

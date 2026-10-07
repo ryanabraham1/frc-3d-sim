@@ -38,6 +38,8 @@ export interface RankedStore {
   /** Record a finished match and apply `changes` to the players' ratings. */
   saveMatch(match: MatchRecord, changes: RatingChange[]): Promise<void>;
   leaderboard(mode: RankedMode, limit: number, minGames: number): Promise<LeaderRow[]>;
+  /** 1-based rank among players with at least `minGames` games, and how many there are (null if unranked). */
+  rankOf(playerId: string, mode: RankedMode, minGames: number): Promise<{ rank: number; total: number; row: RatingRow } | null>;
 }
 
 export const freshRating = (): RatingRow => ({ rating: START_RATING, games: 0, wins: 0, losses: 0, draws: 0, peak: START_RATING });
@@ -91,6 +93,12 @@ export class MemoryStore implements RankedStore {
       if (r && r.games >= minGames) rows.push({ ...r, name: p.name, playerId });
     }
     return rows.sort((a, b) => b.rating - a.rating).slice(0, limit);
+  }
+
+  async rankOf(playerId: string, mode: RankedMode, minGames: number) {
+    const all = await this.leaderboard(mode, Number.MAX_SAFE_INTEGER, minGames);
+    const i = all.findIndex((r) => r.playerId === playerId);
+    return i < 0 ? null : { rank: i + 1, total: all.length, row: all[i] };
   }
 }
 
@@ -159,6 +167,21 @@ export class SupabaseStore implements RankedStore {
       `ranked_ratings?mode=eq.${mode}&games=gte.${minGames}&order=rating.desc&limit=${limit}&select=player_id,name,rating,games,wins,losses,draws,peak`,
     );
     return (rows ?? []).map((r) => ({ playerId: r.player_id, name: r.name, rating: r.rating, games: r.games, wins: r.wins, losses: r.losses, draws: r.draws, peak: r.peak }));
+  }
+
+  async rankOf(playerId: string, mode: RankedMode, minGames: number) {
+    const row = await this.getRating(playerId, mode);
+    if (row.games < minGames) return null;
+    const count = async (filter: string): Promise<number> => {
+      const res = await this.fetchImpl(`${this.url.replace(/\/$/, '')}/rest/v1/ranked_ratings?mode=eq.${mode}&games=gte.${minGames}&${filter}&select=player_id`, {
+        method: 'HEAD',
+        headers: { apikey: this.key, authorization: `Bearer ${this.key}`, prefer: 'count=exact' },
+      });
+      const range = res.headers.get('content-range') ?? '';
+      return Number(range.split('/')[1]) || 0;
+    };
+    const [better, total] = await Promise.all([count(`rating=gt.${row.rating}`), count('rating=gte.0')]);
+    return { rank: better + 1, total, row };
   }
 }
 

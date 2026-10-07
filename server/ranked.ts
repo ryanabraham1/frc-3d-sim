@@ -3,7 +3,8 @@ import {
   balanceTeams,
   isRankedMode,
   MODE_SIZE,
-  PLACEMENT_GAMES,
+  LEADERBOARD_MIN_GAMES,
+  LEADERBOARD_SIZE,
   RANKED_SEASON_ID,
   rateMatch,
   type Outcome,
@@ -147,9 +148,11 @@ export class RankedService {
     if (!isRankedMode(mode)) return;
     const me = typeof secret === 'string' && SECRET.test(secret) ? playerIdFor(secret) : null;
     try {
-      const rows = await this.deps.store.leaderboard(mode, 25, PLACEMENT_GAMES);
-      const entries: LeaderEntry[] = rows.map((r) => ({ name: r.name, rating: r.rating, games: r.games, wins: r.wins, losses: r.losses, draws: r.draws, peak: r.peak, ...(me && r.playerId === me ? { me: true } : {}) }));
-      this.deps.send(peerId, { op: 'leaderboard', mode, rows: entries });
+      const rows = await this.deps.store.leaderboard(mode, LEADERBOARD_SIZE, LEADERBOARD_MIN_GAMES);
+      // Names were filtered when set, but old rows (or a bad store) are re-checked on the way out.
+      const entries: LeaderEntry[] = rows.map((r) => ({ name: cleanName(r.name), rating: r.rating, games: r.games, wins: r.wins, losses: r.losses, draws: r.draws, peak: r.peak, ...(me && r.playerId === me ? { me: true } : {}) }));
+      const standing = me ? await this.deps.store.rankOf(me, mode, LEADERBOARD_MIN_GAMES) : null;
+      this.deps.send(peerId, { op: 'leaderboard', mode, rows: entries, ...(standing ? { you: { rank: standing.rank, total: standing.total, rating: standing.row.rating, games: standing.row.games } } : {}) });
     } catch (e) {
       this.log(`leaderboard failed: ${(e as Error).message}`);
       this.deps.send(peerId, { op: 'leaderboard', mode, rows: [] });

@@ -23,6 +23,9 @@ export type Outcome = Team | 'tie';
 export const START_RATING = 1000;
 export const PLACEMENT_GAMES = 5;
 export const MIN_RATING = 100;
+/** Games before a player appears on the leaderboard (tiers still wait for PLACEMENT_GAMES). */
+export const LEADERBOARD_MIN_GAMES = 1;
+export const LEADERBOARD_SIZE = 25;
 
 /** Probability that a side rated `a` beats a side rated `b`. */
 export function expectedScore(a: number, b: number): number {
@@ -38,29 +41,91 @@ export function kFactor(games: number): number {
 
 export const avg = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : START_RATING);
 
+// ───────────────────────────── rank ladder ─────────────────────────────
+
+export type TierId = 'rookie' | 'bolt' | 'gear' | 'piston' | 'servo' | 'titan' | 'champion' | 'apex';
+
 export interface Tier {
-  id: string;
+  id: TierId;
   name: string;
   /** Lowest rating in the tier. */
   min: number;
   color: string;
+  /** Three divisions (I–III) of DIVISION_POINTS each; Rookie and Apex are open-ended. */
+  divisions: boolean;
 }
 
+/** Ladder from the bottom up. A new player (1000) starts at Gear III. */
 export const TIERS: readonly Tier[] = [
-  { id: 'bronze', name: 'Bronze', min: 0, color: '#b4783c' },
-  { id: 'silver', name: 'Silver', min: 900, color: '#aab4c3' },
-  { id: 'gold', name: 'Gold', min: 1100, color: '#f2c14e' },
-  { id: 'platinum', name: 'Platinum', min: 1300, color: '#4cc9c0' },
-  { id: 'diamond', name: 'Diamond', min: 1500, color: '#6aa8ff' },
-  { id: 'master', name: 'Master', min: 1700, color: '#c084fc' },
+  { id: 'rookie', name: 'Rookie', min: 0, color: '#9aa3b2', divisions: false },
+  { id: 'bolt', name: 'Bolt', min: 750, color: '#d9894b', divisions: true },
+  { id: 'gear', name: 'Gear', min: 900, color: '#c7d0dd', divisions: true },
+  { id: 'piston', name: 'Piston', min: 1050, color: '#f4c542', divisions: true },
+  { id: 'servo', name: 'Servo', min: 1200, color: '#35d3c3', divisions: true },
+  { id: 'titan', name: 'Titan', min: 1350, color: '#6c8cff', divisions: true },
+  { id: 'champion', name: 'Champion', min: 1500, color: '#c26bff', divisions: true },
+  { id: 'apex', name: 'Apex', min: 1650, color: '#ff5d73', divisions: false },
 ];
+export const DIVISION_POINTS = 50;
+const ROMAN = ['', 'I', 'II', 'III'];
 
-/** Tier for a rating; `null` while the player is still in placement matches. */
-export function tierOf(rating: number, games: number): Tier | null {
-  if (games < PLACEMENT_GAMES) return null;
-  let t = TIERS[0];
-  for (const x of TIERS) if (rating >= x.min) t = x;
-  return t;
+export interface RankInfo {
+  tier: Tier;
+  tierIndex: number;
+  /** 1–3, or 0 for Rookie and Apex. */
+  division: 0 | 1 | 2 | 3;
+  /** "Gear III", "Rookie", "Apex". */
+  label: string;
+  /** Rating points into the current division (Apex: points above the Apex line; Rookie: 0). */
+  points: number;
+  /** 0–1 progress toward the next division/tier (1 for Apex). */
+  progress: number;
+  /** Name of the next rank, or null at the top. */
+  next: string | null;
+  /** Position on the whole ladder (0 = Rookie … 19 = Apex), for comparing ranks. */
+  ordinal: number;
+}
+
+/** Where a rating sits on the ladder. */
+export function rankFor(rating: number): RankInfo {
+  let tierIndex = 0;
+  TIERS.forEach((t, i) => {
+    if (rating >= t.min) tierIndex = i;
+  });
+  const tier = TIERS[tierIndex];
+  const label = (d: number) => (d ? `${tier.name} ${ROMAN[d]}` : tier.name);
+  if (!tier.divisions) {
+    const top = tier.id === 'apex';
+    return {
+      tier,
+      tierIndex,
+      division: 0,
+      label: tier.name,
+      points: top ? rating - tier.min : 0,
+      progress: top ? 1 : Math.max(0, Math.min(1, rating / TIERS[1].min)),
+      next: top ? null : `${TIERS[1].name} I`,
+      ordinal: top ? 1 + (TIERS.length - 2) * 3 : 0,
+    };
+  }
+  const into = rating - tier.min;
+  const division = (Math.min(2, Math.floor(into / DIVISION_POINTS)) + 1) as 1 | 2 | 3;
+  const points = into - (division - 1) * DIVISION_POINTS;
+  const nextTier = TIERS[tierIndex + 1];
+  return {
+    tier,
+    tierIndex,
+    division,
+    label: label(division),
+    points: Math.min(points, DIVISION_POINTS),
+    progress: Math.min(1, points / DIVISION_POINTS),
+    next: division < 3 ? `${tier.name} ${ROMAN[division + 1]}` : nextTier.divisions ? `${nextTier.name} I` : nextTier.name,
+    ordinal: 1 + (tierIndex - 1) * 3 + (division - 1),
+  };
+}
+
+/** The rank to show: null while the player is still in placement matches. */
+export function visibleRank(rating: number, games: number): RankInfo | null {
+  return games < PLACEMENT_GAMES ? null : rankFor(rating);
 }
 
 export interface RankedParticipant {

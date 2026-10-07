@@ -17,8 +17,41 @@ Each mode has its own Elo. Everything is layered on the multiplayer relay ([MULT
 4. **Placement.** The normal start-position screen; 75 s, then everyone is locked in where they stand. Drive-in-AUTO, no bots.
 5. **Result.** Host and every client report the winner at the results screen. The relay applies Elo only if the host and at least
    half of the other drivers agree; otherwise the match is **voided** (no change).
-6. **Rating.** `rateMatch`: team strength = mean rating, `K` = 40 for the first 10 games, 28 up to 30, then 20. Tiers (Bronze …
-   Master) show after 5 placement games.
+6. **Rating.** `rateMatch`: team strength = mean rating, `K` = 40 for the first 10 games, 28 up to 30, then 20. The rank ladder (below) shows after 5 placement
+   games.
+
+## Rank ladder
+
+Eight tiers, each with three divisions (I–III, 50 rating points apiece) except the open-ended ends. A new player (1000) starts at
+Gear III. Defined in `rankFor` (`src/engine/net/ranked.ts`), drawn by `src/app/rankEmblem.ts`.
+
+| Tier | From | Emblem |
+|---|---|---|
+| Rookie | 0 | hex nut |
+| Bolt | 750 | lightning bolt |
+| Gear | 900 | gear |
+| Piston | 1050 | piston (glow) |
+| Servo | 1200 | dial + wings |
+| Titan | 1350 | shield + wings |
+| Champion | 1500 | star + wings + crown |
+| Apex | 1650 | burst + rotating rays (no divisions; shows points over the line) |
+
+Emblems are inline SVG with a light sweep, a glow that pulses from Piston up, and a pop-in; a rank-up shows a particle burst on the
+Ranked page (`prefers-reduced-motion` turns it all off). Placement matches (first 5) show an unranked badge and a progress bar.
+
+## Leaderboard
+
+Per mode, top 25 by rating (anyone with at least one game; placement players carry the unranked badge). The top three get a
+podium; if you're below the list you get "Your rank: #N of M" (`rankOf` in the store).
+
+## Names and chat
+
+`src/engine/net/nameFilter.ts` normalises text (case, accents, leetspeak, separators, stretched letters) and blocks long
+profanity/slur stems anywhere plus short words only as whole words (so "Scunthorpe" and "Grape" pass). `cleanName`/`cleanTitle`
+(used by the relay for every name and room title) replace a bad name with "Player" and a bad title with nothing, so the server
+enforces it whatever the client sends; the forms also refuse a bad name with a message, chat words are starred out, and
+leaderboard names are re-checked on the way out. It is a blocklist: determined people will find gaps, and a word that merely
+contains a blocked stem (e.g. "mishit") is caught too. Add or remove terms in that file.
 
 ## Leaving
 

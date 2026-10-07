@@ -1,8 +1,12 @@
-import { currentStep, draftDone, draftOptions, MODE_LABEL, MODE_SIZE, PLACEMENT_GAMES, RANKED_MODES, tierOf, teamOf, type RankedMode } from '@engine/net/ranked';
+import { currentStep, draftDone, draftOptions, MODE_LABEL, MODE_SIZE, PLACEMENT_GAMES, RANKED_MODES, rankFor, teamOf, visibleRank, type RankedMode } from '@engine/net/ranked';
+import { nameProblem } from '@engine/net/nameFilter';
 import { slotLabel, type SlotId } from '@engine/net/protocol';
 import type { LobbyController } from './lobby';
 import type { MpPageCtx } from './multiplayer';
+import { emblemSvg, rankChip } from './rankEmblem';
 import { rankedPool } from './rankedPool';
+
+const tierBadge = (rating: number, games: number): string => rankChip(rating, games);
 
 /** Ranked pages for the menu: landing (rating, queue, leaderboard), the ban/pick draft, and "match found". */
 
@@ -16,25 +20,28 @@ function savedName(): string {
   }
 }
 
-export function tierBadge(rating: number, games: number): string {
-  const t = tierOf(rating, games);
-  return t
-    ? `<span class="rk-tier" style="--tier:${t.color}">${t.name}</span>`
-    : `<span class="rk-tier unranked">Placement ${Math.min(games, PLACEMENT_GAMES)}/${PLACEMENT_GAMES}</span>`;
-}
-
 const fmtTime = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+
+const MEDAL = ['🥇', '🥈', '🥉'];
 
 function leaderboardHtml(lobby: LobbyController): string {
   const rows = lobby.ranked.leaderboard;
   if (rows === null) return '<div class="rl-empty"><span class="mp-dot waking"></span>Loading leaderboard…</div>';
-  if (!rows.length) return `<div class="rl-empty">Nobody has finished ${PLACEMENT_GAMES} ${MODE_LABEL[lobby.ranked.mode]} matches yet.<br/>Be the first on the board.</div>`;
-  return `<table class="rk-board"><thead><tr><th>#</th><th>Player</th><th>Rating</th><th>W-L-D</th></tr></thead><tbody>${rows
-    .map(
-      (r, i) =>
-        `<tr class="${r.me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(r.name)}${r.me ? ' <i>you</i>' : ''}<br/>${tierBadge(r.rating, r.games)}</td><td><b>${r.rating}</b></td><td>${r.wins}-${r.losses}-${r.draws}</td></tr>`,
-    )
-    .join('')}</tbody></table>`;
+  if (!rows.length) return `<div class="rl-empty">Nobody has played a ${MODE_LABEL[lobby.ranked.mode]} ranked match yet.<br/>Be the first on the board.</div>`;
+  const podium = rows
+    .slice(0, 3)
+    .map((r, i) => `<div class="rk-pod p${i + 1} ${r.me ? 'me' : ''}"><span class="medal">${MEDAL[i]}</span><b>${esc(r.name)}</b><span class="rk-pod-rating">${r.rating}</span>${tierBadge(r.rating, r.games)}</div>`)
+    .join('');
+  const rest = rows.slice(3);
+  const you = lobby.ranked.standing;
+  const youOnBoard = rows.some((r) => r.me);
+  return `<div class="rk-podium">${podium}</div>${
+    rest.length
+      ? `<table class="rk-board"><thead><tr><th>#</th><th>Player</th><th>Rating</th><th>W-L-D</th></tr></thead><tbody>${rest
+          .map((r, i) => `<tr class="${r.me ? 'me' : ''}"><td>${i + 4}</td><td>${esc(r.name)}${r.me ? ' <i>you</i>' : ''}<br/>${tierBadge(r.rating, r.games)}</td><td><b>${r.rating}</b></td><td>${r.wins}-${r.losses}-${r.draws}</td></tr>`)
+          .join('')}</tbody></table>`
+      : ''
+  }${you && !youOnBoard ? `<div class="rk-you">Your rank: <b>#${you.rank}</b> of ${you.total} · ${you.rating}</div>` : ''}`;
 }
 
 function lastResultHtml(lobby: LobbyController): string {
@@ -43,7 +50,34 @@ function lastResultHtml(lobby: LobbyController): string {
   if (r.status === 'void') return `<div class="rk-result void"><b>Match voided</b><span>${esc(r.reason ?? 'No rating change.')}</span></div>`;
   const sign = r.delta > 0 ? '+' : '';
   const title = r.result === 'win' ? 'Victory' : r.result === 'draw' ? 'Draw' : r.result === 'abandon' ? 'You left the match' : r.result === 'none' ? 'Match ended' : 'Defeat';
-  return `<div class="rk-result ${r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''}"><b>${title}</b><span>${r.before} → <b>${r.after}</b> (${sign}${r.delta})${r.status === 'abandoned' && r.result !== 'abandon' ? ' · opponent left' : ''}</span></div>`;
+  const points = `${r.before} → <b>${r.after}</b> (${sign}${r.delta})${r.status === 'abandoned' && r.result !== 'abandon' ? ' · opponent left' : ''}`;
+  const { rankBefore: from, rankAfter: to } = r;
+  // Rank movement gets its own celebration (or a gentler note for a demotion).
+  let move: 'up' | 'down' | 'placed' | null = null;
+  if (to && !from) move = 'placed';
+  else if (to && from && to.ordinal > from.ordinal) move = 'up';
+  else if (to && from && to.ordinal < from.ordinal) move = 'down';
+  const card = `<div class="rk-result ${r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''}"><b>${title}</b><span>${points}</span></div>`;
+  if (!move || !to) return card;
+  const heading = move === 'up' ? 'Rank up!' : move === 'placed' ? 'Placement complete' : 'Rank down';
+  const line = move === 'placed' ? `You placed <b>${to.label}</b>` : `${from!.label} → <b>${to.label}</b>`;
+  const burst = move === 'down' ? '' : `<div class="rk-burst" style="--tier:${to.tier.color}">${Array.from({ length: 14 }, (_, i) => `<i style="--a:${i * (360 / 14)}deg;--d:${i % 2 ? 54 : 74}px"></i>`).join('')}</div>`;
+  return `${card}<div class="rk-rankup ${move}" style="--tier:${to.tier.color}">${burst}${emblemSvg(to, { size: 92, pop: true })}<div><b>${heading}</b><span>${line}</span></div></div>`;
+}
+
+function meCardHtml(lobby: LobbyController): string {
+  const R = lobby.ranked;
+  const mine = R.profile?.ratings[R.mode];
+  if (!mine) return '<div class="rk-me"><div class="dim">Search once to get on the ladder.</div></div>';
+  const rank = visibleRank(mine.rating, mine.games);
+  const info = rank ?? rankFor(mine.rating);
+  const bar = rank
+    ? `<div class="rk-bar" style="--tier:${rank.tier.color};--p:${rank.progress}"><i></i></div><div class="rk-bar-text">${rank.next ? `${rank.division ? `${rank.points}/50` : `${mine.rating}/750`} · next <b>${esc(rank.next)}</b>` : `Apex · +${rank.points} over the line`}</div>`
+    : `<div class="rk-bar placing" style="--p:${mine.games / PLACEMENT_GAMES}"><i></i></div><div class="rk-bar-text">Play ${PLACEMENT_GAMES - mine.games} more match${PLACEMENT_GAMES - mine.games === 1 ? '' : 'es'} to reveal your rank</div>`;
+  return `<div class="rk-me" style="--tier:${info.tier.color}">
+    ${emblemSvg(rank, { size: 104 })}
+    <div class="rk-me-info"><div class="rk-rank-name">${rank ? esc(rank.label) : 'Unranked'}</div><div class="rk-rating">${mine.rating}<small>rating</small></div>${bar}<div class="dim">${mine.wins}W ${mine.losses}L ${mine.draws}D · peak ${mine.peak}</div></div>
+  </div>`;
 }
 
 export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { body: string; footer: string } {
@@ -51,7 +85,6 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
   const err = lobby.error ? `<div class="mp-error">${esc(lobby.error)}</div>` : '';
   if (lobby.serverState === 'unknown') queueMicrotask(() => void lobby.wake());
   if (lobby.serverState === 'online') queueMicrotask(() => lobby.browse());
-  const mine = R.profile?.ratings[R.mode];
   const busy = lobby.status === 'connecting';
   const online = lobby.serverState === 'online';
   const server = {
@@ -81,10 +114,7 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
               return `<button class="opt ${m === R.mode ? 'on' : ''}" data-rk-mode="${m}" ${R.searching ? 'disabled' : ''}>${MODE_LABEL[m]}<small>${r ? r.rating : '—'}</small></button>`;
             }).join('')}
           </div>
-          <div class="rk-me">
-            <div class="rk-rating">${mine ? mine.rating : '—'}</div>
-            <div>${mine ? tierBadge(mine.rating, mine.games) : ''}<div class="dim">${mine ? `${mine.wins}W ${mine.losses}L ${mine.draws}D · peak ${mine.peak}` : 'Sign in by searching once'}</div></div>
-          </div>
+          ${meCardHtml(lobby)}
           ${lastResultHtml(lobby)}
           ${search}
         </div>
@@ -142,7 +172,7 @@ export function rankedDraftPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     const ban = d.bans.filter((x) => x.slot === slot).map((x) => byId.get(x.id)?.label ?? x.id);
     const active = step?.slot === slot;
     return `<div class="rk-seat ${teamOf(slot)} ${active ? 'active' : ''} ${p.peerId === me?.peerId ? 'mine' : ''}">
-      <div class="who"><b>${esc(p.name)}${p.peerId === me?.peerId ? ' (you)' : ''}</b><span>${slotLabel(slot)} · ${p.rating ?? '—'} ${p.games !== undefined && p.games < PLACEMENT_GAMES ? '(placing)' : ''}</span></div>
+      <div class="who"><b>${esc(p.name)}${p.peerId === me?.peerId ? ' (you)' : ''}</b><span>${slotLabel(slot)} · ${p.rating !== undefined ? rankChip(p.rating, p.games ?? 0, 18) : '—'}</span></div>
       <div class="picks">${pick ? `<span class="chip pick">${esc(byId.get(pick.id)?.label ?? pick.id)}</span>` : active && step?.kind === 'pick' ? '<span class="chip">picking…</span>' : ''}${ban.map((b) => `<span class="chip ban">✕ ${esc(b)}</span>`).join('')}</div>
     </div>`;
   };
@@ -188,7 +218,7 @@ export function bindRanked(el: HTMLElement, lobby: LobbyController): void {
     find.onclick = () => {
       const name = (nameInput?.value ?? '').trim() || 'Player';
       try {
-        localStorage.setItem(NAME_KEY, name);
+        if (!nameProblem(name)) localStorage.setItem(NAME_KEY, name);
       } catch {
         /* ignore */
       }

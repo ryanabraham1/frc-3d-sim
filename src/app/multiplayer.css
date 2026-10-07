@@ -632,27 +632,230 @@
   align-items: center;
   gap: 18px;
 }
-.rk-rating {
+.rk-me-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.rk-rank-name {
   font-family: var(--display);
   font-weight: 800;
-  font-size: 56px;
+  font-size: 30px;
   line-height: 1;
-  color: var(--accent-bright);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--tier, var(--text));
 }
-.rk-tier {
-  display: inline-block;
-  font-size: 12px;
+.rk-rating {
+  font-family: var(--display);
   font-weight: 700;
+  font-size: 22px;
+  color: var(--muted);
+}
+.rk-rating small {
+  font-size: 12px;
+  margin-left: 6px;
   letter-spacing: 0.6px;
   text-transform: uppercase;
-  padding: 2px 10px;
-  border-radius: 999px;
-  color: var(--tier, var(--muted));
-  border: 1px solid var(--tier, var(--border));
 }
-.rk-tier.unranked {
+.rk-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.rk-bar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, var(--tier, var(--accent)), #fff8);
+  animation: rk-fill 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.rk-bar.placing i {
+  background: repeating-linear-gradient(45deg, #8d8c9c 0 6px, #6c6b7a 6px 12px);
+}
+.rk-bar-text {
+  font-size: 12px;
   color: var(--muted);
+}
+.rk-bar-text b {
+  color: var(--text);
+}
+@keyframes rk-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Emblems */
+.rk-emblem {
+  flex: none;
+  overflow: visible;
+}
+.rk-emblem.glow {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--tier) 65%, transparent));
+  animation: rk-glow 2.8s ease-in-out infinite;
+}
+.rk-emblem.tier-champion.glow,
+.rk-emblem.tier-apex.glow {
+  animation-duration: 1.8s;
+}
+.rk-shine {
+  transform: skewX(-20deg) translateX(-60px);
+  animation: rk-shine 4.5s ease-in-out infinite;
+  animation-delay: 1s;
+}
+.rk-emblem.tier-apex .rk-shine,
+.rk-emblem.tier-champion .rk-shine {
+  animation-duration: 3s;
+}
+.rk-rays {
+  transform-box: view-box;
+  animation: rk-spin 24s linear infinite;
+}
+.rk-emblem.pop {
+  animation: rk-pop 0.9s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.rk-emblem.pop.glow {
+  animation: rk-pop 0.9s cubic-bezier(0.2, 1.6, 0.4, 1) both, rk-glow 2.8s 0.9s ease-in-out infinite;
+}
+@keyframes rk-shine {
+  0%,
+  55% {
+    transform: skewX(-20deg) translateX(-60px);
+  }
+  100% {
+    transform: skewX(-20deg) translateX(220px);
+  }
+}
+@keyframes rk-glow {
+  50% {
+    filter: drop-shadow(0 0 16px color-mix(in srgb, var(--tier) 90%, transparent));
+  }
+}
+@keyframes rk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rk-pop {
+  0% {
+    transform: scale(0.2) rotate(-12deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
+.rk-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--tier, var(--muted));
+  white-space: nowrap;
+}
+.rk-chip.unranked {
+  color: var(--muted);
+  font-weight: 500;
+}
+.rk-chip .rk-shine,
+.rk-chip .rk-rays {
+  animation: none;
+}
+.rk-chip .rk-emblem.glow {
+  animation: none;
+  filter: none;
+}
+
+/* Rank up / down */
+.rk-rankup {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--tier);
+  background: radial-gradient(120% 140% at 0% 50%, color-mix(in srgb, var(--tier) 22%, transparent), transparent 70%);
+  overflow: hidden;
+  animation: rk-slide 0.5s ease both;
+}
+.rk-rankup.down {
   border-color: var(--border);
+  background: var(--surface-2);
+  filter: saturate(0.6);
+}
+.rk-rankup > div:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.rk-rankup b:first-child {
+  font-family: var(--display);
+  font-size: 26px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--tier);
+}
+.rk-rankup span {
+  color: var(--muted);
+}
+.rk-rankup span b {
+  color: var(--text);
+}
+@keyframes rk-slide {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.rk-burst {
+  position: absolute;
+  left: 64px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.rk-burst i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px;
+  border-radius: 50%;
+  background: var(--tier);
+  box-shadow: 0 0 8px var(--tier);
+  opacity: 0;
+  animation: rk-spark 1.1s 0.25s ease-out both;
+}
+@keyframes rk-spark {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateX(10px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--a)) translateX(var(--d)) scale(0.2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rk-emblem,
+  .rk-shine,
+  .rk-rays,
+  .rk-burst i,
+  .rk-bar i,
+  .rk-rankup {
+    animation: none !important;
+  }
 }
 .rk-search {
   display: flex;
@@ -886,4 +1089,55 @@
   .rk-teams {
     grid-template-columns: 1fr;
   }
+}
+
+/* Leaderboard podium */
+.rk-podium {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rk-pod {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  text-align: center;
+  min-width: 0;
+}
+.rk-pod b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rk-pod.p1 {
+  border-color: #f2c14e;
+  background: rgba(242, 193, 78, 0.1);
+  padding-top: 18px;
+}
+.rk-pod.me {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+.rk-pod .medal {
+  font-size: 26px;
+  line-height: 1;
+}
+.rk-pod-rating {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 26px;
+  color: var(--accent-bright);
+}
+.rk-you {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 14px;
 }

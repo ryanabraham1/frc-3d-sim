@@ -5,6 +5,7 @@ import { footprint } from '@engine/robot/config';
 import { footprintPoly } from '@engine/startPose';
 import type { RoomListing, RoomVisibility } from '@engine/net/relayProtocol';
 import { MAX_TITLE_LENGTH } from '@engine/net/relayProtocol';
+import { nameProblem } from '@engine/net/nameFilter';
 import type { LobbyController } from './lobby';
 import { bindRanked, rankedDraftPage, rankedLandingPage, rankedWaitingPage } from './ranked';
 import { bindHeadingControls, bindPlacementMap, headingControls, placementMap, placementProblems, playerSpot, rotateSpot, syncHeadingControls, type MineState, type PlacedRobot } from './placement';
@@ -392,7 +393,8 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   const q = <T extends HTMLElement>(k: string) => el.querySelector<T>(`[data-mp="${k}"]`);
   const name = () => {
     const n = (q<HTMLInputElement>('name')?.value ?? '').trim() || 'Player';
-    saveName(n);
+    // A rejected name is not remembered; the lobby methods show the reason.
+    if (!nameProblem(n)) saveName(n);
     return n;
   };
   const url = q<HTMLInputElement>('url');
