@@ -1185,3 +1185,28 @@
 .rk-modes-table tr.idle td {
   color: var(--muted);
 }
+
+/* Draft cards show the robot, not a description */
+.rk-card-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: 8px;
+  background: radial-gradient(ellipse at 50% 75%, rgba(255, 255, 255, 0.08), transparent 70%);
+  overflow: hidden;
+}
+.rk-card-img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.rk-card-img img:not([src]) {
+  visibility: hidden;
+}
+.rk-card {
+  min-height: 0;
+}
+.rk-pool {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}

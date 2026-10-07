@@ -4,7 +4,26 @@ import { slotLabel, type SlotId } from '@engine/net/protocol';
 import type { LobbyController } from './lobby';
 import type { MpPageCtx } from './multiplayer';
 import { emblemSvg, rankChip } from './rankEmblem';
+import { getSeason } from '@seasons/index';
+import { RANKED_SEASON_ID } from '@engine/net/ranked';
 import { rankedPool } from './rankedPool';
+
+/** Draft thumbnails already rendered (id → data URL), so a redraw of the page doesn't blank them. */
+const thumbCache = new Map<string, string>();
+
+/**
+ * Render every draftable robot's 3D thumbnail in the background (serialized on one GL context, cached). Called when a
+ * search starts, so the cards are ready by the time the draft opens.
+ */
+export function prefetchDraftThumbs(): void {
+  const season = getSeason(RANKED_SEASON_ID);
+  void import('./robotPreview').then((m) => {
+    for (const e of rankedPool(season)) {
+      if (thumbCache.has(e.id)) continue;
+      void m.robotThumb(season, e.config, 'blue').then((url) => thumbCache.set(e.id, url)).catch(() => undefined);
+    }
+  });
+}
 
 const tierBadge = (rating: number, games: number): string => rankChip(rating, games);
 
@@ -217,9 +236,10 @@ export function rankedDraftPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     const taken = !ban && mineTeam && d.picks.some((p) => p.id === id && teamOf(p.slot) === mineTeam);
     const clickable = myTurn && options.has(id);
     const state = ban ? `Banned by ${slotLabel(ban.slot)}` : taken ? 'On your team' : '';
-    const summary = (ctx.season.robotSummary ? ctx.season.robotSummary(e.config) : '') || e.description.split(/(?<=\.)\s/)[0];
-    return `<button class="rk-card ${ban ? 'banned' : ''} ${taken ? 'taken' : ''} ${clickable ? 'go' : ''} ${clickable && step?.kind === 'ban' ? 'banning' : ''}" data-draft="${esc(id)}" ${clickable ? '' : 'disabled'} title="${esc(e.description)}">
-      <span class="rk-card-tag">${esc(e.tag)}</span><b>${esc(e.label)}</b><span class="rk-card-sum">${esc(summary)}</span>${state ? `<span class="rk-card-state">${esc(state)}</span>` : ''}
+    const cached = thumbCache.get(id);
+    return `<button class="rk-card ${ban ? 'banned' : ''} ${taken ? 'taken' : ''} ${clickable ? 'go' : ''} ${clickable && step?.kind === 'ban' ? 'banning' : ''}" data-draft="${esc(id)}" ${clickable ? '' : 'disabled'}>
+      <span class="rk-card-img"><img alt="" data-draft-thumb="${esc(id)}" ${cached ? `src="${cached}"` : ''}/></span>
+      <span class="rk-card-tag">${esc(e.tag)}</span><b>${esc(e.label)}</b>${state ? `<span class="rk-card-state">${esc(state)}</span>` : ''}
     </button>`;
   };
 
@@ -269,6 +289,22 @@ export function bindRanked(el: HTMLElement, lobby: LobbyController): void {
   }
 
   el.querySelectorAll<HTMLElement>('[data-draft]').forEach((b) => (b.onclick = () => lobby.draft(b.dataset.draft!)));
+  // Fill in any thumbnail that isn't cached yet as it finishes rendering.
+  const missing = Array.from(el.querySelectorAll<HTMLImageElement>('img[data-draft-thumb]')).filter((img) => !img.getAttribute('src'));
+  if (missing.length) {
+    const season = getSeason(RANKED_SEASON_ID);
+    const pool = new Map(rankedPool(season).map((e) => [e.id, e]));
+    void import('./robotPreview').then((m) => {
+      for (const img of missing) {
+        const e = pool.get(img.dataset.draftThumb ?? '');
+        if (!e) continue;
+        void m.robotThumb(season, e.config, 'blue').then((url) => {
+          thumbCache.set(e.id, url);
+          if (img.isConnected) img.src = url;
+        }).catch(() => undefined);
+      }
+    });
+  }
   const clock = el.querySelector<HTMLElement>('[data-mp="turn-timer"]');
   if (clock) {
     const start = performance.now();

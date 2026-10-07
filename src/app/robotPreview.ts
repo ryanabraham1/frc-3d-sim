@@ -88,9 +88,17 @@ function frame(camera: THREE.PerspectiveCamera, scale: number, azimuth: number, 
 const thumbs = new Map<string, Promise<string>>();
 let queue: Promise<unknown> = Promise.resolve();
 
+function configHash(config: RobotConfig): string {
+  const json = JSON.stringify(config);
+  let h = 5381;
+  for (let i = 0; i < json.length; i++) h = ((h << 5) + h + json.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
 /** One still image (data URL) of a robot, rendered once and cached. Renders are serialized on one GL context. */
 export function robotThumb(season: SeasonDefinition, config: RobotConfig, alliance: 'red' | 'blue', w = 360, h = 240): Promise<string> {
-  const key = `${season.id}|${config.model ?? 'generic'}|${config.teamNumber}|${alliance}|${w}x${h}`;
+  // Archetype presets share a model and team number, so the config itself is part of the key.
+  const key = `${season.id}|${config.model ?? 'generic'}|${config.teamNumber}|${configHash(config)}|${alliance}|${w}x${h}`;
   const hit = thumbs.get(key);
   if (hit) return hit;
   // Fetch/decode independently: a slow CAD download must not hold up every card after it.

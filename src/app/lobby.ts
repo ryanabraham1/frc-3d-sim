@@ -34,6 +34,7 @@ import {
   type RankedMode,
 } from '@engine/net/ranked';
 import type { LeaderEntry } from '@engine/net/relayProtocol';
+import { prefetchDraftThumbs } from './ranked';
 import { rankedPool, rankedPoolIds } from './rankedPool';
 import { censorText, nameProblem } from '@engine/net/nameFilter';
 import { cleanName, cleanTitle, normalizeRoomCode, type RoomListing, type RoomMeta, type RoomVisibility } from '@engine/net/relayProtocol';
@@ -367,6 +368,7 @@ export class LobbyController {
       return;
     }
     this.ranked.searching = true;
+    prefetchDraftThumbs(); // render the draft's 3D thumbnails while we wait for a match
     this.ranked.searchStartedAt = Date.now();
     this.ranked.waiting = 1;
     this.client.queue(this.ranked.mode, this.playerName, this.rankedSecret());
