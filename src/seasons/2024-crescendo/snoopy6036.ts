@@ -23,8 +23,8 @@ export function buildSnoopy6036(k: ModelKit): RobotModel {
   const held=pivot(arm,.18,0),shot=pivot(arm,.46,0);
   return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],heldAnchor:held,
     flow:{stow:()=>flowAt(k,held,0,0,0),feed:()=>[flowAt(k,held,0,0,0),flowAt(k,shot,0,0,0)]},
-    update(s){base.update(s);intake.update(s);yaw.rotation.y=s.climb>0?Math.PI:s.intaking?0:k.turret.rotation.y;
-      arm.rotation.z=s.climb>.5?.31*Math.PI*2:s.climb>0?.001*Math.PI*2:(s.amp??s.passing)?.27*Math.PI*2:s.aiming||s.firing>0?s.hood:0;
+    update(s){base.update(s);intake.update(s);yaw.rotation.y=s.climb>0?Math.PI:k.turret.userData.simulatedShooter||s.aiming||s.firing>0?k.turret.rotation.y:0;
+      arm.rotation.z=s.climb>.5?.31*Math.PI*2:s.climb>0?.001*Math.PI*2:(s.amp??s.passing)?.27*Math.PI*2:k.turret.userData.shooterPitch??(s.aiming||s.firing>0?s.hood:0);
       for(const w of wheels)w.rotation.z-=s.enabled?40*s.dt:0;
     }};
 }

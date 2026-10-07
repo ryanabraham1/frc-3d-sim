@@ -1497,12 +1497,14 @@ export class Robot {
   aimTurretAt(target: AimTarget | null, dt: number): void {
     const yaw = this.pose.yaw;
     let desired = yaw;
-    if (target && this.config.launcher.turret && this.config.aimAssist === 'full') {
+    const snoopy = this.config.model === 'snoopy-6036';
+    const aiming = this.lastCommand.shoot || this.lastCommand.pass || this.lastCommand.aim;
+    if (target && this.config.launcher.turret && this.config.aimAssist === 'full' && (!snoopy || aiming)) {
       const t = this.body.translation();
       desired = Math.atan2(-(target.point.z - t.z), target.point.x - t.x);
     }
     const err = wrapAngle(desired - this.turretYaw);
-    const maxStep = 12 * dt;
+    const maxStep = (snoopy ? 5 : 12) * dt;
     this.turretYaw = wrapAngle(this.turretYaw + clamp(err, -maxStep, maxStep));
     // While the driver holds shoot / pass, re-solve the shot from here a few times a second so the hood visibly
     // tracks the range before the piece leaves (the launch itself still solves exactly at release).
@@ -1516,7 +1518,13 @@ export class Robot {
         if (sol) this.lastShotAngle = sol.angle;
       }
     } else this.aimSolveIn = 0;
+    if (snoopy) {
+      const goal = aiming ? (this.lastShotAngle || c.launcher.angle) : 0;
+      this.shooterPitch += clamp(goal-this.shooterPitch, -3.5*dt, 3.5*dt);
+    }
   }
+  /** Actual Snoopy shooter elevation, advanced by simulation rather than render frames. */
+  private shooterPitch = 0;
   private aimSolveIn = 0;
   private readonly aimTmp = new THREE.Vector3();
 
@@ -1663,17 +1671,15 @@ export class Robot {
     // servo keeps every ball on target, but a hard shove or a sudden sprint leaves the chassis behind and the balls
     // fly where the launcher actually points, so they miss.
     if (target && !c.turret && this.config.autoAlign && this.burstTime <= 0 && Math.abs(this.alignError) > (c.alignTolerance ?? 0.05)) return null;
-    this.burstTime = BURST_HOLD_S;
     if (!this.projectileSet && !Robot.warnedProjectile && typeof console !== 'undefined') {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
     }
-    this.fireCooldown = 1 / c.rate;
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
     // A multi-exit dumper alternates between its exits, so shots leave as several parallel streams.
     const offsets = launcherExitOffsets(c0);
-    const ex = this.launcherExit(offsets[this.exitIndex++ % offsets.length]);
+    const ex = this.launcherExit(offsets[this.exitIndex % offsets.length]);
     // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
     // (the aim below assumes a level robot, so a rocking or tipping robot misses — as it would for real).
     const pos = this.localToWorld(ex.forward, ex.up, -ex.side, new THREE.Vector3());
@@ -1700,10 +1706,17 @@ export class Robot {
       }
       if (this.config.aimAssist === 'full' && c.turret) {
         aimYaw = Math.atan2(-(lead.point.z - pos.z), lead.point.x - pos.x);
-        this.turretYaw = aimYaw;
+        if (c0.model === 'snoopy-6036') {
+          if (Math.abs(wrapAngle(aimYaw-this.turretYaw)) > (c.alignTolerance ?? .05)) return null;
+          aimYaw = this.turretYaw;
+        } else this.turretYaw = aimYaw;
       }
     }
     this.lastShotAngle = theta;
+    if (c0.model === 'snoopy-6036' && Math.abs(theta-this.shooterPitch) > .035) return null;
+    this.exitIndex++;
+    this.burstTime = BURST_HOLD_S;
+    this.fireCooldown = 1 / c.rate;
     this.anim.firing = 1;
     const yawN = aimYaw + rng.gauss(0, c.spread);
     const pitchN = theta + rng.gauss(0, c.spread);
@@ -1845,7 +1858,7 @@ export class Robot {
       climbProgress: this.climbProgress,
       cmdSeq,
       act: this.actBits(),
-      hood: this.lastShotAngle,
+      hood: this.config.model === 'snoopy-6036' ? this.shooterPitch : this.lastShotAngle,
     };
   }
 
@@ -1877,7 +1890,10 @@ export class Robot {
     this.climbSlot = s.climbSlot;
     this.replicaClimbProgress = s.climbProgress;
     if (s.act !== undefined) this.netAct = s.act;
-    if (s.hood !== undefined) this.lastShotAngle = s.hood;
+    if (s.hood !== undefined) {
+      this.lastShotAngle = s.hood;
+      if (this.config.model === 'snoopy-6036') this.shooterPitch = s.hood;
+    }
   }
 
   // ───────────────────────── misc ─────────────────────────
@@ -1895,6 +1911,7 @@ export class Robot {
     this.climbLevel = 0;
     this.climbSlot = null;
     this.turretYaw = pose.yaw;
+    this.shooterPitch = 0;
     this.fireCooldown = 0;
     this.exitIndex = 0;
     this.flowFeedIndex = 0;
@@ -2010,6 +2027,10 @@ export class Robot {
     this.hopperFill.scale.y = Math.max(0.001, frac);
     this.hopperFill.position.y = this.config.bumperTop + (hopperH * frac) / 2;
     this.turret.rotation.y = wrapAngle(this.turretYaw - yawFromQuat(r));
+    if (this.config.model === 'snoopy-6036') {
+      this.turret.userData.simulatedShooter = true;
+      this.turret.userData.shooterPitch = this.shooterPitch;
+    }
     const armBase = Math.max(0.05, this.config.height - this.config.bumperTop);
     const deployment = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' ? 1 : 0) : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * this.climbProgress : .25;
     const armLen = armBase * (.25 + .75 * deployment);
