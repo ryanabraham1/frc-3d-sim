@@ -1,3 +1,4 @@
+import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 
@@ -18,7 +19,6 @@ const sourceExtension = 1.0287; // 40.5 in; CAD shows the fully extended nested 
 const baseReach = sourceReach-sourceExtension;
 const sourceToolPitch = 23*Math.PI/180; // measured roller-row centers in export.
 const rotationAxis = new THREE.Vector3(0,0,1);
-const ease=(a:number,b:number,dt:number)=>dt>0?a+(b-a)*(1-Math.exp(-10*dt)):b;
 
 export function buildSpectreCad(root:THREE.Group,k:ModelKit,animated:()=>boolean):RobotModel {
   function mount(name:string,at:THREE.Vector3){
@@ -67,8 +67,8 @@ export function buildSpectreCad(root:THREE.Group,k:ModelKit,animated:()=>boolean
         nextPitch=Math.atan2(dy,dx)-Math.atan2(crossOffset,reach);
         nextExtension=THREE.MathUtils.clamp(reach-baseReach,0,1.05);
       }
-      pitch=ease(pitch,nextPitch,s.dt);extension=ease(extension,nextExtension,s.dt);
-      toolPitch=ease(toolPitch,nextTool,s.dt);slide=ease(slide,nextSlide,s.dt);
+      pitch=scoringEase(pitch,nextPitch,s.dt);extension=scoringEase(extension,nextExtension,s.dt);
+      toolPitch=scoringEase(toolPitch,nextTool,s.dt);slide=scoringEase(slide,nextSlide,s.dt);
       arm.rotation.z=pitch-sourcePitch;
       const shift=(extension-sourceExtension)/2;
       mid.position.copy(midBind).addScaledVector(rail,shift);

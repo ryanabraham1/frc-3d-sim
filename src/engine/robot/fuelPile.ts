@@ -10,6 +10,8 @@ export interface FuelSeed { x: number; y: number; z: number; s: number; sy?: num
 
 /** Small sleeping, visual-only particle solver. No Rapier bodies, geometry rebuilds or fixed rest targets. */
 export class FuelPile {
+  contacts?: { sync(): boolean; resolve(p: Float32Array, v: Float32Array, j: number, radius: number): void };
+  wake(): void { this.awake = this.count > 0; this.quiet = 0; }
   readonly positions: Float32Array;
   private readonly velocity: Float32Array;
   private readonly before: Float32Array;
@@ -68,7 +70,7 @@ export class FuelPile {
       if (d2 < diameter * diameter) y = Math.max(y, this.positions[j + 1] + Math.sqrt(diameter * diameter - d2));
     }
     const roof = Math.min(b.y0 + b.height, b.ceiling?.(x, z) ?? Infinity);
-    return new THREE.Vector3(x, Math.min(roof - r, Math.max(y + 0.015, hint.y)), z);
+    return new THREE.Vector3(x, this.open ? Math.max(y + 0.015, hint.y) : Math.min(roof - r, Math.max(y + 0.015, hint.y)), z);
   }
 
   receive(position: THREE.Vector3): void {
@@ -98,6 +100,7 @@ export class FuelPile {
   step(s: RobotAnimState, escape?: (x: number, y: number, z: number, vx: number, vy: number, vz: number) => void): boolean {
     const dt = THREE.MathUtils.clamp(s.dt, 0, 0.1);
     if (dt <= 0) return false;
+    if (this.count > 0 && this.contacts?.sync()) this.wake();
     // Gravity in the chassis frame: a tilted or overturned robot pours its pile toward the low side.
     const ux = s.upx ?? 0, uy = s.upy ?? 1, uz = s.upz ?? 0;
     if (Math.abs(ux - this.upX) + Math.abs(uy - this.upY) + Math.abs(uz - this.upZ) > 0.01 && this.count > 0) { this.awake = true; this.quiet = 0; }
@@ -159,6 +162,11 @@ export class FuelPile {
             v[k] += dx * impulse; v[k + 1] += dy * impulse; v[k + 2] += dz * impulse;
           }
           this.confine(a, ax, az); this.confine(b, bx, bz);
+        }
+        if (this.contacts) for (let i = 0; i < this.count; i++) {
+          const oldX = p[i * 3], oldZ = p[i * 3 + 2];
+          this.contacts.resolve(p, v, i * 3, this.radius * this.seeds[i].s * 0.96);
+          this.confine(i, oldX, oldZ);
         }
       }
       const damping = Math.exp(-7 * h);

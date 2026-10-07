@@ -46,7 +46,9 @@ it('a chassis-aimed shooter keeps firing off target once a burst is under way, s
   const target = { point: new THREE.Vector3(C.HUB_CENTER.x, 1.8, -C.HUB_CENTER.y) };
   r.alignError = 0.4; // way off target before the first shot: holds fire
   expect(r.launch(target, rng)).toBeNull();
-  r.alignError = 0.01; // locked on: fires
+  r.lastCommand = { ...IDLE_COMMAND, shoot:true };
+  for (let n=0;n<180;n++) { r.aimTurretAt(target,sim.physics.dt); r.advanceScoringMechanisms(sim.physics.dt); }
+  r.alignError = 0.01; // chassis and mechanism locked on: fires
   expect(r.launch(target, rng)).not.toBeNull();
   r.fireCooldown = 0;
   r.alignError = 0.4; // knocked off mid-burst: keeps firing (and the ball flies where the chassis points)

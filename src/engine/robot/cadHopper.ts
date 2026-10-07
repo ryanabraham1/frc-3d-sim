@@ -6,15 +6,18 @@ import type { ModelKit } from './models';
 export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3D;lift?:THREE.Object3D;front?:THREE.Object3D}) {
   const limestone = id === 'limestone-1678', top = id === 'toploader-604';
   const group = new THREE.Group(); group.name = 'cad-hopper-fuel'; k.visual.add(group);
-  const base = top ? .17 : limestone ? .17 : .19;
-  const back = top ? .23 : limestone ? -.03 : .16;
-  const width = top ? .61 : .60;
-  const front = top ? -.58 : limestone ? -.56 : -.50;
-  const roof = top ? .65 : limestone ? .53 : .51;
+  const base = top ? .1524 : limestone ? .17 : .14;
+  const back = top ? .23 : limestone ? .075 : .16;
+  const width = top ? .67 : limestone ? .65 : .67;
+  const front = top ? -.61 : limestone ? -.56 : -.64;
+  const roof = top ? .69 : limestone ? .53 : .51;
   const raised = limestone ? k.config.hopperExpansion?.fullHeight ?? .737 : roof;
-  const inside = (x: number, z: number) => !top || x < -.06 || Math.abs(z) > .17;
-  const make = (f: number, h: number) => fillBlock(group, { x:(f+back)/2, y0:base, length:back-f, width, height:h-base-.015, color:0xf2c200, capacity:k.config.hopperCapacity, inside, ceiling: limestone ? x => x < -.31 ? .51+(h-.51)*THREE.MathUtils.clamp((x-f)/(-.31-f),0,1) : h : undefined });
-  const compact = make(top ? -.35 : -.31, roof), expanded = make(front, roof), high = limestone ? make(front, raised) : expanded;
+  const inside = (x: number, z: number) => !top || Math.hypot(x-.0254,z) > .09;
+  // Allocate against the fully deployed cavity; the live roof must not discard the upper expansion's balls.
+  let liveFront = front, liveRoof = raised;
+  const pile = fillBlock(group, { x:(front+back)/2, y0:base, length:back-front, width, height:raised-base-.006, exactFloor:true, color:0xf2c200, capacity:k.config.hopperCapacity, inside,
+    ceiling: limestone ? x => x < -.31 ? .51+(liveRoof-.51)*THREE.MathUtils.clamp((x-liveFront)/(-.31-liveFront),0,1) : liveRoof : top ? (x,z) => Math.hypot(x-.0254,z) < .23 ? .54 : liveRoof : undefined });
+  const mesh = group.getObjectByName('hopper-fuel-pile')!;
   const extension = new THREE.Group(); extension.name = 'cad-hopper-extension'; k.visual.add(extension);
   const netGeometry = new THREE.BufferGeometry();
   const net = new THREE.LineSegments(netGeometry, new THREE.LineBasicMaterial({color:0x24292b, transparent:true,opacity:.8}));
@@ -28,9 +31,10 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
     const e=k.config.hopperExpansion;
     const lift = limestone && e ? Math.max(0,(fraction*k.config.hopperCapacity-e.startCount)/(k.config.hopperCapacity-e.startCount)) : 0;
     vertical=settle(vertical,lift,dt);
-    const extended=horizontal>.5 || fraction>.5;
-    compact.set(extended ? 0 : fraction); expanded.set(extended && vertical<.5 ? fraction : 0);
-    if(limestone) high.set(extended && vertical>=.5 ? fraction : 0);
+    liveFront = THREE.MathUtils.lerp(top ? -.35 : -.31, front, horizontal);
+    liveRoof = THREE.MathUtils.lerp(roof, raised, vertical);
+    mesh.userData.resizeFuelBin({x:(liveFront+back)/2,length:back-liveFront,height:liveRoof-base-.006});
+    pile.set(fraction);
     if(!limestone)return;
     const xf=THREE.MathUtils.lerp(-.31,front,horizontal), y=THREE.MathUtils.lerp(roof,raised,vertical);
     // The upper posts, nested side rails and folded hopper panels are from the supplied GLB.

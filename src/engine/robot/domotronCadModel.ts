@@ -1,3 +1,4 @@
+import { scoringActuator } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { actuator, cadAnchor, cadJoint, cadPoint } from './crescendoCadJoints';
@@ -23,8 +24,8 @@ export function buildDomotronCad(root: THREE.Group, k: ModelKit, animated: () =>
       const active = animated(), amp = s.amp ?? s.passing, climbing = s.climb > 0;
       const aim = s.aiming || s.firing > 0;
       const degrees = climbing ? (s.climb > .5 ? -45 : -128) : amp ? -105 : s.intaking ? 45 : aim ? THREE.MathUtils.radToDeg(THREE.MathUtils.clamp(s.hood,0,THREE.MathUtils.degToRad(55))) : 55;
-      pitch = active ? actuator(pitch,THREE.MathUtils.degToRad(degrees-55),2.8,s.dt) : 0;
-      lift = active ? actuator(lift,climbing ? .4064 : amp ? .2032 : .003175,.65,s.dt) : 0;
+      pitch = active ? scoringActuator(pitch,THREE.MathUtils.degToRad(degrees-55),2.8,s.dt) : 0;
+      lift = active ? scoringActuator(lift,climbing ? .4064 : amp ? .2032 : .003175,.65,s.dt) : 0;
       deploy = active ? actuator(deploy,THREE.MathUtils.degToRad(s.intaking || climbing ? 140 : 10),3.5,s.dt) : 0;
       hook = active ? actuator(hook,s.climb > .5 ? -1.4 : 0,2.5,s.dt) : 0;
       shooter.rotation.z = pitch; intakeJoint.rotation.z = deploy; climber.rotation.z = hook;

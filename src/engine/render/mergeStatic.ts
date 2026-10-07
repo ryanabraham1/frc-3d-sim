@@ -44,7 +44,7 @@ function mergeCluster(anchor: THREE.Object3D, dynamic: Set<THREE.Object3D>): voi
       if (mesh.isMesh && mergeable(mesh)) {
         const mat = mesh.material as THREE.Material;
         // Identical-looking materials (models create one per part) merge together; the first instance is drawn.
-        const key = `${materialKey(mat)}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${mesh.renderOrder}`;
+        const key = `${materialKey(mat)}|${mesh.castShadow ? 1 : 0}${mesh.receiveShadow ? 1 : 0}|${mesh.renderOrder}|${!!mesh.userData.fuelCadContact}|${!!mesh.userData.fuelDrivenSurface}`;
         let g = groups.get(key);
         if (!g) groups.set(key, (g = { mat, cast: mesh.castShadow, receive: mesh.receiveShadow, order: mesh.renderOrder, meshes: [] }));
         g.meshes.push(mesh);
@@ -86,6 +86,8 @@ function mergeCluster(anchor: THREE.Object3D, dynamic: Set<THREE.Object3D>): voi
     mesh.receiveShadow = g.receive;
     mesh.renderOrder = g.order;
     mesh.name = 'merged-static';
+    mesh.userData.fuelCadContact = !!g.meshes[0].userData.fuelCadContact;
+    mesh.userData.fuelDrivenSurface = !!g.meshes[0].userData.fuelDrivenSurface;
     anchor.add(mesh);
     mesh.updateMatrixWorld();
     for (const m of g.meshes) {

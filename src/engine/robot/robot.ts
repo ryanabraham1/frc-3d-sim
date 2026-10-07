@@ -1,3 +1,4 @@
+import { collectScoringReadiness } from './scoringReadiness';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type RAPIER from '@dimforge/rapier3d-compat';
@@ -9,8 +10,9 @@ import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, footprint, groundSid
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
-import { fillBlock, pointIn, robotModelBuilder, seededRandom, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
+import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 import { PieceFlow } from './pieceFlow';
+import { FuelContacts } from './fuelContacts';
 import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
@@ -149,7 +151,7 @@ export class Robot {
   get intakeRoom(): number {
     // The shot blocker folds over the intake side: the intake can't run while it's up or moving.
     if (this.blockerDeploy > 0) return 0;
-    let room = this.capacityLeft;
+    let room = this.capacityLeft + (this.openHopper && this.fuelPiles.length ? 1 : 0);
     if (this.config.hopperExpansion && this.overheadLimit < Infinity) {
       let n = this.held.length;
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
@@ -219,6 +221,7 @@ export class Robot {
         .setCanSleep(false),
     );
     this.turretYaw = start.yaw;
+    this.shooterPitch = config.model === 'snoopy-6036' ? 0 : config.launcher.angle;
     this.wheelShape = new R.Ball(Robot.WHEEL_RADIUS);
     this.buildColliders();
     this.buildVisual(scene);
@@ -383,25 +386,7 @@ export class Robot {
     this.hopperNet.name = 'stretching-hopper-net';
     this.hopperNet.userData.grid = positions;
     this.visual.add(this.hopperNet);
-    const fuelGeometry = new THREE.SphereGeometry(Robot.NET_FUEL_R, 10, 7);
-    const fuelMaterial = new THREE.MeshStandardMaterial({ color: 0xf2c200, roughness: 0.85 });
-    // FUEL heaped under the net at loose random spots (seeded by team, so each robot looks the same every match). Each
-    // one shows once the net has lifted enough to uncover it, so they appear one by one as the bulge grows.
-    const rand = seededRandom(this.config.teamNumber * 7919 + 13);
-    const spots: { x: number; z: number }[] = [];
-    for (let tries = 0; spots.length < 22 && tries < 600; tries++) {
-      const x = (rand() * 2 - 1) * 0.82, z = (rand() * 2 - 1) * 0.85;
-      if (spots.every((p) => Math.hypot((p.x - x) * this.config.frameLength * 0.38, (p.z - z) * this.config.frameWidth * 0.46) > Robot.NET_FUEL_R * 1.75)) spots.push({ x, z });
-    }
-    for (const { x, z } of spots) {
-      const ball = new THREE.Mesh(fuelGeometry, fuelMaterial);
-      ball.userData.netX = x; ball.userData.netZ = z;
-      ball.userData.show = 0.02 + rand() * 0.035;
-      ball.userData.dy = (rand() - 0.5) * 0.03; // balls in a heap sit at slightly different heights
-      const sq = 0.97 + rand() * 0.05;
-      ball.scale.set(sq, sq * 0.95, sq);
-      this.visual.add(ball); this.netFuel.push(ball);
-    }
+
   }
 
   private static readonly NET_FUEL_R = 0.075; // real FUEL radius: balls under the net are full size
@@ -434,13 +419,18 @@ export class Robot {
     const cx = -c.frameLength * 0.1, sx = c.frameLength * 0.38, sz = c.frameWidth * 0.46;
     // Uncovered FUEL rides up under the net; its tops are where the strands drape.
     const tops: { x: number; z: number; y: number }[] = [];
-    for (const ball of this.netFuel) {
-      const x = ball.userData.netX as number, z = ball.userData.netZ as number;
-      const rise = extra * (1 - x * x) * (1 - z * z);
-      ball.visible = rise > (ball.userData.show as number);
-      const lift = rise + (ball.userData.dy as number) * Math.min(1, extra / 0.1);
-      ball.position.set(cx + x * sx, c.height + lift - Robot.NET_FUEL_R * 0.98, z * sz);
-      if (ball.visible) tops.push({ x: ball.position.x, z: ball.position.z, y: c.height + lift });
+    // Drape over the current simulated pile, including articulated extension bins.
+    // No decorative balls or preset net load points.
+    this.visual.updateMatrixWorld(true);
+    const point = new THREE.Vector3();
+    for (const mesh of this.fuelPiles) {
+      const surface = mesh.userData.fuelSurface?.();
+      if (!surface || !mesh.visible) continue;
+      for (let i = 0; i < surface.count; i++) {
+        point.fromArray(surface.positions, i * 3);
+        this.visual.worldToLocal(mesh.localToWorld(point));
+        tops.push({ x: point.x, z: point.z, y: point.y + surface.radius });
+      }
     }
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
@@ -754,10 +744,26 @@ export class Robot {
     this.wireFuelPiles();
   }
 
+  /** One conserved load across main and deployed extension bins. */
+  private distributeFuel(): void {
+    if (!this.fuelPiles.length) return;
+    const bins = this.fuelPiles.filter(b => b.userData.fuelRequestedFill > 0);
+    const slots = bins.reduce((n, b) => n + b.userData.fuelSlots, 0);
+    const load = Math.max(0, this.held.length - this.piecesInTransit);
+    let remaining = Math.min(load, this.config.hopperCapacity);
+    const total = remaining;
+    for (let i = 0; i < bins.length; i++) {
+      const n = Math.min(bins[i].userData.fuelSlots, i === bins.length - 1 ? remaining : Math.round(total * bins[i].userData.fuelSlots / slots));
+      bins[i].userData.setFuelCount?.(n + (i === 0 && this.openHopper && load > total ? 1 : 0));
+      remaining -= n;
+    }
+
+  }
+
   /** True when the loose FUEL sits in a bin with no lid: nets / covers (and non-FUEL robots) keep it in. */
   get openHopper(): boolean {
     const c = this.config;
-    const netted = c.hopperCovered || (!!c.hopperExpansion && c.hopperExpansion.mechanism !== 'telescoping');
+    const netted = c.hopperCovered || !!c.hopperExpansion;
     return c.launcher.enabled && c.hopperCapacity > 1 && !netted;
   }
 
@@ -766,8 +772,22 @@ export class Robot {
 
   private wireFuelPiles(): void {
     const open = this.openHopper;
+    if (this.statusLight) this.statusLight.userData.fuelNoContact = true;
+    for (const guide of this.intakeGuide) guide.userData.fuelNoContact = true;
+    let cad = false;
+    this.visual.traverse(o => { if (o.userData.cadModel || o.userData.cadDonor) cad = true; });
+    this.visual.traverse(o => {
+      if (!(o instanceof THREE.Mesh)) return;
+      for (let part: THREE.Object3D | null = o; part && part !== this.visual; part = part.parent) {
+        if (part.userData.cadModel || part.userData.cadDonor || part.userData.fuelStructure) o.userData.fuelCadContact = true;
+        if (part.userData.fuelDrivenSurface) o.userData.fuelDrivenSurface = true;
+        if (/(?:intake|feeder|serializer|flywheel)/i.test(part.name)) o.userData.fuelDrivenSurface = true;
+      }
+    });
+    this.visual.userData.fuelCadContacts = cad || this.fuelPiles.length > 0;
     for (const pile of this.fuelPiles) {
       pile.userData.setFuelOpen?.(open);
+      pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
     }
   }
@@ -826,7 +846,9 @@ export class Robot {
       const sc = m.getWorldScale(this.flowScale);
       if (m.geometry.boundingSphere!.radius * Math.max(sc.x, sc.y, sc.z) < 0.035) m.castShadow = false;
     });
-    return mergeStatic(this.visual, dynamic);
+    const result = mergeStatic(this.visual, dynamic);
+    this.wireFuelPiles(); // Contact surfaces must refer to the final merged render geometry.
+    return result;
   }
   private modelMats: { dark: THREE.Material; alu: THREE.Material; bumper: THREE.Material } | null = null;
   private modelStart: [number, number] = [0, 0];
@@ -934,7 +956,12 @@ export class Robot {
   }
 
   /** Advance the team model's animation (called from syncVisual, once per rendered frame). */
-  private animateModel(frameDt?: number): void {
+  private animateModel(frameDt?: number, simulation = false): void {
+    if (!simulation && frameDt === undefined && this.scoringSimulated && this.netAct === null && Math.abs(this.anim.fill - Math.min(1, (this.held.length - this.piecesInTransit) / Math.max(1,this.config.hopperCapacity))) < 1e-6) {
+      const dt = frameDt ?? this.physics.dt;
+      for (const animate of this.fuelAnimations) animate({ ...this.anim, dt });
+      return;
+    }
     const model = this.model;
     if (!model && !this.roundHopper) return;
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
@@ -958,7 +985,7 @@ export class Robot {
     if (this.held.length < this.lastHeld) a.firing = 1;
     this.lastHeld = this.held.length;
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
-    a.hood = this.lastShotAngle || this.config.launcher.angle;
+    a.hood = this.shooterPitch;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
@@ -975,8 +1002,12 @@ export class Robot {
     a.omega = this.body.angvel().y;
     this.tmp.set(0, 1, 0).applyQuaternion(this.q); // this.q is already the inverse chassis rotation
     a.upx = this.tmp.x; a.upy = this.tmp.y; a.upz = this.tmp.z;
-    model?.update(a);
-    for (const animate of this.fuelAnimations) animate(a);
+    if (simulation) this.scoringModelReady = collectScoringReadiness(() => model?.update(a));
+    else model?.update(a);
+    if (!simulation) {
+      this.distributeFuel();
+      for (const animate of this.fuelAnimations) animate(a);
+    }
   }
 
   /**
@@ -1510,11 +1541,18 @@ export class Robot {
     const snoopy = this.config.model === 'snoopy-6036';
     const aiming = this.lastCommand.shoot || this.lastCommand.pass || this.lastCommand.aim;
     if (target && this.config.launcher.turret && this.config.aimAssist === 'full' && (!snoopy || aiming)) {
-      const t = this.body.translation();
-      desired = Math.atan2(-(target.point.z - t.z), target.point.x - t.x);
+      const ex = this.launcherExit(0);
+      const origin = this.localToWorld(ex.forward,ex.up,-ex.side,this.aimTmp);
+      const v = this.body.linvel();
+      let dx = target.point.x-origin.x, dz = target.point.z-origin.z;
+      if (aiming) for (let k=0;k<3;k++) {
+        const tof = Math.hypot(dx,dz)/Math.max(.1,this.aimShotSpeed*Math.cos(this.lastShotAngle || this.config.launcher.angle));
+        dx = target.point.x-origin.x-v.x*tof; dz = target.point.z-origin.z-v.z*tof;
+      }
+      desired = Math.atan2(-dz,dx);
     }
     const err = wrapAngle(desired - this.turretYaw);
-    const maxStep = (snoopy ? 5 : 12) * dt;
+    const maxStep = (snoopy ? 8 : 12) * dt;
     this.turretYaw = wrapAngle(this.turretYaw + clamp(err, -maxStep, maxStep));
     // While the driver holds shoot / pass, re-solve the shot from here a few times a second so the hood visibly
     // tracks the range before the piece leaves (the launch itself still solves exactly at release).
@@ -1525,18 +1563,38 @@ export class Robot {
         this.aimSolveIn = 0.15;
         const ex = this.launcherExit(0);
         const sol = this.solveShot(this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp), target);
-        if (sol) this.lastShotAngle = sol.angle;
+        if (sol) { this.lastShotAngle = sol.angle; this.aimShotSpeed = sol.speed; }
       }
     } else this.aimSolveIn = 0;
-    if (snoopy) {
-      const goal = aiming ? (this.lastShotAngle || c.launcher.angle) : 0;
-      this.shooterPitch += clamp(goal-this.shooterPitch, -3.5*dt, 3.5*dt);
-    }
+    const goal = aiming ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle;
+    const pitchRate = snoopy ? 5 : 3.5;
+    this.shooterPitch += clamp(goal-this.shooterPitch, -pitchRate*dt, pitchRate*dt);
   }
   /** Actual Snoopy shooter elevation, advanced by simulation rather than render frames. */
   private shooterPitch = 0;
+  private scoringModelReady = false;
+  private scoringSimulated = false;
+  private aimShotSpeed = 8;
   private aimSolveIn = 0;
   private readonly aimTmp = new THREE.Vector3();
+
+  /** Advance scoring joints in the physics loop, so release readiness never depends on render FPS. */
+  advanceScoringMechanisms(dt: number): void {
+    this.scoringSimulated = true;
+    const t = this.body.translation(), r = this.body.rotation();
+    this.visual.position.set(t.x,t.y,t.z);
+    this.visual.quaternion.set(r.x,r.y,r.z,r.w);
+    this.turret.rotation.y = wrapAngle(this.turretYaw-yawFromQuat(r));
+    if (this.config.model === 'snoopy-6036') {
+      this.turret.userData.simulatedShooter = true;
+      this.turret.userData.shooterPitch = this.shooterPitch;
+    }
+    this.animateModel(dt,true);
+  }
+
+  get scoringMechanismReady(): boolean {
+    return !this.model || (this.scoringSimulated && this.scoringModelReady);
+  }
 
   /**
    * Game-piece flight model the shot solver mirrors. Set from the season's GamePieceSpec when the robot
@@ -1719,14 +1777,12 @@ export class Robot {
       }
       if (this.config.aimAssist === 'full' && c.turret) {
         aimYaw = Math.atan2(-(lead.point.z - pos.z), lead.point.x - pos.x);
-        if (c0.model === 'snoopy-6036') {
-          if (Math.abs(wrapAngle(aimYaw-this.turretYaw)) > (c.alignTolerance ?? .05)) return null;
-          aimYaw = this.turretYaw;
-        } else this.turretYaw = aimYaw;
+        if (Math.abs(wrapAngle(aimYaw-this.turretYaw)) > (c.alignTolerance ?? .05)) return null;
+        aimYaw = this.turretYaw;
       }
     }
     this.lastShotAngle = theta;
-    if (c0.model === 'snoopy-6036' && Math.abs(theta-this.shooterPitch) > .035) return null;
+    if (Math.abs(theta-this.shooterPitch) > .035 || !this.scoringMechanismReady) return null;
     this.exitIndex++;
     this.burstTime = BURST_HOLD_S;
     this.fireCooldown = 1 / c.rate;
@@ -1871,7 +1927,7 @@ export class Robot {
       climbProgress: this.climbProgress,
       cmdSeq,
       act: this.actBits(),
-      hood: this.config.model === 'snoopy-6036' ? this.shooterPitch : this.lastShotAngle,
+      hood: this.shooterPitch,
     };
   }
 
@@ -1905,7 +1961,7 @@ export class Robot {
     if (s.act !== undefined) this.netAct = s.act;
     if (s.hood !== undefined) {
       this.lastShotAngle = s.hood;
-      if (this.config.model === 'snoopy-6036') this.shooterPitch = s.hood;
+      this.shooterPitch = s.hood;
     }
   }
 
@@ -1924,7 +1980,9 @@ export class Robot {
     this.climbLevel = 0;
     this.climbSlot = null;
     this.turretYaw = pose.yaw;
-    this.shooterPitch = 0;
+    this.shooterPitch = this.config.model === 'snoopy-6036' ? 0 : this.config.launcher.angle;
+    this.scoringModelReady = false;
+    this.scoringSimulated = false;
     this.fireCooldown = 0;
     this.exitIndex = 0;
     this.flowFeedIndex = 0;
@@ -1992,7 +2050,7 @@ export class Robot {
         const top = ex.up - pieceR - 0.04;
         return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, 0), v(ex.forward - 0.1, (c.bumperTop + top) / 2, 0), v(ex.forward, top, -ex.side)];
       } : undefined,
-    }, roll, pieceR);
+    }, roll, pieceR, roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
   /** Show the intake capture zone on the carpet under this robot (the driver's own robot; off for everyone else). */
@@ -2009,6 +2067,7 @@ export class Robot {
   get piecesInTransit(): number {
     return this.flow?.inTransit ?? 0;
   }
+  get fuelTransportAudit(): { arrivals: number; blocked: number } | undefined { return this.flow?.transportAudit; }
 
   /** Hide the generic hopper fill (seasons that draw their own held game piece). */
   hideHopperFill(): void {

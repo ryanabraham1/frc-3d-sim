@@ -668,6 +668,7 @@ export class Game {
       r.tick(dt);
       drainSpilled(r, this.pool);
       r.aimTurretAt(target, dt);
+      if (!this.rules.handleMechanisms) r.advanceScoringMechanisms(dt);
       const handled = on && this.rules.handleMechanisms?.(r, cmd, dt);
       if (on && !handled && (cmd.shoot || cmd.pass)) {
         const shot = r.launch(target, this.rng);

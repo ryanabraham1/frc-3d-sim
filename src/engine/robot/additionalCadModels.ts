@@ -1,3 +1,4 @@
+import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { box, bar, mat, fillBlock, drivebase, roller, hoodShell } from './models';
 import type { ModelKit, RobotModel } from './models';
@@ -23,10 +24,13 @@ function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
 }
 function fuel(k:ModelKit,front:number,back:number,base:number,roof:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean) {
   const g=new THREE.Group();g.name='cad-hopper-fuel';k.visual.add(g);
-  const make=(f:number)=>fillBlock(g,{x:(f+back)/2,y0:base,length:back-f,width,height:roof-base-.015,color:0xf2c200,capacity:k.config.hopperCapacity,inside});
-  const compact=make(compactFront),extended=make(front);
+  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,color:0xf2c200,capacity:k.config.hopperCapacity,inside});
+  const mesh=g.getObjectByName('hopper-fuel-pile')!;
   let fill=0,deploy=0;
-  return {update(f:number,d:number){fill=f;deploy=d;compact.set(d<.5?f:0);extended.set(d>=.5?f:0);},stow(){
+  return {update(f:number,d:number){fill=f;deploy=d;
+    const edge=THREE.MathUtils.lerp(compactFront,front,d);
+    mesh.userData.resizeFuelBin({x:(edge+back)/2,length:back-edge,height:roof-base-.006});pile.set(f);
+  },stow(){
     const f=deploy<.5?compactFront:front;
     for(let i=0;i<100;i++) {
       const x=f+.075+Math.random()*(back-f-.15),z=(Math.random()-.5)*(width-.15);
@@ -46,7 +50,7 @@ export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   const db=drivebase(k,{motorRing:0xb93628});
   const intake=articulation(root)('intake',[0,0,0]);
   const tip=new THREE.Object3D();tip.position.set(-.15445,.085,0);intake.add(tip);
-  const pile=fuel(k,-.27,.18,.25,.685,.68);
+  const pile=fuel(k,-.325,.245,.15,.695,.73);
   const dark=mat(0x17191c,{rough:.85}),silver=mat(0xbdc4cc,{metal:.7});
   const x=.27,y=k.config.launcher.height,width=.63;
   const drum=roller(k.visual,.051,width,dark,x,y);
@@ -68,7 +72,7 @@ export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       if(!isAnimated())return;
       intake.position.x=-.36*deploy;
       for(const rail of rails){rail.scale.x=.025+.36*deploy;rail.position.x=-.147-.18*deploy;}
-      angle=ease(angle,s.aiming||s.firing>0 ? (s.hood-.9)*.8 : -.2,s.dt);hood.rotation.z=angle;
+      angle=scoringEase(angle,s.aiming||s.firing>0 ? (s.hood-.9)*.8 : -.2,s.dt);hood.rotation.z=angle;
       drum.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?45:0)*s.dt;
       for(const r of feeds)r.rotation.z+=(s.enabled&&(s.intaking||s.firing>0)?32:0)*s.dt;
     }};
@@ -89,14 +93,14 @@ export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean,
   const intake=new THREE.Group(); intake.name='cad-intake-pivot';root.add(intake);
   if(donor) {donor.name='adapted-581-intake';donor.scale.z=.93;intake.add(donor);}
   const tip=new THREE.Object3D();tip.position.set(-.62,.09,0);intake.add(tip);
-  const pile=fuel(k,-.31,.08,.15,.54,.60);
+  const pile=fuel(k,-.325,.20,.15,.545,.62);
   let deploy=0,angle=0;
   return {replaces,lightAt:[0,.56,.28],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.25,.25,0)],stow:pile.stow,feed:(shot=0)=>{
       const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.2,.24,z),new THREE.Vector3(.07,.33,z),point(k,wheel,-.05,0,z),point(k,wheel,.025,.07,z)];}},
     update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return; intake.position.x=(1-deploy)*.22;
-      angle=ease(angle,s.aiming?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.43:0,s.dt);hood.rotation.z=angle;
+      angle=scoringEase(angle,s.aiming?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.43:0,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};
 }
@@ -114,7 +118,7 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
   roof.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x181b20,transparent:true,opacity:.8})));
   roof.position.x=-.63;roof.scale.x=.655;
-  const pile=fuel(k,-.60,.025,.19,.505,.60,-.4095);
+  const pile=fuel(k,-.615,.025,.14,.515,.65,-.4095);
   let deploy=1,angle=0;
   return {replaces,lightAt:[0,.55,.3],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip,-.02,-.06),new THREE.Vector3(-.35,.25,0)],stow:pile.stow,feed:(shot=0)=>{
@@ -125,7 +129,7 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       roof.position.x=-.63+intake.position.x;roof.scale.x=.025-roof.position.x;
       // Park the hood forward/down during travel, rather than retaining the raised export.
       const target=s.aiming||s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.5;
-      angle=ease(angle,target-.925,s.dt);hood.rotation.z=angle;
+      angle=scoringEase(angle,target-.925,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};
 }
@@ -140,7 +144,7 @@ export function build971Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):
   const intake=p('intake',[-.28445,.175757,0]);
   const tip=new THREE.Object3D();tip.position.set(-.55,.16535,0);root.add(tip);intake.attach(tip);
   // Keep fuel behind the turret inlets and above the sloping imported roller floor.
-  const pile=fuel(k,-.30,.10,.24,.53,.69,-.30,(x,z)=>x<-.04||Math.abs(z)<.105);
+  const pile=fuel(k,-.56,.10,.17,.545,.70,-.36,(x,z)=>x<-.04||Math.abs(z)<.105);
   let deploy=1;const angles=[0,0];
   return {replaces,lightAt:[0,.6,.32],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.28,.28,0)],stow:pile.stow,feed:(shot=0)=>{
@@ -154,7 +158,7 @@ export function build971Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):
         // Left export is already compact. Park both hoods there during travel;
         // the right export alone is 0.647268 rad higher and must fold down.
         const target = shot ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.28;
-        angles[i]=ease(angles[i],target-(i===0?1.28:.632732),s.dt);
+        angles[i]=scoringEase(angles[i],target-(i===0?1.28:.632732),s.dt);
         hoods[i].rotation.z=angles[i];wheels[i].rotation.z+=(s.enabled&&s.aiming?50:0)*s.dt;
       });
     }};
@@ -193,7 +197,7 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     o.material=Array.isArray(o.material)?o.material.map(clearPanel):clearPanel(o.material);
     o.castShadow=false;
   });
-  const pile=fuel(k,-.58,.02,.255,.525,.65,-.32);
+  const pile=fuel(k,-.615,.025,.1905,.5461,.67,-.32);
   let deploy=1,angle=0;
   return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],
@@ -205,7 +209,7 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       intake.rotation.z=-(1-deploy)*2.65;
       // Fitted horizontal compression; source supplies the extended hopper pose only.
       if(hopper)hopper.position.x=(1-deploy)*.25;
-      angle=ease(angle,s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.05:0,s.dt);
+      angle=scoringEase(angle,s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.05:0,s.dt);
       hood.rotation.z=angle;
       flywheel.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?70:0)*s.dt;
     }};

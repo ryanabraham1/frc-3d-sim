@@ -1,10 +1,10 @@
+import { stageObstacles } from '../../seasons/2024-crescendo/obstacles';
 import type { Alliance } from '../coords';
 import type { AutoPilot, SeasonContext, SeasonDefinition, SeasonRules } from '../core/season';
 import { IDLE_COMMAND, type Robot, type RobotCommand } from '../robot/robot';
 import { mirrorPose } from '../startPose';
 import { arrive, routeThroughBands, turnToward } from './steering';
 import { aroundCircles } from './cycleBot';
-import * as Notes from '../../seasons/2024-crescendo/constants';
 import * as Reef from '../../seasons/2025-reefscape/constants';
 import { BANDS } from '../../seasons/2026-rebuilt/autopilot';
 import type { ReefscapeRules } from '../../seasons/2025-reefscape/rules';
@@ -119,7 +119,7 @@ export class PlannedAutoPilot implements AutoPilot {
     }
     if (!this.travelBudget) this.travelBudget = Math.hypot(goal.x - r.pose.x, goal.y - r.pose.y) / Math.max(0.5, r.config.maxSpeed * 0.3) + s.duration + 5;
     let waypoint: { x: number; y: number } = goal;
-    if (this.season.year === 2024) waypoint = aroundCircles(r.pose, goal, (['blue', 'red'] as const).map(a => ({ ...Notes.stageCenter(a), r: Math.min(1.7 + r.footprint.width / 2, Math.hypot(goal.x - Notes.stageCenter(a).x, goal.y - Notes.stageCenter(a).y) - .03) })));
+    if (this.season.year === 2024) waypoint = aroundCircles(r.pose, goal, stageObstacles(r).map(o => ({ ...o, r: Math.min(o.r, Math.hypot(goal.x - o.x, goal.y - o.y) - .03) })));
     if (this.season.year === 2026) waypoint = routeThroughBands(r.pose, goal, BANDS, r.footprint.width / 2, r.config.height);
     if (this.season.year === 2025) waypoint = aroundCircles(r.pose, goal, (['blue', 'red'] as const).map(a => ({ ...Reef.reefCenter(a), r: Math.min(Reef.REEF_APOTHEM / Math.cos(Math.PI / 6) + Math.max(r.footprint.length, r.footprint.width) / 2 + 0.08, Math.hypot(goal.x - Reef.reefCenter(a).x, goal.y - Reef.reefCenter(a).y) - 0.03) })));
     const drive = arrive(r.pose, waypoint, Math.min(3.2, r.config.maxSpeed * 0.8), intermediate ? .3 : .65);

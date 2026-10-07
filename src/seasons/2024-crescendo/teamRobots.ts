@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { additionalCrescendoTeamRobots } from './additionalTeamRobots';
 import { moreCrescendoTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
@@ -128,9 +129,9 @@ registerRobotModel('vortex-254', (k: ModelKit) => {
       const fs = flywheelSpeed(s);
       for (const w of fly) spin(w, -fs, s.dt);
       for (const r of feed) spin(r, s.intaking || s.firing > 0 ? -20 : 0, s.dt);
-      hoodAng = approach(hoodAng, (s.hood - 0.6) * 0.9, 10, s.dt);
+      hoodAng = scoringApproach(hoodAng, (s.hood - 0.6) * 0.9, 10, s.dt);
       hood.rotation.z = hoodAng;
-      amp.position.y = approach(amp.position.y, ampBase + (s.climb > 0.2 ? 0.432 : (s.amp ?? s.passing) ? 0.18 : 0), 6, s.dt);
+      amp.position.y = scoringApproach(amp.position.y, ampBase + (s.climb > 0.2 ? 0.432 : (s.amp ?? s.passing) ? 0.18 : 0), 6, s.dt);
       for (const r of ampRollers) spin(r, (s.amp ?? s.passing) && s.firing > 0 ? -20 : 0, s.dt);
       climb.position.y = approach(climb.position.y, s.climb * 0.3, 6, s.dt);
     },
@@ -214,7 +215,7 @@ registerRobotModel('doppler-1690', (k: ModelKit) => {
       intake.update(s);
       // Raises toward the shot elevation while holding a NOTE; straight up for the AMP / TRAP.
       const target = (s.amp ?? s.passing) || s.climb > 0.2 ? 1.5 : s.enabled && (s.aiming || s.firing > 0) ? Math.min(1.5, s.hood) : 0;
-      arm = approach(arm, target, 7, s.dt);
+      arm = scoringApproach(arm, target, 7, s.dt);
       pv.rotation.z = arm;
       head.rotation.z = 0; // shooter is fixed to the pitching arm
       const fs = flywheelSpeed(s);
@@ -316,11 +317,11 @@ registerRobotModel('axl-4522', (k: ModelKit) => {
       base.update(s);
       intake.update(s);
       const up = (s.amp ?? s.passing) || s.climb > 0.2;
-      lift = approach(lift, up ? inch(14) : 0, 5, s.dt);
+      lift = scoringApproach(lift, up ? inch(14) : 0, 5, s.dt);
       stage.position.y = lift;
       carriage.position.y = H - 0.12 + lift;
       // Up for the SPEAKER, pitched down when raised (AMP / TRAP).
-      tilt = approach(tilt, up ? -0.6 : s.aiming || s.firing > 0 ? s.hood : 0, 8, s.dt);
+      tilt = scoringApproach(tilt, up ? -0.6 : s.aiming || s.firing > 0 ? s.hood : 0, 8, s.dt);
       carriage.rotation.z = tilt;
       const fs = flywheelSpeed(s);
       wheels[0].rotation.z -= fs * s.dt;

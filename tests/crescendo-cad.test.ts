@@ -44,6 +44,9 @@ describe('supplied CRESCENDO CAD',()=>{
       expect(assembly.rotation.y).toBeCloseTo(0);
       model.update({...idle,enabled:true});
       expect(assembly.rotation.y).toBeCloseTo(0);
+      const rest=model.flow!.feed!();
+      const restingDirection=rest[1].clone().sub(rest[0]);
+      expect(Math.abs(Math.atan2(restingDirection.y,restingDirection.x))).toBeLessThan(.02);
     }
     // A midfield feed uses the same shooter geometry at its pass elevation;
     // it must not trigger this robot's separate AMP mechanism deployment.

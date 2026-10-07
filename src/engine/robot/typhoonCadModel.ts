@@ -1,3 +1,4 @@
+import { scoringActuator } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { actuator, cadAnchor, cadJoint, cadPoint } from './crescendoCadJoints';
@@ -22,9 +23,9 @@ export function buildTyphoonCad(root: THREE.Group,k: ModelKit,animated:()=>boole
     update(s){
       if(!animated()){pitch=0;yaw=Math.PI;climbAngle=0;}else{
         const target=(s.amp??s.passing)?1.45:s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.14,1.25):0;
-        pitch=actuator(pitch,target,3.5,s.dt);
+        pitch=scoringActuator(pitch,target,3.5,s.dt);
         const error=Math.atan2(Math.sin(k.turret.rotation.y-yaw),Math.cos(k.turret.rotation.y-yaw));
-        yaw=actuator(yaw,yaw+error,5,s.dt);yaw=Math.atan2(Math.sin(yaw),Math.cos(yaw));
+        yaw=scoringActuator(yaw,yaw+error,5,s.dt);yaw=Math.atan2(Math.sin(yaw),Math.cos(yaw));
         climbAngle=actuator(climbAngle,s.climb*1.8,3,s.dt);
       }
       shooter.rotation.z=pitch;turret.rotation.y=yaw;climb.rotation.z=climbAngle;

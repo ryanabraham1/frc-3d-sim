@@ -369,6 +369,8 @@ export class ReefscapeRules implements SeasonRules {
     m.height += clamp(desiredHeight - m.height, -mechanism.liftSpeed * dt, mechanism.liftSpeed * dt);
     m.forward += clamp(desiredForward - m.forward, -1.2 * dt, 1.2 * dt);
     this.updateElevatorCollider(robot, m.height);
+    robot.placeAnim = { height:m.height, forward:m.forward, level:m.level, side:m.side, handoff:m.handoff, algae:m.algae };
+    robot.advanceScoringMechanisms(dt);
     if (robot.isClimbing) return true;
     if (harvest && Math.abs(m.height - desiredHeight) < 0.06) {
       m.harvest += dt;
@@ -394,8 +396,10 @@ export class ReefscapeRules implements SeasonRules {
       // Auto-align robots wait until lined up; manual robots release wherever the driver put them.
       if (robot.config.autoAlign && !m.aligned) return true;
       if (Math.abs(m.height - desiredHeight) > 0.02 || Math.abs(m.forward - desiredForward) > 0.02) return true;
+      if (!robot.scoringMechanismReady) return true;
       this.ejectCoral(robot, coral, m.level);
     } else if (algae !== undefined && robot.fireCooldown <= 0 && (cmd.pass || cmd.shoot)) {
+      if (!robot.scoringMechanismReady) return true;
       if (cmd.pass && robot.config.processor!.enabled && (this.nearProcessor(robot) || !robot.config.options?.net)) this.feedProcessor(robot, algae);
       else if (algaeNet) {
         if (!net) this.tell(robot, 'Drive up to the BARGE facing your NET · the elevator rises and outtakes the ALGAE');

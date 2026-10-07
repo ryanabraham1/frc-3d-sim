@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { wildStang111 } from './wildStang111';
 import { additionalReefscapeTeamRobots } from './additionalTeamRobots';
 import { moreReefscapeTeamRobots } from './moreTeamRobots';
@@ -121,7 +122,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
     lightAt: [ex - 0.015, H - 0.01, 0],
     update(s) {
       const p = place(s);
-      ext = approach(ext, Math.max(0, p.height - (H - 0.15)), 14, s.dt);
+      ext = scoringApproach(ext, Math.max(0, p.height - (H - 0.15)), 14, s.dt);
       stages[0].position.y = ext * 0.5;
       stages[1].position.y = ext;
       const carriageY = p.height <= H - 0.15 ? p.height : H - 0.15 + ext;
@@ -130,7 +131,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
       reach.scale.x = forward; reach.position.x = forward / 2;
       eff.wrist.position.x = forward;
       // Handoff: the wrist flips back to meet the ground intake folding up over the back bumper.
-      wrist = approach(wrist, p.handoff ? Math.PI - 0.5 : wristFor(p.level), 8, s.dt);
+      wrist = scoringApproach(wrist, p.handoff ? Math.PI - 0.5 : wristFor(p.level), 8, s.dt);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
@@ -218,14 +219,14 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
       // Solve to the piece center, including the wrist-to-piece offset.
       const dx = forward - px - .1 * Math.cos(pitch);
       const dy = height - py - .1 * Math.sin(pitch);
-      ang = approach(ang, Math.atan2(dy, dx), 10, s.dt);
-      len = approach(len, Math.max(seg, Math.hypot(dx, dy)), 10, s.dt);
+      ang = scoringApproach(ang, Math.atan2(dy, dx), 10, s.dt);
+      len = scoringApproach(len, Math.max(seg, Math.hypot(dx, dy)), 10, s.dt);
       arm.rotation.z = ang;
       const travel = len - seg;
       mid.position.x = travel * 0.5;
       inner.position.x = travel;
       tip.position.x = seg + travel;
-      wrist = approach(wrist, pitch - ang, 8, s.dt);
+      wrist = scoringApproach(wrist, pitch - ang, 8, s.dt);
       tip.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       climber.position.x = approach(climber.position.x, s.climb > 0.1 ? seg * 0.3 : seg * 0.8, 5, s.dt);
@@ -318,13 +319,13 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
       const resting = !handoff && p.height < 0.55 && p.level !== 1;
       const dx = p.forward - px;
       const dy = p.height - py;
-      lean = approach(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), 8, s.dt);
-      along = approach(along, handoff ? 0.3 : resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
+      lean = scoringApproach(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), 8, s.dt);
+      along = scoringApproach(along, handoff ? 0.3 : resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
       tilt.rotation.z = -lean;
       const ext = Math.max(0, along - stageLen + 0.05);
       for (let i = 1; i < stages.length; i++) stages[i].position.y = (ext * i) / (stages.length - 1);
       carriage.position.set(0.04, along, 0);
-      wrist = approach(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, 8, s.dt);
+      wrist = scoringApproach(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, 8, s.dt);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);

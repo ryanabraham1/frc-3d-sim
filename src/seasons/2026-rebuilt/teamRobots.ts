@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { cadRebuiltTeamRobots } from './cadTeamRobots';
 import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import { moreRebuiltTeamRobots } from './moreTeamRobots';
@@ -52,7 +53,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const db = drivebase(k, { motorRing: 0x17a3b3 });
   const hopH = H - bt - 0.05;
   // Smoked walls on the bumpers (the bumper backing doubles as the hopper wall), teal trusses along the top.
-  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.97, width: W * 0.97, height: hopH, m: smoke });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: 0, y0: bt, length: L * 0.97, width: W * 0.97, height: hopH, m: smoke });
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.06, sz * W * 0.485], [L * 0.96, 0, 0], [0, 0.05, 0], { cells: 8, w: 0.012, m: teal, zig: true });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.485, bt, sz * W * 0.485], [sx * L * 0.485, H - 0.01, sz * W * 0.485], 0.02, tealTube);
   // TBA 2026 front/rear views: teal triangulated corner strips and black sponsor panels.
@@ -61,7 +62,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
     decal(k.visual, 'fabworks.', { w: L * .42, h: .055, x: -.08, y: H - .15, z: sz * W * .491, rotY: sz > 0 ? 0 : Math.PI });
     decal(k.visual, 'RIPCURRENT', { w: .18, h: .035, x: .10, y: bt + .06, z: sz * W * .491, rotY: sz > 0 ? 0 : Math.PI });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-(L*.05),z) > .15 });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-(L*.05),z) > .095 });
   // Dye rotor: pocketed spinning plate in a fenced tub, spiral guide wall into the open tower under the turret.
   const rr = Math.min(L, W) * 0.44;
   const dye = dyeRotor(k.visual, { x: L * 0.05, y0: bt + 0.02, R: rr, wallH: 0.1, towerX: L * 0.05, towerR: 0.09, towerTop: H - 0.08, plate: black, accent: teal, motors: 2 });
@@ -73,9 +74,11 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const sh = adaptedTurretShooter(t, { width: .20, topY: .06, color: 0x17a3b3 }) ?? turretShooter(t, { width: Math.max(0.19, 0.16 + 0.04), wheel: mat(0xb87333, { metal: 0.8, rough: 0.3 }), plate: black, accent: teal, height: 0.15, topY: 0.06 });
   // Smoked hopper extension that slides out over the deployed intake.
   const tray = new THREE.Group();
+  tray.name = 'sliding-hopper';
   k.visual.add(tray);
-  hopperWalls(tray, { x: side * (L / 2 - 0.14), y0: bt + 0.02, length: 0.26, width: W * 0.92, height: hopH * 0.9, m: smoke });
+  hopperWalls(tray, { intakeSide: k.groundSide, floorDepth: .12, x: side * (L / 2 - 0.14), y0: bt + 0.02, length: 0.26, width: W * 0.92, height: hopH * 0.9, m: smoke });
   for (const sz of [-1, 1]) bar(tray, [side * (L / 2 - 0.27), bt + 0.02 + hopH * 0.9, sz * W * 0.46], [side * (L / 2 - 0.01), bt + 0.02 + hopH * 0.9, sz * W * 0.46], 0.015, tealTube);
+  const trayFill = fillBlock(tray, { x: side * (L / 2 - .14), y0: bt + .03, length: .25, width: W * .88, height: hopH * .9, color: FUEL, capacity: 12 });
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black });
   const deploy = { v: 0 };
   let rotorRate = 0;
@@ -90,6 +93,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
       const d = latchDeploy(deploy, s);
       intake.update(s, d);
       tray.position.x = side * d * 0.2;
+      trayFill.set(d > .35 ? s.fill : 0);
       fill.set(s.fill);
       // Slowly counter-rotates to agitate; spins hard to feed while firing.
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 9 : -1.2, 6, s.dt);
@@ -117,7 +121,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const side = k.groundSide;
   const db = drivebase(k, { motorRing: 0x2d6fe0 });
   const hopH = H - bt - 0.04;
-  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: smoke });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: smoke });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.48, bt, sz * W * 0.48], [sx * L * 0.48, H - 0.02, sz * W * 0.48], 0.022, blackTube);
   // Slatted black cage around the top of the hopper.
   for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.1, sz * W * 0.48], [L * 0.96, 0, 0], [0, 0.08, 0], { cells: 7, w: 0.012, m: black });
@@ -129,7 +133,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
     decal(k.visual, 'AT', { w: 0.07, h: 0.05, x: 0, y: H - 0.15, z, rotY });
     decal(k.visual, 'MADTOWN', { w: 0.15, h: 0.035, x: L * 0.22, y: H - 0.16, z, rotY });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x,z) > .15 });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x,z) > .095 });
   // Concentric floor rotor, feed column and turret bearing at the center of the chassis.
   const tx = 0;
   const rr = Math.min(L, W) * 0.42;
@@ -213,9 +217,9 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   const hx = -L * 0.12;
   const hl = L * 0.72;
   const hopH = H - bt - 0.03;
-  hopperWalls(k.visual, { x: hx, y0: bt, length: hl, width: W * 0.98, height: hopH, m: smoke });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: hx, y0: bt, length: hl, width: W * 0.98, height: hopH, m: smoke });
   // Flexible net roof is drawn by Robot from hopperExpansion, following actual load.
-  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
+  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity });
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
     const z = sz * (W * 0.49 + 0.006);
@@ -288,7 +292,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       for (const r of wheels) spin(r, -fs, s.dt);
       spin(flywheel, fs, s.dt, 'y');
       // Dumper hood: lies flat until the driver shoots, then lifts to the solved angle (range-dependent).
-      hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
+      hoodAng = scoringApproach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = hoodAng;
       cadShooter?.update(s);
     },
@@ -313,7 +317,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const lowTop = deckY + .015;
   const clear = mat(0x69717b, { opacity: 0.28, rough: 0.5, metal: 0 });
   // The intake/back and far walls are tall; the turret corner has low clear walls.
-  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.92, width: W * 0.92, height: lowTop - bt, m: clear, frame: gray });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: 0, y0: bt, length: L * 0.92, width: W * 0.92, height: lowTop - bt, m: clear, frame: gray });
   box(k.visual, L*.92, top-lowTop, .006, clear, 0, (top+lowTop)/2, -W*.46);
   box(k.visual, .006, top-lowTop, W*.92, clear, -L*.46, (top+lowTop)/2, 0);
   // Keep the rest of both adjacent faces enclosed: only the turret corner is lowered.
@@ -408,7 +412,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
   const silver = mat(0xc9ced5, { metal: 0.7, rough: 0.3 });
   const db = drivebase(k, { motorRing: 0x2f6fd6 });
   const hopH = H - bt - 0.04;
-  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.97, width: W * 0.97, height: hopH, m: smoke });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: 0, y0: bt, length: L * 0.97, width: W * 0.97, height: hopH, m: smoke });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.485, bt, sz * W * 0.485], [sx * L * 0.485, H - 0.04, sz * W * 0.485], 0.03, silverTube);
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
@@ -589,7 +593,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
   const hx = side * L * 0.06;
   const hl = L * 0.8;
   const hopH = H - bt - 0.04;
-  hopperWalls(k.visual, { x: hx, y0: bt, length: hl, width: W * 0.96, height: hopH, m: clear });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: hx, y0: bt, length: hl, width: W * 0.96, height: hopH, m: clear });
   box(k.visual, hl, 0.005, W * 0.96, mat(0xeef2f5, { opacity: 0.5, metal: 0 }), hx, H - 0.04, 0);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [hx + (sx * hl) / 2, bt, sz * W * 0.48], [hx + (sx * hl) / 2, H - 0.04, sz * W * 0.48], 0.035, blackTube);
   for (const y of [bt + hopH * 0.45, H - 0.045]) for (const sz of [-1, 1]) bar(k.visual, [hx - hl / 2, y, sz * W * 0.485], [hx + hl / 2, y, sz * W * 0.485], 0.02, orangeTube);
@@ -655,7 +659,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
       spin(wheels[0], -fs, s.dt);
       spin(wheels[1], s.firing > 0 || s.intaking ? -25 : 0, s.dt);
       for (const f of wheels.slice(2)) spin(f, fs, s.dt, 'y');
-      hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
+      hoodAng = scoringApproach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = -side * hoodAng;
       cadShooter?.update(s);
     },

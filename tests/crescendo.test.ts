@@ -418,7 +418,12 @@ describe('2024 CRESCENDO — manual facts', () => {
     jump(sim, 150 + 3 + 3.2);
     give(sim);
     const sensorOnly = sim.ctx.score.category('blue', 'speaker');
-    // Launch manually (robots are disabled after the match) and let it enter.
+    // Position the mechanism before manually releasing after the disabled match.
+    sim.robot.lastCommand = { ...IDLE_COMMAND, shoot:true };
+    for (let n=0;n<180;n++) {
+      sim.robot.aimTurretAt(sim.rules.aimTarget(sim.robot),sim.physics.dt);
+      sim.robot.advanceScoringMechanisms(sim.physics.dt);
+    }
     const shot = sim.robot.launch(sim.rules.aimTarget(sim.robot), sim.rng)!;
     sim.pool.placeWorld(sim.robot.held.pop()!, shot.pos, shot.vel);
     run(sim, 1.2);

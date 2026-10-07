@@ -1,3 +1,4 @@
+import { scoringEase, scoringPosition } from './scoringReadiness';
 import { buildTyphoonCad } from './typhoonCadModel';
 import * as THREE from 'three';
 import { buildPrestoCad } from './prestoCadModel';
@@ -72,7 +73,6 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
   let dopplerPitchVelocity = 0;
   let ampAngle = 0;
   let carriageLift = 0;
-  const ease = (from: number, to: number, dt: number) => dt > 0 ? to + (from - to) * Math.exp(-9 * dt) : to;
   return {
     replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     intakeAnchor:intake, heldAnchor:held, lightAt:[0,.3,k.config.frameWidth*.35],
@@ -88,7 +88,7 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
         // Critically damped motion starts gently and settles without bouncing.
         // The analytic step keeps the same motion at different render rates.
         if (s.dt > 0) {
-          const frequency = 7;
+          const frequency = 10;
           const offset = dopplerPitch - target;
           const step = (dopplerPitchVelocity + frequency * offset) * s.dt;
           const decay = Math.exp(-frequency * s.dt);
@@ -98,14 +98,15 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
           dopplerPitch = target;
           dopplerPitchVelocity = 0;
         }
+        scoringPosition(dopplerPitch,target);
         shooter.rotation.z = dopplerPitch;
       } else shooter.rotation.z = (s.amp ?? s.passing) ? (typhoon ? 1.45-.435 : twister ? .14-.35 : rush ? .15-.15 : domotron ? -.45-.72 : 0) : s.aiming || s.firing > 0 ? THREE.MathUtils.clamp(s.hood,.14,1.08)-(typhoon ? .435 : twister ? .35 : rush ? .15 : domotron ? .72 : .02) : 0;
       for(const c of climbers)c.rotation.z = s.climb*(typhoon ? 1.8 : twister ? .8 : domotron ? -1.4 : -1.85);
       if(rushClimb)rushClimb.position.y=.35*s.climb;
       for(const ski of skis)ski.rotation.z=-s.climb*.7;
-      carriageLift = ease(carriageLift, (s.amp ?? s.passing) ? .25 : 0, s.dt);
+      carriageLift = scoringEase(carriageLift, (s.amp ?? s.passing) ? .25 : 0, s.dt);
       if(carriage)carriage.position.y=.24155+carriageLift;
-      ampAngle = ease(ampAngle, doppler ? ((s.amp ?? s.passing) ? 1.25 : 0) : rush ? ((s.amp ?? s.passing) ? 0 : -.9) : ((s.amp ?? s.passing) || s.climb > .2 ? -.8 : 0), s.dt);
+      ampAngle = scoringEase(ampAngle, doppler ? ((s.amp ?? s.passing) ? 1.25 : 0) : rush ? ((s.amp ?? s.passing) ? 0 : -.9) : ((s.amp ?? s.passing) || s.climb > .2 ? -.8 : 0), s.dt);
       if(amp)amp.rotation.z=ampAngle;
     },
   };

@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { buildSkyfall1114 } from './skyfall1114';
 import * as THREE from 'three';
 import { buildSnoopy6036 } from './snoopy6036';
@@ -101,7 +102,7 @@ registerRobotModel('typhoon-2910', (k: ModelKit) => {
     flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, conveyor, 0.03), ...overRollers(k, feed, 0.025)] },
     update(s) {
       base.update(s); intake.update(s);
-      tilt = approach(tilt, s.enabled && (s.aiming || s.firing > 0) ? s.hood : 0, 10, s.dt);
+      tilt = scoringApproach(tilt, s.enabled && (s.aiming || s.firing > 0) ? s.hood : 0, 10, s.dt);
       shooter.rotation.z = tilt;
       for (const w of wheels) spin(w, flywheel(s) * (w === wheels[0] ? -1 : 1), s.dt);
       for (const pl of pulleys) pl.rotation.z += flywheel(s) * s.dt * 0.3;
@@ -166,7 +167,7 @@ registerRobotModel('titan-581', (k: ModelKit) => {
     flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, conveyor, 0.03), ...overRollers(k, feed, 0.02)] },
     update(s) {
       base.update(s); intake.update(s);
-      ang = approach(ang, armAngle(s, 0.12), 8, s.dt);
+      ang = scoringApproach(ang, armAngle(s, 0.12), 8, s.dt);
       arm.rotation.z = ang;
       for (const w of wheels) spin(w, flywheel(s) * (w === wheels[0] ? -1 : 1), s.dt);
       for (const r of [...conveyor, ...feed]) spin(r, s.intaking || s.firing > 0 ? -22 : 0, s.dt);

@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, decal, drivebase, ledStrip, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, overRollers, underBumperEntry, type ModelKit } from '@engine/robot/models';
@@ -96,7 +97,7 @@ registerRobotModel('lowkey-2056', (k: ModelKit) => {
       // Home: arm down so the shooter mouth meets the conveyor. Holding a NOTE it tracks the shot angle; AMP raises
       // it past vertical to drop the NOTE in; the climber hook stows it flat.
       const target = s.climb > 0.2 ? 0 : (s.amp ?? s.passing) ? 1.75 : s.fill > 0 && s.enabled ? Math.min(1.1, s.hood) : s.firing > 0 ? s.hood : 0.12;
-      ang = approach(ang, target, 8, s.dt);
+      ang = scoringApproach(ang, target, 8, s.dt);
       arm.rotation.z = ang;
       const fs = s.enabled ? 40 + 50 * s.firing : 0;
       flywheels[0].rotation.z -= fs * s.dt;

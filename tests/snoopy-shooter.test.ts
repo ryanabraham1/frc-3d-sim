@@ -18,14 +18,16 @@ it('holds the note while yaw and pitch move, then releases after alignment even 
   const target = sim.rules.aimTarget(sim.robot)!;
   sim.robot.lastCommand = { ...IDLE_COMMAND, shoot: true, intake: true };
   sim.robot.aimTurretAt(target, sim.physics.dt);
+  sim.robot.advanceScoringMechanisms(sim.physics.dt);
   const firstYaw = sim.robot.turretYaw;
-  expect(Math.abs(firstYaw)).toBeLessThanOrEqual(5 * sim.physics.dt + .0001);
+  expect(Math.abs(firstYaw)).toBeLessThanOrEqual(8 * sim.physics.dt + .0001);
   expect(sim.robot.launch(target, sim.rng)).toBeNull();
   expect(sim.robot.fireCooldown).toBe(0);
   let shot = null;
   let elapsed = sim.physics.dt;
   while (!shot && elapsed < 2) {
     sim.robot.aimTurretAt(target, sim.physics.dt);
+  sim.robot.advanceScoringMechanisms(sim.physics.dt);
     shot = sim.robot.launch(target, sim.rng);
     elapsed += sim.physics.dt;
   }

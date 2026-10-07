@@ -1,5 +1,6 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
-import { approach, bar, box, drivebase, flowAt, link, mat, plate, pivot, pointIn, roller, sidePlates, spin, tubeMat, underBumperEntry, underBumperIntake, wheelShaft, type ModelKit, type RobotModel } from '@engine/robot/models';
+import { bar, box, drivebase, flowAt, link, mat, plate, pivot, pointIn, roller, sidePlates, spin, tubeMat, underBumperEntry, underBumperIntake, wheelShaft, type ModelKit, type RobotModel } from '@engine/robot/models';
 import { motor } from '@engine/robot/mechanicalDetail';
 
 /** Skyfall 2.0: chassis-aimed pivot shooter, one NOTE, rear under-bumper intake.
@@ -92,7 +93,7 @@ export function buildSkyfall1114(k: ModelKit): RobotModel {
       const datum=45.27*Math.PI/180;
       const target=s.climb>.5 ? -(Math.PI/2+datum) : s.climb>.1 ? (-39*Math.PI/180+datum)
         : s.amp ? -(23.5*Math.PI/180+datum) : s.enabled&&(s.aiming||s.firing>0) ? THREE.MathUtils.clamp(s.hood-datum,-.35,.65) : 0;
-      angle=s.dt===0?target:approach(angle,target,6,s.dt); arm.rotation.z=angle;
+      angle=scoringApproach(angle,target,10,s.dt); arm.rotation.z=angle;
       held.rotation.z=datum;
       for(const r of rollers) spin(r,s.enabled&&(s.intaking||s.firing>0)?-32:0,s.dt);
       for(const {sign,body,rod} of struts) {

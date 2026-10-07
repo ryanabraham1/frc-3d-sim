@@ -106,7 +106,9 @@ function frame(now: number) {
   const dt = Math.min((now-last)/1000,0.05); last=now;
   renderer.setSize(innerWidth,innerHeight,false);
   for (const i of items) {
-    const rect=i.el.getBoundingClientRect(); if(rect.bottom<0||rect.top>innerHeight||!rect.width) continue;
+    const rect=i.el.getBoundingClientRect();
+    const visible=rect.bottom>=0&&rect.top<=innerHeight&&!!rect.width;
+    if(!visible&&pose.value!=='fuel-fill'&&pose.value!=='full')continue;
     const r=i.robot; r.enabled=pose.value !== 'idle' && pose.value !== 'cad';
     r.climbReady=pose.value==='endgame';
     r.climbPhase=pose.value==='climb'?'align':pose.value==='hang'?'hanging':'none';
@@ -133,12 +135,12 @@ function frame(now: number) {
       r.lastCommand = { ...IDLE_COMMAND, intake:collecting, shoot:scoring };
       r.placeAnim = { height:scoring ? 1.75 : .45, forward:scoring ? .7 : .3, level:4,
         side:scoring && r.config.placement?.scoreSide==='sides' ? 1 : 0, handoff:transfer ? (i.t-.8)/1.7 : 0 };
-    } else if (pose.value === 'flow') {
+    } else if (pose.value === 'flow' || pose.value === 'fuel-fill') {
       // Loop: intake from the carpet for 2.4 s (or until full), then fire everything at the launcher's rate.
       const c = r.config, cap = Math.max(1, c.hopperCapacity), cycle = 2.4 + Math.min(2.5, cap / Math.max(1, c.launcher.rate)) + 0.6;
-      i.t = (i.t + dt) % cycle;
+      i.t = pose.value === 'fuel-fill' ? i.t + dt : (i.t + dt) % cycle;
       if (i.t < dt) { r.held.length = 0; i.next = 0; }
-      const intaking = i.t < 2.4;
+      const intaking = pose.value === 'fuel-fill' ? r.held.length < cap : i.t < 2.4;
       r.lastCommand = { ...IDLE_COMMAND, intake: intaking, shoot: !intaking };
       if (intaking && i.t >= i.next && r.held.length < cap) {
         i.next = i.t + Math.max(0.12, 2.0 / cap);
@@ -148,12 +150,18 @@ function frame(now: number) {
         const edge=yaw===undefined?L/2:(Math.abs(Math.cos(yaw))*L+Math.abs(Math.sin(yaw))*r.footprint.width)/2;
         r.noteCapture({ x: yaw===undefined?side*(edge+.12):(edge+.12)*Math.cos(yaw)+lat*Math.sin(yaw), y: c.intake.ground === false ? c.height + 0.25 : SEASONS.find(x => x.id === seasonSelect.value)!.gamePiece.radius, z: yaw===undefined?lat:-(edge+.12)*Math.sin(yaw)+lat*Math.cos(yaw) });
         r.held.push(-1);
-      } else if (!intaking && i.t >= i.next && r.held.length > 0 && i.t > 2.7) {
+      } else if (pose.value !== 'fuel-fill' && !intaking && i.t >= i.next && r.held.length > 0 && i.t > 2.7) {
         i.next = i.t + 1 / Math.max(1, c.launcher.rate);
         r.held.pop();
       }
     } else if (pose.value !== 'transfer') r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='both'?(r.config.options?.dualPieceStorage||r.config.options?.coralBuffer?1:0):pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
     r.syncVisual(dt);
+    if (seasonSelect.value === '2026-rebuilt') {
+      const audit=r.fuelTransportAudit;
+      i.el.dataset.fuelHeld=String(r.held.length);
+      i.el.dataset.fuelBlocked=String(audit?.blocked ?? 0);
+      i.el.querySelector('.label')!.textContent = `${i.el.getAttribute('aria-label')} · FUEL ${r.held.length}/${r.config.hopperCapacity}${pose.value === 'fuel-fill' ? ` · ${r.piecesInTransit} moving · ${audit?.blocked ?? 0} blocked` : ''}`;
+    }
     if (i.coral) {
       const anchor = r.modelHeldAnchor, p = r.placeAnim!;
       i.coral.visible = !!anchor && (r.held.length > 0 || pose.value==='score');
@@ -188,6 +196,7 @@ function frame(now: number) {
 
     }
     // Gallery uses the exact built model, animated through Robot; climb preview is driven by its replicated state.
+    if(!visible)continue;
     const scale=Math.max(new THREE.Box3().setFromObject(r.visual).max.y + .15,pose.value==='algae'?2.6:1.15,r.config.height+0.3,(pose.value==='score' || pose.value==='algae' || pose.value==='flow') && r.config.placement?.enabled ? 2.2 : 0);
     if (focus >= 0) {
       const d=scale*3.0*zoom, a=Math.atan2(2,1.8)+orbit+(reverse?Math.PI:0);

@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, sidePlates, spin, tube, tubeMat, wheelShaft, type ModelKit } from '@engine/robot/models';
@@ -77,7 +78,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
       if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: -Math.PI / 2 };
       else if (stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
       else goal = reachWith(p, dir, ex, la, yMin, yMax);
-      yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.16));
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
@@ -165,7 +166,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       if (collecting) goal = { yc: .11 - .03 + Math.sin(.75) * (la - .1) + Math.sin(.1) * .13, phi: -.75 };
       else if (stowed(p)) goal = { yc: yMin, phi: 1.25 };
       else goal = reachWith({ ...p, forward: p.forward - .13 * Math.cos(pitch), height: p.height - .03 - .13 * Math.sin(pitch) }, dir, ax, la - .1, yMin, yMax);
-      yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.14));
       middleStage.position.y = ext * .5;
       stage.position.y = ext; carriage.position.y = yc - ext;
@@ -244,7 +245,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
       if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: -Math.PI / 2 };
       else if (stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
-      yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.14));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
@@ -301,7 +302,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
     update(s) {
       const p = place(s), yMin = bt + 0.12;
       const goal = p.handoff ? { yc: bt + .1 + la, phi: -Math.PI / 2 } : stowed(p) ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, 1, ex + 0.04, la, yMin, top + 0.9);
-      yc = approach(yc, goal.yc, 12, s.dt); phi = approach(phi, goal.phi, 10, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 10, s.dt);
       const ext = Math.max(0, yc - top + 0.1);
       carriage.position.y = yc; stage.position.y = ext / 2; stage2.position.y = ext;
       arm.rotation.z = phi; wrist.rotation.z = -phi + (p.handoff || stowed(p) ? 0 : p.level === 4 ? -Math.PI / 2 : p.level === 1 ? 0 : -.6);

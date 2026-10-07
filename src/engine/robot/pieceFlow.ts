@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { FuelContacts } from './fuelContacts';
 
 /**
  * Visual-only game-piece flow through a robot. Scoring and physics are unchanged: a piece counts as held the moment
@@ -9,7 +10,8 @@ import * as THREE from 'three';
  * - Feed: while a multi-piece robot fires, the next pieces ride from the stow up to the shooter, one per shot.
  *
  * Paths are polylines in the robot's visual frame (x forward, y up, -z left), re-read from the model at spawn so
- * pivoting intakes and shooters are followed.
+ * pivoting intakes and shooters are followed. With CAD FUEL contacts, paths drive roller traction instead of
+ * directly placing the ball: velocity, gravity and surface reactions determine its position.
  */
 export interface FlowPaths {
   /** Intake path after the capture point, ending at the stow point (where the held piece rests / the hopper). */
@@ -21,6 +23,7 @@ export interface FlowPaths {
 }
 
 interface Token {
+  velocity: THREE.Vector3;
   obj: THREE.Object3D;
   pts: THREE.Vector3[];
   /** Cumulative segment lengths. */
@@ -38,11 +41,15 @@ const MIN_DUR = 0.22;
 const MAX_DUR = 0.65;
 
 export class PieceFlow {
+  readonly transportAudit = { arrivals: 0, blocked: 0 };
   private readonly free: THREE.Object3D[] = [];
   private readonly live: Token[] = [];
   private readonly captures: THREE.Vector3[] = [];
   private lastHeld = -1;
   private readonly tmp = new THREE.Vector3();
+  private readonly contactPosition = new Float32Array(3);
+  private readonly contactVelocity = new Float32Array(3);
+  private readonly motorTarget = new THREE.Vector3();
 
   constructor(
     private readonly visual: THREE.Group,
@@ -51,6 +58,8 @@ export class PieceFlow {
     /** Spin pieces as they roll through (balls); flat pieces (rings) stay level. */
     private readonly roll: boolean,
     private readonly radius = 0.075,
+    /** FUEL roller transport: integrate motor pull and gravity, then collide with the robot surfaces. */
+    private readonly contacts?: FuelContacts,
   ) {}
 
   /** A piece was captured at this world position (call when it is pushed onto `robot.held`). */
@@ -94,12 +103,15 @@ export class PieceFlow {
       this.spawnFeed(Math.max(0.08, Math.min(0.4, fireInterval * 0.95)));
     }
     if (delta <= 0) this.captures.length = 0;
+    if (this.live.length && this.contacts) this.contacts.sync();
     for (let i = this.live.length - 1; i >= 0; i--) {
       const tok = this.live[i];
       tok.t += dt;
       const u = Math.min(1, tok.t / tok.dur);
-      if (u >= 1) {
-        if (tok.kind === 'intake') this.paths.arrive?.(tok.pts[tok.pts.length - 1]);
+      const end = tok.pts[tok.pts.length - 1];
+      const delivered = !this.contacts || tok.kind === 'feed' || tok.obj.position.distanceTo(end) < this.radius * 1.25;
+      if (u >= 1 && (delivered || tok.t >= tok.dur + .8)) {
+        if (tok.kind === 'intake') this.arrive(tok);
         this.release(tok.obj);
         this.live.splice(i, 1);
         continue;
@@ -107,7 +119,22 @@ export class PieceFlow {
       // Ease in-out: pieces are grabbed, accelerate through the rollers, and settle at the end.
       const e = u * u * (3 - 2 * u);
       this.tmp.copy(tok.obj.position);
-      this.at(tok, e * tok.cum[tok.cum.length - 1], tok.obj.position);
+      if (this.contacts) {
+        const time = Math.min(dt, .1), steps = Math.max(1, Math.ceil(time * 120)), h = time / steps;
+        for (let sub = 0; sub < steps; sub++) {
+          const progress = Math.max(0, u - (steps - sub - 1) * h / tok.dur);
+          const eased = progress * progress * (3 - 2 * progress);
+          this.at(tok, eased * tok.cum[tok.cum.length - 1], this.motorTarget);
+          // Roller/feeder traction pulls toward the transport lane. Surface reaction determines the actual position.
+          this.motorTarget.sub(tok.obj.position).multiplyScalar(1 / .025).clampLength(0,tok.kind === 'feed' ? 12 : 6);
+          tok.velocity.lerp(this.motorTarget,1-Math.exp(-60*h));
+          tok.velocity.y -= 9.81 * h;
+          tok.obj.position.addScaledVector(tok.velocity, h);
+          tok.obj.position.toArray(this.contactPosition);tok.velocity.toArray(this.contactVelocity);
+          this.contacts.resolve(this.contactPosition,this.contactVelocity,0,this.radius * .96);
+          tok.obj.position.fromArray(this.contactPosition);tok.velocity.fromArray(this.contactVelocity);
+        }
+      } else this.at(tok, e * tok.cum[tok.cum.length - 1], tok.obj.position);
       if (this.roll) {
         // Roll in the actual travel direction rather than spin randomly in place.
         tok.obj.rotation.x += (tok.obj.position.z - this.tmp.z) / this.radius;
@@ -146,7 +173,7 @@ export class PieceFlow {
     if (this.live.length >= MAX_TOKENS) {
       // Oldest token finishes instantly so a fast intake never queues up stale animations.
       const old = this.live.shift()!;
-      if (old.kind === 'intake') this.paths.arrive?.(old.pts[old.pts.length - 1]);
+      if (old.kind === 'intake') this.arrive(old);
       this.release(old.obj);
     }
     if (this.roll && kind === 'intake' && pts.length > 2) {
@@ -170,11 +197,13 @@ export class PieceFlow {
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
     const len = cum[cum.length - 1];
     const obj = this.free.pop() ?? this.make();
+    obj.userData.flowToken = true;
     if (!obj.parent) this.visual.add(obj);
     obj.visible = true;
     obj.position.copy(pts[0]);
     obj.rotation.set(0, 0, 0);
     const tok: Token = {
+      velocity: new THREE.Vector3(),
       obj, pts, cum, t: 0, kind,
       dur: Math.min(MAX_DUR, Math.max(MIN_DUR, len / SPEED)),
     };
@@ -185,6 +214,13 @@ export class PieceFlow {
   private release(o: THREE.Object3D): void {
     o.visible = false;
     this.free.push(o);
+  }
+
+  private arrive(tok: Token): void {
+    const end = tok.pts[tok.pts.length - 1];
+    this.transportAudit.arrivals++;
+    if (this.contacts && tok.obj.position.distanceTo(end) > this.radius * 2) this.transportAudit.blocked++;
+    this.paths.arrive?.(this.contacts ? tok.obj.position : end);
   }
 
   /** Point at arc length `s` along the token's path. */

@@ -1,3 +1,4 @@
+import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { cloneCadPart } from './cadModels';
 import type { RobotAnimState } from './models';
@@ -47,7 +48,7 @@ export function adaptedTurretShooter(parent: THREE.Object3D, o: { width: number;
   wheel.userData.flowSpinAxis = 'z';
   let angle = 0, speed = 0;
   return {hood,flywheel:wheel,update(s) {
-    angle = ease(angle,(s.aiming || s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.28)-1.28,s.dt);
+    angle = scoringEase(angle,(s.aiming || s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.28)-1.28,s.dt);
     hood.rotation.z = angle;
     speed = ease(speed,s.enabled && (s.aiming || s.firing>0) ? 50 : 0,s.dt);
     wheel.rotation.z += speed*s.dt;
@@ -72,7 +73,7 @@ export function adaptedDumper(parent: THREE.Object3D, o: { x: number; y: number;
   });
   let angle = 0;
   return {root,hood,flywheel:wheel,update(s: RobotAnimState) {
-    angle = ease(angle,(s.aiming || s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.349)-1.349,s.dt);
+    angle = scoringEase(angle,(s.aiming || s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,1.25) : 1.349)-1.349,s.dt);
     hood.rotation.z = angle;
     wheel.rotation.z += (s.enabled && (s.aiming || s.firing>0) ? 50 : 0)*s.dt;
   }};

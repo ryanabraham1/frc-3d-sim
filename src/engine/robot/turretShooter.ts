@@ -1,3 +1,4 @@
+import { scoringApproach } from './scoringReadiness';
 import * as THREE from 'three';
 import { approach, hoodShell, mat, pivot, roller, sidePlates, spin, type RobotAnimState } from './models';
 import { belt, fasteners, motor } from './mechanicalDetail';
@@ -146,7 +147,7 @@ export function turretShooter(turret: THREE.Object3D, o: {
       // Stowed flat when idle; up to the solved angle while aiming (and just after a shot). Steeper launches
       // (close shots) open the hood further.
       const want = s.aiming || s.firing > 0 ? hoodFor(s.hood) : HOOD_STOW;
-      hoodAng = s.dt > 0 ? approach(hoodAng, want, 5, s.dt) : want;
+      hoodAng = scoringApproach(hoodAng, want, 10, s.dt);
       hood.rotation.z = hoodAng;
       flySpeed = approach(flySpeed, !s.enabled ? 0 : s.aiming || s.firing > 0 ? 70 : 20, 4, s.dt);
       spin(fly, -flySpeed, s.dt);

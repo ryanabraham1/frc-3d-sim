@@ -1,3 +1,4 @@
+import { stageObstacles } from './obstacles';
 import { aroundCircles, CycleBot } from '@engine/ai/cycleBot';
 import { dist } from '@engine/ai/steering';
 import { TeamBrain } from '@engine/ai/team';
@@ -377,7 +378,9 @@ export function createCrescendoBot(ctx: SeasonContext, rules: CrescendoRules, r:
     route: (goal) => {
       const late = ctx.clock.driveRemaining < 24;
       if (late && dist(goal, C.stageCenter(r.alliance)) < 2) return goal;
-      return aroundCircles(r.pose, goal, late ? [stages.find((s) => dist(s, C.stageCenter(opp)) < 0.1)!, ...stages].map((s, k) => (k === 0 ? { ...s, r: 2.4 + half } : s)) : stages);
+      return aroundCircles(r.pose, goal, late
+        ? [{ ...C.stageCenter(opp), r: 2.4 + half }, ...stageObstacles(r, [r.alliance])]
+        : stageObstacles(r));
     },
     score: () => shooting(false),
   });

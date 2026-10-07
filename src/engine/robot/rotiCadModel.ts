@@ -1,6 +1,7 @@
+import { scoringActuator } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
-import { actuator, cadAnchor, cadJoint, cadPoint } from './crescendoCadJoints';
+import { cadAnchor, cadJoint, cadPoint } from './crescendoCadJoints';
 
 /** Roti: continuous two-stage elevator and pitching pod. Published BETA goals:
  * idle/intake 15 mm, AMP 430.4 mm / -24 degree outlet, preclimb 620 mm,
@@ -23,11 +24,11 @@ export function buildRotiCad(root: THREE.Group, k: ModelKit, animated: () => boo
     update(s) {
       const active=animated(),amp=s.amp??s.passing;
       reverse=amp || s.climb>0;
-      const liftTarget=s.climb>.5?.62:s.climb>0?(s.firing>0?.58:0):amp?.4304:.015;
-      const pitchTarget=s.climb>.5?THREE.MathUtils.degToRad(40):s.climb>0?(s.firing>0?0:THREE.MathUtils.degToRad(-29))
+      const liftTarget=s.climb>.5?.62:s.climb>0?(s.aiming||s.firing>0?.58:0):amp?.4304:.015;
+      const pitchTarget=s.climb>.5?THREE.MathUtils.degToRad(40):s.climb>0?(s.aiming||s.firing>0?0:THREE.MathUtils.degToRad(-29))
         :amp?THREE.MathUtils.degToRad(-24):s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.14,1.25):THREE.MathUtils.degToRad(27);
-      lift=active?actuator(lift,liftTarget,.7,s.dt):0;
-      pitch=active?actuator(pitch,pitchTarget+.508,3,s.dt):0;
+      lift=active?scoringActuator(lift,liftTarget,.7,s.dt):0;
+      pitch=active?scoringActuator(pitch,pitchTarget+.508,3,s.dt):0;
       stage.position.y=stageY+lift/2;
       carriage.position.y=carriageY+lift/2-(active?.31072:0);
       shooter.rotation.z=pitch;

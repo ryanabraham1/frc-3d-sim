@@ -165,8 +165,10 @@ describe('CAD mechanism paths', () => {
       try {
         const r=sim.robot; r.projectile={ radius:season.gamePiece.radius, airDamping:.02 };
         sim.rules.stage(); r.enabled=true; r.held.push(-1,-1);
+        r.lastCommand = { ...IDLE_COMMAND, shoot:true };
+        for (let n=0;n<120;n++) { r.aimTurretAt(null,sim.physics.dt); r.advanceScoringMechanisms(sim.physics.dt); }
         const rng = new Rng(7), a=r.launch(null,rng)!;
-        for (let tick=0; tick<Math.ceil(1/r.config.launcher.rate/sim.physics.dt)+1; tick++) sim.step(IDLE_COMMAND);
+        for (let tick=0; tick<Math.ceil(1/r.config.launcher.rate/sim.physics.dt)+1; tick++) { r.tick(sim.physics.dt); r.advanceScoringMechanisms(sim.physics.dt); }
         const b=r.launch(null,rng)!;
         expect(a).not.toBeNull(); expect(b).not.toBeNull();
         expect(a.pos.z-r.body.translation().z).toBeLessThan(0);

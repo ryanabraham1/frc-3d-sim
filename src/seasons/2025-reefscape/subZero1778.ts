@@ -1,3 +1,4 @@
+import { scoringApproach, scoringPosition } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, decal, deployableIntake, drivebase, intakeDeployTarget, ledStrip, mat, pivot, registerRobotModel, roller, sidePlates, spin, tubeMat, type ModelKit } from '@engine/robot/models';
@@ -105,6 +106,7 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
         theta = side * (p.level === 4 ? Math.PI - t : t);
       }
       swing += wrapAngle(theta - swing) * Math.min(1, 12 * s.dt);
+      scoringPosition(swing,theta);
       arm.rotation.x = swing;
       // SubZero raises its intake while the receiving arm hangs down.
       // Drive folding from transfer progress so even a short handoff reaches
@@ -114,7 +116,7 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
       k.visual.updateMatrixWorld(true);
       const transferY = k.visual.worldToLocal(intake.tip.getWorldPosition(new THREE.Vector3())).y;
       // Carriage height that puts the end effector at the rules' height.
-      lift = approach(lift, Math.max(bt + 0.32, (handoff ? transferY : p.height) + Math.cos(swing) * ARM), 14, s.dt);
+      lift = scoringApproach(lift, Math.max(bt + 0.32, (handoff ? transferY : p.height) + Math.cos(swing) * ARM), 14, s.dt);
       carriage.position.y = lift;
       const ext = Math.max(0, lift + 0.12 - (H - 0.04));
       stages[0].position.y = ext / 2;

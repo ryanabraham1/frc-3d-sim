@@ -200,6 +200,7 @@ export class CrescendoRules implements SeasonRules {
       this.ampReady.set(robot.id, (this.ampReady.get(robot.id) ?? 0) + dt);
     } else this.ampReady.delete(robot.id);
     robot.ampDeploy = robot.enabled && !robot.isClimbing && !cmd.shoot && robot.config.options?.amp !== false && (ampRequested || this.now < (this.ampRelease.get(robot.id) ?? -Infinity));
+    robot.advanceScoringMechanisms(dt);
     if (cmd.intake && robot.config.intake.enabled && !robot.isClimbing) this.intake(robot);
     if (robot.isClimbing) {
       if (cmd.shoot) this.scoreTrap(robot);
@@ -208,7 +209,7 @@ export class CrescendoRules implements SeasonRules {
     const note = this.heldNote(robot);
     if (cmd.pass && !cmd.shoot && note !== undefined && this.nearAmp(robot)) {
       if (robot.config.options?.amp === false) this.tell(robot, 'This robot has no AMP mechanism');
-      else if (robot.fireCooldown <= 0 && (this.ampReady.get(robot.id) ?? 0) >= 0.3) this.scoreAmp(robot, note);
+      else if (robot.scoringMechanismReady && robot.fireCooldown <= 0 && (this.ampReady.get(robot.id) ?? 0) >= 0.3) this.scoreAmp(robot, note);
       return true;
     }
     return false;
@@ -257,7 +258,7 @@ export class CrescendoRules implements SeasonRules {
     const a = robot.alliance;
     const c = robot.climbSlot;
     const note = this.heldNote(robot);
-    if (robot.climbPhase !== 'hanging' || c === null || robot.fireCooldown > 0) return;
+    if (robot.climbPhase !== 'hanging' || c === null || robot.fireCooldown > 0 || !robot.scoringMechanismReady) return;
     if (robot.config.climber.maxLevel < 2) return this.tell(robot, 'No TRAP mechanism on this robot (Climber: Chain + TRAP)');
     if (note === undefined) return this.tell(robot, 'No NOTE to place in the TRAP');
     if (this.trapScored[a][c]) return this.tell(robot, 'This TRAP already holds a NOTE (max. 1 per TRAP)');

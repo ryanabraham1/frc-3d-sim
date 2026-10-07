@@ -1,3 +1,4 @@
+import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -108,7 +109,9 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     replaces: ['chassis','launcher','hopper','intakeRollers','climber','funnel'],
     lightAt: [0,.65,k.config.frameWidth*.35], intakeAnchor: intakeTip,
     flow: {
-      intake: () => [point(intakeTip,0,.075), new THREE.Vector3(-.28,.3,0)],
+      intake: () => isLimestone
+        ? [new THREE.Vector3(-.65,.17,0),new THREE.Vector3(-.52,.30,0),new THREE.Vector3(-.40,.46,0),new THREE.Vector3(-.26,.59,0),new THREE.Vector3(-.13,.49,0)]
+        : [point(intakeTip,0,.075), new THREE.Vector3(-.28,.3,0)],
       stow: hopper.stow,
       feed: (shot = 0) => {
         const z = isToploader ? 0 : ((shot % 4) - 1.5) * .145;
@@ -136,7 +139,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
       // CAD contact tangent: the fixed drum hoods are exported near their high-shot position, not the UI's 52-degree middle shot.
       // Rotate from that measured reference to the actual requested launch angle.
       const cadShotAngle = isToploader ? .90 : isLimestone ? 1.265 : 1.349;
-      hoodAngle = ease(hoodAngle, s.aiming ? THREE.MathUtils.clamp(s.hood,.5,1.25)-cadShotAngle : 0, s.dt);
+      hoodAngle = scoringEase(hoodAngle, s.aiming ? THREE.MathUtils.clamp(s.hood,.5,1.25)-cadShotAngle : 0, s.dt);
       hood.rotation[isToploader ? 'x' : 'z'] = hoodAngle;
       flywheel.rotation[isToploader ? 'x' : 'z'] += (s.enabled && (s.aiming || s.firing > 0) ? 45 : 0)*s.dt;
     },

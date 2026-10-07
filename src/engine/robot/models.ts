@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FuelPile } from './fuelPile';
+import { FuelContacts } from './fuelContacts';
 import type { Alliance } from '../coords';
 import type { RobotConfig } from './config';
 import { HEADLESS, makeTextTexture } from '../render/text';
@@ -170,6 +171,7 @@ export function roller(parent: THREE.Object3D, radius: number, length: number, m
   const g = new THREE.Group();
   g.position.set(x, y, z);
   g.userData.flowSpinAxis = 'z';
+  g.userData.fuelDrivenSurface = true;
   const drum = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 20), m);
   drum.rotation.x = Math.PI / 2;
   g.add(drum);
@@ -254,17 +256,23 @@ export function hoodShell(parent: THREE.Object3D, radius: number, width: number,
 }
 
 /** Translucent box hopper walls (open top), centered at (x, y0 + h/2). */
-export function hopperWalls(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; m: THREE.Material; frame?: THREE.Material }): THREE.Group {
+export function hopperWalls(parent: THREE.Object3D, o: { x: number; y0: number; length: number; width: number; height: number; m: THREE.Material; frame?: THREE.Material; intakeSide?: number; floorDepth?: number }): THREE.Group {
   const g = new THREE.Group();
   g.position.set(o.x, o.y0, 0);
+  g.name = 'hopper-walls';
+  g.userData.fuelStructure = true;
   const t = 0.008;
   box(g, o.length, o.height, t, o.m, 0, o.height / 2, o.width / 2);
   box(g, o.length, o.height, t, o.m, 0, o.height / 2, -o.width / 2);
-  box(g, t, o.height, o.width, o.m, o.length / 2, o.height / 2, 0);
-  box(g, t, o.height, o.width, o.m, -o.length / 2, o.height / 2, 0);
+  for (const side of [-1, 1]) {
+    if (side === o.intakeSide) {
+      // Open intake mouth, bounded by the side cheek plates. A solid sheet here would block pickup.
+      for (const z of [-1, 1]) box(g, t, o.height, o.width * .08, o.m, side * o.length / 2, o.height / 2, z * o.width * .46);
+    } else box(g, t, o.height, o.width, o.m, side * o.length / 2, o.height / 2, 0);
+  }
   // Floor and edge caps make the enclosure read as a finished hopper from above.
   const frame = o.frame ?? DARK_METAL;
-  box(g, o.length, 0.008, o.width, frame, 0, 0.004, 0);
+  box(g, o.length, 0.008, o.width, frame, 0, 0.004 - (o.floorDepth ?? 0), 0);
   for (const sz of [-1, 1]) box(g, o.length, 0.018, 0.018, frame, 0, o.height, sz * o.width / 2);
   for (const sx of [-1, 1]) box(g, 0.018, 0.018, o.width, frame, sx * o.length / 2, o.height, 0);
   if (o.frame) for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(g, 0.022, o.height, 0.022, o.frame, (sx * o.length) / 2, o.height / 2, (sz * o.width) / 2);
@@ -293,10 +301,10 @@ const HOPPER_FLOOR = 0.09;
  * impacts form the pile; initial packing is only a starting pose, never a fixed resting target. Intake tokens hand
  * their exact endpoint to the new particle so it rolls into the pile without a second spawn.
  */
-export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
+export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
   // A real hopper floor rides just above the chassis tubing, not up at bumper-top height: lower the bin to it (same roof) so
   // the FUEL fills the room under the old floor instead of leaving a dead gap above the frame.
-  const drop = Math.max(0, Math.min(bin.y0 - HOPPER_FLOOR, 0.12));
+  const drop = bin.exactFloor ? 0 : Math.max(0, Math.min(bin.y0 - HOPPER_FLOOR, 0.12));
   const o = { ...bin, y0: bin.y0 - drop, height: bin.height + drop };
   type Slot = { x: number; y: number; z: number; s: number; key: number; sy?: number };
   const rand = seededRandom(Math.round(o.length * 1e4) * 31 + Math.round(o.width * 1e4) * 17 + Math.round(o.height * 1e4));
@@ -327,14 +335,39 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
         if (Math.abs(px) > halfX || Math.abs(pz) > halfZ) continue;
         if (o.inside && !o.inside(o.x + px, pz)) continue;
         const py = restHeight(px, pz), key = py + rand() * r * 0.06;
+        const ceiling = Math.min(o.y0 + o.height, o.ceiling?.(o.x + px,pz) ?? Infinity);
+        if (o.y0 + py + r * .95 * k / 1.92 > ceiling) continue;
         if (key < bk) { bk = key; by = py; bx = px; bz = pz; }
       }
-      if (by === Infinity) { bx = 0; bz = 0; by = restHeight(0, 0); }
+      if (by === Infinity) break; // Try another pocket before giving up, never fill then discard an entire upper layer.
       out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4, sy: Math.min(1, 0.95 * k / 1.92) });
     }
     return out;
   };
   const top = (sl: Slot[], r: number) => sl.reduce((m, q) => Math.max(m, q.y - o.y0 + r), 0);
+  // A greedy random pour can strand pockets even when the requested load fits. Try a close-packed starting
+  // arrangement before silently dropping balls. It is only an initial pose; the sleeping solver still settles it.
+  const closePack = (r:number, n:number, k:number): Slot[] => {
+    let best:Slot[]=[];
+    const gap=r*k, row=gap*Math.sqrt(3)/2, layer=gap*Math.sqrt(2/3), sy=.95*k/1.92;
+    for(const swapped of [false,true]) for(const phase of [0,.5]) {
+      const out:Slot[]=[];
+      const spanX=(swapped?o.width:o.length)-2*r, spanZ=(swapped?o.length:o.width)-2*r;
+      for(let h=0;h<Math.ceil(o.height/layer);h++) for(let b=0;b<=Math.floor(spanZ/row);b++) {
+        const dz=-spanZ/2+b*row+(h%2)*row/3;
+        for(let a=0;a<=Math.floor(spanX/gap);a++) {
+          const dx=-spanX/2+(a+((b+h)%2)*.5+phase)*gap;
+          if(dx>spanX/2 || dz>spanZ/2)continue;
+          const x=o.x+(swapped?dz:dx),z=swapped?dx:dz,y=o.y0+r*sy+h*layer;
+          if(o.inside&&!o.inside(x,z))continue;
+          if(y+r*sy>Math.min(o.y0+o.height,o.ceiling?.(x,z)??Infinity))continue;
+          out.push({x,y,z,s:1,sy,key:y-o.y0});
+        }
+      }
+      if(out.length>best.length)best=out.slice(0,n);
+    }
+    return best;
+  };
   // Balls are always real FUEL size (r = 0.075 m), the same as outside the robot. A hopper too small for `capacity`
   // balls packs them tighter instead (foam compresses a little, down to k = 1.7) rather than shrinking the balls.
   const r = o.capacity ? 0.075 : Math.min(0.06, o.length / 6, o.width / 6);
@@ -342,24 +375,39 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   if (o.capacity) {
     let k = 1.92;
     slots = pour(r, o.capacity, k);
-    while (top(slots, r) > o.height && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
+    while ((slots.length < o.capacity || top(slots, r) > o.height) && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
+    if(slots.length<o.capacity) {
+      const packed=closePack(r,o.capacity,k);
+      if(packed.length>slots.length)slots=packed;
+    }
     // Still too tall: the bin holds fewer real-size balls than `capacity`, so show it full of those (never poking out).
-    slots = slots.filter((q) => q.y - o.y0 + r * 0.9 <= o.height);
+    slots = slots.filter((q) => q.y - o.y0 + r * q.s * (q.sy ?? .94) <= o.height);
   } else {
     slots = pour(r, Math.floor(o.length / (r * 2)) * Math.floor(o.width / (r * 2)) * Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75))));
   }
-  if (o.ceiling) slots = slots.filter(q => q.y + r * q.s <= o.ceiling!(q.x,q.z));
+  if (o.ceiling) slots = slots.filter(q => q.y + r * q.s * (q.sy ?? .94) <= o.ceiling!(q.x,q.z));
   slots.sort((a, b) => a.key - b.key);
   const count = slots.length;
-  const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 12, 8), mat(o.color, { rough: 0.85, metal: 0 }), count);
+  // One spare particle lets an uncovered hopper attempt pickup at the brim. It is not stored capacity.
+  slots.push({ x: o.x, y: o.y0 + o.height + r, z: 0, s: 1, key: Infinity, sy: .94 });
+  const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 12, 8), mat(o.color, { rough: 0.85, metal: 0 }), count + 1);
   mesh.name = 'hopper-fuel-pile';
   mesh.userData.fuelBin = { x: o.x, y0: o.y0, length: o.length, width: o.width, height: o.height };
   mesh.userData.fuelSlots = count; // how many real-size FUEL this bin physically holds
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const transform = new THREE.Object3D(), tint = new THREE.Color(o.color);
   // Subtle foam color variation gives the pile depth without textures or extra draw calls.
-  for (let i = 0; i < count; i++) mesh.setColorAt(i, tint.clone().multiplyScalar(0.9 + rand() * 0.1));
+  for (let i = 0; i <= count; i++) mesh.setColorAt(i, tint.clone().multiplyScalar(0.9 + rand() * 0.1));
   const pile = new FuelPile(o, slots, r);
+  mesh.userData.bindFuelContacts = (visual?: THREE.Object3D, importedOnly = false) => { pile.contacts = visual ? new FuelContacts(visual, mesh, false, importedOnly) : undefined; };
+  mesh.userData.resizeFuelBin = (bounds: { x: number; length: number; height: number }) => {
+    if (Math.abs(o.x - bounds.x) + Math.abs(o.length - bounds.length) + Math.abs(o.height - bounds.height) < 1e-5) return;
+    Object.assign(o, bounds);
+    Object.assign(mesh.userData.fuelBin, bounds);
+    mesh.boundingSphere!.center.set(o.x, o.y0 + o.height / 2, 0);
+    mesh.boundingSphere!.radius = Math.hypot(o.length, o.width, o.height) / 2 + r;
+    pile.wake();
+  };
   const place = (i: number) => {
     const b = slots[i], j = i * 3, p = pile.positions;
     transform.position.set(p[j], p[j + 1], p[j + 2]);
@@ -382,9 +430,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     for (let i = 0; i < mesh.count; i++) place(i);
     mesh.instanceMatrix.needsUpdate = true;
   };
-  return {
-    set(f) {
-      const want = Math.min(count, Math.round(THREE.MathUtils.clamp(f, 0, 1) * count));
+  const setCount = (want: number) => {
       if (want !== mesh.count) {
         pile.setCount(want);
         mesh.count = want;
@@ -392,8 +438,14 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
         mesh.instanceMatrix.needsUpdate = true;
       }
       mesh.visible = want > 0;
-    },
   };
+  mesh.userData.setFuelCount = (n: number) => setCount(Math.min(count + (pile.open ? 1 : 0), Math.max(0, n)));
+  mesh.userData.fuelSurface = () => ({positions: pile.positions, count: pile.size, radius: r});
+  return { set(f) {
+    mesh.userData.fuelRequestedFill = f;
+    const n = Math.min(count, Math.round(THREE.MathUtils.clamp(f, 0, 1) * count));
+    setCount(pile.open && n === count && mesh.count > count ? mesh.count : n);
+  } };
 }
 
 /**
@@ -875,6 +927,7 @@ export function wheelShaft(parent: THREE.Object3D, x: number, y: number, o: { n:
   const g = new THREE.Group();
   g.position.set(x, y, 0);
   g.userData.flowSpinAxis = 'z';
+  g.userData.fuelDrivenSurface = true;
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, o.span + 0.04, 8), o.shaft ?? mat(0x9aa0a8, { metal: 0.7, rough: 0.3 }));
   shaft.rotation.x = Math.PI / 2;
   g.add(shaft);

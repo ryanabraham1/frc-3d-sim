@@ -75,19 +75,22 @@ describe('real team robots', () => {
         const r = sim.robot;
         sim.step(IDLE_COMMAND);
         r.enabled = false;
+        r.advanceScoringMechanisms(0.05);
         r.syncVisual(0.05);
         const idle = pose(r.visual);
         r.enabled = true;
         r.lastCommand = { ...IDLE_COMMAND, intake: true };
-        for (let k = 0; k < 20; k++) r.syncVisual(0.05);
+        for (let k = 0; k < 20; k++) { r.advanceScoringMechanisms(0.05); r.syncVisual(0.05); }
         const moving = pose(r.visual);
         expect(moving.every(Number.isFinite), 'finite transforms').toBe(true);
         expect(moving.some((v, i) => Math.abs(v - idle[i]) > 1e-3), 'something animates when enabled + intaking').toBe(true);
         // Firing: rollers / rotor spin faster.
         const before = pose(r.visual);
         r.held.push(-1);
+        r.advanceScoringMechanisms(0.05);
         r.syncVisual(0.05);
         r.held.length = 0;
+        r.advanceScoringMechanisms(0.05);
         r.syncVisual(0.05);
         expect(pose(r.visual).some((v, i) => Math.abs(v - before[i]) > 1e-3)).toBe(true);
       });

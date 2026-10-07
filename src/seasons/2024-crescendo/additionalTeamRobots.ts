@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, controller, decal, drivebase, hook, lattice, link, mat, pivot, plate, pointIn, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, underBumperIntake, wheelShaft, wire, overRollers, underBumperEntry, type ModelKit, type RobotAnimState } from '@engine/robot/models';
@@ -128,9 +129,9 @@ registerRobotModel('twister-118', (k: ModelKit) => {
     flow: { intake: () => [...underBumperEntry(k, inch(1)), ...overRollers(k, k.groundSide > 0 ? [lift[1], lift[0]] : lift, 0.03), ...overRollers(k, feed, 0.025)] },
     update(s) {
       db.update(s); intake.update(s);
-      tilt = approach(tilt, s.hood - 0.6, 10, s.dt); shooter.rotation.z = tilt;
+      tilt = scoringApproach(tilt, s.hood - 0.6, 10, s.dt); shooter.rotation.z = tilt;
       screw.set(screwBase, pointIn(t, shooter, 0.12, -0.06, 0, screwTop));
-      divAng = approach(divAng, (s.amp ?? s.passing) || s.climb > 0.1 ? -0.55 : 0.1, 6, s.dt); div.rotation.z = divAng;
+      divAng = scoringApproach(divAng, (s.amp ?? s.passing) || s.climb > 0.1 ? -0.55 : 0.1, 6, s.dt); div.rotation.z = divAng;
       // Chain arms swing up to reach the chain, then winch down (climb 0.25) to lift the robot.
       arms = approach(arms, s.climb > 0.1 ? stow + (1.5 - stow) * Math.min(1, s.climb * 1.15) : stow, 4, s.dt);
       for (const a of chainArms) a.rotation.z = arms;
@@ -214,9 +215,9 @@ registerRobotModel('tidepod-4414', (k: ModelKit) => {
       db.update(s); intake.update(s);
       // Up for the AMP / TRAP and to hook the chain; pulls back down to lift the robot (climb 0.25).
       const up = (s.amp ?? s.passing) ? 0.32 : s.climb > 0.1 ? 0.36 * Math.min(1, s.climb * 1.1) : 0;
-      ext = approach(ext, up, 5, s.dt); stage.position.y = ext;
+      ext = scoringApproach(ext, up, 5, s.dt); stage.position.y = ext;
       // Pod pitch: aim angle while shooting (level = the lean undone), nosed down for the AMP.
-      tilt = approach(tilt, side * lean + ((s.amp ?? s.passing) ? -0.5 : s.hood - 0.6), 9, s.dt); pod.rotation.z = tilt;
+      tilt = scoringApproach(tilt, side * lean + ((s.amp ?? s.passing) ? -0.5 : s.hood - 0.6), 9, s.dt); pod.rotation.z = tilt;
       const fs = flywheel(s);
       spin(fly[0], -fs, s.dt); spin(fly[1], fs, s.dt);
       for (const r of ampRollers) spin(r, (s.amp ?? s.passing) || s.intaking ? 25 : 0, s.dt);
@@ -287,7 +288,7 @@ registerRobotModel('madtown-2024-1323', (k: ModelKit) => {
       db.update(s); intake.update(s);
       // Arm angle above horizontal toward the far end: resting, raised to the shot angle, or past vertical (AMP).
       const target = (s.amp ?? s.passing) ? 1.9 : s.fill > 0 && s.enabled ? Math.max(0.15, s.hood) : -stow;
-      ang = approach(ang, target, 6, s.dt);
+      ang = scoringApproach(ang, target, 6, s.dt);
       arm.rotation.z = -side * ang; // positive ang lifts the far (front) end
       for (const st of struts) st.rod.set(st.base, pointIn(k.visual, arm, -side * len * 0.4, -0.045, st.sz * (pz - 0.025), st.tip));
       const fs = flywheel(s);

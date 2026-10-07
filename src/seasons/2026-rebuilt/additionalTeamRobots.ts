@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { adaptedDumper } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
@@ -17,7 +18,7 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
   const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop;
   const black = mat(0x16191d), accent = tubeMat(color), smoke = mat(0x64707b, { opacity: 0.35 });
   const db = drivebase(k, { motorRing: color });
-  hopperWalls(k.visual, { x: -L * 0.08, y0: bt, length: L * 0.8, width: W * 0.94, height: H - bt - 0.06, m: smoke });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: -L * 0.08, y0: bt, length: L * 0.8, width: W * 0.94, height: H - bt - 0.06, m: smoke });
   const fill = fillBlock(k.visual, { x: -L * 0.08, y0: bt + 0.02, length: L * 0.78, width: W * 0.92, height: c.hopperExpansion!.fullHeight - bt - 0.07, color: 0xf2c200, capacity: c.hopperCapacity });
   const roof = new THREE.Group(); k.visual.add(roof);
   let net: THREE.LineSegments | undefined;
@@ -111,7 +112,7 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
         p.needsUpdate=true; net!.geometry.computeBoundingSphere();
       }
       // Hood folds flat when idle and swings to the solved angle while aiming (see turretShooter).
-      hood = approach(hood, s.aiming || s.firing > 0 ? hoodFor(s.hood) : -0.35, 5, s.dt); for (const h of hoods) h.rotation.z = hood;
+      hood = scoringApproach(hood, s.aiming || s.firing > 0 ? hoodFor(s.hood) : -0.35, 5, s.dt); for (const h of hoods) h.rotation.z = hood;
       for (const w of wheels) spin(w, s.enabled ? 40 + 60 * s.firing : 0, s.dt);
     } };
 });
@@ -123,7 +124,7 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
   const c=k.config,L=c.frameLength,W=c.frameWidth,H=c.height,bt=c.bumperTop;
   const silver=tubeMat(0xbcc4cd),black=mat(0x181b20),clear=mat(0xbac5cd,{opacity:.25}),green=mat(0x37963c);
   const db=drivebase(k,{motorRing:0x37963c});
-  hopperWalls(k.visual,{x:-L*.08,y0:bt,length:L*.82,width:W*.94,height:H-bt-.06,m:clear});
+  hopperWalls(k.visual,{intakeSide:k.groundSide,floorDepth:.12,x:-L*.08,y0:bt,length:L*.82,width:W*.94,height:H-bt-.06,m:clear});
   const fill=fillBlock(k.visual,{x:-L*.08,y0:bt+.02,length:L*.78,width:W*.88,height:H-bt-.08,color:0xf2c200,capacity:c.hopperCapacity});
   box(k.visual,L*.75,.006,W*.93,clear,-L*.1,H-.035,0);
   // Full-height cheek plates follow the sloping intake roof and support the drum bearings.
@@ -155,7 +156,7 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
       feed:(shot=0)=>{const exits=launcherExitOffsets(c),z=-exits[shot%exits.length];return [new THREE.Vector3(-L*.35,bt+.04+r,z),new THREE.Vector3(L*.22,bt+.12+r,z),flowAt(k,cadShooter?.flywheel ?? fly,-.09,-.02,z),flowAt(k,cadShooter?.flywheel ?? fly,.02,.04,z)];}},
     update(s){cadShooter?.update(s);db.update(s);fill.set(s.fill);pile.setFill(s.fill);
       deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
-      angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
+      angle=scoringApproach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
       for(const wheel of [fly,overspeed,...conveyor])spin(wheel,s.enabled?40+60*s.firing:0,s.dt);
     }};
 });
@@ -168,7 +169,7 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
   const silver=tubeMat(0xbcc4cd),black=mat(0x15181c),clear=mat(0xdde5ec,{opacity:.25});
   const db=drivebase(k,{motorRing:0xbcc4cd});
   // Retaining walls behind the heads stay open at the shooter end.
-  hopperWalls(k.visual,{x:-L*.18,y0:bt,length:L*.55,width:W*.92,height:H-bt-.035,m:clear});
+  hopperWalls(k.visual,{intakeSide:k.groundSide,floorDepth:.12,x:-L*.18,y0:bt,length:L*.55,width:W*.92,height:H-bt-.035,m:clear});
   const fill=fillBlock(k.visual,{x:-L*.18,y0:bt+.02,length:L*.5,width:W*.86,height:H-bt-.06,color:0xf2c200,capacity:c.hopperCapacity});
   for(const sign of [-1,1]) {
     const z=sign*W*.46;
@@ -199,7 +200,7 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
       feed:(shot=0)=>{const i=shot%heads.length,z=heads[i].position.z;return [new THREE.Vector3(-L*.2,bt+.04+r,z),new THREE.Vector3(L*.1,bt+.05+r,z),flowAt(k,wheels[i],-.08,-.02,0),flowAt(k,wheels[i],.02,.04,0)];}},
     update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
       deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
-      angle=approach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);
+      angle=scoringApproach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);
       for(const head of heads)head.rotation.y=k.turret.rotation.y;
       for(const hood of hoods)hood.rotation.z=angle;
       for(const wheel of wheels)spin(wheel,s.enabled?40+60*s.firing:0,s.dt);

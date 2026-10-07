@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, mat, pivot, registerRobotModel, sidePlates, spin, tubeMat, wheelShaft } from '@engine/robot/models';
@@ -67,7 +68,7 @@ registerRobotModel('wildstang-111', k => {
         height=Math.max(bt+.12,p.height-Math.sqrt(Math.max(0,length*length-reach*reach)));
         angle=Math.atan2(p.height-height,side*reach)+(algae?Math.PI:0);
       }
-      yc=approach(yc,height,10,s.dt); phi=approach(phi,angle,9,s.dt);
+      yc=scoringApproach(yc,height,10,s.dt); phi=scoringApproach(phi,angle,9,s.dt);
       const ext=Math.max(0,yc-(H-.16)); middleStage.position.y=ext*.5; stage.position.y=ext; carriage.position.y=yc-ext;
       arm.rotation.x=phi;
       for (const r of coralRollers) spin(r,s.intaking?20:s.firing>0?-25:0,s.dt);

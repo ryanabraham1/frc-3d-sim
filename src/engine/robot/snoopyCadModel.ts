@@ -1,6 +1,7 @@
+import { scoringActuator } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
-import { actuator, cadAnchor, cadJoint, cadPoint } from './crescendoCadJoints';
+import { cadAnchor, cadJoint, cadPoint } from './crescendoCadJoints';
 
 /** Snoopy: complete turret-mounted A-frame and shooter-mounted chain hooks.
  * Public code expresses AMP=.27, climb=.31, pull-in=.001 in rotations.
@@ -24,14 +25,14 @@ export function buildSnoopyCad(root: THREE.Group, k: ModelKit, animated: () => b
     flow:{intake:()=>[cadPoint(k,intake),new THREE.Vector3(-.15,.16,0),cadPoint(k,held)],stow:()=>cadPoint(k,held),feed:()=>[cadPoint(k,held),cadPoint(k,shot)]},
     update(s) {
       const active = animated(), amp = s.amp ?? s.passing;
-      const goal = s.climb > .5 ? .31*Math.PI*2 : s.climb > 0 ? (s.firing > 0 ? .14 : .001)*Math.PI*2
+      const goal = s.climb > .5 ? .31*Math.PI*2 : s.climb > 0 ? ((s.aiming || s.firing > 0) ? .14 : .001)*Math.PI*2
         : amp ? .27*Math.PI*2 : s.aiming || s.firing > 0 ? s.hood : 0;
-      pitch = active ? (k.turret.userData.simulatedShooter
+      pitch = active ? (k.turret.userData.simulatedShooter && !amp && s.climb === 0
         ? k.turret.userData.shooterPitch-sourcePitch
-        : actuator(pitch,goal-sourcePitch,3.5,s.dt)) : 0;
+        : scoringActuator(pitch,goal-sourcePitch,5,s.dt)) : 0;
       const yawGoal = s.climb > 0 ? Math.PI : k.turret.userData.simulatedShooter || s.aiming || s.firing > 0 ? k.turret.rotation.y : 0;
       const yawError = Math.atan2(Math.sin(yawGoal-yaw),Math.cos(yawGoal-yaw));
-      yaw = active ? (k.turret.userData.simulatedShooter ? yawGoal : actuator(yaw,yaw+yawError,5,s.dt)) : sourceYaw;
+      yaw = active ? (k.turret.userData.simulatedShooter && s.climb === 0 ? yawGoal : scoringActuator(yaw,yaw+yawError,8,s.dt)) : sourceYaw;
       yaw = Math.atan2(Math.sin(yaw),Math.cos(yaw));
       shooter.rotation.z = pitch; turret.rotation.y = yaw;
     },

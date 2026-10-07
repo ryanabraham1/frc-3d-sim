@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
@@ -19,7 +20,7 @@ import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
  *  - 1778 Chill Out HAILSTORM: blue, spindexer with a grip-taped "bottle rocket" cone, compact turret (CD CAD release).
  *  - 5940 BREAD Croquembouche: gold truss frame, black net roof, DOUBLE turret (CD double-turret CAD release).
  *  - 7769 The CREW CHUNK: black sponsor-plated polycarb walls and net, wide static-hood shooter, racked intake that
- *    slides out (CD CAD release, hopper "almost 70", 50–60 in play).
+ *    slides out (CD CAD relhopper "almost 70", 50–60 in play).
  *  - 9128/10340 Itkan Triple Threat: black hex-perforated hopper, three fixed lanes with tubing-wrapped rollers and a
  *    static hood, twin top intake rollers; 15–16 BPS sustained, 20–25 initial (CD reveal Q&A); capacity 50 [EST], sized like similar compact boxes (254).
  */
@@ -108,7 +109,7 @@ function shell(k: ModelKit, o: { x?: number; lengthK?: number; widthK?: number; 
   const c = k.config, L = c.frameLength, W = c.frameWidth;
   const y0 = c.bumperTop, h = (o.top ?? c.height - 0.03) - y0;
   const length = L * (o.lengthK ?? 0.96), width = W * (o.widthK ?? 0.96);
-  hopperWalls(k.visual, { x: o.x ?? 0, y0, length, width, height: h, m: o.wall, frame: o.frame });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: o.x ?? 0, y0, length, width, height: h, m: o.wall, frame: o.frame });
   return { y0, h, length, width };
 }
 
@@ -397,7 +398,7 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
       { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const r of rolls) spin(r, -fs, s.dt);
-      hoodAng = approach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
+      hoodAng = scoringApproach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
       hood.rotation.z = hoodAng;
     },
   };
@@ -463,7 +464,7 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
       for (const r of passive) spin(r, side * speed * .3, s.dt);
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);
-      hood.rotation.z = approach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .14 : -side * -.35, 6, s.dt);
+      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .14 : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -517,7 +518,7 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       for (const r of [...feeding, ...intakeRolls]) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);
       for (const r of hoodRolls) spin(r, -side * speed, s.dt);
-      hood.rotation.z = approach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .6 : -side * -.35, 6, s.dt);
+      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .6 : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -535,13 +536,13 @@ registerRobotModel('toploader-604', (k: ModelKit) => {
   const db = drivebase(k, { tube: blackTube, motorRing: 0xe8c21a });
   const hopH = H - bt - 0.04;
   // White corrugated side walls with a black rear section at the shooting end.
-  hopperWalls(k.visual, { x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: white, frame: blackTube });
+  hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: white, frame: blackTube });
   box(k.visual, L * 0.3, hopH, W * 0.96, black, -side * L * 0.33, bt + hopH / 2, 0);
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH * 0.5, color: FUEL, capacity: c.hopperCapacity });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity });
   // Sliding hopper extension that deploys with the intake.
   const tray = new THREE.Group();
   k.visual.add(tray);
-  hopperWalls(tray, { x: side * (L / 2 - 0.12), y0: bt + 0.02, length: 0.24, width: W * 0.9, height: hopH * 0.85, m: white, frame: blackTube });
+  hopperWalls(tray, { intakeSide: k.groundSide, floorDepth: .12, x: side * (L / 2 - 0.12), y0: bt + 0.02, length: 0.24, width: W * 0.9, height: hopH * 0.85, m: white, frame: blackTube });
   // Dye rotor and the inset turret, yellow ring and wire guides on top.
   const rr = Math.min(L, W) * 0.4, cx = L * 0.02;
   const dye = dyeRotor(k.visual, { x: cx, y0: bt + 0.02, R: rr, wallH: 0.09, towerX: cx, towerR: 0.085, towerTop: H - 0.08, plate: black, accent: yellow, motors: 2 });
@@ -557,7 +558,7 @@ registerRobotModel('toploader-604', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: clear, rollerMaterial: mat(0x1d2025, { rough: 0.95 }) });
   const d = { v: 0 };
   let rotorRate = 0;
-  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: hopH * 0.5, r: FUEL_R });
+  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: hopH * 0.97, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.38, H + 0.03, -W * 0.38],

@@ -71,6 +71,7 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
         r.tick(dt);
         drainSpilled(r, pool);
         r.aimTurretAt(target, dt);
+        if (!rules.handleMechanisms) r.advanceScoringMechanisms(dt);
         const handled = enabled && rules.handleMechanisms?.(r, cmd, dt);
         if (enabled && !handled && (cmd.shoot || cmd.pass)) {
           const shot = r.launch(target, sim.rng);

@@ -1,3 +1,4 @@
+import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { transferFold } from '../../seasons/2025-reefscape/transferVisual';
 import { buildSpectreCad } from './spectreCadModel';
@@ -64,8 +65,8 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
         const targetZ=p.handoff?.25:parked?0:(p.side===1?-1:1)*p.forward;
         const theta=Math.asin(THREE.MathUtils.clamp(targetZ/dy,-.98,.98));
         const targetHeight=p.handoff?.29:parked?.48:p.height;
-        yc=ease(yc,Math.max(.32,targetHeight-dy*Math.cos(theta)),s.dt);
-        phi=ease(phi,theta,s.dt);
+        yc=scoringEase(yc,Math.max(.32,targetHeight-dy*Math.cos(theta)),s.dt);
+        phi=scoringEase(phi,theta,s.dt);
         carriage.position.y=yc-f.shoulder[1];
         if(stage)stage.position.y=Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
         arm.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),phi);
@@ -84,7 +85,7 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
         targetY=THREE.MathUtils.clamp(p.height+(id==='whisper-1690'?.11:0)-Math.sqrt(Math.max(0,length*length-reach*reach)),.32,2.2);
         targetPhi=Math.atan2(p.height+(id==='whisper-1690'?.11:0)-targetY,id==='whisper-1690'&&p.side===-1?-reach:reach);
       }
-      yc=ease(yc,targetY,s.dt);phi=ease(phi,targetPhi,s.dt);
+      yc=scoringEase(yc,targetY,s.dt);phi=scoringEase(phi,targetPhi,s.dt);
       carriage.position.y=yc-f.shoulder[1];
       if(stage)stage.position.y=id==='quixilver-604-2025'?carriage.position.y:Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
       arm.quaternion.copy(q.setFromAxisAngle(axis,phi)).multiply(neutral);
@@ -118,7 +119,7 @@ function wildstang(root:THREE.Group,k:ModelKit,animated:()=>boolean):RobotModel 
       const length=Math.hypot(v.y,v.z),reach=Math.min(length,p.forward),side=p.side===-1?1:-1;
       const targetAngle=p.height<=.46 ? -.15 : Math.atan2(Math.sqrt(Math.max(0,length*length-reach*reach)),side*reach)-Math.atan2(v.y,v.z);
       const targetY=p.height<=.46 ? .76 : p.height-Math.sqrt(Math.max(0,length*length-reach*reach));
-      yc=ease(yc,Math.max(.42,targetY),s.dt);angle=ease(angle,targetAngle,s.dt);
+      yc=scoringEase(yc,Math.max(.42,targetY),s.dt);angle=scoringEase(angle,targetAngle,s.dt);
       carriage.position.y=yc-shaft[1];arm.rotation.x=-angle;
       if(stage)stage.position.y=Math.max(0,yc-.92);
       climb.rotation.z=ease(climb.rotation.z,1.5*(1-s.climb),s.dt);
@@ -153,7 +154,7 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
       let y=.42,angle=Math.PI/2;
       if(p.handoff){y=(zuma?.32:transfer.y)+r;angle=-Math.PI/2;}
       else if(!parked){const reach=Math.min(r,Math.max(.02,p.forward)),rise=Math.sqrt(Math.max(0,r*r-reach*reach));y=Math.max(.32,p.height-rise);angle=Math.atan2(rise,(p.side===-1?1:-1)*reach);}
-      yc=ease(yc,y,s.dt);phi=ease(phi,angle,s.dt);carriage.position.y=yc-shaft[1];
+      yc=scoringEase(yc,y,s.dt);phi=scoringEase(phi,angle,s.dt);carriage.position.y=yc-shaft[1];
       if(stage)stage.position.y=zuma?Math.max(0,yc-.92)-.7874:Math.max(0,yc-shaft[1])*.5;
       arm.rotation.x=bindAngle-phi;
       // The head is rigidly mounted: preserve its CAD transform relative

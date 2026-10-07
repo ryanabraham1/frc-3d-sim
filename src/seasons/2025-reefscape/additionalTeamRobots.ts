@@ -1,3 +1,4 @@
+import { scoringApproach } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, wheelShaft, wire, type ModelKit, type PlaceAnim, type RobotAnimState } from '@engine/robot/models';
@@ -139,8 +140,8 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
       if (p.handoff) goal = { yc: bt + 0.08 + la + .055, phi: -Math.PI / 2 };
       else if (stowed(p)) goal = { yc: yMin, phi: Math.PI / 2 };
       else goal = reachWith(p, p.side === -1 ? -1 : 1, 0, la, yMin, yMax);
-      yc = approach(yc, goal.yc, 12, s.dt);
-      phi = approach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt);
+      phi = scoringApproach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext;
       carriage.position.y = yc - ext;
@@ -241,8 +242,8 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
         goal = { yc: bt + .1 - .05 - length * Math.sin(angle), phi: angle };
       } else if (stowed(p)) goal = { yc: bt + (p.algae ? .2 : .05) + la * .9, phi: dir > 0 ? -1.35 : Math.PI + 1.35 };
       else goal = reachWith(p, dir, ex, la, yMin, yMax);
-      yc = approach(yc, goal.yc, 12, s.dt);
-      phi = approach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt);
+      phi = scoringApproach(phi, goal.phi, 9, s.dt);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
@@ -335,8 +336,8 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
       if (p.handoff) goal = { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
       else if (stowed(p)) goal = { yc: yMin, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
-      yc = approach(yc, goal.yc, 12, s.dt);
-      phi = approach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt);
+      phi = scoringApproach(phi, goal.phi, 9, s.dt);
       const ext = Math.min(top - bt - 0.25, Math.max(0, yc - (top - 0.14)));
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
@@ -354,15 +355,15 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
 export function additionalReefscapeTeamRobots(): TeamRobot[] {
   return [
     { id: 'whisper-1690', team: 1690, name: 'WHISPER',
-      description: '1690 Orbit. Center differential elevator whose carbon arm rotates over the top: the rigid vacuum cup scores CORAL and ALGAE on the intake side and its opposite. Spiky floor intake, conveyor to the arm, deep climb. Simulator estimates: 2.2 m/s lift, 0.30 s release, 0.35 s harvest and 5.4 m/s drive.',
+      description: '1690 Orbit. Center differential elevator whose carbon arm rotates over the top: the rigid vacuum cup scores CORAL and ALGAE on the intake side and its opposite. Spiky floor intake, conveyor to the arm, deep climb. Simulator estimates: 2.2 m/s lift, 0.30 s rel0.35 s harvest and 5.4 m/s drive.',
       source: 'https://www.chiefdelphi.com/t/orbit-1690-2025-robot-reveal-whisper/492064 — reveal, team Q&A; 1690 CAD release; 1690orbit.com 2025 photos',
       config: whisper() },
     { id: 'lightning-2056', team: 2056, name: 'LIGHTNING',
-      description: '2056 OP Robotics. 32 × 28 in. Two-stage continuous-belt elevator, truss gripper arm, polycarbonate star-wheel floor intake with a "straightenator" feeding a cradle under the elevator; all REEF levels, NET, PROCESSOR and rope-winch deep climb. 15 ft/s drive; full elevator travel in about 0.6 s. Simulator tuning: 2.5 m/s lift, 0.40 s release, 0.45 s harvest.',
+      description: '2056 OP Robotics. 32 × 28 in. Two-stage continuous-belt elevator, truss gripper arm, polycarbonate star-wheel floor intake with a "straightenator" feeding a cradle under the elevator; all REEF levels, NET, PROCESSOR and rope-winch deep climb. 15 ft/s drive; full elevator travel in about 0.6 s. Simulator tuning: 2.5 m/s lift, 0.40 s rel0.45 s harvest.',
       source: 'https://2056.ca/wp-content/uploads/2025/05/OPR25-2056-Technical-Binder.pdf',
       config: config(2056, 'lightning-2056', 2.5, 0.40, 0.45, 4.572, 3.0, 40, [32, 28]) },
     { id: 'firefly-118', team: 118, name: 'Firefly',
-      description: '118 Robonauts. 29 in square. Single-stage elevator with a cycloidal-driven arm and a white end effector that takes CORAL from the floor intake and ALGAE from the REEF; separate ALGAE floor rollers; L1–L4, NET, PROCESSOR and deep cage climb. Simulator estimates: 1.9 m/s lift, 0.25 s release, 0.30 s harvest, 4.9 m/s drive and 2.0 s climb.',
+      description: '118 Robonauts. 29 in square. Single-stage elevator with a cycloidal-driven arm and a white end effector that takes CORAL from the floor intake and ALGAE from the REEF; separate ALGAE floor rollers; L1–L4, NET, PROCESSOR and deep cage climb. Simulator estimates: 1.9 m/s lift, 0.25 s rel0.30 s harvest, 4.9 m/s drive and 2.0 s climb.',
       source: 'Supplied 00_0000_2025_Firefly.stp; https://www.chiefdelphi.com/t/2025-robonauts-cad-and-code-release/502317 — Firefly technical binder; TBA 2025 photos',
       config: config(118, 'firefly-118', 1.9, 0.25, 0.30, 4.9, 2.0, 40, [29, 29]) },
   ];

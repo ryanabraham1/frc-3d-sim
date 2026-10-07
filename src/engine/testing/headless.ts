@@ -119,6 +119,7 @@ export class HeadlessSim {
     robot.tick(dt);
     drainSpilled(robot, pool);
     robot.aimTurretAt(target, dt);
+    if (!rules.handleMechanisms) robot.advanceScoringMechanisms(dt);
     const handled = rules.handleMechanisms?.(robot, cmd, dt);
     if (!handled && (cmd.shoot || cmd.pass)) {
       const shot = robot.launch(target, this.rng);
