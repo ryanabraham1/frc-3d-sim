@@ -41,8 +41,9 @@ it('every FUEL robot keeps its stowed balls inside the hopper while driving', as
           for (const i of r.bay.stowed) {
             const b = sim.pool.bodies[i].translation();
             p.set(b.x - t.x, b.y - t.y, b.z - t.z).applyQuaternion(q);
-            const over = { '-x': cav.min.x - tol - p.x, '+x': p.x - cav.max.x - tol, '-z': cav.min.z - tol - p.z, '+z': p.z - cav.max.z - tol,
-              floor: cav.min.y - tol - p.y, roof: cav.open ? 0 : p.y - cav.max.y - tol };
+            const rb = sim.pool.colliderRadius * 0.93, e = 0.02; // the whole ball, not just its centre
+            const over = { '-x': cav.min.x + rb - e - p.x, '+x': p.x + rb - cav.max.x - e, '-z': cav.min.z + rb - e - p.z, '+z': p.z + rb - cav.max.z - e,
+              floor: cav.min.y - tol - p.y, roof: cav.open ? 0 : p.y + rb - cav.max.y - e };
             for (const [side, d] of Object.entries(over)) if (d > worst) { worst = d; where = `${side} @frame ${k} ball ${i} lift ${(r.bay as any).floorLift?.toFixed(2)}`; }
           }
         }
