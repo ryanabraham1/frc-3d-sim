@@ -122,7 +122,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     },
     update(s) {
       deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
-      hopper.update(s.fill, deploy, s.dt);
+      hopper.update(s.fill, deploy, s.dt, s.blocker);
       if (!animated) return;
       if (isToploader) {
         intake.rotation.z = -(1-deploy)*1.9;

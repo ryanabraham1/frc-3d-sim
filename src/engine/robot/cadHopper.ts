@@ -25,11 +25,11 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
   if (limestone) extension.add(net);
   let fraction = 0, horizontal = 0, vertical = 0;
   const settle = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;
-  const update = (fill:number,deployed:number,dt:number) => {
+  const update = (fill:number,deployed:number,dt:number, hopperRaised = 0) => {
     fraction = THREE.MathUtils.clamp(fill,0,1);
     horizontal = deployed;
     const e=k.config.hopperExpansion;
-    const lift = limestone && e ? Math.max(0,(fraction*k.config.hopperCapacity-e.startCount)/(k.config.hopperCapacity-e.startCount)) : 0;
+    const lift = limestone && e ? hopperRaised : 0;
     vertical=settle(vertical,lift,dt);
     liveFront = THREE.MathUtils.lerp(top ? -.35 : -.31, front, horizontal);
     liveRoof = THREE.MathUtils.lerp(roof, raised, vertical);

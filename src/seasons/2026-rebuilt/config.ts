@@ -211,7 +211,7 @@ export function rebuiltSpecBars(config: RobotConfig) {
   const c = normalizeRebuiltConfig(config);
   const intake = c.intake.ground && c.intake.station ? 'ground + OUTPOST' : c.intake.ground ? 'ground' : 'OUTPOST only';
   return [
-    ...(c.hopperExpansion ? [{ label: 'Trench-safe load', value: `≤${c.hopperExpansion.startCount} FUEL · net expands when fuller`, frac: c.hopperExpansion.startCount / c.hopperCapacity }] : []),
+    ...(c.hopperExpansion ? [{ label: 'Trench-safe load', value: c.hopperExpansion.mechanism === 'telescoping' ? `F toggles ${c.hopperExpansion.startCount}/${c.hopperCapacity} FUEL` : `≤${c.hopperExpansion.startCount} FUEL · net expands when fuller`, frac: c.hopperExpansion.startCount / c.hopperCapacity }] : []),
     { label: 'FUEL hopper', value: `${c.hopperCapacity}`, frac: c.hopperCapacity / 80 },
     { label: 'Fire rate', value: `${c.launcher.rate} /s`, frac: c.launcher.rate / 35 },
     { label: 'Intake rate', value: c.intake.ground ? `${c.intake.rate ?? 'unlimited'} /s` : 'OUTPOST only', frac: c.intake.ground ? (c.intake.rate ?? 30) / 30 : 0.1 },

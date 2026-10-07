@@ -76,7 +76,7 @@ export class TouchControls {
       { label: 'AUTO', mode: 'tap', action: 'toggleIntake', size: 'small', pos: `right:${R(20)};bottom:${B(176)}` },
       { label: 'LVL+', mode: 'tap', action: 'levelUp', size: 'small', pos: `right:${R(68)};bottom:${B(176)}`, show: () => opts.levels > 1 },
       { label: 'LVL−', mode: 'tap', action: 'levelDown', size: 'small', pos: `right:${R(116)};bottom:${B(176)}`, show: () => opts.levels > 1 },
-      { label: 'BLOCK', mode: 'tap', action: 'toggleBlocker', size: 'small', pos: `right:${R(164)};bottom:${B(176)}`, show: opts.blocker },
+      { label: 'F', mode: 'tap', action: 'toggleBlocker', size: 'small', pos: `right:${R(164)};bottom:${B(176)}`, show: opts.blocker },
       { label: '⟲', mode: 'hold', action: 'rotateLeft', pos: `right:${R(274)};bottom:${B(24)}` },
       { label: '⟳', mode: 'hold', action: 'rotateRight', pos: `right:${R(214)};bottom:${B(24)}` },
       { label: 'SLOW', mode: 'hold', action: 'precision', size: 'small', pos: `right:${R(214)};bottom:${B(84)}` },

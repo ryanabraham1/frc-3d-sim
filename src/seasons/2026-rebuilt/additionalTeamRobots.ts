@@ -81,9 +81,9 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       {
-        // Automatic simulator contract sequence: count controls the same raised envelope as collision/routing.
+        // The driver toggle controls the same raised envelope as collision/routing.
         const e = c.hopperExpansion!;
-        const load = Math.max(0,Math.min(1,(s.fill*c.hopperCapacity-e.startCount)/(c.hopperCapacity-e.startCount)));
+        const load = s.blocker;
         // The telescoping rails creep up (and settle back) instead of jumping a step per FUEL.
         const lift = (e.fullHeight-H)*load;
         roofLift = s.dt > 0 ? approach(roofLift,lift,6,s.dt) : lift;
@@ -214,7 +214,7 @@ export function additionalRebuiltTeamRobots(): TeamRobot[] {
       source: 'https://www.chiefdelphi.com/t/2910-robot-reveal-2026-blitz/516325?page=5 — Champs rebuild team Q&A; frcteam2910.org 2026 recap',
       config: config(2910,'reblitz-2910',false,40,33,5.3,90) },
     { id: 'limestone-1678', team: 1678, name: 'Limestone',
-      description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. 60 FUEL with the hopper raised. Simulator estimates: 24 FUEL/s, 4.7 m/s drive; telescoping expansion starts above 40 FUEL.',
+      description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. 60 FUEL with the hopper raised. Simulator estimates: 24 FUEL/s, 4.7 m/s drive; F toggles hopper capacity between 40 and 60 FUEL.',
       source: 'https://www.chiefdelphi.com/t/1678-2026-robot-limestone/515709 — reveal and team hopper/CAD discussion',
       config: config(1678,'limestone-1678',false,60,24,4.7,88) },
     { id: 'mixtape-971', team: 971, name: 'Mixtape',

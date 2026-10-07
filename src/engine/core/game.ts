@@ -208,7 +208,7 @@ export class Game {
       this.touch = new TouchControls(container, this.input, {
         humanPlayerButtons: season.humanPlayerButtons ?? 1,
         levels: season.maxScoringLevel ?? season.maxClimbLevel,
-        blocker: () => !!this.player?.config.shotBlocker,
+        blocker: () => !!this.player && (!!this.player.config.shotBlocker || this.player.manualHopper),
         labels: season.touchLabels,
         climber: () => (this.player?.config.climber.maxLevel ?? 0) > 0,
       });
@@ -548,7 +548,11 @@ export class Game {
       this.hud.toast(`Auto-intake ${this.autoIntake ? 'ON' : 'OFF'}`);
     }
     if (inp.toggleBlocker && this.player) {
-      if (!this.player.config.shotBlocker) this.hud.toast('This robot has no shot blocker');
+      if (this.player.manualHopper) {
+        if (this.blockerUp && this.player.held.length > this.player.config.hopperExpansion!.startCount) this.hud.toast('Shoot down to 40 FUEL before lowering the hopper');
+        else if (!this.blockerUp && this.player.overheadLimit < this.player.config.hopperExpansion!.fullHeight) this.hud.toast('Cannot raise the hopper under the TRENCH');
+        else { this.blockerUp = !this.blockerUp; this.hud.toast(`Hopper ${this.blockerUp ? 'UP · 60 FUEL' : 'DOWN · 40 FUEL'}`); }
+      } else if (!this.player.config.shotBlocker) this.hud.toast('This robot has no shot blocker');
       else {
         this.blockerUp = !this.blockerUp;
         this.hud.toast(`Shot blocker ${this.blockerUp ? 'UP' : 'DOWN'}`);
@@ -585,7 +589,7 @@ export class Game {
       pass: inp.pass,
       climb: inp.climb ? this.climbLevel : null,
       descend: inp.descend,
-      ...(this.blockerUp && robot.config.shotBlocker ? { block: true } : {}),
+      ...(this.blockerUp && (robot.config.shotBlocker || robot.manualHopper) ? { block: true } : {}),
       ...(this.season.maxScoringLevel ? { scoringLevel: this.scoringLevel } : {}),
     };
   }
@@ -866,6 +870,7 @@ export class Game {
           `<div>Camera: ${this.camera.label} <span class="dim">(V${this.camera.mode === 'chase' ? ' · T flips' : ''})</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +
           `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(I)</span></div>` +
+          (p.manualHopper ? `<div>Hopper: ${p.hopperRaised ? 'UP' : 'down'} · ${p.held.length}/${p.hopperCapacity} FUEL <span class="dim">(F)</span></div>` : '') +
           (p.config.shotBlocker ? `<div>Shot blocker: ${this.blockerUp ? (p.blockerDeploy < 1 && p.overheadLimit < Infinity ? 'held down by TRENCH' : 'UP · intake off') : 'down'} <span class="dim">(F)</span></div>` : '') +
           (this.season.maxScoringLevel
             ? `<div>Reef target: L${this.scoringLevel} <span class="dim">(1-4)</span></div><div>Cage: ${this.season.climberLabels?.[p.config.climber.maxLevel] ?? 'Deep'} <span class="dim">(C)</span></div>`

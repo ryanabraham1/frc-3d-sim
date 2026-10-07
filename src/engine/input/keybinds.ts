@@ -35,7 +35,7 @@ export const ACTIONS: ActionDef[] = [
   def('toggleIntake', 'Robot', 'Toggle auto-intake', 'KeyI'),
   def('climb', 'Robot', 'Climb', 'KeyC'),
   def('descend', 'Robot', 'Descend', 'KeyX'),
-  def('toggleBlocker', 'Robot', 'Shot blocker up / down (robots that have one)', 'KeyF'),
+  def('toggleBlocker', 'Robot', 'Shot blocker / hopper up or down', 'KeyF'),
   def('levelUp', 'Robot', 'Level up', 'BracketRight'),
   def('levelDown', 'Robot', 'Level down', 'BracketLeft'),
   def('level1', 'Robot', 'Select level 1', 'Digit1'),

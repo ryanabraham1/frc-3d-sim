@@ -141,7 +141,10 @@ export class Robot {
   private netVel = 0;
   private lastSync = -1;
   /** Actual envelope used for obstacle routing and flexible-roof collisions. */
-  get clearanceHeight(): number { return loadedRobotHeight(this.config, this.held.length); }
+  get manualHopper(): boolean { return this.config.hopperExpansion?.mechanism === 'telescoping'; }
+  hopperRaised = false;
+  get hopperCapacity(): number { return this.manualHopper && !this.hopperRaised ? this.config.hopperExpansion!.startCount : this.config.hopperCapacity; }
+  get clearanceHeight(): number { return this.manualHopper ? (this.hopperRaised ? this.config.hopperExpansion!.fullHeight : this.config.height) : loadedRobotHeight(this.config, this.held.length); }
   /** Lowest overhead obstacle above the robot this tick (set by the sim from the season; Infinity = none). */
   overheadLimit = Infinity;
   /**
@@ -152,7 +155,7 @@ export class Robot {
     // The shot blocker folds over the intake side: the intake can't run while it's up or moving.
     if (this.blockerDeploy > 0) return 0;
     let room = this.capacityLeft + (this.openHopper && this.fuelPiles.length ? 1 : 0);
-    if (this.config.hopperExpansion && this.overheadLimit < Infinity) {
+    if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
       let n = this.held.length;
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
       room = Math.min(room, n - this.held.length);
@@ -971,6 +974,7 @@ export class Robot {
     a.time += a.dt;
     a.enabled = this.enabled;
     const act = this.netAct ?? this.actBits();
+    if (this.netAct !== null && this.manualHopper) this.hopperRaised = (act & 4) !== 0;
     a.intaking = (act & 1) !== 0 && this.blockerDeploy === 0;
     a.passing = (act & 2) !== 0;
     a.amp = this.enabled ? (this.netAct !== null ? (act & 16) !== 0 : this.ampDeploy ?? undefined) : false;
@@ -980,7 +984,7 @@ export class Robot {
       this.blockerDeploy = clamp(this.blockerDeploy + ((act & 4) ? 1 : -1) * a.dt / this.config.shotBlocker.seconds, 0, 1);
       this.poseBlocker();
     }
-    a.blocker = this.blockerDeploy;
+    a.blocker = this.manualHopper ? Number(this.hopperRaised) : this.blockerDeploy;
     // A piece leaving the robot (shot, placed or fed) flashes the shooter / end effector.
     if (this.held.length < this.lastHeld) a.firing = 1;
     this.lastHeld = this.held.length;
@@ -1092,7 +1096,7 @@ export class Robot {
   }
 
   get capacityLeft(): number {
-    return this.config.hopperCapacity - this.held.length;
+    return Math.max(0, this.hopperCapacity - this.held.length);
   }
 
   /** Bumper footprint corners in field frame. */
@@ -1218,6 +1222,10 @@ export class Robot {
    * pushing matches and spins come out of mass, tread grip, motor limits and where the hit lands.
    */
   drive(cmd: RobotCommand, dt: number): void {
+    if (this.manualHopper) {
+      if (cmd.block && this.overheadLimit >= this.config.hopperExpansion!.fullHeight) this.hopperRaised = true;
+      else if (!cmd.block && this.held.length <= this.config.hopperExpansion!.startCount) this.hopperRaised = false;
+    }
     this.updateHopperEnvelope();
     this.updateBlocker(cmd, dt);
     if (this.climbPhase !== 'none') {
@@ -1939,7 +1947,7 @@ export class Robot {
 
   /** Mechanism bits replicated to clients: 1 intake, 2 pass, 4 shot blocker out, 8 aiming (shoot or pass held), 16 AMP deployed. */
   private actBits(): number {
-    return (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0) | (this.lastCommand.block && this.blockerDeploy > 0 ? 4 : 0)
+    return (this.lastCommand.intake ? 1 : 0) | (this.lastCommand.pass ? 2 : 0) | ((this.manualHopper ? this.hopperRaised : this.lastCommand.block && this.blockerDeploy > 0) ? 4 : 0)
       | (this.lastCommand.shoot || this.lastCommand.pass ? 8 : 0) | (this.ampDeploy ? 16 : 0);
   }
 
@@ -1995,6 +2003,7 @@ export class Robot {
     this.held.length = 0;
     this.flow?.clear(0);
     this.blockerDeploy = 0;
+    this.hopperRaised = false;
     this.poseBlocker();
   }
 

@@ -19,7 +19,7 @@ it('the requested 2026 dumper rates survive normalization', () => {
   }
 });
 
-for (const team of [254,4414,1678]) it(`${team}: expanded net physically blocks a full hopper at the trench and retracts when emptied`, () => {
+for (const team of [254,4414]) it(`${team}: expanded net physically blocks a full hopper at the trench and retracts when emptied`, () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
   const start = { x: C.HUB_CENTER.x - 2, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 };
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: start }); sims.push(sim);
@@ -67,7 +67,7 @@ it('net and telescoping expansion do not inflate the requested total capacities'
   }
 });
 
-for (const team of [254, 4414, 1678]) it(`${team}: intaking through the trench stops at the trench-safe load instead of jamming, then resumes after`, () => {
+for (const team of [254, 4414]) it(`${team}: intaking through the trench stops at the trench-safe load instead of jamming, then resumes after`, () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
   let safe = c.hopperExpansion!.startCount;
   while (loadedRobotHeight(c, safe + 1) <= C.TRENCH_SAFE_HEIGHT) safe++;
@@ -120,4 +120,37 @@ for(const team of [971,6800]) it(`${team} uses its compact travel height and phy
   expect(sim.robot.clearanceHeight).toBeLessThan(C.TRENCH_CLEARANCE);
   sim.run(4,{...IDLE_COMMAND,vx:2});
   expect(sim.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x+C.TRENCH_DEPTH/2+.5);
+});
+
+
+it('1678 manually toggles capacity and clearance, preserves excess fuel, and cannot raise under the trench', () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === 1678)!.config);
+  const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
+  const r = sim.robot;
+  expect(r.hopperCapacity).toBe(40);
+  sim.load(40);
+  expect(r.capacityLeft).toBe(0);
+  expect(r.clearanceHeight).toBe(c.height);
+  r.drive({ ...IDLE_COMMAND, block: true }, .02);
+  expect(r.hopperCapacity).toBe(60);
+  expect(r.capacityLeft).toBe(20);
+  expect(r.clearanceHeight).toBe(c.hopperExpansion!.fullHeight);
+  sim.load(20);
+  r.drive(IDLE_COMMAND, .02);
+  expect(r.hopperRaised).toBe(true);
+  expect(r.held.length).toBe(60);
+  for (const i of r.held.splice(40)) sim.pool.reserve(i);
+  r.drive(IDLE_COMMAND, .02);
+  expect(r.hopperCapacity).toBe(40);
+  expect(r.clearanceHeight).toBe(c.height);
+  r.overheadLimit = C.TRENCH_SAFE_HEIGHT;
+  r.drive({ ...IDLE_COMMAND, block: true }, .02);
+  expect(r.hopperRaised).toBe(false);
+  r.overheadLimit = Infinity;
+  r.drive({ ...IDLE_COMMAND, block: true }, .02);
+  for(let i=0;i<60;i++) r.syncVisual(.05);
+  expect(r.visual.getObjectByName('telescoping-hopper-roof')!.position.y).toBeCloseTo(c.hopperExpansion!.fullHeight-c.height);
+  r.drive(IDLE_COMMAND, .02);
+  for(let i=0;i<60;i++) r.syncVisual(.05);
+  expect(r.visual.getObjectByName('telescoping-hopper-roof')!.position.y).toBe(0);
 });
