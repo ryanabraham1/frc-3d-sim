@@ -20,7 +20,7 @@ function swallowed(rate: number | undefined, seconds: number): number {
   let n = 0;
   for (let t = 0; t < seconds; t += dt) {
     r.tickIntake(dt);
-    while (r.intakeRoom > 0) { r.held.push(-1); n++; r.tickIntake(0); }
+    while (r.intakeRoom > 0 && r.held.length < 500) { r.held.push(-1); n++; r.tickIntake(0); }
   }
   return n;
 }

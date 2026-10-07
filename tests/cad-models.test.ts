@@ -108,7 +108,7 @@ describe('imported 2026 CAD models', () => {
     }
     const initial = [...intake.position.toArray(), ...intake.quaternion.toArray()];
     for (let step = 0; step < 100; step++) {
-      model.update({ ...idle, dt: .02, time: step*.02, enabled: true, intaking: true, aiming: true, firing: .4, fill: .6, hood: .5+step*.0075 });
+      model.update({ ...idle, dt: .02, time: step*.02, enabled: true, intaking: true, aiming: true, firing: .4, fill: .6, hood: .5+step*.0075, blocker: id === 'limestone-1678' ? 1 : 0 });
       visual.updateMatrixWorld(true);
       root.traverse(o => expect(o.matrixWorld.elements.every(Number.isFinite)).toBe(true));
       const bounds = new THREE.Box3().setFromObject(root, true);
@@ -119,9 +119,9 @@ describe('imported 2026 CAD models', () => {
     }
     expect([...intake.position.toArray(), ...intake.quaternion.toArray()]).not.toEqual(initial);
     const hood = root.getObjectByName('cad-hood-pivot')!;
-    model.update({ ...idle, enabled:true, aiming:true, hood:.5, fill:1 });
+    model.update({ ...idle, enabled:true, aiming:true, hood:.5, fill:1, blocker: id === 'limestone-1678' ? 1 : 0 });
     const low = hood.quaternion.clone();
-    model.update({ ...idle, enabled:true, aiming:true, hood:1.25, fill:1 });
+    model.update({ ...idle, enabled:true, aiming:true, hood:1.25, fill:1, blocker: id === 'limestone-1678' ? 1 : 0 });
     expect(low.angleTo(hood.quaternion), 'low and high shots must move the hood visibly').toBeGreaterThan(.6);
     const fuel = visual.getObjectByName('cad-hopper-fuel')!;
     expect(fuel.children.some(o => o instanceof THREE.InstancedMesh && o.count > 10)).toBe(true);

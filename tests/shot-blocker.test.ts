@@ -156,6 +156,9 @@ it('a chassis-aimed dumper keeps firing when shoved a few degrees off the HUB, b
     sim.load(5);
     const target = sim.rules.aimTarget(r);
     r.autoAlign({ ...IDLE_COMMAND, shoot: true }, target);
+    r.launch(target, sim.rng); // too early (hood still stowed), but it records the solved hood angle
+    sim.run(0.6, { ...IDLE_COMMAND, aim: true }); // let the hood reach it
+    r.autoAlign({ ...IDLE_COMMAND, shoot: true }, target);
     return r.launch(target, sim.rng) !== null;
   };
   expect(fire(0.12)).toBe(true); // ~7° off: used to hold fire until within 3°
