@@ -105,11 +105,15 @@ export class MemoryStore implements RankedStore {
 /** Postgres through Supabase's REST API (PostgREST), using the service-role key. Schema: supabase/ranked.sql. */
 export class SupabaseStore implements RankedStore {
   readonly persistent = true;
-  constructor(
-    private readonly url: string,
-    private readonly key: string,
-    private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
+  private readonly url: string;
+  private readonly key: string;
+  private readonly fetchImpl: typeof fetch;
+  // No parameter properties: `node server/index.ts` runs in strip-only mode, which rejects them.
+  constructor(url: string, key: string, fetchImpl: typeof fetch = fetch) {
+    this.url = url;
+    this.key = key;
+    this.fetchImpl = fetchImpl;
+  }
 
   private async call<T>(path: string, init: RequestInit & { prefer?: string } = {}): Promise<T> {
     const { prefer, ...rest } = init;
