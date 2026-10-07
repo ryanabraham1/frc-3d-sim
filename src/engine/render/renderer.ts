@@ -274,12 +274,14 @@ export class Renderer {
   private frame = 0;
 
   /**
-   * Compile every material's shader now, including what the first frame can't see. Otherwise WebGL compiles each
-   * one the first time it's drawn: a 300-400 ms freeze on the first frame and more hitches as robots come into view.
+   * Compile every material's shader before the first frame, including what that frame can't see. Otherwise WebGL
+   * compiles each one the first time it's drawn: a 300-500 ms freeze on the first frame and more hitches as robots come
+   * into view. Resolves when the driver has finished (parallel compile), or after `timeoutMs` whatever happens.
    */
-  prewarm(): void {
+  prewarm(timeoutMs = 4000): Promise<void> {
     this.scene.updateMatrixWorld();
-    this.renderer.compile(this.scene, this.camera);
+    const done = this.renderer.compileAsync(this.scene, this.camera).then(() => undefined, () => undefined);
+    return Promise.race([done, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
   }
 
   dispose(): void {

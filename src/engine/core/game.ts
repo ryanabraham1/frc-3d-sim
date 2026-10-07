@@ -409,7 +409,11 @@ export class Game {
       this.perfPanel.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:1000;pointer-events:none;background:#000c;color:#fff;padding:8px;font:11px monospace';
       this.renderer.container.appendChild(this.perfPanel);
     }
-    this.renderer.prewarm();
+    // The loop starts once shaders are compiled (during the intro), so the first frames don't freeze.
+    void this.renderer.prewarm().then(() => { if (!this.disposed) this.startLoop(); });
+  }
+
+  private startLoop(): void {
     this.last = this.lastDraw = performance.now();
     if (this.role !== 'local') {
       // Multiplayer ticks run off a worker timer, not rAF. Host: the simulation must keep running when its
