@@ -251,7 +251,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     `<button class="bbtn" data-mp="leave">${lobby.isHost ? 'Close room' : 'Leave room'}</button><span class="spacer"></span>` +
     (lobby.isHost
       ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>${L.manualAuto ? 'Set starting positions' : 'Plan autos &amp; positions'}</button>`
-      : `<span class="mp-hint">${L.inMatch ? 'Match in progress — you’ll join the next one' : 'Waiting for the host to start…'}</span>`);
+      : `<span class="mp-hint">${L.inMatch ? 'Match in progress — joining as a spectator…' : 'Waiting for the host to start…'}</span>`);
   return { body, footer };
 }
 

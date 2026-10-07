@@ -105,6 +105,8 @@ export class LobbyController {
   } = { mode: '2v2', searching: false, searchStartedAt: 0, waiting: 0, profile: null, leaderboard: null, standing: null, lastResult: null };
   /** Name used for ranked (kept in step with the page's name field). */
   playerName = '';
+  /** Host: the running match's setup (sent to anyone who joins mid-match so they can spectate). */
+  private liveSetup: MatchSetup | null = null;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   private turnDeadline = 0;
   private placeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -221,6 +223,7 @@ export class LobbyController {
       this.ranked.searching = false;
       this.clearRankedTimers();
       this.lastChatAt.clear();
+      this.liveSetup = null;
       this.choices.clear();
       this.lastSent = '';
       this.clearAutoStart();
@@ -888,7 +891,9 @@ export class LobbyController {
     this.clearAutoStart();
     for (const p of lobby.players) p.ready = false;
     this.broadcastLobby();
-    this.client.send({ t: 'start', setup: { ...setup, robots: setup.robots.map(({ autoPlan: _plan, ...r }) => r) } } satisfies HostMsg);
+    const wire: MatchSetup = { ...setup, robots: setup.robots.map(({ autoPlan: _plan, ...r }) => r) };
+    this.liveSetup = wire;
+    this.client.send({ t: 'start', setup: wire } satisfies HostMsg);
     this.onStart(setup, 'host');
   }
 
@@ -896,6 +901,7 @@ export class LobbyController {
   backToLobby(): void {
     if (!this.lobby || !this.isHost) return;
     this.lobby.inMatch = false;
+    this.liveSetup = null;
     this.client.send({ t: 'to-lobby' } satisfies HostMsg);
     this.broadcastLobby();
     this.onToLobby();
@@ -973,7 +979,8 @@ export class LobbyController {
     const lobby = this.lobby;
     const p = lobby?.players.find((x) => x.peerId === peerId);
     if (!lobby || !p) return;
-    let slot = c.slot === undefined ? p.slot : c.slot;
+    // Nobody changes seats while a match is running (late joiners spectate).
+    let slot = c.slot === undefined || lobby.inMatch ? p.slot : c.slot;
     const taken = (x: SlotId) => lobby.players.some((o) => o !== p && o.slot === x);
     if (slot && taken(slot)) {
       // Taken (e.g. two players both saved "Blue 2"): new arrivals get the nearest free station on the
@@ -1007,6 +1014,12 @@ export class LobbyController {
       this.systemChat(`${name} joined`);
     }
     this.broadcastLobby();
+    // Joining while a match is running: drop them straight in as a spectator (ranked matches are closed).
+    const live = this.liveSetup;
+    if (live && this.lobby.inMatch && !this.lobby.ranked && !live.peers.includes(peerId)) {
+      live.peers = [...live.peers, peerId];
+      this.client.send({ t: 'start', setup: live } satisfies HostMsg, peerId);
+    }
   }
 
   private hostRemovePlayer(peerId: string, announce = true): void {

@@ -169,4 +169,27 @@ describe('online lobbies', () => {
     expect(relay.roomCount()).toBe(1);
     expect(relay.publicRoomCount()).toBe(1);
   });
+
+  it('someone who joins mid-match is sent the live match to spectate', async () => {
+    const host = player();
+    await host.create('Ann');
+    await until(() => !!host.lobby?.players.length);
+    const hostStarts: unknown[] = [];
+    host.onStart = (setup) => hostStarts.push(setup);
+    host.startMatch();
+    expect(host.lobby!.inMatch).toBe(true);
+    expect(hostStarts).toHaveLength(1);
+
+    const viewer = player();
+    const got: { setup: { peers: string[]; robots: unknown[] }; role: string }[] = [];
+    viewer.onStart = (setup, role) => got.push({ setup, role });
+    await viewer.join(host.client.room, 'Vic');
+    await until(() => got.length === 1);
+    expect(got[0].role).toBe('client');
+    expect(got[0].setup.peers).toContain(viewer.client.peerId);
+    expect(got[0].setup.robots.length).toBeGreaterThan(0);
+    // They are a spectator: asking for a seat mid-match changes nothing.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(host.lobby!.players.find((p) => p.peerId === viewer.client.peerId)!.slot).toBeNull();
+  });
 });
