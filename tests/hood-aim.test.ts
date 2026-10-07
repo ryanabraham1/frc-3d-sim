@@ -58,3 +58,41 @@ it('a chassis-aimed shooter keeps firing off target once a burst is under way, s
   r.fireCooldown = 0;
   expect(r.launch(target, rng)).toBeNull();
 });
+
+it.each([4414, 1323, 5940, 3476])('team %s keeps releasing fuel while driving and turning after acquiring aim', (team) => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
+  const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: C.HUB_CENTER.x - 3, y: C.HUB_CENTER.y, yaw: 0 } });
+  sims.push(sim);
+  sim.load(c.hopperCapacity);
+  const r = sim.robot;
+  r.enabled = true;
+  r.lastCommand = { ...IDLE_COMMAND, shoot: true };
+  // Prescribed chassis motion isolates actuator tracking from field collisions and driver auto-align.
+  // Warm up at rest, then change both range and lateral velocity, with chassis yaw changing for turrets.
+  let stationary = 0, fired = 0, sinceShot = 0, longestGap = 0;
+  for (let n = 0; n < 450; n++) {
+    const dt = sim.physics.dt;
+    if (n >= 270) {
+      const t = (n-270)*dt;
+      const p = sim.frame.toWorld(C.HUB_CENTER.x-3+.65*t, C.HUB_CENTER.y+.35*t, c.height/2);
+      const old = r.body.translation();
+      r.body.setTranslation({x:p.x,y:old.y,z:p.z}, true);
+      r.body.setLinvel({x:.65,y:0,z:-.35}, true);
+      if (c.launcher.turret) r.body.setRotation({x:0,y:Math.sin(t*.6/2),z:0,w:Math.cos(t*.6/2)},true);
+    }
+    r.tick(dt);
+    const target = sim.rules.aimTarget(r)!;
+    r.aimTurretAt(target, dt);
+    r.advanceScoringMechanisms(dt);
+    const shot = r.launch(target, sim.rng);
+    if (n >= 90 && n < 270 && shot) stationary++;
+    if (n >= 270) {
+      sinceShot += dt;
+      if (shot) { fired++; longestGap = Math.max(longestGap, sinceShot); sinceShot = 0; }
+    }
+  }
+  expect(stationary).toBeGreaterThan(0);
+  // Moving and alternating muzzle positions can require brief actuator repositioning.
+  expect(fired).toBeGreaterThanOrEqual(Math.ceil(stationary*.4));
+  expect(Math.max(longestGap, sinceShot)).toBeLessThan(1);
+});

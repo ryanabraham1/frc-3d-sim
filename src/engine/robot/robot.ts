@@ -1540,41 +1540,40 @@ export class Robot {
     let desired = yaw;
     const snoopy = this.config.model === 'snoopy-6036';
     const aiming = this.lastCommand.shoot || this.lastCommand.pass || this.lastCommand.aim;
-    if (target && this.config.launcher.turret && this.config.aimAssist === 'full' && (!snoopy || aiming)) {
-      const ex = this.launcherExit(0);
-      const origin = this.localToWorld(ex.forward,ex.up,-ex.side,this.aimTmp);
-      const v = this.body.linvel();
-      let dx = target.point.x-origin.x, dz = target.point.z-origin.z;
-      if (aiming) for (let k=0;k<3;k++) {
-        const tof = Math.hypot(dx,dz)/Math.max(.1,this.aimShotSpeed*Math.cos(this.lastShotAngle || this.config.launcher.angle));
-        dx = target.point.x-origin.x-v.x*tof; dz = target.point.z-origin.z-v.z*tof;
+    const c = this.config;
+    if (target && (c.launcher.turret ? aiming : this.lastCommand.shoot || this.lastCommand.pass) && c.launcher.enabled && c.aimAssist !== 'off' && this.climbPhase === 'none') {
+      if (c.launcher.turret) {
+        const offsets = launcherExitOffsets(c);
+        const ex = this.launcherExit(offsets[this.exitIndex % offsets.length]);
+        const sol = this.solveMovingShot(this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp), target);
+        this.lastShotAngle = sol.angle;
+        if (c.aimAssist === 'full') desired = sol.yaw;
+      } else {
+        this.aimSolveIn -= dt;
+        if (this.aimSolveIn <= 0) {
+          this.aimSolveIn = .15;
+          const ex = this.launcherExit(0);
+          const sol = this.solveShot(this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp), target);
+          if (sol) this.lastShotAngle = sol.angle;
+        }
       }
-      desired = Math.atan2(-dz,dx);
+    } else if (target && c.launcher.turret && c.aimAssist === 'full' && !snoopy) {
+      const ex = this.launcherExit(0);
+      const origin = this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp);
+      desired = Math.atan2(-(target.point.z-origin.z), target.point.x-origin.x);
     }
+    if (!this.lastCommand.shoot && !this.lastCommand.pass) this.aimSolveIn = 0;
     const err = wrapAngle(desired - this.turretYaw);
     const maxStep = (snoopy ? 8 : 12) * dt;
     this.turretYaw = wrapAngle(this.turretYaw + clamp(err, -maxStep, maxStep));
-    // While the driver holds shoot / pass, re-solve the shot from here a few times a second so the hood visibly
-    // tracks the range before the piece leaves (the launch itself still solves exactly at release).
-    const c = this.config;
-    if (target && (this.lastCommand.shoot || this.lastCommand.pass) && c.launcher.enabled && c.aimAssist !== 'off' && this.climbPhase === 'none') {
-      this.aimSolveIn -= dt;
-      if (this.aimSolveIn <= 0) {
-        this.aimSolveIn = 0.15;
-        const ex = this.launcherExit(0);
-        const sol = this.solveShot(this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp), target);
-        if (sol) { this.lastShotAngle = sol.angle; this.aimShotSpeed = sol.speed; }
-      }
-    } else this.aimSolveIn = 0;
     const goal = aiming ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle;
     const pitchRate = snoopy ? 5 : 3.5;
     this.shooterPitch += clamp(goal-this.shooterPitch, -pitchRate*dt, pitchRate*dt);
   }
-  /** Actual Snoopy shooter elevation, advanced by simulation rather than render frames. */
+  /** Actual shooter elevation, advanced by simulation rather than render frames. */
   private shooterPitch = 0;
   private scoringModelReady = false;
   private scoringSimulated = false;
-  private aimShotSpeed = 8;
   private aimSolveIn = 0;
   private readonly aimTmp = new THREE.Vector3();
 
@@ -1729,6 +1728,24 @@ export class Robot {
     return lowestClear ?? fallback;
   }
 
+  /** Shared moving-shot target for actuator tracking and release readiness. */
+  private solveMovingShot(pos: THREE.Vector3, target: AimTarget): { speed: number; angle: number; yaw: number; clear: boolean } {
+    const c = this.config.launcher, rv = this.body.linvel();
+    const lead: AimTarget = { ...target, point: target.point.clone() };
+    let speed = c.manualSpeed, angle = c.angle, clear = true;
+    let yaw = Math.atan2(-(lead.point.z-pos.z), lead.point.x-pos.x);
+    for (let k = 0; k < 3; k++) {
+      const sol = this.solveShot(pos, lead);
+      if (!sol) { clear = false; break; }
+      speed = sol.speed; angle = sol.angle; clear = sol.clear;
+      // Bearing and elevation must describe the same iteration's trajectory.
+      yaw = Math.atan2(-(lead.point.z-pos.z), lead.point.x-pos.x);
+      const tof = Math.hypot(lead.point.x-pos.x, lead.point.z-pos.z) / Math.max(.1, speed*Math.cos(angle));
+      lead.point.set(target.point.x-rv.x*tof, target.point.y, target.point.z-rv.z*tof);
+    }
+    return { speed, angle, yaw, clear };
+  }
+
   /**
    * Compute a launch (world position + velocity) toward `target` or straight ahead.
    * Returns null if the launcher can't fire this tick.
@@ -1760,23 +1777,12 @@ export class Robot {
     let aimYaw = c.turret ? this.turretYaw : heading;
     this.lastShotClear = true;
     if (target && this.config.aimAssist !== 'off') {
-      // Iterate to lead the target for robot motion (shoot-on-the-move).
-      const lead: AimTarget = { ...target, point: target.point.clone() };
-      for (let k = 0; k < 3; k++) {
-        const sol = this.solveShot(pos, lead);
-        if (!sol) {
-          this.lastShotClear = false;
-          break;
-        }
-        speed = sol.speed;
-        theta = sol.angle;
-        this.lastShotClear = sol.clear;
-        const d = Math.hypot(lead.point.x - pos.x, lead.point.z - pos.z);
-        const tof = d / Math.max(0.1, speed * Math.cos(theta));
-        lead.point.set(target.point.x - rv.x * tof, target.point.y, target.point.z - rv.z * tof);
-      }
+      const sol = this.solveMovingShot(pos, target);
+      speed = sol.speed;
+      theta = sol.angle;
+      this.lastShotClear = sol.clear;
       if (this.config.aimAssist === 'full' && c.turret) {
-        aimYaw = Math.atan2(-(lead.point.z - pos.z), lead.point.x - pos.x);
+        aimYaw = sol.yaw;
         if (Math.abs(wrapAngle(aimYaw-this.turretYaw)) > (c.alignTolerance ?? .05)) return null;
         aimYaw = this.turretYaw;
       }

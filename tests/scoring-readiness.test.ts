@@ -21,13 +21,14 @@ it('requires every scoring joint to reach its goal and invalidates readiness on 
 });
 for(const season of SEASONS.filter(s=>s.year!==2025)) {
  describe(`${season.year} scoring readiness`,()=>{
-  it('waits for turret yaw and pitch, then fires; changing target holds fire again',()=>{
+  it.each([0, 2])('waits for turret yaw and pitch at %s m/s, then fires; changing target holds fire again',(speed)=>{
    const config=cloneConfig(season.robotDefaults);config.model=undefined;config.launcher.turret=true;config.aimAssist='full';
    config.launcher.spread=0;config.launcher.speedError=0;
    const sim=new HeadlessSim(season,RAPIER,{robot:config,alliance:'blue',pose:{x:2,y:2,yaw:0}});sims.push(sim);
    sim.robot.held.push(-1,-1);sim.robot.lastCommand={...IDLE_COMMAND,shoot:true};
    const target={point:sim.frame.toWorld(2,5,2)};
    const r=sim.robot,rng=new Rng(7);
+   r.body.setLinvel({x:speed,y:0,z:speed*.5},true);
    expect(r.launch(target,rng)).toBeNull();expect(r.fireCooldown).toBe(0);expect(r.turretYaw).toBe(0);
    let shot=null;
    for(let n=0;n<180&&!shot;n++) {r.aimTurretAt(target,sim.physics.dt);r.advanceScoringMechanisms(sim.physics.dt);shot=r.launch(target,rng);}
