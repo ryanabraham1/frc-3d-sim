@@ -431,7 +431,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
             if (peer.room) return send(peer, { op: 'error', message: 'Leave your room before searching for a ranked match' });
             void ranked.queue(peer.id, req.mode, req.name, req.secret);
           } else if (req.op === 'profile') void ranked.profile(peer.id, req.secret, req.name);
-          else void ranked.leaderboard(peer.id, req.mode, req.secret);
+          else void ranked.leaderboard(peer.id, req.secret);
           break;
         case 'unqueue':
           ranked.unqueue(peer.id);

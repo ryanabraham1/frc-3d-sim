@@ -85,7 +85,9 @@ describe('ranked relay', () => {
     p.send({ op: 'profile', name: 'Cy', secret: p.secret });
     const prof = await p.next('profile');
     expect(prof.persistent).toBe(false);
-    expect(prof.ratings['2v2']).toMatchObject({ rating: 1000, games: 0 });
+    expect(prof.rating).toMatchObject({ rating: 1000, games: 0 });
+    expect(prof.standing).toBeNull();
+    expect(prof.season).toBe('2026-rebuilt');
   });
 
   it('rejects a malformed secret', async () => {
@@ -151,7 +153,9 @@ describe('ranked relay', () => {
     const winner = r1.result === 'win' ? a : b;
     winner.send({ op: 'profile', name: 'W', secret: winner.secret });
     const prof = await winner.next('profile');
-    expect(prof.ratings['1v1']).toMatchObject({ rating: 1020, games: 1, wins: 1 });
+    expect(prof.rating).toMatchObject({ rating: 1020, games: 1, wins: 1 });
+    expect(prof.rating.modes['1v1']).toMatchObject({ games: 1, wins: 1 });
+    expect(prof.rating.modes['2v2'].games).toBe(0);
     expect(store.matches[0]).toMatchObject({ status: 'final', outcome: 'red', redScore: 80 });
   });
 
@@ -179,7 +183,7 @@ describe('ranked relay', () => {
     expect(rh.delta).toBeGreaterThan(0);
     void a;
     void b;
-    const stats = await store.getRating((await store.leaderboard('1v1', 5, 0))[0]?.playerId ?? '', '1v1');
+    const stats = await store.getRating((await store.leaderboard(5, 0))[0]?.playerId ?? '');
     expect(stats.games).toBeGreaterThanOrEqual(1);
   });
 
@@ -212,7 +216,7 @@ describe('ranked relay', () => {
     const a = await peer('a');
     a.send({ op: 'profile', name: 'Ann', secret: a.secret });
     const first = await a.next('profile');
-    expect(first.standings).toEqual({}); // nothing played yet
+    expect(first.standing).toBeNull(); // nothing played yet
     const { playerIdFor } = await import('../server/ranked');
     const me = playerIdFor(a.secret);
     await store.touchPlayer('rival', 'Rival');
@@ -221,8 +225,29 @@ describe('ranked relay', () => {
     await win(me, 1050);
     a.send({ op: 'profile', name: 'Ann', secret: a.secret });
     const prof = await a.next('profile');
-    expect(prof.standings).toEqual({ '2v2': { rank: 2, total: 2 } });
-    expect(prof.ratings['2v2']).toMatchObject({ rating: 1050, games: 1, wins: 1 });
+    expect(prof.standing).toEqual({ rank: 2, total: 2 });
+    expect(prof.rating).toMatchObject({ rating: 1050, games: 1, wins: 1 });
+  });
+
+  it('one rating is shared by every mode and appears on one leaderboard', async () => {
+    const a = await peer('a');
+    a.send({ op: 'profile', name: 'Ann', secret: a.secret });
+    await a.next('profile');
+    const { playerIdFor } = await import('../server/ranked');
+    const me = playerIdFor(a.secret);
+    const win = (mode: '1v1' | '2v2' | '3v3', before: number, after: number) =>
+      store.saveMatch({ mode, season: 's', outcome: 'red', redScore: 0, blueScore: 0, status: 'final', players: [] }, [{ playerId: me, before, after, delta: after - before, result: 'win' }]);
+    await win('1v1', 1000, 1020);
+    await win('3v3', 1020, 1034);
+    a.send({ op: 'profile', name: 'Ann', secret: a.secret });
+    const prof = await a.next('profile');
+    expect(prof.rating).toMatchObject({ rating: 1034, games: 2, wins: 2, peak: 1034 });
+    expect(prof.rating.modes['1v1'].games).toBe(1);
+    expect(prof.rating.modes['3v3'].games).toBe(1);
+    a.send({ op: 'leaderboard', secret: a.secret });
+    const lb = await a.next('leaderboard');
+    expect(lb.rows).toHaveLength(1);
+    expect(lb.rows[0]).toMatchObject({ name: 'Ann', rating: 1034, games: 2, me: true });
   });
 
   it('serves a leaderboard that marks the requester', async () => {
@@ -230,7 +255,7 @@ describe('ranked relay', () => {
     await store.touchPlayer('x', 'Xavier');
     for (let i = 0; i < 5; i++)
       await store.saveMatch({ mode: '1v1', season: 's', outcome: 'red', redScore: 0, blueScore: 0, status: 'final', players: [] }, [{ playerId: 'x', before: 1000, after: 1000 + i, delta: 1, result: 'win' }]);
-    a.send({ op: 'leaderboard', mode: '1v1', secret: a.secret });
+    a.send({ op: 'leaderboard', secret: a.secret });
     const lb = await a.next('leaderboard');
     expect(lb.rows.map((r) => r.name)).toEqual(['Xavier']);
     expect(lb.rows[0].me).toBeUndefined();
@@ -260,7 +285,7 @@ describe('ranked rate limits with the default limits', () => {
       for (let i = 0; i < 24; i++) {
         for (const p of [a, b]) {
           p.send({ op: 'profile', name: 'x', secret: p.secret });
-          p.send({ op: 'leaderboard', mode: '1v1', secret: p.secret });
+          p.send({ op: 'leaderboard', secret: p.secret });
         }
       }
       await new Promise((r) => setTimeout(r, 200));

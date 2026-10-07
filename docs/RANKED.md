@@ -1,7 +1,8 @@
 # Ranked play
 
 Ranked matches 1v1, 2v2 and 3v3 on the current game (`RANKED_SEASON_ID` in `src/engine/net/ranked.ts`, 2026 REBUILT).
-Each mode has its own Elo. Everything is layered on the multiplayer relay ([MULTIPLAYER.md](MULTIPLAYER.md)).
+One rating and one leaderboard per year (`RANKED_SEASON_ID`), shared by 1v1, 2v2 and 3v3; the mode you queue only decides
+team size. Everything is layered on the multiplayer relay ([MULTIPLAYER.md](MULTIPLAYER.md)).
 
 ## Flow
 
@@ -17,8 +18,16 @@ Each mode has its own Elo. Everything is layered on the multiplayer relay ([MULT
 4. **Placement.** The normal start-position screen; 75 s, then everyone is locked in where they stand. Drive-in-AUTO, no bots.
 5. **Result.** Host and every client report the winner at the results screen. The relay applies Elo only if the host and at least
    half of the other drivers agree; otherwise the match is **voided** (no change).
-6. **Rating.** `rateMatch`: team strength = mean rating, `K` = 40 for the first 10 games, 28 up to 30, then 20. The rank ladder (below) shows after 5 placement
+6. **Rating.** `rateMatch`: team strength = mean rating sets the expected result, `K` = 40 for the first 10 games, 28 up to 30, then 20. The rank ladder (below) shows after 5 placement
    games.
+
+### Team-aware rating changes
+
+A team's change is split by skill (`teamShares`, `TEAM_BLAME` in `ranked.ts`). Take a 1400 teamed with a 700 against two 1000s: the
+teams are rated about even, so a loss costs the team roughly 16 points each way. Instead of a flat split the 1400 loses about 5
+and the 700 about 26 (the stronger player is blamed less, the weaker more); on a win the stronger player gets more of the credit.
+The factors average to 1, so a team's total change is unchanged, and 1v1s or evenly matched teams are plain Elo. Factors are
+clamped to 0.35-1.65.
 
 ## Rank ladder
 
@@ -38,8 +47,8 @@ Ranked page (`prefers-reduced-motion` turns it all off). Placement matches (firs
 
 ## Leaderboard
 
-Per mode, top 25 by rating (anyone with at least one game; placement players carry the unranked badge). The top three get a
-podium; if you're below the list you get "Your rank: #N of M" (`rankOf` in the store).
+One season leaderboard, top 25 by rating (anyone with at least one game; placement players carry the unranked badge). The top three get a
+podium; if you're below the list you get "Your rank: #N of M" (`rankOf` in the store). The stats panel also shows the record per mode (the only thing that is per mode now).
 
 ## Names and chat
 
@@ -61,7 +70,8 @@ opponents are scored as winners. A dropped connection has the relay's 30 s recon
   rating follows a browser. Clearing site data starts a new player; extra browsers can farm accounts. One device can't queue twice.
 - **Store:** `server/rankedStore.ts`. `MemoryStore` (default, resets on restart) or `SupabaseStore` when `SUPABASE_URL` and
   `SUPABASE_SERVICE_KEY` are set **on the Render web service** (never the static site, never `VITE_`-prefixed). Run
-  `supabase/ranked.sql` once; RLS is enabled with no policies so only the service key can touch the tables.
+  `supabase/ranked.sql` once for a new database, or `supabase/ranked_migration_season.sql` if you already ran the first version
+  (it moves per-mode ratings to one rating per season and drops the old table); RLS is enabled with no policies so only the service key can touch the tables.
 
 ## Trust model and limits
 

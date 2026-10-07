@@ -16,7 +16,6 @@ import {
   cleanName,
   type LeaderEntry,
   type RankedRosterEntry,
-  type RatingSummary,
   type RelayEvent,
 } from '../src/engine/net/relayProtocol.ts';
 import { Matchmaker, type QueueEntry } from './matchmaker.ts';
@@ -127,44 +126,32 @@ export class RankedService {
     return playerIdFor(secret);
   }
 
-  private async ratingsFor(playerId: string, name: string): Promise<Record<RankedMode, RatingSummary>> {
-    return this.deps.store.touchPlayer(playerId, name);
-  }
-
   async profile(peerId: string, secret: unknown, name: unknown): Promise<void> {
     const playerId = this.identify(peerId, secret);
     if (!playerId) return;
     const clean = cleanName(name);
     try {
-      const ratings = await this.ratingsFor(playerId, clean);
-      // Where I stand on each mode's leaderboard (only modes I've played).
-      const standings: Partial<Record<RankedMode, { rank: number; total: number }>> = {};
-      await Promise.all(
-        (['1v1', '2v2', '3v3'] as const).map(async (m) => {
-          if (ratings[m].games < LEADERBOARD_MIN_GAMES) return;
-          const st = await this.deps.store.rankOf(playerId, m, LEADERBOARD_MIN_GAMES);
-          if (st) standings[m] = { rank: st.rank, total: st.total };
-        }),
-      );
-      this.deps.send(peerId, { op: 'profile', persistent: this.deps.store.persistent, name: clean, ratings, standings });
+      const rating = await this.deps.store.touchPlayer(playerId, clean);
+      // Where I stand on the season leaderboard (once I've played).
+      const st = rating.games >= LEADERBOARD_MIN_GAMES ? await this.deps.store.rankOf(playerId, LEADERBOARD_MIN_GAMES) : null;
+      this.deps.send(peerId, { op: 'profile', persistent: this.deps.store.persistent, name: clean, season: RANKED_SEASON_ID, rating, standing: st ? { rank: st.rank, total: st.total } : null });
     } catch (e) {
       this.log(`profile failed: ${(e as Error).message}`);
       this.deps.send(peerId, { op: 'error', message: 'Ratings are unavailable right now' });
     }
   }
 
-  async leaderboard(peerId: string, mode: unknown, secret?: unknown): Promise<void> {
-    if (!isRankedMode(mode)) return;
+  async leaderboard(peerId: string, secret?: unknown): Promise<void> {
     const me = typeof secret === 'string' && SECRET.test(secret) ? playerIdFor(secret) : null;
     try {
-      const rows = await this.deps.store.leaderboard(mode, LEADERBOARD_SIZE, LEADERBOARD_MIN_GAMES);
+      const rows = await this.deps.store.leaderboard(LEADERBOARD_SIZE, LEADERBOARD_MIN_GAMES);
       // Names were filtered when set, but old rows (or a bad store) are re-checked on the way out.
       const entries: LeaderEntry[] = rows.map((r) => ({ name: cleanName(r.name), rating: r.rating, games: r.games, wins: r.wins, losses: r.losses, draws: r.draws, peak: r.peak, ...(me && r.playerId === me ? { me: true } : {}) }));
-      const standing = me ? await this.deps.store.rankOf(me, mode, LEADERBOARD_MIN_GAMES) : null;
-      this.deps.send(peerId, { op: 'leaderboard', mode, rows: entries, ...(standing ? { you: { rank: standing.rank, total: standing.total, rating: standing.row.rating, games: standing.row.games } } : {}) });
+      const standing = me ? await this.deps.store.rankOf(me, LEADERBOARD_MIN_GAMES) : null;
+      this.deps.send(peerId, { op: 'leaderboard', season: RANKED_SEASON_ID, rows: entries, ...(standing ? { you: { rank: standing.rank, total: standing.total, rating: standing.row.rating, games: standing.row.games } } : {}) });
     } catch (e) {
       this.log(`leaderboard failed: ${(e as Error).message}`);
-      this.deps.send(peerId, { op: 'leaderboard', mode, rows: [] });
+      this.deps.send(peerId, { op: 'leaderboard', season: RANKED_SEASON_ID, rows: [] });
     }
   }
 
@@ -178,7 +165,7 @@ export class RankedService {
     this.active.set(playerId, peerId);
     const clean = cleanName(name);
     try {
-      const rating = (await this.ratingsFor(playerId, clean))[mode];
+      const rating = await this.deps.store.touchPlayer(playerId, clean);
       // The peer may have left (or cancelled) while we were reading the database.
       if (!this.deps.isOpen(peerId) || this.active.get(playerId) !== peerId) return;
       this.mm.add(mode, { id: peerId, rating: rating.rating, since: this.now(), data: { peerId, playerId, name: clean, games: rating.games } });

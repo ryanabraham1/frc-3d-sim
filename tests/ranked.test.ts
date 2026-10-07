@@ -15,6 +15,7 @@ import {
   kFactor,
   matchWindow,
   rateMatch,
+  teamShares,
   rankFor,
   visibleRank,
   type RankedParticipant,
@@ -38,11 +39,43 @@ describe('elo', () => {
   });
 
   it('uses the team average in team modes and moves new players faster', () => {
-    const r = rateMatch([P('a', 'red', 1400, 50), P('n', 'red', 800, 0), P('b', 'blue', 1100, 50), P('c', 'blue', 1100, 50)], 'blue');
+    const r = rateMatch([P('a', 'red', 1100, 50), P('n', 'red', 1100, 0), P('b', 'blue', 1100, 50), P('c', 'blue', 1100, 50)], 'blue');
     // Red avg 1100 vs blue 1100: even match, so the loss is K/2 for each (rounded).
     expect(r.find((x) => x.playerId === 'a')!.delta).toBe(-10);
     expect(r.find((x) => x.playerId === 'n')!.delta).toBe(-20);
     expect(kFactor(0)).toBeGreaterThan(kFactor(50));
+  });
+
+  it('blames the stronger player less when a mismatched team loses', () => {
+    // A 1400 teamed with a 700 against two 1000s: the team is rated 1050 vs 1000, so a loss costs the team ~16 points each.
+    const lose = rateMatch([P('good', 'red', 1400), P('bad', 'red', 700), P('a', 'blue', 1000), P('b', 'blue', 1000)], 'blue');
+    const by = Object.fromEntries(lose.map((x) => [x.playerId, x]));
+    expect(by.good.delta).toBeLessThan(0);
+    expect(by.bad.delta).toBeLessThan(by.good.delta); // the weak player loses more
+    expect(Math.abs(by.good.delta)).toBeLessThan(10); // a flat split would be -16
+    expect(by.good.delta + by.bad.delta).toBeGreaterThanOrEqual(-34); // the team's total swing is unchanged (~-32)
+    expect(by.good.delta + by.bad.delta).toBeLessThanOrEqual(-30);
+    // The opponents are even-rated and just share the win.
+    expect(by.a.delta).toBe(by.b.delta);
+    expect(by.a.delta).toBeGreaterThan(0);
+  });
+
+  it('gives the stronger player more credit when that team wins', () => {
+    const win = rateMatch([P('good', 'red', 1400), P('bad', 'red', 700), P('a', 'blue', 1000), P('b', 'blue', 1000)], 'red');
+    const by = Object.fromEntries(win.map((x) => [x.playerId, x]));
+    expect(by.good.delta).toBeGreaterThan(by.bad.delta);
+    expect(by.bad.delta).toBeGreaterThan(0);
+  });
+
+  it('shares nothing unevenly for solo players or evenly matched teams', () => {
+    expect(teamShares([1000], -1)).toEqual([1]);
+    expect(teamShares([1000, 1000, 1000], 1)).toEqual([1, 1, 1]);
+    const f = teamShares([1500, 1000, 600], -1);
+    expect(f[0]).toBeLessThan(f[1]);
+    expect(f[1]).toBeLessThan(f[2]);
+    expect(f.reduce((a, b) => a + b, 0) / 3).toBeCloseTo(1, 1);
+    const g = rateMatch([P('a', 'red', 1200), P('b', 'blue', 1000)], 'red'); // 1v1 is the plain Elo
+    expect(g[0].delta).toBe(Math.round(kFactor(20) * (1 - expectedScore(1200, 1000))));
   });
 
   it('scores a tie as half a point', () => {
@@ -104,10 +137,12 @@ describe('elo', () => {
 
   it('applies changes to a stored record', () => {
     let row = freshRating();
-    row = applyChange(row, { playerId: 'a', before: 1000, after: 1016, delta: 16, result: 'win' });
-    row = applyChange(row, { playerId: 'a', before: 1016, after: 1004, delta: -12, result: 'loss' });
-    row = applyChange(row, { playerId: 'a', before: 1004, after: 1004, delta: 0, result: 'none' });
+    row = applyChange(row, { playerId: 'a', before: 1000, after: 1016, delta: 16, result: 'win' }, '2v2');
+    row = applyChange(row, { playerId: 'a', before: 1016, after: 1004, delta: -12, result: 'loss' }, '1v1');
+    row = applyChange(row, { playerId: 'a', before: 1004, after: 1004, delta: 0, result: 'none' }, '1v1');
     expect(row).toMatchObject({ rating: 1004, games: 2, wins: 1, losses: 1, peak: 1016 });
+    expect(row.modes['2v2']).toMatchObject({ games: 1, wins: 1 });
+    expect(row.modes['1v1']).toMatchObject({ games: 1, losses: 1 });
   });
 });
 
@@ -225,10 +260,13 @@ describe('memory store', () => {
     };
     match('a', 'b', 5);
     match('c', 'b', 2);
-    const rows = await s.leaderboard('1v1', 10, 5);
+    const rows = await s.leaderboard(10, 5);
     expect(rows.map((r) => r.name)).toEqual(['A', 'B'].filter((n) => rows.some((r) => r.name === n)));
     expect(rows[0].name).toBe('A');
-    expect((await s.getRating('b', '1v1')).losses).toBe(7);
+    const b = await s.getRating('b');
+    expect(b.losses).toBe(7);
+    expect(b.modes['1v1'].losses).toBe(7);
+    expect(b.modes['2v2'].games).toBe(0);
   });
 });
 

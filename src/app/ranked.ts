@@ -46,7 +46,7 @@ const MEDAL = ['🥇', '🥈', '🥉'];
 function leaderboardHtml(lobby: LobbyController): string {
   const rows = lobby.ranked.leaderboard;
   if (rows === null) return '<div class="rl-empty"><span class="mp-dot waking"></span>Loading leaderboard…</div>';
-  if (!rows.length) return `<div class="rl-empty">Nobody has played a ${MODE_LABEL[lobby.ranked.mode]} ranked match yet.<br/>Be the first on the board.</div>`;
+  if (!rows.length) return `<div class="rl-empty">Nobody has played a ranked match yet.<br/>Be the first on the board.</div>`;
   const podium = rows
     .slice(0, 3)
     .map((r, i) => `<div class="rk-pod p${i + 1} ${r.me ? 'me' : ''}"><span class="medal">${MEDAL[i]}</span><b>${esc(r.name)}</b><span class="rk-pod-rating">${r.rating}</span>${tierBadge(r.rating, r.games)}</div>`)
@@ -84,35 +84,34 @@ function lastResultHtml(lobby: LobbyController): string {
   return `${card}<div class="rk-rankup ${move}" style="--tier:${to.tier.color}">${burst}${emblemSvg(to, { size: 92, pop: true })}<div><b>${heading}</b><span>${line}</span></div></div>`;
 }
 
-/** All-time record across modes, plus rank and leaderboard position in each. */
+/** All-time record for the season, the leaderboard position, and the record in each mode. */
 function statsPanelHtml(lobby: LobbyController): string {
   const profile = lobby.ranked.profile;
   if (!profile) return '<div class="rl-empty"><span class="mp-dot waking"></span>Loading your stats…</div>';
-  const modes = RANKED_MODES.map((m) => ({ m, r: profile.ratings[m], st: profile.standings?.[m] }));
-  const total = modes.reduce((t, { r }) => ({ games: t.games + r.games, wins: t.wins + r.wins, losses: t.losses + r.losses, draws: t.draws + r.draws }), { games: 0, wins: 0, losses: 0, draws: 0 });
-  if (!total.games) return '<div class="rl-empty">No ranked matches yet.<br/>Your record and rank show up here after your first one.</div>';
+  const r = profile.rating;
+  if (!r.games) return '<div class="rl-empty">No ranked matches yet.<br/>Your record and place on the leaderboard show up here after your first one.</div>';
   const pct = (w: number, g: number) => (g ? `${Math.round((w / g) * 100)}%` : '—');
-  const best = modes.filter(({ r }) => r.games > 0).sort((a, b) => b.r.peak - a.r.peak)[0];
-  const bestRank = visibleRank(best.r.peak, best.r.games);
-  const rows = modes
-    .map(({ m, r, st }) => {
-      if (!r.games) return `<tr class="idle"><td>${MODE_LABEL[m]}</td><td colspan="4" class="dim">Not played</td></tr>`;
-      return `<tr><td>${MODE_LABEL[m]}</td><td>${rankChip(r.rating, r.games, 22)}<br/><span class="dim">${r.rating}</span></td><td>${st ? `<b>#${st.rank}</b> <span class="dim">of ${st.total}</span>` : '<span class="dim">—</span>'}</td><td>${r.wins}-${r.losses}-${r.draws}</td><td>${pct(r.wins, r.games)}</td></tr>`;
-    })
-    .join('');
+  const peakRank = visibleRank(r.peak, r.games);
+  const st = profile.standing;
+  const rows = RANKED_MODES.map((m) => {
+    const x = r.modes[m];
+    if (!x.games) return `<tr class="idle"><td>${MODE_LABEL[m]}</td><td colspan="3" class="dim">Not played</td></tr>`;
+    return `<tr><td>${MODE_LABEL[m]}</td><td>${x.games}</td><td>${x.wins}-${x.losses}-${x.draws}</td><td>${pct(x.wins, x.games)}</td></tr>`;
+  }).join('');
   return `<div class="rk-stats">
-    <div class="rk-stat"><b>${total.games}</b><span>matches</span></div>
-    <div class="rk-stat"><b>${total.wins}</b><span>wins</span></div>
-    <div class="rk-stat"><b>${total.losses}</b><span>losses</span></div>
-    <div class="rk-stat"><b>${pct(total.wins, total.games)}</b><span>win rate</span></div>
-    <div class="rk-stat wide"><b>${best.r.peak}</b><span>peak · ${MODE_LABEL[best.m]}${bestRank ? ` · ${esc(bestRank.label)}` : ''}</span></div>
+    <div class="rk-stat wide"><b>${st ? `#${st.rank}` : '—'}</b><span>${st ? `of ${st.total} on the leaderboard` : 'finish placement to join the leaderboard'}</span></div>
+    <div class="rk-stat"><b>${r.games}</b><span>matches</span></div>
+    <div class="rk-stat"><b>${r.wins}</b><span>wins</span></div>
+    <div class="rk-stat"><b>${r.losses}</b><span>losses</span></div>
+    <div class="rk-stat"><b>${pct(r.wins, r.games)}</b><span>win rate</span></div>
+    <div class="rk-stat wide"><b>${r.peak}</b><span>peak rating${peakRank ? ` · ${esc(peakRank.label)}` : ''}</span></div>
   </div>
-  <table class="rk-board rk-modes-table"><thead><tr><th>Mode</th><th>Rank</th><th>Position</th><th>W-L-D</th><th>Win%</th></tr></thead><tbody>${rows}</tbody></table>`;
+  <table class="rk-board rk-modes-table"><thead><tr><th>Mode</th><th>Played</th><th>W-L-D</th><th>Win%</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function meCardHtml(lobby: LobbyController): string {
   const R = lobby.ranked;
-  const mine = R.profile?.ratings[R.mode];
+  const mine = R.profile?.rating;
   if (!mine) return '<div class="rk-me"><div class="dim">Search once to get on the ladder.</div></div>';
   const rank = visibleRank(mine.rating, mine.games);
   const info = rank ?? rankFor(mine.rating);
@@ -142,7 +141,7 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
   const search = R.searching
     ? `<div class="rk-search"><span class="mp-dot waking"></span><div><b>Searching ${MODE_LABEL[R.mode]}…</b><span><span data-mp="search-timer">0:00</span> · <span data-mp="queue-count">${R.waiting}</span> in queue (need ${need})</span></div></div>
        <button class="bbtn mp-grow" data-mp="cancel-search">Cancel search</button>`
-    : `<button class="bbtn primary mp-big" data-mp="find" ${busy || !online ? 'disabled' : ''}>Find ${MODE_LABEL[R.mode]} match<small>Matched by rating · draft your robot · placed on the ladder</small></button>`;
+    : `<button class="bbtn primary mp-big" data-mp="find" ${busy || !online ? 'disabled' : ''}>Find ${MODE_LABEL[R.mode]} match<small>One rating across every mode · draft your robot</small></button>`;
   return {
     body: `
     <div class="mp-grid" data-mp="ranked-page">
@@ -155,8 +154,8 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
           <label class="mp-field"><span>Your name</span><input data-mp="name" maxlength="24" placeholder="Driver name" value="${esc(savedName() || lobby.playerName)}" ${R.searching ? 'disabled' : ''}/></label>
           <div class="seg rk-modes" role="group" aria-label="Ranked mode">
             ${RANKED_MODES.map((m) => {
-              const r = R.profile?.ratings[m];
-              return `<button class="opt ${m === R.mode ? 'on' : ''}" data-rk-mode="${m}" ${R.searching ? 'disabled' : ''}>${MODE_LABEL[m]}<small>${r ? r.rating : '—'}</small></button>`;
+              const played = R.profile?.rating.modes[m].games;
+              return `<button class="opt ${m === R.mode ? 'on' : ''}" data-rk-mode="${m}" ${R.searching ? 'disabled' : ''}>${MODE_LABEL[m]}<small>${played ? `${played} played` : 'queue'}</small></button>`;
             }).join('')}
           </div>
           ${meCardHtml(lobby)}
@@ -170,13 +169,14 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
           <div class="rl-list" data-mp="stats">${online ? statsPanelHtml(lobby) : '<div class="rl-empty">Connect to see your stats.</div>'}</div>
         </section>
         <section class="panel mp-card">
-          <div class="panel-head"><span>${MODE_LABEL[R.mode]} leaderboard</span></div>
+          <div class="panel-head"><span>${getSeason(RANKED_SEASON_ID).year} leaderboard</span></div>
           <div class="rl-list" data-mp="leaderboard">${online ? leaderboardHtml(lobby) : '<div class="rl-empty">Connect to see the leaderboard.</div>'}</div>
         </section>
         <section class="panel mp-card">
           <div class="panel-head"><span>How ranked works</span></div>
           <ol class="mp-steps">
-            <li>You’re matched with players near your rating; the search widens the longer you wait. Teams are balanced.</li>
+            <li>One rating and one leaderboard per year, whichever mode you queue. You’re matched near your rating; the search widens the longer you wait, and teams are balanced.</li>
+            <li>In team modes the change is shared by skill: if you carry a weaker teammate and lose, you lose less; they lose more.</li>
             <li>Both sides <b>ban</b> robots, then <b>pick</b> theirs in snake order. A robot can only be picked once per alliance.</li>
             <li>Choose your starting position, then play. Everyone reports the result; the rating moves only if they agree.</li>
             <li><b>Leaving a match counts as a loss.</b> A dropped connection has 30 seconds to come back.</li>

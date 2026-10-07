@@ -276,8 +276,8 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.raw({ op: 'profile', name, secret });
   }
 
-  leaderboard(mode: RankedMode, secret?: string): void {
-    this.raw({ op: 'leaderboard', mode, secret });
+  leaderboard(secret?: string): void {
+    this.raw({ op: 'leaderboard', secret });
   }
 
   /** Ranked: report the match result as this player saw it. */

@@ -130,10 +130,34 @@ export interface RatingChange {
   result: 'win' | 'loss' | 'draw' | 'abandon' | 'none';
 }
 
+/** How strongly a player's rating relative to their teammates shifts credit and blame (0 = split evenly). */
+export const TEAM_BLAME = 0.8;
+const BLAME_MIN = 0.35;
+const BLAME_MAX = 1.65;
+
 /**
- * Rating changes for a finished match. Team strength is the mean rating of its members. A player who left
- * (`abandoned`) is scored as a loss even if their team was ahead; their teammates who stayed keep their
- * rating (the match is void for them), and the opponents are scored as winners.
+ * How a team's rating change is shared out. Ratings stand in for who carried the match: when a team loses, the
+ * stronger players are blamed less and the weaker ones more; when it wins, the stronger players get more of the
+ * credit. The factors average to 1, so the team's total change is unchanged, and a solo player or an evenly
+ * matched team is unaffected. `sign` is +1 for a gain, -1 for a loss.
+ */
+export function teamShares(ratings: number[], sign: 1 | -1): number[] {
+  if (ratings.length < 2) return ratings.map(() => 1);
+  const mean = avg(ratings);
+  let f = ratings.map((r) => Math.max(BLAME_MIN, Math.min(BLAME_MAX, 1 + sign * TEAM_BLAME * ((r - mean) / 400))));
+  // Clamping can pull the average off 1; rescale (twice, to settle) so the team total stays the same.
+  for (let i = 0; i < 2; i++) {
+    const m = avg(f);
+    f = f.map((x) => Math.max(BLAME_MIN, Math.min(BLAME_MAX, x / m)));
+  }
+  return f;
+}
+
+/**
+ * Rating changes for a finished match. Team strength is the mean rating of its members, which sets the expected
+ * result; the team's change is then split by `teamShares`. A player who left (`abandoned`) is scored as a loss
+ * even if their team was ahead; their teammates who stayed keep their rating (the match is void for them), and the
+ * opponents are scored as winners.
  */
 export function rateMatch(players: RankedParticipant[], outcome: Outcome, abandoned: ReadonlySet<string> = new Set()): RatingChange[] {
   const team = (t: Team) => players.filter((p) => p.team === t);
@@ -142,11 +166,18 @@ export function rateMatch(players: RankedParticipant[], outcome: Outcome, abando
   const redLeft = team('red').some((p) => abandoned.has(p.playerId));
   const blueLeft = team('blue').some((p) => abandoned.has(p.playerId));
   const decided: Outcome = redLeft && !blueLeft ? 'blue' : blueLeft && !redLeft ? 'red' : outcome;
+  const shares = new Map<string, number>();
+  for (const t of ['red', 'blue'] as const) {
+    const members = team(t);
+    const score = decided === 'tie' ? 0.5 : decided === t ? 1 : 0;
+    const gain = score - expectedScore(strength[t], strength[t === 'red' ? 'blue' : 'red']) >= 0;
+    teamShares(members.map((p) => p.rating), gain ? 1 : -1).forEach((f, i) => shares.set(members[i].playerId, f));
+  }
   return players.map((p) => {
     const mine = p.team;
     const other: Team = mine === 'red' ? 'blue' : 'red';
     const score = decided === 'tie' ? 0.5 : decided === mine ? 1 : 0;
-    const raw = Math.round(kFactor(p.games) * (score - expectedScore(strength[mine], strength[other])));
+    const raw = Math.round(kFactor(p.games) * (score - expectedScore(strength[mine], strength[other])) * (shares.get(p.playerId) ?? 1));
     const left = abandoned.has(p.playerId);
     const teamLeft = mine === 'red' ? redLeft : blueLeft;
     // Stayers on the abandoning side are not punished for a teammate's exit.

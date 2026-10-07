@@ -74,11 +74,19 @@ export type RelayRequest =
   | { op: 'unqueue' }
   /** Fetch this player's ratings (registers them on first use). */
   | { op: 'profile'; name: string; secret: string }
-  | { op: 'leaderboard'; mode: RankedMode; secret?: string }
+  /** The season's single leaderboard (one rating covers every mode). */
+  | { op: 'leaderboard'; secret?: string }
   /** Ranked room member: the result as they saw it. The relay needs the host and the other drivers to agree. */
   | { op: 'result'; winner: Outcome; red: number; blue: number }
   /** Client → always delivered to host. Host → `to` peer, or every client when omitted. */
   | { op: 'send'; data: unknown; to?: string };
+
+export interface ModeSummary {
+  games: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
 
 export interface RatingSummary {
   rating: number;
@@ -87,9 +95,11 @@ export interface RatingSummary {
   losses: number;
   draws: number;
   peak: number;
+  /** Record in each mode (the rating is shared). */
+  modes: Record<RankedMode, ModeSummary>;
 }
 
-export interface LeaderEntry extends RatingSummary {
+export interface LeaderEntry extends Omit<RatingSummary, 'modes'> {
   name: string;
   /** This row is the requesting player. */
   me?: boolean;
@@ -113,8 +123,8 @@ export type RelayEvent =
   | { op: 'unqueued'; reason: string }
   /** A ranked match was formed and this peer is already seated in its room (the host is `hostId`). */
   | { op: 'matched'; room: string; peerId: string; hostId: string; token: string; mode: RankedMode; team: Team; roster: RankedRosterEntry[] }
-  | { op: 'profile'; persistent: boolean; name: string; ratings: Record<RankedMode, RatingSummary>; /** Leaderboard position per mode played. */ standings?: Partial<Record<RankedMode, { rank: number; total: number }>> }
-  | { op: 'leaderboard'; mode: RankedMode; rows: LeaderEntry[]; /** The requester's standing (if they have played). */ you?: { rank: number; total: number; rating: number; games: number } }
+  | { op: 'profile'; persistent: boolean; name: string; season: string; rating: RatingSummary; /** Place on the season leaderboard (null until I've played). */ standing: { rank: number; total: number } | null }
+  | { op: 'leaderboard'; season: string; rows: LeaderEntry[]; /** The requester's standing (if they have played). */ you?: { rank: number; total: number; rating: number; games: number } }
   /** Result of a ranked match for this player. `status` void = no rating change. */
   | { op: 'rating'; mode: RankedMode; status: 'final' | 'abandoned' | 'void'; before: number; after: number; delta: number; result: 'win' | 'loss' | 'draw' | 'abandon' | 'none'; reason?: string }
   | { op: 'error'; message: string }

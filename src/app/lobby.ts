@@ -33,7 +33,7 @@ import {
   type Outcome,
   type RankedMode,
 } from '@engine/net/ranked';
-import type { LeaderEntry } from '@engine/net/relayProtocol';
+import type { LeaderEntry, RatingSummary } from '@engine/net/relayProtocol';
 import { prefetchDraftThumbs } from './ranked';
 import { rankedPool, rankedPoolIds } from './rankedPool';
 import { censorText, nameProblem } from '@engine/net/nameFilter';
@@ -98,7 +98,8 @@ export class LobbyController {
     searching: boolean;
     searchStartedAt: number;
     waiting: number;
-    profile: { persistent: boolean; name: string; ratings: Record<RankedMode, { rating: number; games: number; wins: number; losses: number; draws: number; peak: number }>; standings?: Partial<Record<RankedMode, { rank: number; total: number }>> } | null;
+    /** My season rating (shared by every mode), record per mode, and place on the leaderboard. */
+    profile: { persistent: boolean; name: string; season: string; rating: RatingSummary; standing: { rank: number; total: number } | null } | null;
     leaderboard: LeaderEntry[] | null;
     /** My place on the board (null until I've played). */
     standing: { rank: number; total: number; rating: number; games: number } | null;
@@ -179,30 +180,29 @@ export class LobbyController {
       this.ranked.profile = p;
       if (!same) this.onChange();
     });
-    this.client.on('leaderboard', ({ mode, rows, you }) => {
-      if (mode !== this.ranked.mode) return;
+    this.client.on('leaderboard', ({ rows, you }) => {
       const same = JSON.stringify([this.ranked.leaderboard, this.ranked.standing]) === JSON.stringify([rows, you ?? null]);
       this.ranked.leaderboard = rows;
       this.ranked.standing = you ?? null;
       if (!same) this.onChange();
     });
     this.client.on('rating', (r) => {
-      const prior = this.ranked.profile?.ratings[r.mode];
+      const prior = this.ranked.profile?.rating;
       const counted = r.status !== 'void' && r.result !== 'none';
       const games = prior?.games ?? 0;
       // Refresh my standing (leaderboard position) once the result is in.
       setTimeout(() => this.pollRanked(true), 500);
       this.ranked.lastResult = { ...r, rankBefore: visibleRank(r.before, games), rankAfter: visibleRank(r.after, games + (counted ? 1 : 0)) };
-      if (this.ranked.profile) {
-        const row = this.ranked.profile.ratings[r.mode];
-        if (r.status !== 'void' && r.result !== 'none') {
-          row.rating = r.after;
-          row.games++;
-          row.peak = Math.max(row.peak, r.after);
-          if (r.result === 'win') row.wins++;
-          else if (r.result === 'draw') row.draws++;
-          else row.losses++;
-        }
+      if (this.ranked.profile && counted) {
+        const row = this.ranked.profile.rating;
+        const m = row.modes[r.mode];
+        row.rating = r.after;
+        row.games++;
+        m.games++;
+        row.peak = Math.max(row.peak, r.after);
+        const key = r.result === 'win' ? 'wins' : r.result === 'draw' ? 'draws' : 'losses';
+        row[key]++;
+        m[key]++;
       }
       this.onChange();
     });
@@ -338,10 +338,7 @@ export class LobbyController {
 
   setRankedMode(mode: RankedMode): void {
     if (!isRankedMode(mode) || this.ranked.searching || this.ranked.mode === mode) return;
-    this.ranked.mode = mode;
-    this.ranked.leaderboard = null;
-    this.ranked.standing = null;
-    this.pollRanked();
+    this.ranked.mode = mode; // only picks the queue: the rating and leaderboard are shared by every mode
     this.onChange();
   }
 
@@ -351,7 +348,7 @@ export class LobbyController {
     if (!this.client.open || this.ranked.searching) return;
     // Ratings only change after a match, so they are fetched once per visit (and after each match), not on every poll.
     if (force || !this.ranked.profile) this.client.profile(this.playerName || 'Player', this.rankedSecret());
-    this.client.leaderboard(this.ranked.mode, this.rankedSecret());
+    this.client.leaderboard(this.rankedSecret());
   }
 
   async findMatch(name: string): Promise<void> {
