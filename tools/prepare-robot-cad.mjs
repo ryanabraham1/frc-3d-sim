@@ -76,6 +76,14 @@ const specs = {
     ['intake',/Intake Assembly <1>/], ['shooter',/Shooter Assembly <1>/], ['elevator',/4\. Elevator/],
     ['arm',/5A\. Arm/], ['manip',/5B\. Manipulator/], ['climber',/Assembly 1 <1>/],
   ]},
+  // 6731 Multiclass (CADathon 2025): fixed rear over-bumper intake, fixed front shooter with a pivoting hood. The CAD carries its six
+  // SPEECH BUBBLEs inside the robot; they become the held-piece display (bubble-0..5). Bumpers are the sim's own.
+  'hero-multiclass-6731': {file:'hero-multiclass-6731-source.gltf',year:'wcp-hero-heist',axes:'negative-y',offsetY:.048,lossless:true,preserveColors:true,omit:/^bumper(?:\/|$)|Origin Cube/,groups:[
+    ['roller-main',/(?:Compliant Wheel|Hex \(24\.407 in\)).*speech bubble intake/], ['roller-stub1',/stub roller assembly <1>.*speech bubble intake/],
+    ['roller-stub2',/stub roller assembly <2>.*speech bubble intake/],
+    ['flywheel',/4" SDS Flywheel|\(am-2647\)|Hex \(11\.059 in\)/], ['hood',/hood assembly <1>/],
+    ['feeder',/\(am-4716\)/], ['intake',/full intake <1>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -294,6 +302,10 @@ for (const id of ids) {
     if (id === 'hero-sentinel-1923' && /Ground Intake Assy/.test(full) && /Compliant Wheel|Flex Wheel/.test(n.getName())) {
       // Every intake roller is orange so the intake face reads at a glance.
       for (const p of n.getMesh().listPrimitives()) if (p.getMaterial()) p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.96,.4,.04,1]).setName('intake-orange'));
+    }
+    if (id === 'hero-multiclass-6731') {
+      if (/^Speech Bubble\//.test(full)) { let top = n; while (top.getParentNode()?.getParentNode()) top = top.getParentNode(); group = `bubble-${top.getParentNode().listChildren().filter(c => /Speech Bubble/.test(c.getName())).indexOf(top)}`; }
+      else if (group === 'frame' && /Hex \(9\.718 in\)/.test(full) && bounds.max[2] < .40) group = 'feeder';
     }
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';
     if (id === 'sublime-1678' && group === 'carriage' && bounds.min[2] < .2) group = 'frame';

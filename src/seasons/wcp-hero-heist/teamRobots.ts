@@ -3,6 +3,7 @@ import { lb, deg, inch } from '@engine/units';
 import { heroRobotDefaults, normalizeHeroConfig, PLAYING_MASS_ALLOWANCE } from './config';
 import { registerRobotModel, drivebase, box, bar, mat, roller, type ModelKit } from '@engine/robot/models';
 import * as THREE from 'three';
+import { multiclass6731Robot } from './multiclass6731';
 import { fireweedTeamRobot } from './fireweed1540';
 import { team5800Robots } from './team5800';
 import { poofs254Robot } from './team254';
@@ -53,7 +54,7 @@ function mantis6800(): TeamRobot[] {
   // Medium pending full folded-body clearance validation; sheet claims High.
   c.climber={maxLevel:2,secondsPerLevel:1.7};
   const mantis:TeamRobot={id:'hero-mantis-6800',team:6800,name:'Mantis',description:'Valor’s Hero Heist Mystic: dual side intakes, six-bubble spindexer, turret and roller hood, folding magazine and telescoping suction climb. Drive speed, joint travel and playing mass are estimates.',source:'https://cad.onshape.com/documents/e4397ae1ed0ebe3445466e8a/w/dc22b6503a48cdc0a163c772/e/579f1fa8cfef57db8f7205ca',config:normalizeHeroConfig(c)};
-  return [mantis,constantine1318(),nomad6995(),fireweedTeamRobot(),...team5800Robots(),poofs254Robot(),sentinel1923Robot()];
+  return [mantis,constantine1318(),nomad6995(),fireweedTeamRobot(),...team5800Robots(),poofs254Robot(),sentinel1923Robot(),multiclass6731Robot()];
 }
 /** 1318 "Constantine": Mystic with a full-width 4-bar intake and a same-side geared-hood shooter (CAD -Y = sim +X). */
 function constantine1318(): TeamRobot {
