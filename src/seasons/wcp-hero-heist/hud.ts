@@ -29,11 +29,13 @@ export class HeroHud implements SeasonHud {
         + `<div class="mini dim">${ctx.clock.current.id === 'auto' || !ctx.clock.started ? `AUTO EXIT ${team.filter(r => rules.exited.has(r.id)).length}/${team.length}` : `TOWER ${tower}/60`}</div>`);
     }
     // 20 districts as small squares: squad color, filled by OWNERSHIP strength, outlined when FULLY owned.
+    const p0 = ctx.playerRobot, aimed = p0 && p0.config.launcher.enabled && (p0.held.length > 0 || rules.manualTarget(p0)) ? rules.targets.get(p0.id) : undefined;
     const cell = (id: number) => {
       const s = own.districts[id], lvl = levelOf(s);
+      const ring = id === aimed ? 'box-shadow:0 0 0 2px #ffd21f,0 0 6px 2px rgba(255,210,31,.75);' : lvl === 'full' ? 'outline:1px solid #fff;' : '';
       const rgb = s.support === 'red' ? '232,61,79' : s.support === 'blue' ? '51,127,232' : '138,143,153';
       const alpha = s.support ? 0.25 + 0.75 * (s.strength / 4) : 0.25;
-      return `<i title="${esc(DISTRICTS[id].label)} · ${lvl.toUpperCase()}" style="display:inline-block;width:9px;height:9px;margin:1px;border-radius:2px;background:rgba(${rgb},${alpha});${lvl === 'full' ? 'outline:1px solid #fff;' : ''}"></i>`;
+      return `<i title="${esc(DISTRICTS[id].label)} · ${lvl.toUpperCase()}" style="display:inline-block;width:9px;height:9px;margin:1px;border-radius:2px;background:rgba(${rgb},${alpha});${ring}"></i>`;
     };
     const row = (label: string, ids: number[]) => `<div class="mini" style="white-space:nowrap"><span class="dim" style="display:inline-block;width:22px">${label}</span>${ids.map(cell).join('')}</div>`;
     ctx.hud.setHtml(this.slots.center, row('UP', [0, 1, 2, 3, 4, 5]) + row('DN', [6, 7, 8, 9, 10, 11]) + row('W·E', [12, 13, 14, 15, 16, 17, 18, 19]));

@@ -297,10 +297,10 @@ export interface SeasonDefinition {
   /** How the red half mirrors the blue `mapShapes`: rotational (default, L−x, W−y) or mirror (L−x, y). */
   mapSymmetry?: 'rotational' | 'mirror';
   /**
-   * Shot targets a driver can pick by hand (`,` / `.` cycle, `Z` = automatic), carried as `RobotCommand.aimTarget`.
-   * The rules decide whether a picked target is reachable.
+   * Shot targets a driver can pick by hand (`,` / `.` cycle left/right through those on screen, `Z` = automatic), carried
+   * as `RobotCommand.aimTarget`, with the on-screen set as `aimVisible`. The rules decide whether a pick is reachable.
    */
-  aimTargets?: { id: number; label: string }[];
+  aimTargets?: { id: number; label: string; /** FIELD-frame point (m): only targets on the driver's screen can be picked. */ point?: { x: number; y: number; z: number } }[];
   /** Number of human-player buttons (1 = H only; 2 adds B / gamepad LB; 3 adds N; 4 adds M). Default 1. */
   humanPlayerButtons?: number;
   /**

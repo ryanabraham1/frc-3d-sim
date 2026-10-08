@@ -673,10 +673,13 @@ export class Game {
     if (targets?.length && (inp.targetStep || inp.targetAuto)) {
       if (inp.targetAuto) this.aimChoice = -1;
       else {
-        const k = targets.findIndex((t) => t.id === this.aimChoice);
-        this.aimChoice = targets[k < 0 ? (inp.targetStep > 0 ? 0 : targets.length - 1) : (k + inp.targetStep + targets.length) % targets.length].id;
+        // Cycle left ↔ right through the targets on this screen only.
+        const seen = this.visibleTargets();
+        const k = seen.findIndex((t) => t.id === this.aimChoice);
+        if (seen.length) this.aimChoice = seen[k < 0 ? (inp.targetStep > 0 ? 0 : seen.length - 1) : (k + inp.targetStep + seen.length) % seen.length].id;
+        else this.hud.toast('No shot target in view', 'info', undefined, 'aim-target');
       }
-      this.hud.toast(this.aimChoice < 0 ? 'Target: automatic' : `Target: ${targets.find((t) => t.id === this.aimChoice)!.label} · Z = automatic`, 'info', undefined, 'aim-target');
+      if (this.aimChoice < 0 || this.visibleTargets().length) this.hud.toast(this.aimChoice < 0 ? 'Target: automatic' : `Target: ${targets.find((t) => t.id === this.aimChoice)!.label} · Z = automatic`, 'info', undefined, 'aim-target');
     }
     if (inp.toggleIntake) {
       this.autoIntake = !this.autoIntake;
@@ -730,8 +733,35 @@ export class Game {
       descend: inp.descend,
       ...(this.blockerUp && (robot.config.shotBlocker || robot.manualHopper) ? { block: true } : {}),
       ...(this.season.maxScoringLevel ? { scoringLevel: this.scoringLevel } : {}),
-      ...(this.season.aimTargets?.length ? { aimTarget: this.aimChoice } : {}),
+      ...(this.season.aimTargets?.length ? this.aimCommand() : {}),
     };
+  }
+
+  /**
+   * Shot targets on this screen (projected inside the view, in front of the camera), left to right. A target is only
+   * pickable while you can see it.
+   */
+  private visibleTargets(): { id: number; sx: number }[] {
+    const cam = this.renderer.camera;
+    cam.updateMatrixWorld();
+    const out: { id: number; sx: number }[] = [];
+    for (const t of this.season.aimTargets ?? []) {
+      if (!t.point) { out.push({ id: t.id, sx: 0 }); continue; }
+      const v = this.frame.toWorld(t.point.x, t.point.y, t.point.z, this.aimTmp).project(cam);
+      if (v.z < 1 && Math.abs(v.x) <= 0.97 && Math.abs(v.y) <= 0.97) out.push({ id: t.id, sx: v.x });
+    }
+    return out.sort((a, b) => a.sx - b.sx);
+  }
+  private readonly aimTmp = new Vector3();
+
+  /** The driver's pick (dropped back to automatic once it leaves the screen) and the on-screen set for the rules. */
+  private aimCommand(): { aimTarget: number; aimVisible: number } {
+    const seen = this.visibleTargets();
+    if (this.aimChoice >= 0 && !seen.some((t) => t.id === this.aimChoice)) {
+      this.aimChoice = -1;
+      this.hud.toast('Target out of view · automatic', 'info', undefined, 'aim-target');
+    }
+    return { aimTarget: this.aimChoice, aimVisible: seen.reduce((m, t) => (t.id < 31 ? m | (1 << t.id) : m), 0) };
   }
 
   /** Velocity toward the nearest loose piece within reach of the intake (touch intake assist), or null. */

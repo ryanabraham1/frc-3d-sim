@@ -338,7 +338,23 @@ describe('Hero Heist manual shot targets', () => {
     expect(rules(sim).ownership.districts[id].support, DISTRICTS[id].label).toBe('red'); // load() hands out red bubbles
     for (const d of DISTRICTS) if (d.id !== id) expect(rules(sim).ownership.districts[d.id].strength, d.label).toBe(0);
   });
+  it('only targets on the driver\'s screen count: automatic picks among them and an off-screen pick is ignored', () => {
+    const sim = make(preset('mystic-turret'), 'blue', { x: 8.2, y: 4.6, yaw: 0 });
+    sim.run(0.3); sim.load(2);
+    const r = rules(sim);
+    const onlyDowntown = [6, 7, 8, 9, 10, 11].reduce((m, id) => m | (1 << id), 0);
+    sim.robot.lastCommand = { ...IDLE_COMMAND, aimTarget: -1, aimVisible: onlyDowntown };
+    expect(DISTRICTS[r.targetFor(sim.robot)!.id].region).toBe('downtown');
+    sim.robot.lastCommand = { ...IDLE_COMMAND, aimTarget: 3, aimVisible: onlyDowntown };
+    expect(r.targetFor(sim.robot)!.id).not.toBe(3);
+    sim.robot.lastCommand = { ...IDLE_COMMAND, aimTarget: 3, aimVisible: onlyDowntown | (1 << 3) };
+    expect(r.targetFor(sim.robot)!.id).toBe(3);
+    sim.robot.lastCommand = { ...IDLE_COMMAND, aimTarget: -1, aimVisible: 0 };
+    expect(r.targetFor(sim.robot)).toBeNull();
+    expect(heroHeist.aimTargets!.every(t => t.point)).toBe(true);
+  });
   it('the pick travels in multiplayer commands; automatic stays the default', () => {
+    expect(unpackCommand(JSON.parse(JSON.stringify(packCommand({ ...IDLE_COMMAND, aimVisible: (1 << 19) | 5 }))))).toMatchObject({ aimTarget: -1, aimVisible: (1 << 19) | 5 });
     const cmd = { ...IDLE_COMMAND, shoot: true, aimTarget: 17 };
     expect(unpackCommand(JSON.parse(JSON.stringify(packCommand(cmd))))).toMatchObject({ shoot: true, aimTarget: 17 });
     expect(unpackCommand(packCommand({ ...IDLE_COMMAND, aimTarget: -1 }))?.aimTarget).toBe(-1);

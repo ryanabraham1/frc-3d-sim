@@ -225,6 +225,12 @@ export class HeroHeistRules implements SeasonRules {
     return s.support === a ? 2 : 1;
   }
 
+  /** Is district `id` on this robot's driver's screen? (Bots and tests send no view: everything counts.) */
+  inView(r: Robot, id: number): boolean {
+    const mask = r.lastCommand.aimVisible;
+    return mask === undefined || (mask & (1 << id)) !== 0;
+  }
+
   /** Is this target the driver's manual pick (vs automatic)? */
   manualTarget(r: Robot): boolean { return (r.lastCommand.aimTarget ?? -1) >= 0; }
 
@@ -243,12 +249,12 @@ export class HeroHeistRules implements SeasonRules {
     if (!r.config.launcher.enabled) return null;
     // The driver picked a CITY BLOCK by hand (`,` / `.`): aim there even if it is a long or awkward shot.
     const picked = r.lastCommand.aimTarget;
-    if (picked !== undefined && picked >= 0 && DISTRICTS[picked]) { this.targets.set(r.id, picked); return DISTRICTS[picked]; }
+    if (picked !== undefined && picked >= 0 && DISTRICTS[picked] && this.inView(r, picked)) { this.targets.set(r.id, picked); return DISTRICTS[picked]; }
     const pref = this.preferredBlock.get(r.id);
     if (pref !== undefined && this.shotPossible(r, DISTRICTS[pref])) { this.targets.set(r.id, pref); return DISTRICTS[pref]; }
     // Like a driver's target selection, the target stays locked while the trigger is held and the shot stays possible.
     const locked = this.targets.get(r.id);
-    if (locked !== undefined && r.lastCommand.shoot && this.shotPossible(r, DISTRICTS[locked])) return DISTRICTS[locked];
+    if (locked !== undefined && r.lastCommand.shoot && this.inView(r, locked) && this.shotPossible(r, DISTRICTS[locked])) return DISTRICTS[locked];
     const p = r.pose;
     const score = (d: District) => {
       const c = d.cityBlock.center, dist = Math.hypot(c.x - p.x, c.y - p.y);
@@ -259,12 +265,12 @@ export class HeroHeistRules implements SeasonRules {
     };
     let best: District | null = null, bestScore = -Infinity;
     for (const d of DISTRICTS) {
-      if (!this.shotPossible(r, d)) continue;
+      if (!this.inView(r, d.id) || !this.shotPossible(r, d)) continue;
       const s = score(d);
       if (s > bestScore) { bestScore = s; best = d; }
     }
     const prev = this.targets.get(r.id);
-    if (prev !== undefined && best && prev !== best.id && this.shotPossible(r, DISTRICTS[prev]) && score(DISTRICTS[prev]) > bestScore - 0.25) best = DISTRICTS[prev];
+    if (prev !== undefined && best && prev !== best.id && this.inView(r, prev) && this.shotPossible(r, DISTRICTS[prev]) && score(DISTRICTS[prev]) > bestScore - 0.25) best = DISTRICTS[prev];
     if (best) this.targets.set(r.id, best.id); else this.targets.delete(r.id);
     return best;
   }

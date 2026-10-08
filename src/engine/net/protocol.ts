@@ -120,8 +120,8 @@ export interface MatchSetup {
 
 // ───────────────────────────── messages ─────────────────────────────
 
-/** [vx, vy, omega, flags, climbLevel (-1 = none), optional scoringLevel (1–4, 0 = none), optional aimTarget (-1 = auto)] */
-export type PackedCommand = [number, number, number, number, number, number?, number?];
+/** [vx, vy, omega, flags, climbLevel (-1 = none), optional scoringLevel (1–4, 0 = none), optional aimTarget (-1 = auto), optional aimVisible mask] */
+export type PackedCommand = [number, number, number, number, number, number?, number?, number?];
 
 const F_INTAKE = 1;
 const F_SHOOT = 2;
@@ -133,15 +133,17 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
 export function packCommand(c: RobotCommand): PackedCommand {
   const flags = (c.intake ? F_INTAKE : 0) | (c.shoot ? F_SHOOT : 0) | (c.pass ? F_PASS : 0) | (c.descend ? F_DESCEND : 0) | (c.block ? F_BLOCK : 0);
   const packed: PackedCommand = [r3(c.vx), r3(c.vy), r3(c.omega), flags, c.climb ?? -1];
-  if (c.scoringLevel !== undefined || c.aimTarget !== undefined) packed.push(c.scoringLevel ?? 0);
-  if (c.aimTarget !== undefined) packed.push(c.aimTarget);
+  if (c.scoringLevel !== undefined || c.aimTarget !== undefined || c.aimVisible !== undefined) packed.push(c.scoringLevel ?? 0);
+  if (c.aimTarget !== undefined || c.aimVisible !== undefined) packed.push(c.aimTarget ?? -1);
+  if (c.aimVisible !== undefined) packed.push(c.aimVisible);
   return packed;
 }
 
 export function unpackCommand(p: unknown): RobotCommand | null {
-  if (!Array.isArray(p) || p.length < 5 || p.length > 7 || !p.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
-  if (p.length >= 6 && (!Number.isInteger(p[5]) || p[5] < (p.length === 7 ? 0 : 1) || p[5] > 4)) return null;
-  if (p.length === 7 && (!Number.isInteger(p[6]) || p[6] < -1 || p[6] > 63)) return null;
+  if (!Array.isArray(p) || p.length < 5 || p.length > 8 || !p.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  if (p.length >= 6 && (!Number.isInteger(p[5]) || p[5] < (p.length >= 7 ? 0 : 1) || p[5] > 4)) return null;
+  if (p.length >= 7 && (!Number.isInteger(p[6]) || p[6] < -1 || p[6] > 63)) return null;
+  if (p.length === 8 && (!Number.isInteger(p[7]) || p[7] < 0 || p[7] > 0x7fffffff)) return null;
   const [vx, vy, omega, flags, climb] = p as PackedCommand;
   return {
     vx,
@@ -154,7 +156,8 @@ export function unpackCommand(p: unknown): RobotCommand | null {
     ...((flags & F_BLOCK) !== 0 ? { block: true } : {}),
     climb: climb >= 0 ? climb : null,
     ...(p.length >= 6 && p[5] ? { scoringLevel: p[5] } : {}),
-    ...(p.length === 7 ? { aimTarget: p[6] } : {}),
+    ...(p.length >= 7 ? { aimTarget: p[6] } : {}),
+    ...(p.length === 8 ? { aimVisible: p[7] } : {}),
   };
 }
 

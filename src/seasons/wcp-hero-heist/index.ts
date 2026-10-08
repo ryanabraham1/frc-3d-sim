@@ -78,7 +78,7 @@ export const heroHeist: SeasonDefinition = {
   humanPlayerButtons: 2,
   humanPlayerHint: { auto: 'Human players feed bubbles down the chute and panels out of the slide to robots waiting with their intake on.', manual: 'H opens / closes the bubble chute (bubbles keep rolling out until you close it); B slides a STORY PANEL out of the slot nearest your robot.' },
   touchLabels: { pass: 'PANEL' },
-  aimTargets: DISTRICTS.map(d => ({ id: d.id, label: d.label })),
+  aimTargets: DISTRICTS.map(d => ({ id: d.id, label: d.label, point: d.cityBlock.center })),
   startPose,
   driverEye,
 

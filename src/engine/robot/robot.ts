@@ -35,6 +35,8 @@ export interface RobotCommand {
   scoringLevel?: number;
   /** Driver-selected shot target (season `aimTargets` id); -1 or omitted = the season picks. */
   aimTarget?: number;
+  /** Bitmask of the `aimTargets` ids on this driver's screen (automatic targeting only picks among them). */
+  aimVisible?: number;
   /** Hold the shot blocker out (robots with config.shotBlocker). */
   block?: boolean;
   /** Square the chassis onto the shot target (auto-align robots) without firing, like a driver holding the aim button. */
