@@ -8,6 +8,7 @@ import { AUTO_ROUTINES, ReefscapeAutoPilot } from './autopilot';
 import { driverEye, normalizeReefscapeConfig, reefscapeRobotDefaults, reefscapeRobotOptions, reefscapeRobotPresets, reefscapeRobotSummary, reefscapeSpecBars, reefscapeCardBars, startPose, TIMELINE } from './config';
 import { quixilver604 } from './quixilver604';
 import { reefscapeTeamRobots } from './teamRobots';
+import { topEpaCadRobots } from './topEpaCadRobots';
 import { buildReefscapeField, type ReefscapeFieldRefs } from './field';
 import { ReefscapeHud } from './hud';
 import { ReefscapeRules } from './rules';
@@ -34,7 +35,7 @@ export const reefscape2025: SeasonDefinition = {
   normalizeRobotConfig: normalizeReefscapeConfig, robotPresets: reefscapeRobotPresets(),
   robotSummary: reefscapeRobotSummary,
   robotOptions: reefscapeRobotOptions,
-  teamRobots: [...reefscapeTeamRobots(),quixilver604()],
+  teamRobots: [...reefscapeTeamRobots(),quixilver604(),...topEpaCadRobots()],
   robotSpecBars: reefscapeSpecBars,
   robotCardBars: reefscapeCardBars,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'tread', 'pre', 'reach', 'lift', 'place', 'harvest', 'release', 'rate', 'acc', 'cspd'],

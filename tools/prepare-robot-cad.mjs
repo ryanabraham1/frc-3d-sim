@@ -163,6 +163,83 @@ const specs = {
     ['intake', /25W4100 - OTB Moving/], ['carriage', /25W2300 - Carriage/],
     ['elevator-stage', /25W2200 - Extension Stage/],
   ] },
+  // 2025 public Onshape releases (Spectrum CAD Collection), next five by EPA. Each spec owns its
+  // omissions and regrouping so robots stay independent; bounds are source meters (Z up).
+  'taiyaki-5940': { file: '2025-5940.glb', year: 2025, axes: 'yzx', finePass: true,
+    omit: /Bumpers <|Pi-Motel|Power Distribution Hub|Rio Shroud|Battery|Cams Assembly|CAN ?[Rr]ange|PCB|(?:^|\/)Connector(?:\/|$)|(?:^|\/)cable chain(?:\/|$)|(?:^|\/)occurrence of Coral(?:\/|$)/,
+    groups: [
+      ['effector', /A-0500 End Effector/], ['carriage', /Stage 2 \(carriage\)/], ['elevator-stage', /Stage 1 </],
+      ['intake', /A-0300 Intake/], ['climber', /A-0600 Climber/],
+    ],
+    regroup(group, name, full, b) {
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2);
+      // Pivot hub on the carriage turns with the cantilevered end effector (X-contact bearing axis).
+      if (group === 'carriage' && Math.hypot(c[1] - .1905, c[2] - .2476) < .004 && c[0] > -.12 && !/Bushing|X-Contact|Kraken/.test(name)) return 'effector';
+      // The deploy gearbox, side mounts and drive chain stay on the chassis; the hinge is the 48T sprocket shaft.
+      if (group === 'intake' && c[1] > -.29) return 'frame';
+      // Coral Protector Plate is a fixed chassis cover beside the climber.
+      // Only the spear/fly-swatter arm above the bushings at (x .3429, z .437) swings; post, winch and spring stay put.
+      if (group === 'climber' && !/^(?:P-060[25789]|P-061[134]|Bushing|Tube Connecting Nut)/.test(name)) return 'frame';
+    } },
+  'wisp-422': { file: '2025-422.glb', year: 2025, axes: 'yzx', finePass: true,
+    omit: /Bumpers Mk2|Battery Lead|Arducam|Radio Case|Energy Chain|Retracted Belt Run|Photo Mount|ASSEMBLY_55816|139700_EP01/,
+    groups: [
+      ['effector', /Manipulator Assembly/], ['intake', /Ground Coral Mk2/], ['climber', /Climber Mk2/], ['elevator-stage', /Elevator Assembly/],
+    ],
+    regroup(group, name, full, b) {
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2), x = Math.abs(c[0]);
+      // The elevator assembly is flat: sort continuous-belt stages by their nested side-tube spacing (1st .197, 2nd .165, 3rd .133, carriage .10).
+      if (group === 'elevator-stage') {
+        if (/2nd Stage/.test(name)) return 'elevator-stage';
+        if (/3rd Stage/.test(name)) return 'elevator-stage-2';
+        if (/^Carriage|Tension/.test(name)) return 'carriage';
+        if (c[1] < .06 || c[2] < .07 || b.max[0] - b.min[0] > .3) return 'frame';
+        return x < .12 ? (c[2] < .5 ? 'carriage' : 'elevator-stage-2') : x < .148 ? 'elevator-stage-2' : x < .18 ? 'elevator-stage' : 'frame';
+      }
+      // Ground CORAL arm turns on the 36T sprocket shaft (y -.1956, z .3023); side plates, motor and chain stay fixed.
+      if (group === 'intake' && c[2] < .29) return 'frame';
+      // Climber: post, gearbox and winch are fixed; L plates and hooks pivot on the bushings at (x .337, z .4056).
+      if (group === 'climber' && !/Climber L Plate|Hook Piece|Not Hook|Reaction Bar|Climber Cross|Bushing|tap both end|1" x 1" Tube Plug|Tap 0.4375|Oil-Embedded/.test(name)) return 'frame';
+    } },
+  'singularity-1706': { file: '2025-1706.glb', year: 2025, axes: 'negative-x', finePass: true, offsetX: .3555, offsetY: .026,
+    omit: /RS-900-Bumpers|(?:^|\/)Algae(?:\/|$)|Battery|Robot Radio|radio mount|Robot Signal Light|USB4125|SxB-PH|12AWG Wire|C_0805/,
+    // The elevator assembly carries an unnamed 1 m reference body around the robot.
+    drop: (name, full, b) => !name && Math.max(...b.max.map((v, i) => v - b.min[i])) > .6,
+    groups: [
+      ['effector', /RS400-000/], ['carriage', /RS-300-000/], ['intake', /RS-500/], ['climber', /RS-600/], ['elevator-stage', /RS-200-Elevator/],
+    ],
+    regroup(group, name, full, b) {
+      if (group !== 'elevator-stage') return;
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2), d = b.max.map((v, i) => v - b.min[i]), y = Math.abs(c[1]);
+      // Flat elevator: three nested tube pairs (fixed 1st stage at |y| .2413, 2nd .2032, 3rd .1651) between x .254-.305.
+      if (c[2] < .085 || c[0] < .235 || c[0] > .335 || /Side-Side|gearbox|Stiff|Wire Passthru|Mount Cable Chain|Stage 1 Top/i.test(name)) return 'frame';
+      if (d[1] > .3) return Math.abs(d[1] - .4318) < .01 ? 'elevator-stage' : d[1] < .4 ? 'elevator-stage-2' : 'frame';
+      return y > .145 && y < .1855 ? 'elevator-stage-2' : y >= .1855 && y < .222 ? 'elevator-stage' : 'frame';
+    } },
+  // The largest source (38 M triangles): a 1 mm final pass keeps it near the other assets. Pure-blue CAD swatches are
+  // the team's black printed parts and plates in the match photos.
+  'relay-3005': { file: '2025-3005.glb', year: 2025, axes: 'negative-y', finePass: .001,
+    recolor: c => c[0] < .05 && c[1] < .05 && c[2] > .95 ? [.11, .115, .125, c[3]] : null,
+    // Block-CAD wiring harnesses (pink multi-body routing), the bumpers and the reference CORAL are not robot structure.
+    omit: /1-02: Bumpers|BLOCK CAD - ELECTRONICS|(?:^|\/)Wiring(?:\/|$)|Coral \(Deployed\)/,
+    groups: [
+      ['algae', /7: Algae Gripper/], ['climber', /8-03: Climber Arm/], ['effector', /3-01\.2: Carriage|4: Coral Ejector/],
+      ['carriage', /2-04: Stage 3|3-02: Laterator Base/], ['elevator-stage-2', /2-03: Stage 2/], ['elevator-stage', /2-02: Stage 1/],
+    ] },
+  'redundancy-190': { file: '2025-190.glb', year: 2025, axes: 'yzx', finePass: true,
+    // Origin cubes, the battery and the one-piece bumper (Part 22 of the drivetrain) are not mechanism geometry.
+    omit: /Origin Cube|Robot Battery|^Part 22\/[^/]*\/A-25B-1000/,
+    groups: [
+      ['algae', /A-25B-4002/], ['effector', /A-25B-4001/], ['carriage', /A-25B-2003/], ['elevator-stage', /A-25B-2002/],
+      ['climber', /A-25A-5000/], ['intake', /A-25B-6000/],
+    ],
+    regroup(group, name, full, b) {
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2);
+      // Climber: the gearbox and side plates stay on the chassis; the gas-spring arm and grappling hook swing.
+      if (group === 'climber' && c[2] < .3 && !/P-25A-0216/.test(name)) return 'frame';
+      // Over-the-bumper roller: the side racks slide out with the roller carriage; the camera mounts stay on the chassis.
+      if (group === 'intake' && /Limelight|Limlighty|^Minimal$/.test(name)) return 'frame';
+    } },
   'simbot-tim-1114': { file: 'S26-A000.glb', axes: 'yzx', offsetX: .3048, groups: [
     ['intake', /^(?:S26-IN-P(?:303|311|326)|Part (?:42|43|44|46|52))\//],
   ] },
@@ -337,6 +414,7 @@ for (const id of ids) {
   const inputTriangles = triangleCount();
   // CAD exports use Z up. Preserve meters; turn the real intake toward robot -X.
   const axes = spec.axes === 'negative-z' ? new Matrix4().set(0,0,-1,0, 0,1,0,0, 1,0,0,0, 0,0,0,1) : spec.axes === 'identity' ? new Matrix4() : spec.axes === 'zy-x' ? new Matrix4().set(0,0,1,0, 0,1,0,0, -1,0,0,0, 0,0,0,1) : spec.axes === 'negative-y' ? new Matrix4().set(0,-1,0,0, 0,0,1,spec.offsetY??0, -1,0,0,0, 0,0,0,1) : spec.axes === 'yzx' ? new Matrix4().set(0,1,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,1)
+    : spec.axes === 'negative-x' ? new Matrix4().set(-1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,1)
     : new Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);
   const nodes = root.listNodes();
   axes.elements[12] = spec.offsetX ?? 0;
@@ -351,6 +429,7 @@ for (const id of ids) {
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
     if (spec.omit?.test(full)) { n.setMesh(null); omitted++; continue; }
+    if (spec.drop?.(n.getName(), full, getBounds(n))) { n.setMesh(null); omitted++; continue; }
     if(id==='domotron-604' && /(?:^|\/)\s*(?:occurrence of )?Note(?:\/|$)/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='roti-5940' && /clothed noodle|noodle|bumper/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='spectre-2910' && /Bumper|Origin Cube|Battery|RoboRIO|Power Distribution|Radio Power|Reference/i.test(full)){n.setMesh(null);omitted++;continue;}
@@ -379,6 +458,7 @@ for (const id of ids) {
       if (c === null || c === 'omit') { n.setMesh(null); omitted++; continue; }
       if (c) group = c;
     }
+    if (spec.regroup) group = spec.regroup(group, n.getName(), full, getBounds(n)) ?? group;
     if (id === 'hero-mantis-6800') {
       if (group === 'climber' && /GreyT Telescope/.test(full)) {
         group = /WCP-0418/.test(full) || bounds.min[2] > .61 ? 'climb-end'
@@ -427,6 +507,10 @@ for (const id of ids) {
         const m=p.getMaterial().clone();const c=m.getBaseColorFactor();
         if(c[0]>c[1]*1.15 && c[2]>c[1]*1.15) m.setBaseColorFactor([.68,.7,.73,1]).setMetallicFactor(.45);
         p.setMaterial(m);
+      }
+      if (spec.recolor) {
+        const next = spec.recolor(p.getMaterial().getBaseColorFactor());
+        if (next) p.setMaterial(p.getMaterial().clone().setBaseColorFactor(next));
       }
       if (sheet || themed) {
         const m = p.getMaterial().clone().setExtras({ cadSheet: sheet, cadSmoothSheet: simbotSheet });
@@ -508,11 +592,11 @@ for (const id of ids) {
   };
   await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
   // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
-  // A final bounded 0.5 mm pass reduces those faces without quantizing positions.
-  // Specs can opt in with `finalPass: true` when the joined asset still exceeds the size budget.
-  if (id === 'reblitz-2910' || spec.finalPass) {
+  // A final bounded pass (0.5 mm unless a spec's `finePass` gives the error) reduces those faces without quantizing positions.
+  // Specs opt in with `finalPass: true` or `finePass` when the joined asset still exceeds the size budget.
+  if (id === 'reblitz-2910' || spec.finalPass || spec.finePass) {
     for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
-      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: .40, error: .0005 });
+      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: .40, error: typeof spec.finePass === 'number' ? spec.finePass : .0005 });
     }
     await doc.transform(prune());
   }

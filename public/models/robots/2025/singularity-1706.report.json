@@ -1,0 +1,30 @@
+{
+  "id": "singularity-1706",
+  "sourceFile": "2025-1706.glb",
+  "inputBytes": 260589040,
+  "outputBytes": 9656932,
+  "inputTriangles": 18108238,
+  "outputTriangles": 617642,
+  "omittedOccurrences": 1406,
+  "bounds": {
+    "min": [
+      -0.5125720080017534,
+      -0.0003383473662645631,
+      -0.35600706934928894
+    ],
+    "max": [
+      0.7569871920498237,
+      0.9856786797046663,
+      0.35676905512809753
+    ]
+  },
+  "groups": [
+    "frame",
+    "effector",
+    "carriage",
+    "intake",
+    "climber",
+    "elevator-stage-2",
+    "elevator-stage"
+  ]
+}

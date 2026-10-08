@@ -68,7 +68,7 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   if(c.model==='spectre-2910'){c.intake.groundYaw=0;c.intake.groundSide='front';c.intake.stationSide='front';c.options={...c.options,dualPieceStorage:true};}
   if(c.model==='whisper-1690')c.placement!.scoreSide='sides';
   // Cage approaches use the actual CAD mechanism, independent of intake/scoring faces.
-  const cageGrips:Record<string,[number,number]>={'wildstang-111':[.72,.05],'firefly-118':[.60,0],'zuma-581':[0,.49],'sublime-1678':[.03,-.60],'quixilver-604-2025':[-.37,0],'whisper-1690':[.43,0],'spectre-2910':[-.43,0]};
+  const cageGrips:Record<string,[number,number]>={'wildstang-111':[.72,.05],'firefly-118':[.60,0],'zuma-581':[0,.49],'sublime-1678':[.03,-.60],'quixilver-604-2025':[-.37,0],'whisper-1690':[.43,0],'spectre-2910':[-.43,0],'taiyaki-5940':[-.16,.60],'wisp-422':[-.05,.46],'singularity-1706':[-.45,0],'relay-3005':[0,.44],'redundancy-190':[-.3,0]};
   if(c.model && cageGrips[c.model])c.climber.gripOffset ??= cageGrips[c.model];
   // Older configs flagged NET scoring with the launcher; NET scoring is now the elevator outtake.
   c.options = { ...d.options, ...c.options, net: !!(c.options?.net ?? c.launcher.enabled) };

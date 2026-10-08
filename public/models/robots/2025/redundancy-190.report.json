@@ -1,0 +1,30 @@
+{
+  "id": "redundancy-190",
+  "sourceFile": "2025-190.glb",
+  "inputBytes": 224474824,
+  "outputBytes": 6886780,
+  "inputTriangles": 11685420,
+  "outputTriangles": 448288,
+  "omittedOccurrences": 895,
+  "bounds": {
+    "min": [
+      -0.35629850971252275,
+      0.0006789708992270549,
+      -0.3899427026357973
+    ],
+    "max": [
+      0.35562920570373535,
+      1.0604499578475954,
+      0.3555999994277954
+    ]
+  },
+  "groups": [
+    "intake",
+    "frame",
+    "climber",
+    "carriage",
+    "elevator-stage",
+    "algae",
+    "effector"
+  ]
+}

@@ -5,6 +5,8 @@ import { SEASONS } from '../src/seasons';
 import { cloneConfig } from '../src/engine/robot/config';
 import { CAD_2025_MODEL_IDS, decodeCadModel, cadRobotModelBuilder, setCadAnimationEnabled } from '../src/engine/robot/cadModels';
 import type { RobotAnimState } from '../src/engine/robot/models';
+// The 2025 top-EPA imports (5940, 422, 1706, 3005, 190) have no separate arm group: elevator-mounted heads and pivots.
+const TOP_EPA=new Set<string>(['taiyaki-5940','wisp-422','singularity-1706','relay-3005','redundancy-190']);
 const idle:RobotAnimState={dt:0,time:0,enabled:false,intaking:false,firing:0,passing:false,aiming:false,hood:.9,fill:0,climb:0,blocker:0,place:null,vx:0,vz:0,omega:0};
 beforeAll(async()=>{
   for(const id of CAD_2025_MODEL_IDS){const b=readFileSync(`public/models/robots/2025/${id}.glb`);await decodeCadModel(id,b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));}
@@ -23,7 +25,7 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
   b.max.toArray().forEach((v,i)=>expect(v).toBeCloseTo(report.bounds.max[i],4));
   expect(report.outputBytes/report.inputBytes).toBeLessThan(.06);
   expect(report.outputTriangles/report.inputTriangles).toBeLessThan(.12);
-  for(const name of ['frame','arm','carriage','elevator-stage',id==='wildstang-111'?'coral-head':'effector'])expect(root.getObjectByName(name)).toBeTruthy();
+  for(const name of ['frame',...(TOP_EPA.has(id)?[]:['arm']),'carriage','elevator-stage',id==='wildstang-111'?'coral-head':'effector'])expect(root.getObjectByName(name)).toBeTruthy();
   setCadAnimationEnabled(true);model.update(idle);visual.updateMatrixWorld(true);
   if(id==='firefly-118'){const latch=root.getObjectByName('climber-latch')!;expect(latch.parent?.name).toBe('cad-climber-pivot');const stowed=new THREE.Box3().setFromObject(latch,true);expect(stowed.max.x).toBeLessThan(config.frameLength/2);}
   if(id==='subzero-1778')expect(model.coralAxis).toEqual([0,0,1]);
