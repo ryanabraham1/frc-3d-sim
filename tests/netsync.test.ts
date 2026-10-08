@@ -191,6 +191,21 @@ describe('ClientSync', () => {
     return { hostSim, h, clientSim, c, cs, applied, dispose };
   }
 
+  it('ignores old and duplicate snapshots when direct and relay delivery overlap', () => {
+    const p = pair('2026-rebuilt');
+    try {
+      for (let k = 0; k < 3; k++) p.h.hs.sendSnapshot(k / 30);
+      p.cs.onBinary(p.h.frames[0], 0);
+      p.cs.onBinary(p.h.frames[1], 33);
+      const received = p.cs.snapshots;
+      expect(p.cs.onBinary(p.h.frames[0], 40)).toBeNull(); // delayed old keyframe
+      expect(p.cs.onBinary(p.h.frames[1], 45)).toBeNull(); // duplicate
+      expect(p.cs.snapshots).toBe(received);
+      expect(p.cs.onBinary(p.h.frames[2], 67)).not.toBeNull();
+      expect(p.cs.missed).toBe(0);
+    } finally { p.dispose(); }
+  });
+
   it('asks for a keyframe (at most once a second) when snapshots go missing', () => {
     const p = pair('2026-rebuilt');
     const { h, cs, c } = p;

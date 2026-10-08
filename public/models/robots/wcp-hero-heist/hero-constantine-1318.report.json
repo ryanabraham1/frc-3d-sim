@@ -1,0 +1,31 @@
+{
+  "id": "hero-constantine-1318",
+  "sourceFile": "hero-constantine-1318-source.gltf",
+  "inputBytes": 271434969,
+  "outputBytes": 8666100,
+  "inputTriangles": 6816970,
+  "outputTriangles": 660773,
+  "omittedOccurrences": 539,
+  "bounds": {
+    "min": [
+      -0.3241100013256073,
+      0.000010028481483320695,
+      -0.3238500058708963
+    ],
+    "max": [
+      0.32226248830556875,
+      0.9547881931066513,
+      0.3238500356622416
+    ]
+  },
+  "groups": [
+    "frame",
+    "climb-top",
+    "climb-mid",
+    "intake-fixed",
+    "hood",
+    "flywheel",
+    "intake",
+    "intake-links"
+  ]
+}

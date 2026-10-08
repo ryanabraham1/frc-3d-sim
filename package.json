@@ -11,7 +11,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "cad:prepare": "node --max-old-space-size=6144 tools/prepare-robot-cad.mjs",
-    "serve": "node server/index.ts"
+    "serve": "node server/index.ts",
+    "cloudflare:dev": "wrangler dev --config cloudflare/wrangler.jsonc --port 8787",
+    "cloudflare:deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",
+    "cloudflare:typecheck": "tsc --noEmit -p cloudflare/tsconfig.json",
+    "cloudflare:smoke": "node tools/relay-smoke.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
@@ -21,6 +25,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261008.1",
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
@@ -30,7 +35,8 @@
     "meshoptimizer": "^1.3.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "4.148.0"
   },
   "engines": {
     "node": ">=22.18"

@@ -1,0 +1,36 @@
+{
+  "id": "hero-multiclass-5800",
+  "sourceFile": "hero-multiclass-5800-source.glb",
+  "inputBytes": 156539224,
+  "outputBytes": 10566332,
+  "inputTriangles": 8487894,
+  "outputTriangles": 864080,
+  "omittedOccurrences": 1058,
+  "bounds": {
+    "min": [
+      -0.3418568974250103,
+      -5.551115123125783e-17,
+      -0.32049719989299774
+    ],
+    "max": [
+      0.3885917216628318,
+      0.7566278874874115,
+      0.3230499029159554
+    ]
+  },
+  "groups": [
+    "wrist-roller",
+    "wrist",
+    "frame",
+    "turret",
+    "flywheel-0",
+    "flywheel-2",
+    "flywheel-1",
+    "spindexer-star",
+    "elevator-stage",
+    "carriage",
+    "intake-middle",
+    "intake-inner",
+    "intake-outer"
+  ]
+}

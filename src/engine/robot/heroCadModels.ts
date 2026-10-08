@@ -1,9 +1,19 @@
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { scoringEase } from './scoringReadiness';
+import { buildConstantineCad } from './heroConstantineCad';
+import { buildMulticlass5800 } from './hero5800Model';
+import { buildNomadCad } from './heroNomadModel';
+import { buildPoofs254Cad } from './hero254CadModel';
+import { buildSentinel1923Cad } from './heroSentinelCad';
 
 /** Mantis source axes (-Y,Z,-X), meters. Joint centers measured from source shafts. */
 export function buildHeroCad(_id: string, root: THREE.Group, k: ModelKit, animated: () => boolean): RobotModel {
+  if (_id === 'hero-constantine-1318') return buildConstantineCad(root, k, animated);
+  if (_id.startsWith('hero-multiclass-5800')) return buildMulticlass5800(root, k, animated);
+  if (_id === 'hero-nomad-6995') return buildNomadCad(root, k, animated);
+  if (_id === 'hero-poofs-254') return buildPoofs254Cad(root, k, animated);
+  if (_id === 'hero-sentinel-1923') return buildSentinel1923Cad(root, k, animated);
   const get = (name: string) => root.getObjectByName(name);
   const pivot = (name: string, at: [number,number,number], parts: string[], parent: THREE.Object3D = root) => {
     const g = new THREE.Group(); g.name = `cad-${name}-pivot`; g.position.fromArray(at); parent.add(g);
@@ -48,8 +58,11 @@ export function buildHeroCad(_id: string, root: THREE.Group, k: ModelKit, animat
       // The exported side four-bars are retracted. Travel is fitted to floor roller contact [EST].
       left.rotation.x=-deploy*.82; right.rotation.x=deploy*.70;
       fold.rotation.z=folding*1.55;
-      turret.rotation.y=k.turret.rotation.y;
-      pitch=scoringEase(pitch,s.aiming?THREE.MathUtils.clamp(s.hood,.26,1.22)-.85:0,s.dt);
+      // The exported shooter exits toward -x: the flywheel (x .048) and hood roller (x .195, above it) pinch the ball
+      // up and back, away from the feed at the turret axis (x .155). Turn it half a revolution so it faces the target.
+      turret.rotation.y=k.turret.rotation.y+Math.PI;
+      // Raising the hood pivots it clockwise about the flywheel; the exported nip sits at ~52 degrees [EST from CAD].
+      pitch=scoringEase(pitch,s.aiming?-(THREE.MathUtils.clamp(s.hood,.26,1.22)-.913):0,s.dt);
       hood.rotation.z=pitch;
       flywheel.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?45:0)*s.dt;
       extension=scoringEase(extension,s.climb>.6?.97:s.climb>0?.16:0,s.dt);

@@ -1,0 +1,33 @@
+{
+  "id": "hero-poofs-254",
+  "sourceFile": "hero-poofs-254-source.glb",
+  "inputBytes": 126856652,
+  "outputBytes": 7578768,
+  "inputTriangles": 6722812,
+  "outputTriangles": 575196,
+  "omittedOccurrences": 766,
+  "bounds": {
+    "min": [
+      -0.6423038467541337,
+      3.0531133177191805e-16,
+      -0.341436866321601
+    ],
+    "max": [
+      0.36838626956939696,
+      1.873037183691969,
+      0.3401721086120233
+    ]
+  },
+  "groups": [
+    "frame",
+    "pad",
+    "claw-base",
+    "claw",
+    "turret",
+    "hood",
+    "flywheel",
+    "stage3",
+    "stage2",
+    "intake"
+  ]
+}

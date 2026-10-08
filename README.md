@@ -180,12 +180,13 @@ checkpoint; ranked matches retain their existing departure adjudication. Test la
 
 ## Deployment
 
-For a site that loads immediately even when the multiplayer server is asleep, deploy the built `dist/`
-as a **Render Static Site** (or on Vercel) and the WebSocket relay as a **Render Web Service**. Set the
-static site's build-time environment variable `VITE_RELAY_URL=wss://<relay>.onrender.com/ws`.
-The Multiplayer page probes the WebSocket, shows the wake status, and connects when the relay is ready.
-The included [`render.yaml`](render.yaml) still supports a simpler single-service deployment, but that
-URL waits for the service to wake before it can show the site. Steps: [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md) §8.
+The static frontend runs on **Vercel**, with **Cloudflare Workers + Durable Objects** handling the
+multiplayer relay. Set `VITE_RELAY_URL=wss://frc-3d-sim-relay.ryan-ryanabraham.workers.dev/ws` in
+Vercel's build environment. WebRTC connects players directly to the host for driver controls and
+snapshots when possible; Cloudflare automatically carries fallback traffic.
+
+Setup, ranked database secrets, local checks and free-plan limits: [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md).
+The Node relay and `render.yaml` remain available for local development and legacy hosting.
 
 ## Sources
 

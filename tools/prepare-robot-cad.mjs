@@ -18,6 +18,80 @@ const specs = {
     ['magazine',/Cartidge/], ['magazine-mount',/Turret Mount|Latch Arms/],
     ['spindexer',/Assembly 1 <6>/],
   ]},
+  // Team 1540 Fireweed (Hero Heist Gadgeteer). Onshape Z-up export: source +Y is the shooter side, so (Y,Z,X) puts the intake on robot -X.
+  'hero-fireweed-1540': {file:'hero-1540-source.gltf',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,omit:/Story Panel|Speech Bubble|Origin Cube|Bumper Foam/,groups:[
+    ['climb-tube',/bi-stable reeled composite tube/], ['climb-cup',/Vacuum Cup|Billet Vacuum Mount/],
+    ['hood',/shooter hood/],
+    ['elevator-carriage',/Elevator Carriage AS/],
+    ['intake',/2\. Intake/],
+  ]},
+  // 1318 "Constantine" (Mystic). Intake and shooter exit are both at CAD -Y, which becomes sim +X (front).
+  'hero-constantine-1318': {file:'hero-constantine-1318-source.gltf',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,
+    omit:/Bumper Assembly|Power Distribution Hub|Origin Cube|Battery|RoboRIO|Radio/,groups:[
+    ['hood',/Shooter Hood|180t 10DP External|Stealth Wheel/],
+    ['flywheel',/Brass Flywheel|4" Solid Roller Wheel/],
+    ['intake-fixed',/Gear Box|Plate No Gearboxx|Motor Plate|Kraken X44.*Intake|MAXPlanetary Kraken X44|REV-21-2103|Rounded Hex Gear|Pocketed Gear|Hex Bore Gear|Rounded Hex Bore Hub 25 Chain|#25 chain|Rounded Hex Shaft - 2\.0in/],
+    ['intake-links',/4 Bar (?:Front|Back)|Part 11(?!\d)|36t Aluminum Plate Sprocket/],
+    ['intake',/Intake Assembly|WCP-1755/],
+    ['climb-top',/(?:Vacuum Cup|Constant Force Spring|WCP-041[89]|Nutstrip).*Suction Climber/],
+    ['climb-mid',/Tube 2"x2"x24".*Suction Climber/],
+  ]},
+  // 5800 Wolverine Multiclass: elevator + wrist on the +Y (front) side, 4-bar floor intake on -Y (back), turret with three
+  // 4" drive wheels on top. Axes 'yzx': source (x,y,z) -> robot (forward = source +Y, up = Z, right = source +X).
+  'hero-multiclass-5800': {file:'hero-multiclass-5800-source.glb',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,
+    omit:/Bumper <1>|Robot Battery|Origin Cube|Robot Radio|Energy Chain|PDP 2\.0|Main Breaker|roboRIO|RoboRIO|Anderson/,groups:[
+    ['flywheel',/4" Solid Roller Wheel.*Rotation \+ Hood/], ['turret',/Rotation \+ Hood/],
+    ['intake-inner',/Inner Linkage/], ['intake-middle',/Middle Linkage/], ['intake-outer',/Outer Linkage/],
+    ['wrist-roller',/Compliant Intake Wheel.*Manipulator <1>/], ['wrist',/Manipulator <1>/],
+    ['carriage',/Carriage <1>/], ['spindexer-star',/^(?:Part 18|SplineXL \(7" L\)|84t Aluminum MotionX).*Spindexer <1>/],
+    ['elevator-stage',/^(?:Tube 2"x1"x25\.75"|Tube 2"x1"x4\.5"|Tube 2"x1"x9"|Top Crossbar|Side Top Plate)/],
+  ]},
+  // 6995 NOMAD: source is the Onshape glTF export (Z up, +Y = shooter side, -Y = intake side). The elevator/end effector
+  // is turned 180° about the vertical axis so the panel lift stands on the shooter (front) side, where the rules place panels.
+  'hero-nomad-6995': {file:'hero-nomad-6995-source.gltf',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,
+    omit:/Bumpers|Origin Cube|Power Distribution Hub|Robot Battery|120A Main Breaker|Anderson SB120|RoboRIO|Radio|CANivore/i,groups:[
+    ['hood',/hood/i], ['flywheel',/3" Stealth Wheel/], ['backroller',/2" Stealth Wheel.*Shooter V4/],
+    ['elevator-stage',/Stage 1 <1>/],
+    // The carriage plates, bearing blocks, belt clamps and pivot gearbox hang directly off the elevator and ride with the end effector.
+    ['effector',/^(?!.*(?:Static Stage <1>|Stage 1 <1>)).*Elevator <1>/],
+  ]},
+  // Team 254's CADathon Gadgeteer (Bellarmine/Cheesy Poofs): back floor intake, 3-ball serializer/feeder, turret, three-stage elevator
+  // carrying a disk (STORY PANEL) claw and a suction pad. Source axes are Z up, intake toward -Y, so 'yzx' puts the intake at robot -X.
+  'hero-poofs-254': {file:'hero-poofs-254-source.glb',year:'wcp-hero-heist',axes:'yzx',offsetX:-.0115,lossless:true,preserveColors:true,omit:/Bumper Assembly|(?:^|\/)Belt\/|PDP 2\.0|Battery|RoboRIO/,groups:[
+    ['intake',/Intake Rollers Assembly/], ['claw',/Disk Manipulator Claw Assembly/], ['claw-base',/Disk Manipulator Pivot Assembly/],
+    ['pad',/Sunction Pad Assembly/], ['hood',/^(?:Hood|Hood Plate)\/.*Turret Assembly <\d+>/], ['turret',/(?:^|\/)(?:occurrence of )?Turret Assembly <\d+>/],
+  ]},
+  // 1923 Sentinel (Gadgeteer): swerve, front-over-bumper roller intake, side panel arm, fixed ball tunnel shooter.
+  'hero-sentinel-1923': {file:'hero-sentinel-1923-source.gltf',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,omit:/Robot Battery|Power Distribution Hub|RSL|Robot Signal Light|Main Breaker|Anderson/,groups:[
+    ['flywheel',/4" Stealth Wheel/], ['hood',/(?:^|\/)(?:occurrence of )?(?:Hood|80t Pocketed Steel Spur Gear)(?:\/|$)/], ['intake-arm',/Ground Intake Assy/], ['arm',/Pink Arm Assy/], ['tunnel',/Ball tunnel Assy/],
+  ]},
+  // 9408 Gadgeteer (Hero Heist). Onshape export is Z-up; source +Y is the floor intake, so sim -X.
+  'hero-gadgeteer-9408': {file:'hero-gadgeteer-9408-source.glb',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,
+    omit:/Bumper Assembly|Power Distribution Hub|Battery|RoboRIO|Origin Cube|Starting Configuration|Main Breaker/,groups:[
+    ['flywheel',/^(?:2" OD 1\/2" Hex ID Stealth Wheel 60A|1\/2" Thunderhex Shaft \(10\.51"\)).*Shooter Assembly <1>/],
+    ['climb-pad',/^Part 1\/occurrence of Part 1\/Assembly 1 <1>/], ['climb-end',/3 Stage End/],
+    ['climb-mid2',/3 Stage Mid2|WCP-0418/], ['climb-mid1',/3 Stage Mid1|WCP-0419/],
+    ['hood',/^(?:Part 9|Part 18|Part 16|Spur gear \(190 teeth\))\/occurrence of .*Shooter Assembly <1>/],
+    ['elevator-stage',/^Tube 2"x1"x27"\/occurrence of .*4\. Elevator/],
+    ['intake',/Intake Assembly <1>/], ['shooter',/Shooter Assembly <1>/], ['elevator',/4\. Elevator/],
+    ['arm',/5A\. Arm/], ['manip',/5B\. Manipulator/], ['climber',/Assembly 1 <1>/],
+  ]},
+  // 6731 Multiclass (CADathon 2025): fixed rear over-bumper intake, fixed front shooter with a pivoting hood. The CAD carries its six
+  // SPEECH BUBBLEs inside the robot; they become the held-piece display (bubble-0..5). Bumpers are the sim's own.
+  'hero-multiclass-6731': {file:'hero-multiclass-6731-source.gltf',year:'wcp-hero-heist',axes:'negative-y',offsetY:.048,lossless:true,preserveColors:true,omit:/^bumper(?:\/|$)|Origin Cube/,groups:[
+    ['roller-main',/(?:Compliant Wheel|Hex \(24\.407 in\)).*speech bubble intake/], ['roller-stub1',/stub roller assembly <1>.*speech bubble intake/],
+    ['roller-stub2',/stub roller assembly <2>.*speech bubble intake/],
+    ['flywheel',/4" SDS Flywheel|\(am-2647\)|Hex \(11\.059 in\)/], ['hood',/hood assembly <1>/],
+    ['feeder',/\(am-4716\)/], ['intake',/full intake <1>/],
+  ]},
+  // Team 498's CADathon Mystic: one over-the-bumper intake on the back, turret + hood shooter, telescoping winch climber.
+  'hero-mystic-498': {file:'hero-498-source.gltf',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,
+    omit:/SWYFT Bumper|Robot Battery|120A Main Breaker|Origin Sphere|Power Distribution Hub|Simplified PDH|Climber Rope/,groups:[
+    ['intake-rollers',/Rollers <1>.*Intake <1>/], ['intake-gearbox',/Gearbox <1>.*Intake <1>/], ['intake-indexer',/Indexer <1>.*Intake <1>/],
+    ['flywheel',/4" Solid Roller Wheel.*Active Turret/], ['turret-static',/Static Turret <1>.*Shooter <1>/], ['turret',/Active Turret <1>.*Shooter <1>/], ['hood',/Active Hood <1>.*Shooter <1>/],
+    ['climb-stage1',/Stage 1 <1>.*Climber <2>/], ['climb-carriage',/Carriage <1>.*Climber <2>/], ['climb-wrench',/Wrench <1>.*Climber <2>/],
+    ['climb-base',/Base Stage <1>.*Climber <2>/], ['hopper',/Hopper <1>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -421,7 +495,7 @@ for (const id of ids) {
   axes.elements[13] = spec.offsetY ?? 0;
   axes.elements[14] = spec.offsetZ ?? 0;
   const retained = [];
-  let omitted = 0;
+  let omitted = 0, wheelCount = 0;
   const surfaces = new Set();
   for (const n of nodes) {
     if (!n.getMesh()) continue;
@@ -430,6 +504,8 @@ for (const id of ids) {
     const full = names.join('/');
     if (spec.omit?.test(full)) { n.setMesh(null); omitted++; continue; }
     if (spec.drop?.(n.getName(), full, getBounds(n))) { n.setMesh(null); omitted++; continue; }
+    // An unnamed 0.2 m block hangs past the 1318 back bumper (not part of the robot structure).
+    if(id==='hero-constantine-1318' && !n.getName() && getBounds(n).min[1]>.31){n.setMesh(null);omitted++;continue;}
     if(id==='domotron-604' && /(?:^|\/)\s*(?:occurrence of )?Note(?:\/|$)/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='roti-5940' && /clothed noodle|noodle|bumper/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='spectre-2910' && /Bumper|Origin Cube|Battery|RoboRIO|Power Distribution|Radio Power|Reference/i.test(full)){n.setMesh(null);omitted++;continue;}
@@ -445,6 +521,8 @@ for (const id of ids) {
     if (id === 'simbot-tim-1114' && !n.getName()) { n.setMesh(null); omitted++; continue; }
     // Keep structure and mechanism geometry; remove fasteners and electrical interiors.
     const bounds = getBounds(n);
+    // 9408's export carries every fastener and spacer: drop parts under 25 mm, which are invisible at robot scale.
+    if (id === 'hero-gadgeteer-9408' && Math.max(...bounds.max.map((v,i)=>v-bounds.min[i])) < .025) { n.setMesh(null); omitted++; continue; }
     // Limestone's export includes an unnamed six-triangle reference sheet outside the robot.
     const looseReference = id === 'limestone-1678' && !n.getName() && bounds.max[1] > .8;
     const hardware = /screw|washer|blind rivet|locknut|hex nut|nutstrip|nut strip|spacer|bearing|bushing|crush block/i.test(n.getName())
@@ -459,6 +537,10 @@ for (const id of ids) {
       if (c) group = c;
     }
     if (spec.regroup) group = spec.regroup(group, n.getName(), full, getBounds(n)) ?? group;
+    if (id === 'hero-poofs-254') {
+      if (/Elevator Assy/.test(full) && group === 'frame') group = bounds.min[2] >= .95 ? 'stage3' : bounds.min[2] >= .58 ? 'stage2' : 'frame';
+      if (group === 'turret' && /^(?:Lower Roller Tube|Shaft)\//.test(full) && bounds.min[0] > .0 && bounds.min[2] > .70) group = 'flywheel';
+    }
     if (id === 'hero-mantis-6800') {
       if (group === 'climber' && /GreyT Telescope/.test(full)) {
         group = /WCP-0418/.test(full) || bounds.min[2] > .61 ? 'climb-end'
@@ -466,6 +548,28 @@ for (const id of ids) {
           : /WCP-0420/.test(full) && bounds.min[2] < .10 ? 'climb-mid1' : 'climber';
       } else if (group === 'climber' && bounds.min[2] > .60) group = 'climb-pad';
       if (/^intake-/.test(group) && (bounds.max[2] < .30 && Math.max(Math.abs(bounds.min[0]),Math.abs(bounds.max[0])) < .24)) group='frame';
+    }
+    if (id === 'hero-fireweed-1540' && /Stealth Wheel/.test(n.getName()) && /Indexshooteer/.test(full)) group = `wheel-${wheelCount++}`;
+    // 1540's intake is a double-jointed arm: the panel end effector is the second link (joint axle at source y -0.608, z 0.15).
+    if (id === 'hero-fireweed-1540' && group === 'intake' && (/^(?:panel intake|panel inner intake plate|polycarb panel|3\/4 axle panel intake|36t Aluminum Plate Sprocket)/.test(n.getName()) || (/^cf tube/.test(n.getName()) && bounds.max[1] < -.65))) group = 'intake-ee';
+    if (id === 'hero-multiclass-5800' && group === 'flywheel') group = `flywheel-${Math.round(((bounds.min[0]+bounds.max[0])/2-.06)/.03)}`;
+    if (id === 'hero-sentinel-1923') {
+      const nm = n.getName();
+      // Molded bumper shell: the simulator draws alliance bumpers.
+      if (nm === 'Part 2' && bounds.max[0]-bounds.min[0] > .8) { n.setMesh(null); omitted++; continue; }
+      if (group === 'intake-arm' && /GIMount|GITubeMt|Antilever|LLMount|Minimal|Kraken|MAXPlanetary|SprocketSpacer|^0\.196|66L #25|24t Aluminum Sprocket|8mm SplineXS|88T|15t Aluminum Pulley \(HTD 5mm, 9mm|Rounded Hex \(2\.438/.test(nm)) group = 'frame';
+      else if (group === 'arm') {
+        if (/PAMount|PASideMount|GBMount|^Tube 2"x1"x(?:9|12)"|Kraken|MAXPlanetary|MAXSpline|12t Steel Sprocket|54L #25|REV-21-2581/.test(nm)) group = 'frame';
+        else if (/Claw|Compliant Intake Wheel|NEO 550|550Spacer|8t Steel Spur|30t Steel Spur|^Tube 2"x2"x16|^0\.196/.test(nm) || (bounds.min[1] > .17 && !/^Tube 2"x1"x17/.test(nm))) group = 'arm-slide';
+      }
+    }
+    if (id === 'hero-sentinel-1923' && /Ground Intake Assy/.test(full) && /Compliant Wheel|Flex Wheel/.test(n.getName())) {
+      // Every intake roller is orange so the intake face reads at a glance.
+      for (const p of n.getMesh().listPrimitives()) if (p.getMaterial()) p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.96,.4,.04,1]).setName('intake-orange'));
+    }
+    if (id === 'hero-multiclass-6731') {
+      if (/^Speech Bubble\//.test(full)) { let top = n; while (top.getParentNode()?.getParentNode()) top = top.getParentNode(); group = `bubble-${top.getParentNode().listChildren().filter(c => /Speech Bubble/.test(c.getName())).indexOf(top)}`; }
+      else if (group === 'frame' && /Hex \(9\.718 in\)/.test(full) && bounds.max[2] < .40) group = 'feeder';
     }
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';
     if (id === 'sublime-1678' && group === 'carriage' && bounds.min[2] < .2) group = 'frame';
@@ -498,7 +602,7 @@ for (const id of ids) {
     surfaces.add(signature);
     const dims = bounds.max.map((v,i) => v-bounds.min[i]);
     const simbotSheet = id === 'simbot-tim-1114' && /^S26-IN-P(?:301|315|318|321|322|330)$/.test(n.getName());
-    const sheet = simbotSheet || /wall|coroplast|panel|plate|bellypan|polycarb/i.test(n.getName()) || (Math.min(...dims)<.012 && dims.filter(v=>v>.15).length>=2) || (id === 'limestone-1678' && /^Part 60$/.test(n.getName()));
+    const sheet = simbotSheet || /wall|coroplast|panel|plate|bellypan|polycarb/i.test(n.getName()) || (Math.min(...dims)<.012 && dims.filter(v=>v>.15).length>=2) || (id === 'limestone-1678' && /^Part 60$/.test(n.getName())) || (id === 'hero-mystic-498' && /Wrench Tube|Wrench Gusset/.test(n.getName()));
     const themed = !spec.preserveColors && spec.year !== 2025 && spec.year !== 2024 && (/arm plate|hood plate|slider mount|slot reinforcement|sponsor panel|printed|wire guide/i.test(n.getName()) || (id === 'limestone-1678' && /1678-26c-16(?:14|85)/.test(n.getName())));
     // Retain CAD colors, with rubber and clear-sheet finishes identified by part names.
     for (const p of n.getMesh().listPrimitives()) {
@@ -528,6 +632,9 @@ for (const id of ids) {
         const m = p.getMaterial().clone().setName('clear-hopper-sheet').setBaseColorFactor([.8,.86,.91,.25]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.3);
         if (sheet) m.setExtras({cadSheet:true});
         p.setMaterial(m);
+      } else if (id === 'hero-fireweed-1540' && /^Indexer (?:Left|Right) Plate$/.test(n.getName())) {
+        // Clear side plates so the held bubbles in the indexer stay visible from both sides.
+        p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.72,.84,.92,.26]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.3).setName('clear-indexer-plate'));
       } else if (id === 'limestone-1678' && /^(?:Part 60|Part 58(?:-Mirrored)?|1678-26c-1529|part 26|1678-26c-1118)$/i.test(n.getName())) {
         p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.64,.72,.76,.20]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.38).setName('clear-hopper-sheet'));
       } else if (/polycarb|coroplast/i.test(n.getName()) && !/roller|plug|shaft/i.test(n.getName())) {
@@ -560,7 +667,9 @@ for (const id of ids) {
       m.setExtras({ ...m.getExtras(), cadFinish: true, ...(sheet ? { cadSheet: true } : {}) });
       p.setMaterial(m);
     }
-    const matrix = axes.clone().multiply(new Matrix4().fromArray(n.getWorldMatrix())).toArray();
+    if (id === 'hero-nomad-6995' && group === 'frame' && /Intake <1>/.test(full) && bounds.min[2] >= .33) group = 'slapdown';
+    const turned = id === 'hero-nomad-6995' && /Elevator <1>/.test(full) ? new Matrix4().makeRotationZ(Math.PI) : new Matrix4();
+    const matrix = axes.clone().multiply(turned).multiply(new Matrix4().fromArray(n.getWorldMatrix())).toArray();
     retained.push({ n, group, matrix });
   }
   // Detach leaves before deleting old CAD hierarchy. Each rigid group merges independently.
@@ -592,11 +701,11 @@ for (const id of ids) {
   };
   await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
   // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
-  // A final bounded pass (0.5 mm unless a spec's `finePass` gives the error) reduces those faces without quantizing positions.
+  // A final bounded pass reduces those faces without quantizing positions (0.5 mm unless the robot or a spec's `finePass` sets it).
   // Specs opt in with `finalPass: true` or `finePass` when the joined asset still exceeds the size budget.
-  if (id === 'reblitz-2910' || spec.finalPass || spec.finePass) {
+  if (id === 'reblitz-2910' || id === 'hero-gadgeteer-9408' || spec.finalPass || spec.finePass) {
     for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
-      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: .40, error: typeof spec.finePass === 'number' ? spec.finePass : .0005 });
+      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: id === 'hero-gadgeteer-9408' ? .45 : .40, error: id === 'hero-gadgeteer-9408' ? .001 : typeof spec.finePass === 'number' ? spec.finePass : .0005 });
     }
     await doc.transform(prune());
   }

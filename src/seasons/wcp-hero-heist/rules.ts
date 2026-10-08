@@ -7,6 +7,7 @@ import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
+import { groundSideSign } from '@engine/robot/config';
 import { convexOverlap, pointInPolygon } from '@engine/zones';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import {
@@ -182,12 +183,16 @@ export class HeroHeistRules implements SeasonRules {
     return legalPossession(heroClass(r.config), p, b);
   }
 
-  /** Mantis has a second physical floor mouth on the opposite side of its chassis. */
+  /** A `dualSideIntake` build (Mantis, Multiclass) has a second physical floor mouth on the face opposite its main one. */
   private oppositeSideMouth(r: Robot, w: {x:number;y:number;z:number}, radius: number): boolean {
-    if (r.config.model !== 'hero-mantis-6800' || !r.config.options?.dualSideIntake) return false;
-    const p=r.toLocal(w), edge=r.footprint.width/2;
-    const out=-p.l-edge;
-    return out > -.06 && out < r.config.intake.reach+radius && Math.abs(p.f)<r.config.intake.width/2;
+    const c=r.config;
+    if (!c.options?.dualSideIntake) return false;
+    const {f,l}=r.toLocal(w), yaw=c.intake.groundYaw, fp=r.footprint;
+    const along=yaw===undefined?-groundSideSign(c)*f:-(f*Math.cos(yaw)+l*Math.sin(yaw));
+    const across=yaw===undefined?l:-f*Math.sin(yaw)+l*Math.cos(yaw);
+    const edge=yaw===undefined?fp.length/2:(Math.abs(Math.cos(yaw))*fp.length+Math.abs(Math.sin(yaw))*fp.width)/2;
+    const out=along-edge;
+    return out > -.06 && out < c.intake.reach+radius && Math.abs(across)<c.intake.width/2;
   }
 
   private intake(): void {
@@ -204,7 +209,7 @@ export class HeroHeistRules implements SeasonRules {
         const kind = kindOf(i);
         if (!this.canTake(r, kind)) continue;
         const radius = kind === 'bubble' ? BUBBLE_RADIUS : 0.12;
-        const ground = r.config.intake.ground !== false && f.z <= (kind === 'bubble' ? 0.3 : 0.1) && (r.groundMouthContains(w, radius) || this.oppositeSideMouth(r,w,radius));
+        const ground = r.config.intake.ground !== false && (kind === 'bubble' || r.config.options?.groundPanels !== false) && f.z <= (kind === 'bubble' ? 0.3 : 0.1) && (r.groundMouthContains(w, radius) || this.oppositeSideMouth(r,w,radius));
         const station = !!r.config.intake.station && r.stationContains(w, radius, 0.2);
         if (!ground && !station) continue;
         if (robots.some(o => o !== r && o.shieldsPiece(w, radius))) continue;

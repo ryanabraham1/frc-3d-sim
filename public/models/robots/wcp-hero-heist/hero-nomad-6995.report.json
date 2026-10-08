@@ -1,0 +1,30 @@
+{
+  "id": "hero-nomad-6995",
+  "sourceFile": "hero-nomad-6995-source.gltf",
+  "inputBytes": 269903063,
+  "outputBytes": 11164664,
+  "inputTriangles": 6982632,
+  "outputTriangles": 929693,
+  "omittedOccurrences": 497,
+  "bounds": {
+    "min": [
+      -0.35165002942085266,
+      -0.0031649763841413744,
+      -0.3516499996185303
+    ],
+    "max": [
+      0.3516500070691109,
+      1.1787527102327062,
+      0.3516499996185303
+    ]
+  },
+  "groups": [
+    "frame",
+    "effector",
+    "elevator-stage",
+    "hood",
+    "flywheel",
+    "backroller",
+    "slapdown"
+  ]
+}

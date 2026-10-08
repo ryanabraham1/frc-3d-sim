@@ -1,0 +1,37 @@
+{
+  "id": "hero-multiclass-6731",
+  "sourceFile": "hero-multiclass-6731-source.gltf",
+  "inputBytes": 295609189,
+  "outputBytes": 8327768,
+  "inputTriangles": 10961134,
+  "outputTriangles": 649697,
+  "omittedOccurrences": 290,
+  "bounds": {
+    "min": [
+      -0.6121744885944673,
+      0.0003393213748930646,
+      -0.3318001925945282
+    ],
+    "max": [
+      0.32385000586509705,
+      0.5704359631538392,
+      0.3318001925945282
+    ]
+  },
+  "groups": [
+    "bubble-0",
+    "bubble-1",
+    "bubble-2",
+    "bubble-3",
+    "bubble-4",
+    "bubble-5",
+    "intake",
+    "roller-main",
+    "roller-stub2",
+    "roller-stub1",
+    "frame",
+    "hood",
+    "flywheel",
+    "feeder"
+  ]
+}
