@@ -12,8 +12,10 @@ registerRobotModel('hero-mystic-498', (k: ModelKit) => {
   box(turret, .30, .03, .30, dark, .1, 0, 0);
   const wheel = roller(turret, .0508, .06, grey, .1, .08, 0);
   box(k.visual, .12, .55, .12, grey, -.06, .4, -.216);
-  bar(k.visual, [-.3, .35, -.33], [-.3, .35, .33], .02, dark);
-  return { replaces: ['chassis', 'launcher', 'climber'], update(s) { db.update(s); turret.rotation.y = k.turret.rotation.y; wheel.rotation.z += s.aiming ? 45 * s.dt : 0; } };
+  const arm = new THREE.Group(); arm.position.set(-.2795, .3535, 0); k.visual.add(arm);
+  for (const z of [-.3, .3]) bar(arm, [0, 0, z], [-.03, .36, z], .02, dark);
+  for (const [x, y] of [[-.03, .36], [.05, .24], [.02, .1]]) roller(arm, .03, .5, mat(0xff6a00), x, y, 0);
+  return { replaces: ['chassis', 'launcher', 'climber'], update(s) { db.update(s); arm.rotation.z = s.enabled && !s.climb ? 2.5 : 0; turret.rotation.y = k.turret.rotation.y; wheel.rotation.z += s.aiming ? 45 * s.dt : 0; } };
 });
 
 /** Team 498 · Mystic. Frame, mechanism positions and climber stages are measured from the Onshape CAD; speed, mass and rates are estimates. */
