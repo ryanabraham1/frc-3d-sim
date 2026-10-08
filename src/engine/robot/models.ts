@@ -406,6 +406,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   // Subtle foam color variation gives the pile depth without textures or extra draw calls.
   for (let i = 0; i <= count; i++) mesh.setColorAt(i, tint.clone().multiplyScalar(0.9 + rand() * 0.1));
   const pile = new FuelPile(o, slots, r);
+  mesh.userData.wakeFuel = () => pile.wake();
   mesh.userData.bindFuelContacts = (visual?: THREE.Object3D, importedOnly = false) => { pile.contacts = visual ? new FuelContacts(visual, mesh, false, importedOnly) : undefined; };
   mesh.userData.resizeFuelBin = (bounds: { x: number; length: number; height: number }) => {
     if (Math.abs(o.x - bounds.x) + Math.abs(o.length - bounds.length) + Math.abs(o.height - bounds.height) < 1e-5) return;

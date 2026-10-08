@@ -9,7 +9,7 @@ import { slidingHopper } from '@engine/robot/slidingHopper';
 // 6800: supplied wide-drum variant with linear rear intake and sliding hopper, black/gold.
 // Valor's earlier binder describes a turret variant; this roster follows the supplied CAD.
 // Frame 27 in square for both; rates 16 / 18 and speeds [EST]. Capacities are real-size FUEL packed into the CAD hopper:
-// 9470 40 under the rigid rim plus 12 net stretch; 6800 31 under the rigid rim plus about 10 as its black net roof stretches (41) [EST].
+// 9470 40 under the rigid rim plus 22 net stretch; 6800 31 under the rigid rim plus 20 as its black net roof stretches (51) [EST].
 // These individual builders are the lightweight fallback; loaded CAD replaces them.
 registerRobotModel('ctrl-alt-defeat-9470',(k:ModelKit)=>{
   const db=drivebase(k),clear=mat(0xd9e1e8,{opacity:.22}),dark=mat(0x20252b);
@@ -44,6 +44,6 @@ function config(team:number,id:string,capacity:number,rate:number,height:number,
   c.launcher.exitSpan=.59;setRebuiltAccuracy(c,86);return normalizeRebuiltConfig(c);
 }
 export function cadRebuiltTeamRobots():TeamRobot[] {return [
-  {id:'ctrl-alt-defeat-9470',team:9470,name:'Ctrl-Alt-Defeat',description:'9470. Complete supplied CAD with a wide drum shooter, clear hopper and sliding intake-side extension under a flexible net (40 FUEL below the rim, 52 with stretch) and its supplied intake and indexer. Capacity, rate and drive speed are simulator estimates.',source:'User supplied 9470-2026-MAIN.glb; https://www.thebluealliance.com/team/9470/2026',config:config(9470,'ctrl-alt-defeat-9470',52,16,.55,{startCount:40,fullHeight:inch(25.5)})},
-  {id:'downpour-6800',team:6800,name:'Downpour',description:'6800 Valor. Supplied wide drum variant with an adjustable roller hood, translating intake and horizontally expanding hopper under a black net roof: 31 FUEL in the rigid hopper, 41 with the net stretched (past 31 it bulges above TRENCH height). Capacity, rate and drive speed are simulator estimates.',source:'User supplied VR26A-0000 Main.glb; https://www.chiefdelphi.com/t/frc-6800-valor-2026-robot-cad-release/520715',config:config(6800,'downpour-6800',41,18,.55,{startCount:31,fullHeight:inch(25.5)})},
+  {id:'ctrl-alt-defeat-9470',team:9470,name:'Ctrl-Alt-Defeat',description:'9470. Complete supplied CAD with a wide drum shooter, clear hopper and sliding intake-side extension under a flexible net (40 FUEL below the rim, 62 with stretch) and its supplied intake and indexer. Capacity, rate and drive speed are simulator estimates.',source:'User supplied 9470-2026-MAIN.glb; https://www.thebluealliance.com/team/9470/2026',config:config(9470,'ctrl-alt-defeat-9470',62,16,.55,{startCount:40,fullHeight:inch(27.5)})},
+  {id:'downpour-6800',team:6800,name:'Downpour',description:'6800 Valor. Supplied wide drum variant with an adjustable roller hood, translating intake and horizontally expanding hopper under a black net roof: 31 FUEL in the rigid hopper, 51 with the net stretched (past 31 it bulges above TRENCH height). Capacity, rate and drive speed are simulator estimates.',source:'User supplied VR26A-0000 Main.glb; https://www.chiefdelphi.com/t/frc-6800-valor-2026-robot-cad-release/520715',config:config(6800,'downpour-6800',51,18,.55,{startCount:31,fullHeight:inch(27.5)})},
 ];}

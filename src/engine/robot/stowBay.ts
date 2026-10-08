@@ -74,6 +74,8 @@ export class StowBay {
   constructor(private readonly robot: Robot, private readonly pool: GamePiecePool) {}
 
   private get radius(): number { return this.pool.colliderRadius; }
+  // Net loads must occupy their real volume; compressing every ball leaves the fabric slack at full capacity.
+  private get ballScale(): number { return this.robot.config.hopperExpansion?.mechanism !== 'telescoping' && this.robot.config.hopperExpansion ? 1 : GamePiecePool.STOWED_SCALE; }
 
   private frame(): THREE.Vector3 {
     const t = this.robot.body.translation(), r = this.robot.body.rotation();
@@ -98,14 +100,14 @@ export class StowBay {
     this.frame();
     if (!this.cavity) this.cavity = this.robot.fuelCavity();
     const cav = this.cavity;
-    if (!cav) { this.pool.setStowed(i, GROUPS.stowed); this.stowed.add(i); return; }
+    if (!cav) { this.pool.setStowed(i, GROUPS.stowed, this.ballScale); this.stowed.add(i); return; }
     if (body.isEnabled()) {
       // Captured on the field: carry on from there, pulled in by the rollers.
       this.stats.captured++;
       const from = this.toLocal(body.translation(), new THREE.Vector3());
       const pts = [from, ...this.robot.intakePath(from)];
       this.feeding.set(i, { t: 0, pts, k: 1 });
-      this.pool.setStowed(i, GROUPS.feeding);
+      this.pool.setStowed(i, GROUPS.feeding, this.ballScale);
     } else {
       this.dropIn(i, cav);
     }
@@ -116,7 +118,7 @@ export class StowBay {
    * Slots past what fits continue upward, so an over-full load is simply a heap above the rim.
    */
   private dropIn(i: number, cav: Cavity): void {
-    const rc = this.radius * GamePiecePool.STOWED_SCALE, d = rc * 2.01;
+    const rc = this.radius * this.ballScale, d = rc * 2.01;
     const row = d * Math.sqrt(3) / 2, layerH = d * Math.sqrt(2 / 3);
     const w = cav.max.x - cav.min.x - 2 * rc, l = cav.max.z - cav.min.z - 2 * rc;
     const perRow = Math.max(1, Math.floor(w / d) + 1), rows = Math.max(1, Math.floor(l / row) + 1);
@@ -133,7 +135,7 @@ export class StowBay {
     );
     this.place(i, this.v);
     this.stowed.add(i);
-    this.pool.setStowed(i, GROUPS.stowed);
+    this.pool.setStowed(i, GROUPS.stowed, this.ballScale);
   }
 
   private place(i: number, local: THREE.Vector3): void {
@@ -180,7 +182,7 @@ export class StowBay {
    * Called every few steps, never while the chassis is being thrown around.
    */
   private rebalance(): void {
-    const r = this.radius * GamePiecePool.STOWED_SCALE;
+    const r = this.radius * this.ballScale;
     this.frame();
     if (this.stowed.size > StowBay.ACTIVE_MAX + 6) {
       const rows = [...this.stowed].map(i => ({ i, y: this.toLocal(this.pool.bodies[i].translation(), this.v).y })).sort((a, b) => a.y - b.y);
@@ -212,7 +214,7 @@ export class StowBay {
   /** Switch the top buried layer back on, where it is, and lower the floor under it. */
   private wakeLayer(all = false): void {
     if (!this.buried.size) return;
-    const r = this.radius * GamePiecePool.STOWED_SCALE;
+    const r = this.radius * this.ballScale;
     const top = this.buriedTop(), lin = this.robot.body.linvel();
     this.frame();
     for (const [i, local] of [...this.buried]) {
@@ -312,7 +314,7 @@ export class StowBay {
       if (inside) {
         this.feeding.delete(i);
         this.stowed.add(i);
-        this.pool.setStowed(i, GROUPS.stowed);
+        this.pool.setStowed(i, GROUPS.stowed, this.ballScale);
         continue;
       }
       if (f.t > FEED_TIMEOUT) {
@@ -339,18 +341,20 @@ export class StowBay {
 
   /** Called once per rendered frame, after the physics steps: undo any pop through a wall before it is drawn. */
   settle(): void {
-    if (this.cavity && this.stowed.size) { this.frame(); this.contain(this.cavity, new THREE.Vector3(), this.radius); }
+    if (!this.stowed.size) return;
+    this.cavity = this.robot.fuelCavity();
+    if (this.cavity) { this.frame(); this.contain(this.cavity, new THREE.Vector3(), this.radius); }
   }
 
   private contain(cav: Cavity, p: THREE.Vector3, r: number): void {
     const cx = (cav.min.x + cav.max.x) / 2, cz = (cav.min.z + cav.max.z) / 2;
-    const rs = r * GamePiecePool.STOWED_SCALE; // held balls are drawn at this size: the whole ball stays inside the side walls
+    const rs = r * this.ballScale; // the whole ball stays inside the side walls
     const hx = (cav.max.x - cav.min.x) / 2 - rs, hz = (cav.max.z - cav.min.z) / 2 - rs;
     for (const i of [...this.stowed]) {
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
       const outX = Math.abs(p.x - cx) > hx + 0.01, outZ = Math.abs(p.z - cz) > hz + 0.01;
-      const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - r * 0.93 + 0.01); // covered: the whole ball stays under the roof / net
+      const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + 0.01); // covered: the whole ball stays under the roof / net
       if (!outX && !outZ && !outY) continue;
       if (cav.open && (outX || outZ) && p.y > cav.max.y - r * 0.5) {
         this.stats.released++;

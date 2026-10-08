@@ -2,7 +2,7 @@
   "id": "rubble-581",
   "sourceFile": "2026 Dumper Champs Bot581.glb",
   "inputBytes": 171637844,
-  "outputBytes": 2623904,
+  "outputBytes": 3296040,
   "inputTriangles": 10240481,
   "outputTriangles": 454693,
   "omittedOccurrences": 899,
@@ -22,6 +22,7 @@
     "frame",
     "flywheel",
     "hood",
-    "intake"
+    "intake",
+    "hopper-roof"
   ]
 }

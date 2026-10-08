@@ -291,12 +291,12 @@ export class GamePiecePool {
   }
 
   /** Keep a held piece's body live inside a hopper with these collision groups (GROUPS.feeding / GROUPS.stowed). */
-  setStowed(i: number, groups: number): void {
+  setStowed(i: number, groups: number, scale = GamePiecePool.STOWED_SCALE): void {
     const b = this.bodies[i];
     if (!this.stowed[i]) {
       this.stowed[i] = true;
       b.setLinearDamping(0.35);
-      this.setColliderRadius(i, this.colliderRadius * GamePiecePool.STOWED_SCALE);
+      this.setColliderRadius(i, this.colliderRadius * scale);
       this.setColliderMass(i, this.specs[i].mass * GamePiecePool.STOWED_MASS);
     }
     b.setEnabled(true);

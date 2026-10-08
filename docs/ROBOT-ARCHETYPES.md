@@ -249,14 +249,14 @@ corrections take precedence: 2910 uses 40, 604 uses 85, 9128 uses 45, and 1678 u
 
 | Robot | Rigid box | Net stretch | Capacity |
 |---|---|---|---|
-| 581 Rubble | 42 | +13 (to 25 in) | 55 |
-| 6800 Downpour | 31 | +10 (to 25.5 in) | 41 |
-| 254 Overload | 40 | +12 (to 25 in) | 52 |
-| 1323 MadTown | 50 | +14 (to 25 in) | 64 |
+| 581 Rubble | 42 | +23 (to 27 in) | 65 |
+| 6800 Downpour | 31 | +20 (to 27.5 in) | 51 |
+| 254 Overload | 40 | +22 (to 27 in) | 62 |
+| 1323 MadTown | 50 | +24 (to 27 in) | 74 |
 | 4414 RIPCURRENT | 57 | +28 (to 29.5 in) | 85 (binder) |
-| 9470 Ctrl-Alt-Defeat | 40 [EST] | +12 (to 25.5 in) | 52 |
+| 9470 Ctrl-Alt-Defeat | 40 [EST] | +22 (to 27.5 in) | 62 |
 | 1678 Limestone | 50 lowered [user tuning] | telescoping, raised | 65 |
-| 2910 / 971 / 9470 / 1114 | | | 40 [user tuning] / 35 / 52 [extension + net] / 55 |
+| 2910 / 971 / 9470 / 1114 | | | 40 [user tuning] / 35 / 62 [extension + net] / 55 |
 | 6329 / 1778 / 5940 / 7769 / 9128 | | | 47 / 47 / 33 / 37 / 45 [user tuning] |
 | 604 / 9483 / 4946 / 3476 / 1690 | | | 85 [user tuning] / 86 / 88 / 70 / 39 |
 
@@ -264,8 +264,8 @@ corrections take precedence: 2910 uses 40, 604 uses 85, 9128 uses 45, and 1678 u
 
 254 Overload is configured at 25 FUEL/s, 3476 Sandspit at 20 FUEL/s (requested tuning). The net robots (581, 6800,
 254, 1323, 4414, 9470) carry their rigid-box load under TRENCH height; past it the net stretches over more FUEL, a
-taut dome ((1 − u⁴)(1 − v⁴), `hopperNetCeiling`) about 4 in above the rim. 4414's very elastic net stretches to
-about 29.5 in for the binder's 85, an exception to the 10–15 additional FUEL used for the other four nets. The loose FUEL pile's ceiling follows the drawn net (`setStretch`), so a FUEL
+taut dome ((1 − u⁴)(1 − v⁴), `hopperNetCeiling`) about 6 in above the rim. 4414's very elastic net stretches to
+about 29.5 in for the binder's 85, compared with the 20–24 additional FUEL estimated for the other nets. The loose FUEL pile's ceiling follows the drawn net (`setStretch`), so a FUEL
 entering a slack net lands on the pile rather than up in the dome. Above the threshold, `hopperExpansion`
 interpolates the allowed envelope and adds a massless
 upper collider. Actual ball surfaces lift the crossed strands locally, with sag between contacts and fixed rim anchors;

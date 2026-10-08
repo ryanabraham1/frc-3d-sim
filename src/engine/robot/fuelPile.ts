@@ -16,6 +16,7 @@ export class FuelPile {
   private readonly velocity: Float32Array;
   private readonly before: Float32Array;
   private readonly contactRadius: Float32Array;
+  private readonly netted: boolean;
   private readonly arrivals: THREE.Vector3[] = [];
   private count = 0;
   /** Uncovered hopper: no lid, so FUEL that ends up above the rim leaves the pile (see `step`'s escape callback). */
@@ -40,7 +41,8 @@ export class FuelPile {
     this.positions = new Float32Array(seeds.length * 3);
     this.velocity = new Float32Array(seeds.length * 3);
     this.before = new Float32Array(seeds.length * 3);
-    this.contactRadius = Float32Array.from(seeds, b => radius * Math.min(0.9, (b.sy ?? 0.94) * 1.92 / 1.9) * b.s);
+    this.netted = 'setStretch' in (bin.ceiling ?? {});
+    this.contactRadius = Float32Array.from(seeds, b => radius * (this.netted ? 0.99 : Math.min(0.9, (b.sy ?? 0.94) * 1.92 / 1.9)) * b.s);
     for (let i = 0; i < seeds.length; i++) this.reset(i);
   }
 
@@ -142,8 +144,8 @@ export class FuelPile {
         p[j] += v[j] * h; p[j + 1] += v[j + 1] * h; p[j + 2] += v[j + 2] * h;
         this.confine(i, oldX, oldZ);
       }
-      // Bounded pair budget: small hoppers, three contact passes, no allocations in the contact loop.
-      for (let pass = 0; pass < 3; pass++) {
+      // Bounded pair budget: small hoppers, bounded contact passes, no allocations in the contact loop.
+      for (let pass = 0; pass < (this.netted ? 8 : 3); pass++) {
         for (let a = 0; a < this.count; a++) for (let b = a + 1; b < this.count; b++) {
           const j = a * 3, k = b * 3;
           let dx = p[k] - p[j], dy = p[k + 1] - p[j + 1], dz = p[k + 2] - p[j + 2];

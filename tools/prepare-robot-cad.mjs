@@ -129,6 +129,7 @@ const specs = {
     ['flywheel', /Drum silicone/], ['hood', /Hood silicone|1678-26c-16(?:06|09|10|11|12|13|14|15|17|74|75|85)(?:\/|$)/],
   ] },
   'rubble-581': { file: '2026 Dumper Champs Bot581.glb', axes: 'xzy', groups: [
+    ['hopper-roof', /^Part 22\/.*Hopper </],
     ['hood', /Hood Assem/], ['flywheel', /#1: 4.*Roller Shaft/],
     ['intake', /Champs Intake Assembly/],
   ] },

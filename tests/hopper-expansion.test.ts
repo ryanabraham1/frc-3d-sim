@@ -59,7 +59,7 @@ for (const team of [254,4414]) it(`${team}: expanded net physically blocks a ful
 });
 
 it('net and telescoping expansion do not inflate the requested total capacities', () => {
-  for(const [team,capacity] of [[254,52],[1678,65],[2910,40],[604,85],[9470,52],[9128,45],[971,35],[581,55],[6800,41],[4414,85],[1323,64]]) {
+  for(const [team,capacity] of [[254,62],[1678,65],[2910,40],[604,85],[9470,62],[9128,45],[971,35],[581,65],[6800,51],[4414,85],[1323,74]]) {
     const c=season.teamRobots!.find(t=>t.team===team)!.config;
     expect(c.hopperCapacity).toBe(capacity);
     expect(season.normalizeRobotConfig!(cloneConfig(c)).hopperCapacity).toBe(capacity);

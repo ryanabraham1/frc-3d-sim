@@ -707,12 +707,12 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'madtown-2026-1323', team: 1323, name: 'MadTown',
-      description: '1323 MadTown Robotics (2026 World Champions). A trench-height turret robot in the RIPCURRENT mould: dye rotor feeding a turret that shoots on the move, a net-roofed hopper (50 FUEL in the rigid box, about 14 more as the net stretches: 64) and a lower fire rate (13 FUEL/s) than 4414; past 50 the net bulges above TRENCH height. Its signature SHOT BLOCKER, a slatted panel hinged on the intake-side top edge, swings out 12 in and up to the 30 in height limit over a neighbouring trench robot\'s shooter (F / gamepad L3). Raised, it hits the TRENCH arm, so the robot cannot drive under, and it cannot be raised under the arm. The intake is off while it is up. No climber [EST].',
+      description: '1323 MadTown Robotics (2026 World Champions). A trench-height turret robot in the RIPCURRENT mould: dye rotor feeding a turret that shoots on the move, a net-roofed hopper (50 FUEL in the rigid box, about 24 more as the net stretches: 74) and a lower fire rate (13 FUEL/s) than 4414; past 50 the net bulges above TRENCH height. Its signature SHOT BLOCKER, a slatted panel hinged on the intake-side top edge, swings out 12 in and up to the 30 in height limit over a neighbouring trench robot\'s shooter (F / gamepad L3). Raised, it hits the TRENCH arm, so the robot cannot drive under, and it cannot be raised under the arm. The intake is off while it is up. No climber [EST].',
       source: 'Match photos/video (2026 Champs, Einstein); Chief Delphi "How does 1323 get away with such a complicated robot?" ("turreted dye rotor with a shot blocker"); user tuning relative to 4414',
-      config: teamConfig(1323, 'madtown-2026-1323', { intake: 'both', aim: 'turret', hopper: 64, tall: false, rate: 13, climb: 0 }, (c) => {
+      config: teamConfig(1323, 'madtown-2026-1323', { intake: 'both', aim: 'turret', hopper: 74, tall: false, rate: 13, climb: 0 }, (c) => {
         c.hopperCovered = true; // net over the hopper
-        // Capacity from packing real-size FUEL into this hopper: 50 under the rigid rim, +14 under the stretched net. [EST]
-        c.hopperExpansion = { startCount: 50, fullHeight: inch(25) };
+        // Capacity from packing real-size FUEL into this hopper: 50 under the rigid rim, +24 under the stretched net. [EST]
+        c.hopperExpansion = { startCount: 50, fullHeight: inch(27) };
         c.frameLength = inch(27); // [EST] near-square frame in photos
         c.frameWidth = inch(27);
         // [R: 12 in extension past the FRAME PERIMETER, on the intake side so the intake and blocker share one side;
@@ -724,12 +724,12 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, 52 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, 62 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
-      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 52, tall: false, rate: 25, climb: 0 }, (c) => {
+      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 62, tall: false, rate: 25, climb: 0 }, (c) => {
         c.hopperCovered = true; // net hopper
-        // Capacity from packing real-size FUEL into this hopper: 40 under the rigid rim, +12 under the stretched net. [EST]
-        c.hopperExpansion = { startCount: 40, fullHeight: inch(25) };
+        // Capacity from packing real-size FUEL into this hopper: 40 under the rigid rim, +22 under the stretched net. [EST]
+        c.hopperExpansion = { startCount: 40, fullHeight: inch(27) };
         c.launcher.exits = 3; // [EST] wide multi-wheel shooter
       }),
     },

@@ -439,7 +439,14 @@ export class Robot {
     const c = this.config, extra = this.netShown;
     // FUEL can only rise as far as the net has actually stretched.
     const stretch = extra / Math.max(1e-3, (c.hopperExpansion?.fullHeight ?? c.height) - c.height);
-    for (const mesh of this.fuelPiles) mesh.userData.fuelCeiling?.setStretch?.(stretch);
+    for (const mesh of this.fuelPiles) {
+      const ceiling = mesh.userData.fuelCeiling;
+      if (!ceiling?.setStretch) continue;
+      ceiling.setStretch(stretch);
+      // Opening a roof must wake a pile compressed beneath its earlier, lower ceiling.
+      if (Math.abs(stretch - (mesh.userData.netStretch ?? 1)) > 1e-4) mesh.userData.wakeFuel?.();
+      mesh.userData.netStretch = stretch;
+    }
     const area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
     // Imported sliding hoppers carry the roof anchors with the moving wall, including when stowed.
     const cx = bin ? bin.x : area.cx, sx = bin ? bin.length / 2 : area.sx, sz = bin ? bin.width / 2 : area.sz;
@@ -482,7 +489,7 @@ export class Robot {
         const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
-      const maximum = c.hopperExpansion?.fullHeight ?? c.height;
+      const maximum = Math.min(c.hopperExpansion?.fullHeight ?? c.height, c.height + extra);
       // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
       y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
       // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
@@ -850,6 +857,8 @@ export class Robot {
         min.min(v); max.max(v);
       }
     }
+    // Covered net loads use the same count-dependent roof as their drawn net and clearance collider.
+    if (this.hopperNet) max.y = Math.min(max.y, this.clearanceHeight - .006);
     return Number.isFinite(min.x) ? { min, max, open: this.openHopper } : null;
   }
 

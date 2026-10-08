@@ -124,7 +124,8 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
   roof.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x181b20,transparent:true,opacity:.8})));
   roof.position.x=-.63;roof.scale.x=.655;
-  const pile=fuel(k,-.615,.025,.14,.515,.65,-.4095);
+  // The usable roller floor is above the chassis bellypan; FUEL must not settle into that dead space.
+  const pile=fuel(k,-.615,.025,.19,.515,.65,-.4095);
   let deploy=1,angle=0;
   return {replaces,lightAt:[0,.55,.3],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip,-.02,-.06),new THREE.Vector3(-.35,.25,0)],stow:pile.stow,feed:(shot=0)=>{

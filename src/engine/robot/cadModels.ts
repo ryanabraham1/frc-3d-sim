@@ -80,6 +80,9 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     return group;
   };
   const isToploader = id === 'toploader-604', isLimestone = id === 'limestone-1678';
+  // The flat CAD fabric proxy must give way to the load-driven net, rather than cover its bulge.
+  const fabricRoof = get('hopper-roof');
+  if (fabricRoof && k.config.hopperExpansion?.mechanism !== 'telescoping' && k.config.hopperExpansion) fabricRoof.visible = false;
   const intakePivot: [number, number, number] = isToploader ? [-.3048,.206375,0] : isLimestone ? [-.30465,.1689,0] : [0,0,0];
   const intake = pivot('intake', intakePivot);
   const flywheelCenter: [number, number, number] = isToploader ? [.02608,.5969,-.07444] : isLimestone ? [.2881,.4768,.00947] : [.28575,.47625,0];
@@ -110,6 +113,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     flow: {
       intake: () => isLimestone
         ? [new THREE.Vector3(-.65,.17,0),new THREE.Vector3(-.52,.30,0),new THREE.Vector3(-.40,.46,0),new THREE.Vector3(-.26,.59,0),new THREE.Vector3(-.13,.49,0)]
+        : isToploader ? [new THREE.Vector3(-.58,.12,0),new THREE.Vector3(-.40,.22,0),new THREE.Vector3(-.28,.3,0)]
         : [point(intakeTip,0,.075), new THREE.Vector3(-.28,.3,0)],
       stow: hopper.stow,
       feed: (shot = 0) => {
