@@ -1,0 +1,32 @@
+{
+  "id": "matterhorn-9496",
+  "sourceFile": "2026-9496.glb",
+  "inputBytes": 104090664,
+  "outputBytes": 8151780,
+  "inputTriangles": 4608258,
+  "outputTriangles": 692381,
+  "omittedOccurrences": 312,
+  "bounds": {
+    "min": [
+      -0.6429375219158828,
+      3.6802380715128535e-7,
+      -0.34829748515039693
+    ],
+    "max": [
+      0.3429000079631806,
+      0.5556250510955653,
+      0.34829750657081615
+    ]
+  },
+  "groups": [
+    "frame",
+    "feeder-roller-1",
+    "feeder-roller-2",
+    "feeder-roller-0",
+    "hopper-ext",
+    "flywheel",
+    "intake",
+    "intake-roller-1",
+    "intake-roller-0"
+  ]
+}

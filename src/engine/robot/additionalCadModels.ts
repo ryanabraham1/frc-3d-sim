@@ -10,8 +10,8 @@ import { hopperNetCeiling } from './config';
 // 9470's complete export supplies its intake, indexer and sliding hopper; retraction travel remains estimated.
 // 6800's supplied wide-shooter variant differs from the turret in Valor's earlier binder.
 // 971 keeps both imported turrets, with a shared simulated aim and alternating feeds.
-const ease = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;
-function articulation(root: THREE.Group) {
+export const ease = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;
+export function articulation(root: THREE.Group) {
   return (name:string, at:[number,number,number], yaw=0) => {
     const g=new THREE.Group(); g.name=`cad-${name}-pivot`; g.position.fromArray(at); g.rotation.y=yaw;
     root.add(g); root.updateMatrixWorld(true);
@@ -19,11 +19,11 @@ function articulation(root: THREE.Group) {
     return g;
   };
 }
-function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
+export function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
   k.visual.updateMatrixWorld(true);
   return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
 }
-function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean) {
+export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean) {
   const g=new THREE.Group();g.name='cad-hopper-fuel';k.visual.add(g);
   // A stretching net roof lets FUEL rise above the rigid rim into the net's dome.
   const e=k.config.hopperExpansion,netted=!!e&&e.mechanism!=='telescoping',roof=netted?e!.fullHeight:rim;
@@ -42,7 +42,7 @@ function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:n
     return new THREE.Vector3((f+back)/2,base+.075,0);
   }};
 }
-const replaces:RobotModel['replaces']=['chassis','launcher','hopper','intakeRollers','climber','funnel'];
+export const replaces:RobotModel['replaces']=['chassis','launcher','hopper','intakeRollers','climber','funnel'];
 
 /** S26-A000 supplies the intake/hopper only; drivetrain and shooter remain procedural.
  * CAD origin is shifted 12 inches so the hopper lies over the existing chassis.

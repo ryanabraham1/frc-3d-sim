@@ -1,0 +1,29 @@
+{
+  "id": "cyclone-1987",
+  "sourceFile": "2026-1987.glb",
+  "inputBytes": 161106356,
+  "outputBytes": 8561332,
+  "inputTriangles": 5205786,
+  "outputTriangles": 705922,
+  "omittedOccurrences": 571,
+  "bounds": {
+    "min": [
+      -0.6055853957305732,
+      1.5265566588595902e-16,
+      -0.38639748096466064
+    ],
+    "max": [
+      0.3174999952316284,
+      0.5531636998057364,
+      0.3863974923733622
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake",
+    "rotor",
+    "hood",
+    "turret",
+    "flywheel"
+  ]
+}

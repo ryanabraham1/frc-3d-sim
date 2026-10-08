@@ -1,0 +1,41 @@
+{
+  "id": "roman-6329",
+  "sourceFile": "2026-6329.glb",
+  "inputBytes": 117171616,
+  "outputBytes": 7908128,
+  "inputTriangles": 3600196,
+  "outputTriangles": 673874,
+  "omittedOccurrences": 121,
+  "bounds": {
+    "min": [
+      -0.5986821129918096,
+      3.8743019104003906e-7,
+      -0.3877564147114755
+    ],
+    "max": [
+      0.3433064242666684,
+      0.5477559026619292,
+      0.38775643706321716
+    ]
+  },
+  "groups": [
+    "frame",
+    "flywheel",
+    "shooter-roller-2",
+    "shooter-roller-3",
+    "shooter-roller-1",
+    "shooter-roller-0",
+    "intake-roller-0",
+    "intake-driven-arm",
+    "intake-dropdown",
+    "intake-roller-1",
+    "intake",
+    "intake-drive-arm",
+    "floor-roller-4",
+    "floor-roller-2",
+    "floor-roller-3",
+    "floor-roller-0",
+    "floor-roller-1",
+    "floor-roller-5"
+  ]
+}
