@@ -100,6 +100,8 @@ export class ClientSync {
   onBinary(buf: ArrayBuffer, localMs: number): Snapshot | null {
     const s = decodeSnapshot(buf);
     if (!s) return null;
+    // Relay and direct packets can overlap during a transport switch. Never roll state backward.
+    if (s.seq <= this.lastSeq) return null;
     if (!this.gotKeyframe && !s.meta.key) {
       this.needsKeyframe = true;
       this.requestResync(localMs);

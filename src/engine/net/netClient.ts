@@ -1,3 +1,4 @@
+import { DirectTransport } from './directTransport';
 import { Emitter } from '../core/events';
 import type { Outcome, RankedMode } from './ranked';
 import { cleanClientId, CLOSE_LEAVE, RECONNECT_GRACE_MS, RELAY_PATH, type RelayEvent, type RelayRequest, type RoomListing, type RoomMeta } from './relayProtocol';
@@ -9,6 +10,7 @@ export interface NetClientEvents {
   msg: { from: string; data: unknown };
   /** Binary frame from the host (snapshots). */
   binary: ArrayBuffer;
+  transport: { directPeers: number };
   'peer-joined': { peerId: string; name: string };
   'peer-left': { peerId: string };
   /** Host only: a client's connection dropped (it may come back). */
@@ -53,6 +55,34 @@ export class NetClient extends Emitter<NetClientEvents> {
   /** True while a dropped connection is being resumed. */
   reconnecting = false;
   private token = '';
+  private readonly peers = new Set<string>();
+  private snapshotRoute = '';
+  private readonly direct = new DirectTransport(
+    (to, data) => this.raw({ op: 'signal', to, data }),
+    (from, data) => {
+      if (data instanceof ArrayBuffer) { if (!this.isHost && from === this.hostId) this.emit('binary', data); }
+      else {
+        try {
+          const msg = JSON.parse(data);
+          if (this.isHost && this.peers.has(from) && msg?.t === 'cmd') this.emit('msg', { from, data: msg });
+        } catch { /* malformed direct message */ }
+      }
+    },
+    () => {
+      if (this.room && !this.isHost) this.raw({ op: 'send', data: { t: 'resync' } });
+      this.emit('transport', { directPeers: this.direct.peers.length });
+    },
+  );
+
+  /** Number of direct host/client links; zero means game traffic uses the relay. */
+  get directPeerCount(): number { return this.direct.peers.length; }
+  get directSupported(): boolean { return this.direct.available; }
+
+  private resetDirect(): void {
+    this.direct.close();
+    this.peers.clear();
+    this.snapshotRoute = '';
+  }
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private lastHeard = 0;
   private pingId = 0;
@@ -219,6 +249,8 @@ export class NetClient extends Emitter<NetClientEvents> {
   private onSocketClosed(ws: WebSocket): void {
     if (this.ws !== ws) return;
     this.ws = null;
+    this.direct.close();
+    this.snapshotRoute = '';
     this.stopHeartbeat();
     this.pending?.reject(new Error(this.closedReason ?? 'Disconnected from relay'));
     this.pending = null;
@@ -233,6 +265,7 @@ export class NetClient extends Emitter<NetClientEvents> {
 
   private finish(reason: string): void {
     this.room = '';
+    this.resetDirect();
     this.token = '';
     this.stopHeartbeat();
     this.reconnecting = false;
@@ -255,6 +288,8 @@ export class NetClient extends Emitter<NetClientEvents> {
         if (this.closedReason !== null || generation !== this.generation) return;
         if (ev.op !== 'joined') throw new RelayError('Unexpected relay reply');
         this.hostId = ev.hostId;
+        this.snapshotRoute = '';
+        if (this.isHost) for (const peer of this.peers) void this.direct.offer(peer);
         this.reconnecting = false;
         this.emit('reconnected', {});
         return;
@@ -333,6 +368,8 @@ export class NetClient extends Emitter<NetClientEvents> {
 
   /** Client → host, or host → `to` (all clients when omitted). */
   send(data: unknown, to?: string): void {
+    // Room/lobby events stay ordered on the relay; only frequent driver controls go direct.
+    if (!this.isHost && data && typeof data === 'object' && (data as { t?: string }).t === 'cmd' && this.direct.send(this.hostId, JSON.stringify(data))) return;
     this.raw({ op: 'send', data, to });
   }
 
@@ -340,7 +377,15 @@ export class NetClient extends Emitter<NetClientEvents> {
   sendBinary(buf: ArrayBuffer): void {
     const ws = this.ws;
     this.later(() => {
-      if (this.ws === ws && ws?.readyState === WebSocket.OPEN) ws.send(buf);
+      if (this.ws !== ws || ws?.readyState !== WebSocket.OPEN || !this.isHost) return;
+      const exclude = this.direct.peers.filter(peer => this.direct.send(peer, buf));
+      const route = JSON.stringify(exclude.sort());
+      if (route !== this.snapshotRoute) {
+        // Same socket preserves the route update before the following binary frame.
+        ws.send(JSON.stringify({ op: 'snapshot-route', exclude }));
+        this.snapshotRoute = route;
+      }
+      if (!this.peers.size || [...this.peers].some(peer => !exclude.includes(peer))) ws.send(buf);
     });
   }
 
@@ -355,6 +400,7 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.generation++;
     this.stopHeartbeat();
     this.closedReason = reason;
+    this.resetDirect();
     // Mid-reconnect there is no live room to leave: stop retrying, remember to free the seat, report once.
     if (this.reconnecting) {
       if (this.room && this.token) this.forget = { room: this.room, token: this.token };
@@ -411,7 +457,9 @@ export class NetClient extends Emitter<NetClientEvents> {
         if (ev.id === this.pingId) this.rttMs = Math.round(performance.now() - this.sentPingAt);
         break;
       case 'host-changed':
+        this.resetDirect();
         this.hostId = ev.hostId;
+        if (this.isHost) for (const peer of ev.peers) if (peer.peerId !== this.peerId) { this.peers.add(peer.peerId); void this.direct.offer(peer.peerId); }
         this.emit('host-changed', ev);
         break;
       case 'created':
@@ -440,27 +488,39 @@ export class NetClient extends Emitter<NetClientEvents> {
         this.peerId = ev.peerId;
         this.hostId = ev.hostId;
         this.token = ev.token;
+        if (this.isHost) for (const peer of ev.roster) if (peer.peerId !== this.peerId) { this.peers.add(peer.peerId); void this.direct.offer(peer.peerId); }
         this.emit('matched', ev);
         break;
       case 'rooms':
         this.emit('rooms', { rooms: ev.rooms });
         break;
+      case 'signal':
+        if (this.room && (this.isHost ? this.peers.has(ev.from) : ev.from === this.hostId)) this.direct.handleSignal(ev.from, ev.data, !this.isHost);
+        break;
       case 'msg':
         this.emit('msg', { from: ev.from, data: ev.data });
         break;
       case 'peer-joined':
+        this.peers.add(ev.peerId);
+        if (this.isHost) void this.direct.offer(ev.peerId);
         this.emit('peer-joined', { peerId: ev.peerId, name: ev.name });
         break;
       case 'peer-left':
+        this.peers.delete(ev.peerId);
+        this.direct.drop(ev.peerId);
         this.emit('peer-left', { peerId: ev.peerId });
         break;
       case 'peer-lost':
+        this.direct.drop(ev.peerId);
         this.emit('peer-lost', { peerId: ev.peerId });
         break;
       case 'peer-back':
+        this.peers.add(ev.peerId);
+        if (this.isHost) void this.direct.offer(ev.peerId);
         this.emit('peer-back', { peerId: ev.peerId });
         break;
       case 'host-lost':
+        this.direct.drop(this.hostId);
         this.emit('host-lost', {});
         break;
       case 'host-back':
@@ -469,6 +529,7 @@ export class NetClient extends Emitter<NetClientEvents> {
       case 'room-closed':
         this.closedReason = ev.reason === 'host left' ? 'The host left — room closed' : ev.reason;
         this.room = '';
+        this.resetDirect();
         this.ws?.close();
         break;
     }

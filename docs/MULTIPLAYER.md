@@ -259,35 +259,17 @@ receive the same state. Five-element 2026 driver commands remain supported.
 
 ## 8. Deployment
 
-Multiplayer needs a server that holds WebSockets open, so Vercel alone won't work.
+Use **Vercel for the static frontend** and **Cloudflare Workers + a SQLite-backed Durable Object**
+for the relay. See [CLOUDFLARE.md](CLOUDFLARE.md) for deployment, existing ranked database secrets and
+free-plan limits. Set `VITE_RELAY_URL` to the Worker's `wss://.../ws` URL in Vercel before building.
 
-**Recommended for an instant-loading page: separate static site + Render web service.** Render's free
-web service supports WebSockets, sleeps after 15 minutes without inbound traffic, and takes about a
-minute to wake. Its static site stays available while the web service sleeps.
+Direct WebRTC host/client connections carry snapshots and driver commands when available; lobby
+management, chat, ranked operations and host recovery stay on the relay. Failed direct connections
+fall back automatically, including rooms with a mixture of direct and relay players. The lobby
+shows the current connection type. `?relayOnly` forces fallback for testing.
 
-1. Push this repo to GitHub. Deploy the relay on Render: New → Blueprint → select this repo (`render.yaml`). Note its URL,
-   `https://<service>.onrender.com`. The blueprint also serves the site, but use the static URL below
-   as the public link.
-2. Render → New → Static Site → select the same repo. Build command: `npm ci && npm run build`;
-   publish directory: `dist`.
-3. On the static site's environment settings, set
-   `VITE_RELAY_URL=wss://<service>.onrender.com/ws`, using the actual web service hostname. Redeploy
-   the static site after setting it, because Vite embeds this value during the build.
-4. Share the **static site URL**. The page opens immediately. The Multiplayer page wakes the relay via
-   its WebSocket endpoint and shows the elapsed wait. Players can enter a name or join code while it wakes. Creating
-   a new room and getting its share code require the relay to be online.
-
-5. On the Render static site's **Headers** settings, add path `/*`, header `Cache-Control`, value
-   `no-cache, max-age=0, must-revalidate`. This makes normal visits revalidate HTML and public models
-   after deployments instead of requiring a hard refresh. Render static-site headers are dashboard
-   settings, so pushing this repository alone does not apply that setting to an existing static site.
-   The included Node server and `vercel.json` apply the policy automatically on their respective hosts.
-
-Vercel can host the static site instead, with the same build command, `dist` output, and
-`VITE_RELAY_URL` setting. Keep Render as the WebSocket relay.
-
-The simple single-service option is still available: deploy just the `render.yaml` blueprint and share
-its `https://<service>.onrender.com` URL. That URL waits through a cold start before displaying the page.
+The existing Node server and Render blueprint still work. Vercel's WebSocket Functions also exist,
+but this deployment uses Cloudflare to preserve room coordination in a single location.
 
 ## Host recovery and connection diagnostics
 

@@ -65,6 +65,10 @@ export type RelayRequest =
   | { op: 'rejoin'; room: string; token: string }
   /** Ask for the public room list. */
   | { op: 'list' }
+  /** WebRTC signaling, restricted to the room's host/client links. */
+  | { op: 'signal'; to: string; data: unknown }
+  /** Host: skip relay snapshots for peers currently receiving direct snapshots. */
+  | { op: 'snapshot-route'; exclude: string[] }
   /** Host only: opaque recovery checkpoint, retained in memory for a replacement host. */
   | { op: 'checkpoint'; data: unknown }
   /** Transport heartbeat detects half-open browser connections before a seat expires. */
@@ -143,6 +147,7 @@ export type RelayEvent =
   /** Checkpoint is sent only to the elected host; peers names include reconnecting seats. */
   | { op: 'host-changed'; hostId: string; previousHostId: string; peers: { peerId: string; name: string }[]; checkpoint?: unknown }
   | { op: 'room-closed'; reason: string }
+  | { op: 'signal'; from: string; data: unknown }
   | { op: 'msg'; from: string; data: unknown };
 
 /** Per-tab client ids: short and boring, or dropped. */

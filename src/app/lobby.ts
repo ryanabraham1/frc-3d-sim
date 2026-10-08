@@ -154,6 +154,7 @@ export class LobbyController {
       this.rooms = rooms;
       this.onRooms(rooms);
     });
+    this.client.on('transport', () => this.onChange());
     this.client.on('reconnecting', () => {
       this.reconnecting = true;
       this.onChange();

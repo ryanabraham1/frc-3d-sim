@@ -98,7 +98,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     const busy = lobby.status === 'connecting';
     const server = {
       unknown: '<span class="mp-dot"></span>Checking server…',
-      waking: `<span class="mp-dot waking"></span>Waking up the multiplayer server… <span data-mp="wake-seconds">${lobby.wakeSeconds}s</span> <span class="dim">(free servers sleep when idle — about a minute)</span>`,
+      waking: `<span class="mp-dot waking"></span>Connecting to the multiplayer server… <span data-mp="wake-seconds">${lobby.wakeSeconds}s</span>`,
       online: '<span class="mp-dot on"></span>Server online',
       offline: '<span class="mp-dot off"></span>Server unreachable <button class="link" data-mp="retry">Retry</button>',
     }[lobby.serverState];
@@ -130,7 +130,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
             ${busy ? `<div class="mp-hint">${lobby.serverState === 'waking' ? 'Connecting as soon as the server is up…' : 'Connecting…'}</div>` : ''}
             <details class="mp-adv"><summary>Relay server</summary>
               <label class="mp-field"><span>WebSocket URL</span><input data-mp="url" value="${esc(lobby.relayUrl)}" spellcheck="false"/></label>
-              <div class="mp-hint">Defaults to this site's own <code>/ws</code>. Everyone in a room must use the same relay.</div>
+              <div class="mp-hint">Everyone in a room must use the same relay. Direct connections are attempted automatically.</div>
             </details>
           </div>
         </section>
@@ -176,6 +176,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
 
   const body = `
     ${err}
+    <div class="mp-hint" data-mp="transport">${lobby.isHost ? `${lobby.client.directPeerCount} direct connection${lobby.client.directPeerCount === 1 ? '' : 's'} · ${Math.max(0, L.players.length - 1 - lobby.client.directPeerCount)} through relay` : (lobby.client.directPeerCount ? 'Direct connection to host' : (lobby.client.directSupported ? 'Connected through relay' : 'Connected through relay · direct connections unavailable in this browser'))}</div>
     <div class="mp-room">
       <div><div class="mp-room-label">Room code · <span class="mp-vis-badge ${isPublic ? 'pub' : ''}">${isPublic ? 'Public' : 'Private'}</span></div><div class="mp-room-code">${esc(L.room)}</div></div>
       <div class="mp-room-actions">
