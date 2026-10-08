@@ -136,6 +136,50 @@ Reproduce with `npm run cad:prepare -- /path/to/downloads reblitz-2910`. The gen
 Final asset: 89.65 MB / 4,603,004 triangles reduced to 6.68 MB / 487,204 triangles, with 964 occurrences omitted. Production build and 29 focused CAD/capacity/gameplay tests pass. Browser inspection covers source pose, stowed/deployed intake, both sides, low/high hood settings and full hopper; planar shading keeps the folded containment sheets readable.
 
 
+## Public 2026 CAD batch: 6329, 1706, 7769, 1987, 9496
+
+Next five 2026 teams by EPA with public Onshape releases (Spectrum CAD Collection). Each source GLB was exported from the public document, stays outside the repository, and is reduced with `npm run cad:prepare -- <dir> <id>`. All five export the deployed intake. Rigs live in `src/engine/robot/{roman,mirage,chunk,cyclone,matterhorn}CadModel.ts`; shared four-bar, net and clear-sheet helpers in `rebuiltCadKit.ts`. Each rig's header carries the "verify before you build" checklist (archetype, intake/scoring ends, colours, frame, capacity source). The preparer gained two generic per-spec hooks: `classify` (assign a part to a group, or omit it, from its path, name and bounds) and `finish` (replace a CAD swatch, e.g. clear or smoked polycarbonate). All five are trench robots (CAD top 0.548–0.557 m, collision box 0.55 m). Stock 2026 robots start without a climber; none of these changes that. Tests: `tests/rebuilt-cad-batch.test.ts`.
+
+| ID | Source | Output | Groups |
+| --- | --- | --- | --- |
+| `roman-6329` | "6329-2026.2, Roman II - Public Release", 117.2 MB / 3,600,196 tris | 7.91 MB / 673,874 tris | frame, flywheel (drum), shooter-roller-0..3, floor-roller-0..5, intake (head), intake-roller-0/1, intake-drive-arm, intake-driven-arm, intake-dropdown |
+| `mirage-1706` | "RB-MIRAGE" / "Mirage Public Release", 159.3 MB / 4,556,622 tris | 9.36 MB / 728,944 tris | frame, turret-left/right, wheels-left/right, flywheel-left/right, rotor-left/right, intake, intake-roller-0/1 |
+| `chunk-7769` | "Full Robot" (assembly "Chunk"), 158.2 MB / 6,110,946 tris | 7.30 MB / 594,685 tris | frame, intake, intake-roller, kick-bar, flywheel, hood, feeder, climber |
+| `cyclone-1987` | "2026_1987_Main", 161.1 MB / 5,205,786 tris | 8.56 MB / 705,922 tris | frame, turret, hood, flywheel, rotor, intake |
+| `matterhorn-9496` | "9496_2026_LYNK_Matterhorn_Public", 104.1 MB / 4,608,258 tris | 8.15 MB / 692,381 tris | frame, flywheel (drum), feeder-roller-0..2, intake, intake-roller-0/1, hopper-ext |
+
+### 6329 ROMAN II (`roman-6329`, existing ID)
+
+Roman II is the team's fixed-drum rebuild of the turret Roman I, so the roster entry changes archetype: four-stream drum dumper, no turret, fixed hood (70° [EST]), 24 x 30 in frame. Saved picks of the old turret preset (turret, 47 FUEL, 14/s) migrate to the new defaults; custom configs are kept. Axes `yzx`. FUEL climbs a vertical feed column (cat-tongue rollers against a rolled plate) into the gap between the 4 in drum and two powered hood rollers and leaves over the front. The back intake is a long driven four-bar: drive arm on `(-.267,.2095)`, driven arm `(-.165,.254)`, coupler pins `(-.567,.444)` / `(-.461,.514)` measured from the Pivot Stub Shafts; the head is solved as a real four-bar (fixed assembly branch, so the pose depends only on the drive angle). Drum `(.2285,.4825)`, six sloped floor rollers and four shooter rollers spin about their own shafts. Finishes: the hopper side panels, front plate and deflector are clear (TBA photos), the net roof is drawn because fabric is not in the export. [EST] stow travel (drive arm -1.0 rad: head tucked above the hopper, inside the bumper line), the dropdown swing and the capacity (40, packed under the net).
+
+Visual check against `refs/6329-2026/sheet.jpg`: drum end (clear front plate, purple brackets, black drum) and intake end (black curved arms up the sides, head high, roller row at bumper level when stowed) match.
+
+### 1706 MIRAGE (`mirage-1706`, new)
+
+Championship configuration: two turrets side by side, each with two 3 in shooter wheels at the front, 1 in rear accelerator wheels and a 5 in aluminium inertia flywheel, fed by its own spindexer floor (team CAD-release thread). Axes `xzy`. Turret rings `(.165,.33,±.2225)`; the two heads were exported at different yaws (left -0.4896, right -0.3437 rad, measured from the 1 in to 3 in wheel line), which each rig removes before applying the shared simulated aim. Spindexers `(-.0885,±.1775)`. The intake and the black-walled extension box slide out the back together; [EST] travel 0.30 m. Bumper parts and the low bumper-mount hardware in the chassis assembly are omitted. The climber was removed for Champs; the remaining telescoping tube only carries the Limelight. Roster: twin-turret mounts at ±.2225 m, 50 FUEL [EST], 18/s alternating between the heads [EST].
+
+Visual check against `refs/1706-2026/sheet.jpg` and `refs/cd-522276`: black walls, aluminium, blue turret rings and prints, two heads moving together.
+
+### 7769 CHUNK (`chunk-7769`, existing ID, now CAD-backed)
+
+Wide fixed shooter: 4 in Stealth wheels across the front, compliant-wheel feeder `(.106,.3175)` below, flywheel `(.2285,.4955)`. The "Adjust Hood" plates, hood plates, hood tube and the 32t plate sprockets ride on the flywheel shaft and are chain-driven from a Kraken X44, so the hood pivots about the flywheel axis; it rises for the shot (team: "up in shooting position") and drops for the TRENCH. The "Fixed Hood" guides stay with the frame. The intake rides out on racks with the moving hopper walls and a floor kick bar; [EST] travel 0.22 m (front back to the bumper line); while firing it shuffles (team's anti-jam). The L1 climb arm (vertical tube with a spear) rises 0.20 m [EST] when a TOWER climb is enabled; the stock robot keeps no climber. The team's "Limits" envelope assembly (max height / trench reference blocks) is omitted. Finishes: hopper side walls are smoked polycarbonate; APTIV/CHUNK decals are drawn because the CAD has no artwork. Frame 25 x 29 in; saved picks with the old generic 27 x 27 x 21 in box adopt it. Capacity stays 37 [EST] (team quotes "almost 70", which a non-expanding trench-height box cannot hold).
+
+Visual check against `refs/7769-2026/sheet.jpg` and `refs/cd-521008`: blue Stealth wheels and prints, black smoked walls with white sponsor text, net roof.
+
+### 1987 CYCLONE (`cyclone-1987`, new)
+
+One turret on the axis of a "dye rotor" floor (spinning disc with a sweeper arm and a flex-wheel kicker up the centre column); the turret is held at the top by a fixed 1.5 in "cell tower" column, which stays with the frame together with the turret motor and chain. Axes `yzx`. Turret and rotor axis `(.038, ·, 0)` from the coaxial sprocket plates; 4 in urethane flywheel `(-.0655,.5015,-.0125)`; floating hood on a Thrifty cycloidal about `(-.0735,.5015)`, its 1 in rollers 0.20 m from the shaft (flywheel radius plus one FUEL), so the ball wraps over the wheel and leaves away from the turret axis: the export heading is -X, which the rig removes before applying the aim. The hood opens up to 0.35 rad for steeper shots [EST]. The intake and the hopper end wall run out the back on racks; [EST] travel 0.20 m. Finish: the end wall and its wings are clear polycarbonate (TBA photos); the clear side walls on the real robot are not in the export. Roster: turret at 0.038 m forward, 25 x 30 in frame, 45 FUEL / 14/s [EST].
+
+Visual check against `refs/1987-2026/sheet.jpg`: black turret head over the rotor bowl, clear end wall, aluminium frame.
+
+### 9496 MATTERHORN (`matterhorn-9496`, new)
+
+Fixed full-width drum with brass inertia flywheels on its ends `(.127,.454)`, three-roller vertical feeder at x 0.158 (y .28 / .334 / .388) in front of it, and three printed shot guides at the front. Axes `yzx`. "Intake V2" pivots on a sector "Pivot Gear" driven by an 11t pinion in the hopper floor; the slotted hopper panels and end panel telescope out with it. [EST] intake pivot `(-.38,.20)` from the gear layout, stow angle 1.75 rad (head folds up inside the bumpers), telescope travel 0.24 m. Finish: the drum is black between the brass flywheels (TBA photo). Net roof drawn. Roster: 27 x 27 in, three-stream dumper, 45 FUEL / 15/s [EST].
+
+Visual check against `refs/9496-2026/sheet.jpg`: dark slatted shot guides with orange edges at the shooter end, net roof, black drum with brass ends.
+
+All five keep the unanimated CAD-export view (no pose is applied while animation is off), have procedural fallbacks registered with `registerRobotModel`, and collect only through the rear mouth in `HeadlessSim`.
+
 ## Supplied 2024 CRESCENDO batch
 
 Existing IDs `doppler-1690`, `typhoon-2910` and `twister-118` are preserved. Gold RUSH (`gold-rush-27`) and Domotron (`domotron-604`) are new 2024 roster entries. Their speeds and climb timing are explicitly simulator estimates. All five load in the workshop, menu previews and playable browser simulator, with independent procedural fallbacks.
