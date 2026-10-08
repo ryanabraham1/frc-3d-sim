@@ -28,6 +28,16 @@ registerRobotModel('hero-constantine-1318',(k:ModelKit)=>{
   box(k.visual,.05,.60,.05,steel,0,.66,-.20);
   return {replaces:['chassis','launcher','hopper','intakeRollers','climber'],update(s){db.update(s);wheel.rotation.z-=s.aiming?45*s.dt:0;}};
 });
+// Lightweight source-shaped fallback for headless play or a failed CAD load: intake low at the back, midtake, shooter and panel lift at the front.
+registerRobotModel('hero-nomad-6995',(k:ModelKit)=>{
+  const db=drivebase(k),dark=mat(0x171b20),red=mat(0xb02a2a);
+  const slap=new THREE.Group();slap.position.set(-.09,.44,0);k.visual.add(slap);
+  roller(slap,.026,.56,dark,-.14,-.05,0).rotation.x=Math.PI/2;
+  roller(k.visual,.03,.60,dark,-.31,.26,0).rotation.x=Math.PI/2;
+  box(k.visual,.36,.22,.42,dark,-.06,.14,0);box(k.visual,.28,.20,.30,red,.16,.38,0);
+  const stage=box(k.visual,.06,.76,.52,dark,.02,.40,0);box(k.visual,.5,.06,.30,red,.22,.98,0);
+  return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],update(s){db.update(s);slap.rotation.z=s.enabled?.95:0;stage.scale.y=1;}};
+});
 export function heroTeamRobots(): TeamRobot[] {
   const c=heroRobotDefaults();
   c.teamNumber=6800;c.options={...c.options,heroClass:'mystic',archetype:'mantis-6800',bubbleCapacity:6,panelCapacity:0,panelPreload:0,dualSideIntake:true};
@@ -38,7 +48,7 @@ export function heroTeamRobots(): TeamRobot[] {
   // Medium pending full folded-body clearance validation; sheet claims High.
   c.climber={maxLevel:2,secondsPerLevel:1.7};
   const mantis:TeamRobot={id:'hero-mantis-6800',team:6800,name:'Mantis',description:'Valor’s Hero Heist Mystic: dual side intakes, six-bubble spindexer, turret and roller hood, folding magazine and telescoping suction climb. Drive speed, joint travel and playing mass are estimates.',source:'https://cad.onshape.com/documents/e4397ae1ed0ebe3445466e8a/w/dc22b6503a48cdc0a163c772/e/579f1fa8cfef57db8f7205ca',config:normalizeHeroConfig(c)};
-  return [mantis,constantine1318(),fireweedTeamRobot(),...team5800Robots()];
+  return [mantis,constantine1318(),nomad6995(),fireweedTeamRobot(),...team5800Robots()];
 }
 /** 1318 "Constantine": Mystic with a full-width 4-bar intake and a same-side geared-hood shooter (CAD -Y = sim +X). */
 function constantine1318(): TeamRobot {
@@ -53,4 +63,16 @@ function constantine1318(): TeamRobot {
   // The binder claims a suction LOW climb; the sheet column says High, so the binder (primary source) wins.
   c.climber={maxLevel:1,secondsPerLevel:2.2};
   return {id:'hero-constantine-1318',team:1318,name:'Constantine',description:'Team 1318’s Hero Heist Mystic: full-width collapsing 4-bar intake, indexer loop into a geared-hood shooter on the same side, suction low climb. Drive speed, shooter rate, hood range and playing mass are estimates.',source:'https://cad.onshape.com/documents/34bba2a1872e9254fdab9bc0/w/fb4e5e9e34fc3f6a78a07f49/e/849abb67fbd36e9b8f4f4969',config:normalizeHeroConfig(c)};
+}
+/** 6995 "Nomad": gadgeteer, panel slapdown + linear bubble intake on the back, fixed hooded shooter and 2-stage panel lift on the front. */
+function nomad6995(): TeamRobot {
+  const n=heroRobotDefaults();
+  // 6995 NOMAD: gadgeteer with a panel slapdown + linear ball intake on the back, a fixed hooded shooter and a 2-stage panel lift on the front.
+  n.teamNumber=6995;n.options={...n.options,heroClass:'gadgeteer',archetype:'nomad-6995',bubbleCapacity:4,panelCapacity:2,panelPreload:1};
+  n.frameLength=.6477;n.frameWidth=.6477;n.height=inch(30);n.mass=lb(95);n.preload=3;n.maxSpeed=4.3;n.maxAccel=7.5;
+  n.intake={...n.intake,width:.60,reach:.22,ground:true,station:false};
+  n.launcher={...n.launcher,turret:false,height:.45,muzzleForward:.26,rate:2.5,angle:deg(55),minAngle:deg(40),maxAngle:deg(67)};
+  n.placement={...n.placement!,maxLevel:2,liftSpeed:1.2};
+  n.climber={maxLevel:0,secondsPerLevel:2.2}; // park only (sheet: Park)
+  return {id:'hero-nomad-6995',team:6995,name:'Nomad',description:'Gadgeteer: floor slapdown for STORY PANELS and a linear BUBBLE intake on one end (up to 2 panels or 4 bubbles), midtake belts, a fixed hooded shooter and a 2-stage belted elevator with a pivoting end effector (low FOOTHILL baskets). Park only. Speed, shooter rate, hood range and joint travel are estimates.',source:'https://cad.onshape.com/documents/dc43b19f2e46981255d7d233/w/0a4080792ce2fab8a15b6f4c/e/e2fb5b73bb40afbd07be44d8',config:normalizeHeroConfig(n)};
 }

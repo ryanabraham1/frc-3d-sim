@@ -46,6 +46,15 @@ const specs = {
     ['carriage',/Carriage <1>/], ['spindexer-star',/^(?:Part 18|SplineXL \(7" L\)|84t Aluminum MotionX).*Spindexer <1>/],
     ['elevator-stage',/^(?:Tube 2"x1"x25\.75"|Tube 2"x1"x4\.5"|Tube 2"x1"x9"|Top Crossbar|Side Top Plate)/],
   ]},
+  // 6995 NOMAD: source is the Onshape glTF export (Z up, +Y = shooter side, -Y = intake side). The elevator/end effector
+  // is turned 180° about the vertical axis so the panel lift stands on the shooter (front) side, where the rules place panels.
+  'hero-nomad-6995': {file:'hero-nomad-6995-source.gltf',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,
+    omit:/Bumpers|Origin Cube|Power Distribution Hub|Robot Battery|120A Main Breaker|Anderson SB120|RoboRIO|Radio|CANivore/i,groups:[
+    ['hood',/hood/i], ['flywheel',/3" Stealth Wheel/], ['backroller',/2" Stealth Wheel.*Shooter V4/],
+    ['elevator-stage',/Stage 1 <1>/],
+    // The carriage plates, bearing blocks, belt clamps and pivot gearbox hang directly off the elevator and ride with the end effector.
+    ['effector',/^(?!.*(?:Static Stage <1>|Stage 1 <1>)).*Elevator <1>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -326,7 +335,9 @@ for (const id of ids) {
         .setBaseColorFactor(color).setMetallicFactor(brass?.75:rubber||motor?.05:gold?.4:.65).setRoughnessFactor(brass?.34:rubber||motor?.8:gold?.48:.42);
       p.setMaterial(material);
     }
-    const matrix = axes.clone().multiply(new Matrix4().fromArray(n.getWorldMatrix())).toArray();
+    if (id === 'hero-nomad-6995' && group === 'frame' && /Intake <1>/.test(full) && bounds.min[2] >= .33) group = 'slapdown';
+    const turned = id === 'hero-nomad-6995' && /Elevator <1>/.test(full) ? new Matrix4().makeRotationZ(Math.PI) : new Matrix4();
+    const matrix = axes.clone().multiply(turned).multiply(new Matrix4().fromArray(n.getWorldMatrix())).toArray();
     retained.push({ n, group, matrix });
   }
   // Detach leaves before deleting old CAD hierarchy. Each rigid group merges independently.
