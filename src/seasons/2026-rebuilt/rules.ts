@@ -1,3 +1,4 @@
+import { captureFields, restoreFields } from '@engine/net/recovery';
 import { fuelInsideHubThroat, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } from './hubStructure';
 import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
@@ -47,6 +48,18 @@ interface Processing {
  * with grace windows, TOWER climbing + assessment, human player CHUTE/CORRAL, fouls G403 & G407.
  */
 export class RebuiltRules implements SeasonRules {
+  recoveryState() {
+    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen processing exitFreeAt exitCursor launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
+      ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
+  }
+  restoreRecovery(state: unknown): void {
+    const s = state as ReturnType<RebuiltRules['recoveryState']>;
+    this.applyNetState(s.visible);
+    restoreFields(this, 'releaseTimer lastHpOpen processing exitFreeAt exitCursor launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' '), s.fields);
+    this.ref.restoreRecovery(s.ref);
+    this.pins.restoreRecovery(s.pins);
+  }
+
   firstInactive: Alliance | null = null;
   readonly grace = new HubGrace();
   readonly chuteOpen: Record<Alliance, boolean> = { red: false, blue: false };

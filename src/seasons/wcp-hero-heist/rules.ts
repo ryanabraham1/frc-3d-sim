@@ -1,3 +1,4 @@
+import { captureFields, restoreFields } from '@engine/net/recovery';
 import * as THREE from 'three';
 import { colliderTouchesBody } from '@engine/physics/contacts';
 import { ALLIANCES, type Alliance, type FieldPoint } from '@engine/coords';
@@ -51,6 +52,18 @@ export const mailboxTier = (m: Mailbox) => (m.family !== 'top' ? 1 : m.entry.z >
 const faceReach = (m: Mailbox) => (m.family === 'diagonal' ? 0.09 + ROLLER_CAPTURE * Math.SQRT1_2 : m.family === 'horizontal' ? ROLLER_CAPTURE : 0.06);
 
 export class HeroHeistRules implements SeasonRules {
+  recoveryState() {
+    return { visible: this.netState(), fields: captureFields(this, 'preferredBlock plannedMailbox launchedBy contactKeys towerHigh trussContact notices passPrev hpTimer hpQueue chuteLane towerAssessed simTime passThrough'.split(' ')),
+      ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
+  }
+  restoreRecovery(state: unknown): void {
+    const s = state as ReturnType<HeroHeistRules['recoveryState']>;
+    this.applyNetState(s.visible);
+    restoreFields(this, 'preferredBlock plannedMailbox launchedBy contactKeys towerHigh trussContact notices passPrev hpTimer hpQueue chuteLane towerAssessed simTime passThrough'.split(' '), s.fields);
+    this.ref.restoreRecovery(s.ref);
+    this.pins.restoreRecovery(s.pins);
+  }
+
   readonly handlesIntake = true;
   readonly ownership = new DistrictOwnership();
   /** STORY PANELS held per robot (SPEECH BUBBLES live in `robot.held`, the generic launcher's hopper). */

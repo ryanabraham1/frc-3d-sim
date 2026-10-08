@@ -1,3 +1,4 @@
+import { bodyState, restoreBody, captureFields, restoreFields, capturePilot, restorePilot } from '../net/recovery';
 import { cleanAutoPlan, PlannedAutoPilot } from '../ai/autoPlan';
 import { Mesh, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
@@ -47,6 +48,9 @@ export interface GameNet {
   role: 'host' | 'client';
   client: NetClient;
   setup: MatchSetup;
+  /** A replacement host uses logical inventory, independent of the departing host's hopper bodies. */
+  recovering?: boolean;
+  onCheckpoint?: (state: GameRecovery) => void;
 }
 
 export interface GameCallbacks {
@@ -167,6 +171,7 @@ export class Game {
   private simTime = 0;
   private stepsSinceSnap = 0;
   private lastIdleSnap = 0;
+  private lastCheckpoint = -Infinity;
   private lastPredict = 0;
   /** Host: fraction of wall time spent simulating, measured over ~0.5 s windows. */
   private simLoad = 0;
@@ -392,6 +397,44 @@ export class Game {
     if (this.role === 'client') net!.client.send({ t: 'ready' });
   }
 
+  /** Full gameplay state, independent of rendering and the local driver's camera/input. */
+  recoveryState() {
+    if (!this.rules.recoveryState) throw new Error('Season does not support host recovery');
+    return { version: 1 as const, seasonId: this.season.id,
+      fields: captureFields(this, ['state', 'pausedFrom', 'countdown', 'simTime', 'results']),
+      clock: this.clock.snapshot(), score: this.score.snapshot(), rng: this.rng.snapshot(),
+      pool: this.pool.recoveryState(), rules: this.rules.recoveryState(),
+      robots: this.robots.map(r => ({ id: r.id, body: bodyState(r.body), fields: r.recoveryState() })),
+      auto: [...this.autoPilots].map(([id, pilot]) => [id, capturePilot(pilot)] as const),
+      bots: [...this.botPilots].map(([id, pilot]) => [id, capturePilot(pilot)] as const),
+    };
+  }
+
+  restoreRecovery(state: GameRecovery): void {
+    if (state.version !== 1 || state.seasonId !== this.season.id || !this.rules.restoreRecovery) throw new Error('Incompatible match checkpoint');
+    this.clock.restore(state.clock); this.score.restore(state.score); this.rng.restore(state.rng);
+    for (const robot of this.robots) robot.bay?.clear();
+    this.pool.restoreRecovery(state.pool);
+    this.rules.restoreRecovery(state.rules);
+    for (const saved of state.robots) {
+      const robot = this.robots.find(r => r.id === saved.id);
+      if (!robot) throw new Error('Checkpoint robot missing');
+      restoreBody(robot.body, saved.body); robot.restoreRecovery(saved.fields);
+    }
+    for (const [id, saved] of state.auto) { const pilot = this.autoPilots.get(id); if (pilot) restorePilot(pilot, saved); }
+    for (const [id, saved] of state.bots) { const pilot = this.botPilots.get(id); if (pilot) restorePilot(pilot, saved); }
+    restoreFields(this, ['state', 'pausedFrom', 'countdown', 'simTime', 'results'], state.fields);
+    this.acc = 0;
+    this.hud.hideModal();
+    this.hud.showBanner('HOST RECOVERED', 2);
+    this.hostSync?.requestKeyframe();
+    if (this.state === 'paused') {
+      const from = this.pausedFrom;
+      this.state = from;
+      this.pause();
+    } else if (this.state === 'results') this.showResults();
+  }
+
   // ─────────────────────────── HostSync source ───────────────────────────
 
   get netState(): NetGameState {
@@ -456,7 +499,7 @@ export class Game {
    * remote driver's robot: its hopper is invisible to the physics that matter, so it is drawn, not simulated.
    */
   private wantsRealHopper(rs: RobotSetup, net?: GameNet): boolean {
-    if (this.role === 'client') return false;
+    if (this.role === 'client' || net?.recovering) return false;
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     const mode = this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
     if (mode === 'none') return false;
@@ -525,6 +568,10 @@ export class Game {
       // Waiting / paused / results: keep clients in sync at a low rate.
       this.lastIdleSnap = now;
       this.hostSync.sendSnapshot(this.simTime);
+    }
+    if (this.hostSync && this.net?.onCheckpoint && this.net.client.connected && this.net.client.buffered < 16 * 1024 && now - this.lastCheckpoint >= 2000) {
+      this.lastCheckpoint = now;
+      this.net.onCheckpoint(this.recoveryState());
     }
   }
 
@@ -848,7 +895,8 @@ export class Game {
     if (!p || this.clientModal === 'closed') return;
     if (inp.humanPlayer && cs.netState === 'running') this.net!.client.send({ t: 'hp' });
     if (inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1) && cs.netState === 'running') this.net!.client.send({ t: 'hp', n: inp.humanPlayerAlt });
-    const live = cs.netState === 'running' || cs.netState === 'countdown';
+    const linked = this.net!.client.connected && now - cs.lastReceivedAt < 1000;
+    const live = linked && (cs.netState === 'running' || cs.netState === 'countdown');
     const cmd = live && this.manual(p) && p.enabled ? this.playerCommand(inp, p) : IDLE_COMMAND;
     p.lastCommand = cmd;
     const seq = cs.sendCommand(cmd, now);
@@ -856,7 +904,7 @@ export class Game {
 
     // Prediction: drive our own robot locally right away (the host stays authoritative).
     const pr = this.predictor;
-    if (pr?.active) {
+    if (pr?.active && linked) {
       const fixed = this.physics.dt;
       this.acc += clamp((now - this.lastPredict) / 1000, 0, 0.1);
       let steps = 0;
@@ -955,7 +1003,9 @@ export class Game {
       this.tipNotified = true;
       this.hud.toast(`Robot ${p.tippedOver ? 'tipped over' : 'stuck off its wheels'} — back on its wheels in ${Math.ceil(p.rightingIn)} s`, 'warn');
     } else if (p && p.tippedTime === 0) this.tipNotified = false;
-    const net = this.role === 'local' ? '' : `<div>${this.role === 'host' ? 'Hosting' : 'Online'} · room <b>${this.net!.client.room || '—'}</b></div>`;
+    const link = this.net?.client.reconnecting ? 'Reconnecting…' :
+      this.clientSync && performance.now() - this.clientSync.lastReceivedAt > 1000 ? 'Waiting for host…' : '';
+    const net = this.role === 'local' ? '' : `<div>${this.role === 'host' ? 'Hosting' : 'Online'} · room <b>${this.net!.client.room || '—'}</b>${link ? ` · ${link}` : ''}</div>`;
     if (p) {
       const rs = this.robotSetups.get(p.id)!;
       this.hud.setInfo(
@@ -998,7 +1048,7 @@ export class Game {
         { label: 'Resume', primary: true, onClick: () => this.resume() },
         { label: 'Restart match', onClick: () => this.callbacks.onPlayAgain?.() },
         { label: 'Back to lobby', onClick: () => this.callbacks.onBackToLobby?.() },
-        { label: 'Close room', onClick: () => this.callbacks.onExit() },
+        { label: 'Leave room', onClick: () => this.callbacks.onExit() },
         this.soundButton(() => this.showPauseMenu()),
       ]);
       return;
@@ -1031,7 +1081,7 @@ export class Game {
       this.hud.showModal('Match Results', html, this.callbacks.onPlayAgain ? [
         { label: 'Play again', primary: true, onClick: () => this.callbacks.onPlayAgain?.() },
         { label: 'Back to lobby', onClick: () => this.callbacks.onBackToLobby?.() },
-        { label: 'Close room', onClick: () => this.callbacks.onExit() },
+        { label: 'Leave room', onClick: () => this.callbacks.onExit() },
       ] : [{ label: 'Leave', primary: true, onClick: () => this.callbacks.onExit() }]);
       return;
     }
@@ -1045,6 +1095,8 @@ export class Game {
   netStats(): Record<string, number> {
     return {
       ...Object.fromEntries(Object.entries(this.timings).map(([key, value]) => [key, Math.round(value * 100) / 100])),
+      relayRttMs: this.net?.client.rttMs ?? 0,
+      socketQueuedBytes: this.net?.client.buffered ?? 0,
       bytesSent: this.hostSync?.bytesSent ?? 0,
       bytesReceived: this.clientSync?.bytesReceived ?? 0,
       rttMs: Math.round((this.predictor?.rtt ?? 0) * 1000),
@@ -1080,3 +1132,6 @@ export class Game {
     this.physics.free();
   }
 }
+
+/** Data transferred once to the new host when authority changes. */
+export type GameRecovery = ReturnType<Game['recoveryState']>;

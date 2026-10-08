@@ -178,6 +178,8 @@ export type ClientMsg =
 export type HostMsg =
   | { t: 'lobby'; lobby: LobbyState }
   | { t: 'start'; setup: MatchSetup }
+  /** New authority's setup; clients rebuild their snapshot baseline after a handoff. */
+  | { t: 'resume'; setup: MatchSetup }
   | { t: 'toast'; msg: string; kind: ToastKind; alliance?: Alliance }
   | { t: 'cue'; text: string; cls?: string }
   | { t: 'to-lobby' }

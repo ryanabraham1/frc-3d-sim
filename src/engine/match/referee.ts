@@ -1,3 +1,4 @@
+import { captureFields, restoreFields, type RecoveryFields } from '../net/recovery';
 import { Alliance, opponent } from '../coords';
 import type { SeasonContext } from '../core/season';
 import type { Robot } from '../robot/robot';
@@ -90,6 +91,9 @@ const key = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
 
 /** Finds new contacts between opposing robots, with how fast they were closing, from the real Rapier contacts. */
 export class ContactTracker {
+  recoveryState(): RecoveryFields { return captureFields(this, 'touching last vel'.split(' ')); }
+  restoreRecovery(state: RecoveryFields): void { restoreFields(this, 'touching last vel'.split(' '), state); }
+
   private readonly touching = new Set<string>();
   private readonly last = new Map<string, number>();
   private readonly vel = new Map<number, { vx: number; vy: number }>();
@@ -148,6 +152,20 @@ interface Flight {
 }
 
 export class Referee {
+  recoveryState() {
+    return { fields: captureFields(this, 'tilt tips pushing pushCalled blockades ejections shotCooldown'.split(' ')),
+      contacts: this.contacts.recoveryState(), flights: [...this.flights].map(([idx, { robot, ...flight }]) => [idx, robot.id, flight] as const) };
+  }
+  restoreRecovery(state: ReturnType<Referee['recoveryState']>): void {
+    restoreFields(this, 'tilt tips pushing pushCalled blockades ejections shotCooldown'.split(' '), state.fields);
+    this.contacts.restoreRecovery(state.contacts);
+    this.flights.clear();
+    for (const [idx, id, flight] of state.flights) {
+      const robot = this.ctx.robots.find(r => r.id === id);
+      if (robot) this.flights.set(idx, { ...flight, robot });
+    }
+  }
+
   readonly contacts = new ContactTracker();
   private readonly tilt = new Map<number, { since: number | null; tipped: boolean }>();
   private readonly tips = new Map<string, number>();

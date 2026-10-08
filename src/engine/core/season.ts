@@ -185,6 +185,9 @@ export interface SeasonRules {
    * Multiplayer: JSON-serializable rules state that clients need for HUD/visuals (not the score or clock —
    * the engine syncs those). Clients never run stage/beforeStep/afterStep; they only call applyNetState.
    */
+  /** Full authority state, including processing queues and rule timers, for host recovery. */
+  recoveryState?(): unknown;
+  restoreRecovery?(state: unknown): void;
   netState?(): unknown;
   applyNetState?(state: unknown): void;
 }

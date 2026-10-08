@@ -1,3 +1,4 @@
+import { captureFields, restoreFields, type RecoveryFields } from '../net/recovery';
 import { collectScoringReadiness } from './scoringReadiness';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -2099,6 +2100,18 @@ export class Robot {
     if (this.climbPhase === 'hanging') return 1;
     if (this.climbPhase === 'rise') return clamp(this.climbT / this.climbDur, 0, 1);
     return 0;
+  }
+
+  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
+  restoreRecovery(state: RecoveryFields): void {
+    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
+    this.replicaClimbProgress = null;
+    this.netAct = null;
+    this.lastCommand = { ...IDLE_COMMAND };
+    this.expansionHeight = -1;
+    this.updateHopperEnvelope();
+    this.poseBlocker();
+    this.hasPrevPose = false;
   }
 
   // ───────────────────────── multiplayer ─────────────────────────

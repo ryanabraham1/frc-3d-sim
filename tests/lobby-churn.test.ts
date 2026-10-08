@@ -15,6 +15,8 @@ let url: string;
 const lobbies: LobbyController[] = [];
 
 beforeEach(async () => {
+  // Each controller represents a separate browser tab.
+  vi.stubGlobal('sessionStorage', undefined);
   vi.stubGlobal('location', { protocol: 'http:', host: 'localhost', search: '', href: 'http://localhost/' });
   server = createServer();
   relay = attachRelay(server, { rejectOtherPaths: true, rankedStore: new MemoryStore(), reconnectGraceMs: 30000, limits: { connections: 0, creates: 0, badJoins: 0, ranked: 0 } });
@@ -117,5 +119,53 @@ describe('join/leave churn', () => {
     await until(() => host.client.connected && !host.reconnecting, 6000);
     await sleep(300);
     expect(host.lobby!.players.map((p) => p.name)).toEqual(['Host']);
+  });
+});
+
+describe('lobby host recovery', () => {
+  it('transfers room controls and robot choices and can start a match from the recovered lobby', async () => {
+    const host = player(); await host.create('Host');
+    const guest = player(); await guest.join(host.client.room, 'Guest');
+    const code = host.client.room;
+    await until(() => host.lobby!.players.length === 2 && host.lobby!.players.some(p => p.name === 'Guest' && p.slot));
+    host.setBots(true, 'hard');
+    await until(() => guest.lobby?.fillBots === true);
+    host.leave();
+    await until(() => guest.isHost);
+    expect(guest.client.room).toBe(code);
+    expect(guest.lobby!.players.map(p => p.name)).toEqual(['Guest']);
+    expect(guest.lobby!.players[0].host).toBe(true);
+    expect(guest.canStart()).toBe(true);
+    let lineup = 0;
+    guest.onStart = setup => { lineup = setup.robots.length; };
+    guest.startMatch();
+    expect(lineup).toBe(6);
+  });
+
+  it('a promoted host sends the checkpoint setup to clients and a reconnecting driver retains their station', async () => {
+    const host = player(); await host.create('Host');
+    const guest = player(); await guest.join(host.client.room, 'Guest');
+    const observer = player(); await observer.join(host.client.room, 'Observer');
+    await until(() => host.lobby!.players.length === 3 && host.lobby!.players.every(p => p.slot));
+    let setup: import('../src/engine/net/protocol').MatchSetup | null = null;
+    host.onStart = s => { setup = s; };
+    host.startMatch();
+    await until(() => observer.lobby?.inMatch === true);
+    // GameRecovery is independently verified with all four real season worlds.
+    const game = { version: 1, seasonId: '2026-rebuilt', marker: 'same clock and score' } as unknown as import('../src/engine/core/game').GameRecovery;
+    host.updateRecovery(game);
+    let restored: unknown;
+    guest.onRecover = (s, role, state) => { expect(role).toBe('host'); expect(s.seed).toBe(setup!.seed); restored = state; };
+    let clientResumes = 0;
+    observer.onRecover = (s, role) => { expect(role).toBe('client'); expect(s.seed).toBe(setup!.seed); clientResumes++; };
+    await sleep(50);
+    host.leave();
+    await until(() => !!restored && clientResumes === 1);
+    expect(restored).toEqual(game);
+    const slot = observer.me!.slot;
+    (observer.client as unknown as { ws: WebSocket }).ws.close(3001);
+    await until(() => clientResumes === 2, 6000);
+    expect(observer.me!.slot).toBe(slot);
+    expect(observer.client.hostId).toBe(guest.client.peerId);
   });
 });

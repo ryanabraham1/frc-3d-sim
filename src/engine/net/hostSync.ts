@@ -25,6 +25,8 @@ const STATE_CODE: Record<PieceState, number> = { field: 0, held: 1, reserve: 2 }
  * next one. Everything queued here is latency every client sees, so allow roughly one keyframe.
  */
 const MAX_BUFFERED = 16 * 1024;
+/** Four keep-alives may be missed before a driver goes idle. */
+export const COMMAND_TIMEOUT_MS = 1000;
 
 /** What the host sync reads from the running Game. */
 export interface HostSyncSource {
@@ -51,7 +53,7 @@ export interface HostSyncHooks {
  * (robots every time; only moved pieces; piece state/score/rules only when changed).
  */
 export class HostSync {
-  private readonly cmds = new Map<number, { cmd: RobotCommand; seq: number }>();
+  private readonly cmds = new Map<number, { cmd: RobotCommand; seq: number; at: number }>();
   private readonly waitingFor: Set<string>;
   private readonly lastQ: Int16Array;
   private readonly lastRot: Int16Array;
@@ -82,6 +84,7 @@ export class HostSync {
     // A dropped driver's robot goes idle at once; when they resume they get a full keyframe.
     this.offs.push(client.on('peer-lost', ({ peerId }) => this.onPeerLost(peerId)));
     this.offs.push(client.on('peer-back', () => (this.forceKey = true)));
+    this.offs.push(client.on('reconnecting', () => this.cmds.clear()));
     this.offs.push(client.on('reconnected', () => (this.forceKey = true)));
     this.readyTimer = setTimeout(() => this.fireReady(), readyTimeoutMs);
     queueMicrotask(() => this.checkReady());
@@ -89,7 +92,9 @@ export class HostSync {
 
   /** Latest command from a remote robot's driver (null if none / disconnected). */
   command(robotId: number): RobotCommand | null {
-    return this.cmds.get(robotId)?.cmd ?? null;
+    const latest = this.cmds.get(robotId);
+    if (!latest || !this.client.connected || performance.now() - latest.at > COMMAND_TIMEOUT_MS) return null;
+    return latest.cmd;
   }
 
   send(msg: HostMsg, to?: string): void {
@@ -124,8 +129,8 @@ export class HostSync {
         if (!r || !cmd) return;
         const prev = this.cmds.get(r.id);
         const seq = Number(m.s) || 0;
-        if (prev && seq < prev.seq) return; // stale
-        this.cmds.set(r.id, { cmd, seq });
+        if (prev && seq <= prev.seq) return; // stale
+        this.cmds.set(r.id, { cmd, seq, at: performance.now() });
         break;
       }
       case 'hp':
@@ -163,7 +168,7 @@ export class HostSync {
 
   /** Build + send one snapshot. `time` = host sim time (s). */
   sendSnapshot(time: number): void {
-    if (this.client.buffered > MAX_BUFFERED) return;
+    if (!this.client.connected || this.client.buffered > MAX_BUFFERED) return;
     const { pool, robots, score, rules, clock } = this.src;
     const key = this.forceKey;
     this.forceKey = false;

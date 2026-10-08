@@ -1,3 +1,4 @@
+import { bodyState, restoreBody, captureFields, restoreFields } from '../net/recovery';
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
@@ -348,6 +349,21 @@ export class GamePiecePool {
     this.owner[i] = -1;
     this.tag[i] = tag;
     this.changed.add(i);
+  }
+
+  recoveryState() {
+    return { fields: captureFields(this, ['state', 'owner', 'tag', 'airborne']), bodies: this.bodies.map(bodyState) };
+  }
+  restoreRecovery(state: ReturnType<GamePiecePool['recoveryState']>): void {
+    this.replica = false;
+    restoreFields(this, ['state', 'owner', 'tag', 'airborne'], state.fields);
+    state.bodies.forEach((body, i) => {
+      this.stowed[i] = false;
+      restoreBody(this.bodies[i], body);
+      // Held bodies from a previous host's real hopper become logical inventory on the new host.
+      if (this.state[i] !== 'field') this.bodies[i].setEnabled(false);
+      this.shown[i] = 0; this.prevOk[i] = 0; this.changed.add(i);
+    });
   }
 
   /** Indices changed since the last call (and clears the set). */

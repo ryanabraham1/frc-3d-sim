@@ -1,3 +1,5 @@
+import { compressCheckpoint, decompressCheckpoint } from '@engine/net/recovery';
+import type { GameRecovery } from '@engine/core/game';
 import { cleanAutoPlan, type AutoPlan } from '@engine/ai/autoPlan';
 import { fillBotStations } from '@engine/ai/matchSetup';
 import { seasonLabel, type AiSkill, type GameSettings } from '@engine/core/season';
@@ -44,6 +46,14 @@ import { cloneConfig, footprint } from '@engine/robot/config';
 import { fieldToSpot, footprintPoly, resolveStartPose, wrapAngle, type Poly, type StartSpot } from '@engine/startPose';
 import type { Alliance } from '@engine/coords';
 import { fieldDims, placementDragging, placementProblems } from './placement';
+
+interface RoomRecovery {
+  version: 1;
+  lobby: LobbyState;
+  choices: [string, PlayerChoice][];
+  setup: MatchSetup | null;
+  game: GameRecovery | null;
+}
 
 export type LobbyStatus = 'idle' | 'connecting' | 'lobby';
 /** Free hosts (Render/Koyeb) sleep when idle; the site pings the relay early so it's awake by the time you click. */
@@ -109,6 +119,9 @@ export class LobbyController {
   playerName = '';
   /** Host: the running match's setup (sent to anyone who joins mid-match so they can spectate). */
   private liveSetup: MatchSetup | null = null;
+  private recoveryGame: GameRecovery | null = null;
+  private publishingRecovery = false;
+  private pendingRecovery: { room: string; json: string } | null = null;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   private turnDeadline = 0;
   private placeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,6 +135,7 @@ export class LobbyController {
   onRooms: (rooms: RoomListing[]) => void = () => {};
   onStart: (setup: MatchSetup, role: 'host' | 'client') => void = () => {};
   onToLobby: () => void = () => {};
+  onRecover: (setup: MatchSetup, role: 'host' | 'client', recovery?: GameRecovery) => void = () => {};
   onClosed: (reason: string) => void = () => {};
 
   // host-only state
@@ -152,7 +166,11 @@ export class LobbyController {
         this.broadcastLobby();
       } else this.onChange();
     });
-    this.client.on('peer-back', () => this.broadcastLobby());
+    this.client.on('peer-back', ({ peerId }) => {
+      this.broadcastLobby();
+      if (this.isHost && this.liveSetup && this.lobby?.inMatch) this.sendResume(peerId);
+    });
+    this.client.on('host-changed', ev => void this.recoverHost(ev));
     this.client.on('queued', ({ waiting }) => {
       this.ranked.waiting = waiting;
       this.onChange();
@@ -229,6 +247,8 @@ export class LobbyController {
       this.clearRankedTimers();
       this.lastChatAt.clear();
       this.liveSetup = null;
+      this.recoveryGame = null;
+      this.pendingRecovery = null;
       this.choices.clear();
       this.lastSent = '';
       this.clearAutoStart();
@@ -897,7 +917,9 @@ export class LobbyController {
     for (const p of lobby.players) p.ready = false;
     this.broadcastLobby();
     const wire: MatchSetup = { ...setup, robots: setup.robots.map(({ autoPlan: _plan, ...r }) => r) };
-    this.liveSetup = wire;
+    this.liveSetup = setup;
+    this.recoveryGame = null;
+    this.publishRecovery();
     this.client.send({ t: 'start', setup: wire } satisfies HostMsg);
     this.onStart(setup, 'host');
   }
@@ -907,9 +929,94 @@ export class LobbyController {
     if (!this.lobby || !this.isHost) return;
     this.lobby.inMatch = false;
     this.liveSetup = null;
+    this.recoveryGame = null;
     this.client.send({ t: 'to-lobby' } satisfies HostMsg);
     this.broadcastLobby();
     this.onToLobby();
+  }
+
+  updateRecovery(state: GameRecovery): void {
+    this.recoveryGame = state;
+    this.publishRecovery();
+  }
+
+  private publishRecovery(): void {
+    // Ranked departure adjudication stays with the ranked service; it never elects a new authority.
+    if (!this.isHost || !this.lobby || this.lobby.ranked) return;
+    // During construction, keep the last complete lobby checkpoint until the game is ready.
+    if (this.lobby.inMatch && !this.recoveryGame) return;
+    const data: RoomRecovery = { version: 1, lobby: this.lobby, choices: [...this.choices], setup: this.liveSetup, game: this.recoveryGame };
+    // Capture now; lobby and pool state keep changing while native compression is in progress.
+    this.pendingRecovery = { room: this.client.room, json: JSON.stringify(data) };
+    if (!this.publishingRecovery) void this.flushRecovery();
+  }
+
+  private async flushRecovery(): Promise<void> {
+    this.publishingRecovery = true;
+    try {
+      while (this.pendingRecovery) {
+        const pending = this.pendingRecovery;
+        this.pendingRecovery = null;
+        const data = await compressCheckpoint(pending.json);
+        // A newer checkpoint supersedes one still compressing; leaving a room cancels the upload.
+        if (this.pendingRecovery || !this.isHost || this.client.room !== pending.room) continue;
+        this.client.checkpoint(data);
+      }
+    } catch {
+      this.error = 'Unable to save a host recovery checkpoint';
+      this.onChange();
+    } finally { this.publishingRecovery = false; }
+  }
+
+  private sendResume(to?: string): void {
+    if (!this.liveSetup) return;
+    const wire: MatchSetup = { ...this.liveSetup, robots: this.liveSetup.robots.map(({ autoPlan: _plan, ...r }) => r) };
+    this.client.send({ t: 'resume', setup: wire } satisfies HostMsg, to);
+  }
+
+  private async recoverHost(ev: { hostId: string; previousHostId: string; peers: { peerId: string; name: string }[]; checkpoint?: unknown }): Promise<void> {
+    this.hostAway = false;
+    const room = this.client.room;
+    let saved: RoomRecovery | undefined;
+    if (this.isHost) {
+      try { saved = await decompressCheckpoint(ev.checkpoint) as RoomRecovery; }
+      catch { this.error = 'Unable to read the host recovery checkpoint'; this.leave(); return; }
+      // Another handoff or a deliberate leave can supersede the asynchronous decompression.
+      if (!this.client.connected || this.client.room !== room || !this.isHost || this.client.hostId !== ev.hostId) return;
+      if (!saved || saved.version !== 1) { this.error = 'Unable to recover the host'; this.leave(); return; }
+      this.lobby = saved.lobby;
+      this.choices.clear();
+      for (const [id, choice] of saved.choices) this.choices.set(id, choice);
+      this.liveSetup = saved.setup;
+      this.recoveryGame = saved.game;
+      this.lastMeta = '';
+    }
+    if (!this.lobby) return;
+    const ids = new Set(ev.peers.map(p => p.peerId));
+    this.lobby.players = this.lobby.players.filter(p => ids.has(p.peerId));
+    for (const p of this.lobby.players) p.host = p.peerId === ev.hostId;
+    // Membership changes since the checkpoint (including late spectators) must survive the handoff.
+    for (const peer of ev.peers) {
+      if (!this.lobby.players.some(p => p.peerId === peer.peerId)) this.lobby.players.push({ ...peer, slot: null, team: 0, host: peer.peerId === ev.hostId });
+    }
+    for (const id of this.choices.keys()) if (!ids.has(id)) this.choices.delete(id);
+    if (this.liveSetup) this.liveSetup.peers = [...ids];
+    this.status = 'lobby';
+    this.clearAutoStart();
+    if (this.isHost) {
+      this.systemChat('Host changed — room recovered');
+      this.broadcastLobby();
+      this.scheduleAutoStart();
+    } else this.onChange();
+    if (this.isHost) {
+      if (this.lobby.inMatch && this.liveSetup) {
+        this.onRecover(this.liveSetup, 'host', this.recoveryGame ?? undefined);
+        this.sendResume();
+      } else {
+        this.client.send({ t: 'to-lobby' } satisfies HostMsg);
+        this.onToLobby();
+      }
+    }
   }
 
   // ─────────────────────────── host side ───────────────────────────
@@ -1023,7 +1130,7 @@ export class LobbyController {
     const live = this.liveSetup;
     if (live && this.lobby.inMatch && !this.lobby.ranked && !live.peers.includes(peerId)) {
       live.peers = [...live.peers, peerId];
-      this.client.send({ t: 'start', setup: live } satisfies HostMsg, peerId);
+      this.client.send({ t: 'start', setup: { ...live, robots: live.robots.map(({ autoPlan: _plan, ...r }) => r) } } satisfies HostMsg, peerId);
     }
   }
 
@@ -1049,6 +1156,7 @@ export class LobbyController {
       this.client.send({ t: 'lobby', lobby: { ...this.lobby, players } } satisfies HostMsg, viewer.peerId);
     }
     this.pushMeta();
+    this.publishRecovery();
     this.onChange();
   }
 
@@ -1065,10 +1173,17 @@ export class LobbyController {
         this.onChange();
         break;
       }
+      case 'resume':
+        this.liveSetup = m.setup;
+        if (m.setup.peers.includes(this.client.peerId)) this.onRecover(m.setup, 'client');
+        break;
       case 'start':
+        this.liveSetup = m.setup;
         if (m.setup.peers.includes(this.client.peerId)) this.onStart(m.setup, 'client');
         break;
       case 'to-lobby':
+        this.liveSetup = null;
+        this.recoveryGame = null;
         if (this.lobby) this.lobby.inMatch = false;
         this.onToLobby();
         break;

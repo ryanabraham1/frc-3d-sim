@@ -2,10 +2,10 @@
  * HostSync ↔ ClientSync over a fake transport, on real season worlds (HeadlessSim): what goes into each
  * snapshot (bandwidth) and how clients recover from lost snapshots / late packets (lag).
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { HostSync } from '../src/engine/net/hostSync';
+import { HostSync, COMMAND_TIMEOUT_MS } from '../src/engine/net/hostSync';
 import { ClientSync, MAX_INTERP_DELAY, MIN_INTERP_DELAY } from '../src/engine/net/clientSync';
 import { decodeSnapshot, type ClientMsg, type Snapshot } from '../src/engine/net/protocol';
 import type { NetClient } from '../src/engine/net/netClient';
@@ -29,6 +29,7 @@ function fakeNet() {
   const net = {
     peerId: 'host',
     buffered: 0,
+    connected: true,
     on(ev: string, fn: Listener) {
       if (ev === 'msg') listeners.push(fn);
       return () => {};
@@ -371,5 +372,45 @@ describe('GamePiecePool.syncVisuals (replica)', () => {
     pool.meshes[0].getMatrixAt(i, m);
     expect(m.elements[13]).toBeCloseTo(0.5, 5);
     sim.dispose();
+  });
+});
+
+
+describe('stalled driver connections', () => {
+  it('expires held drive/shoot commands after missed keep-alives and resumes on fresh input', () => {
+    const sim = world('2026-rebuilt');
+    const net = fakeNet();
+    const setup = { seasonId: sim.season.id, seed: 1, autoHumanPlayer: false, peers: ['host', 'c1'],
+      robots: [{ id: 0, slot: 'blue1' as const, alliance: 'blue' as const, station: 1,
+        config: sim.robot.config, start: sim.robot.pose, autoRoutine: 'none', manualAuto: true, peerId: 'c1', name: 'Driver' }] };
+    const src = { pool: sim.pool, robots: [sim.robot], clock: sim.ctx.clock, score: sim.ctx.score, rules: sim.rules,
+      netState: 'running' as const, countdownLeft: 0, lastResults: null };
+    const hs = new HostSync(net.client, setup, src, { humanPlayer() {}, allReady() {}, peerLeft() {} });
+    const now = vi.spyOn(performance, 'now').mockReturnValue(100);
+    try {
+      net.deliver({ t: 'cmd', s: 1, c: [2, 0, 0, 1, 0] });
+      expect(hs.command(0)?.vx).toBe(2);
+      now.mockReturnValue(100 + COMMAND_TIMEOUT_MS + 1);
+      expect(hs.command(0)).toBeNull();
+      net.deliver({ t: 'cmd', s: 2, c: [1, 0, 0, 0, 0] });
+      expect(hs.command(0)?.vx).toBe(1);
+      net.net.connected = false;
+      expect(hs.command(0)).toBeNull();
+    } finally { now.mockRestore(); hs.dispose(); sim.dispose(); }
+  });
+
+  it('retains pending piece changes while the host is offline', () => {
+    const sim = world('2026-rebuilt'); const h = host(sim);
+    try {
+      h.hs.sendSnapshot(1);
+      const i = sim.pool.indices('field')[0];
+      sim.pool.hold(i, 0);
+      h.net.connected = false;
+      h.hs.sendSnapshot(2);
+      expect(h.frames).toHaveLength(1);
+      h.net.connected = true;
+      h.hs.sendSnapshot(3);
+      expect(h.last().meta.pieces).toContainEqual([i, 1, 0, null]);
+    } finally { h.hs.dispose(); sim.dispose(); }
   });
 });

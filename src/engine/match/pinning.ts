@@ -1,3 +1,4 @@
+import { captureFields, restoreFields, type RecoveryFields } from '../net/recovery';
 import { bodiesTouching } from '../physics/contacts';
 import { Alliance, opponent } from '../coords';
 import type { SeasonContext } from '../core/season';
@@ -121,6 +122,9 @@ interface PinRecord {
 }
 
 export class PinTracker {
+  recoveryState(): RecoveryFields { return captureFields(this, 'records'.split(' ')); }
+  restoreRecovery(state: RecoveryFields): void { restoreFields(this, 'records'.split(' '), state); }
+
   private readonly records = new Map<string, PinRecord>();
 
   constructor(readonly rule: PinRule) {}

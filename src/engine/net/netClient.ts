@@ -18,6 +18,7 @@ export interface NetClientEvents {
   /** Clients: the host's connection dropped / came back. */
   'host-lost': Record<string, never>;
   'host-back': Record<string, never>;
+  'host-changed': Ev<'host-changed'>;
   /** Public room list (reply to `list()`). */
   rooms: { rooms: RoomListing[] };
   queued: Ev<'queued'>;
@@ -52,6 +53,13 @@ export class NetClient extends Emitter<NetClientEvents> {
   /** True while a dropped connection is being resumed. */
   reconnecting = false;
   private token = '';
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private lastHeard = 0;
+  private pingId = 0;
+  private sentPingAt = 0;
+  rttMs = 0;
+  /** Cancel asynchronous retries when a player leaves or starts another connection. */
+  private generation = 0;
   /** A seat I abandoned while offline; the relay is told at the next chance. */
   private forget: { room: string; token: string } | null = null;
   /** Per-tab identity so a fresh join replaces a ghost left by this tab's previous page. */
@@ -105,7 +113,7 @@ export class NetClient extends Emitter<NetClientEvents> {
   }
 
   get isHost(): boolean {
-    return !!this.peerId && this.peerId === this.hostId;
+    return !!this.room && !!this.peerId && this.peerId === this.hostId;
   }
 
   /** In a room with a live socket. */
@@ -165,28 +173,53 @@ export class NetClient extends Emitter<NetClientEvents> {
   }
 
   private async openSocket(url: string, timeoutMs: number): Promise<void> {
+    const generation = this.generation;
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`Could not reach relay at ${url}`)), timeoutMs);
-      ws.onopen = () => {
+      const fail = () => {
         clearTimeout(t);
-        resolve();
-      };
-      ws.onerror = () => {
-        clearTimeout(t);
+        ws.onopen = ws.onerror = ws.onclose = null;
+        if (this.ws === ws) this.ws = null;
+        try { ws.close(); } catch { /* already closed */ }
         reject(new Error(`Could not reach relay at ${url}`));
       };
+      const t = setTimeout(fail, timeoutMs);
+      ws.onopen = () => { clearTimeout(t); resolve(); };
+      ws.onerror = fail;
+      ws.onclose = fail;
     });
-    ws.onmessage = (e) => this.later(() => this.onMessage(e));
+    // Install listeners only for the current socket (a cancelled connection may open late).
+    if (this.ws !== ws || generation !== this.generation) { ws.close(CLOSE_LEAVE, 'leave'); throw new Error('Connection cancelled'); }
+    ws.onmessage = (e) => {
+      this.lastHeard = performance.now();
+      this.later(() => { if (this.ws === ws) this.onMessage(e); });
+    };
     ws.onclose = () => this.onSocketClosed(ws);
-    ws.onerror = null;
+    ws.onerror = () => { ws.close(); this.onSocketClosed(ws); };
+    this.stopHeartbeat();
+    this.lastHeard = performance.now();
+    this.heartbeat = setInterval(() => {
+      if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+      if (performance.now() - this.lastHeard > 10000) {
+        // The close handshake can stall on a dead link; detach it and reconnect immediately.
+        ws.close(); this.onSocketClosed(ws); return;
+      }
+      this.sentPingAt = performance.now();
+      this.raw({ op: 'ping', id: ++this.pingId });
+    }, 2000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = null;
   }
 
   private onSocketClosed(ws: WebSocket): void {
     if (this.ws !== ws) return;
     this.ws = null;
+    this.stopHeartbeat();
     this.pending?.reject(new Error(this.closedReason ?? 'Disconnected from relay'));
     this.pending = null;
     // A drop while seated in a room is resumed in the background; anything else ends here.
@@ -201,6 +234,7 @@ export class NetClient extends Emitter<NetClientEvents> {
   private finish(reason: string): void {
     this.room = '';
     this.token = '';
+    this.stopHeartbeat();
     this.reconnecting = false;
     this.emit('closed', { reason });
   }
@@ -209,21 +243,16 @@ export class NetClient extends Emitter<NetClientEvents> {
   private async resume(): Promise<void> {
     this.reconnecting = true;
     this.emit('reconnecting', {});
+    const generation = this.generation;
     const deadline = performance.now() + RECONNECT_GRACE_MS - 2000;
     let delay = 400;
-    while (this.closedReason === null && performance.now() < deadline) {
+    while (this.closedReason === null && generation === this.generation && performance.now() < deadline) {
       try {
-        await this.openSocket(this.url, 6000);
+        await this.openSocket(this.url, Math.min(6000, Math.max(1, deadline - performance.now())));
         // Left while this attempt was connecting: don't take the seat back.
-        if (this.closedReason !== null) {
-          this.ws?.close(CLOSE_LEAVE, 'leave');
-          return;
-        }
-        const ev = await this.request({ op: 'rejoin', room: this.room, token: this.token });
-        if (this.closedReason !== null) {
-          this.ws?.close(CLOSE_LEAVE, 'leave');
-          return;
-        }
+        if (this.closedReason !== null || generation !== this.generation) return;
+        const ev = await this.request({ op: 'rejoin', room: this.room, token: this.token }, Math.min(6000, Math.max(1, deadline - performance.now())));
+        if (this.closedReason !== null || generation !== this.generation) return;
         if (ev.op !== 'joined') throw new RelayError('Unexpected relay reply');
         this.hostId = ev.hostId;
         this.reconnecting = false;
@@ -231,13 +260,15 @@ export class NetClient extends Emitter<NetClientEvents> {
         return;
       } catch (e) {
         if (e instanceof RelayError) break; // the room is gone — no point retrying
+        if (generation !== this.generation) return;
+        this.stopHeartbeat();
         this.ws?.close();
         this.ws = null;
         await new Promise((r) => setTimeout(r, delay));
         delay = Math.min(delay * 1.6, 3000);
       }
     }
-    if (this.closedReason !== null) return; // the player left while we were retrying
+    if (this.closedReason !== null || generation !== this.generation) return; // the player left while we were retrying
     this.finish('Connection lost');
   }
 
@@ -290,6 +321,11 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.raw({ op: 'meta', meta });
   }
 
+  /** Host: cache a portable match/lobby checkpoint at the relay. */
+  checkpoint(data: unknown): void {
+    if (this.isHost && this.connected && this.buffered < 16 * 1024) this.raw({ op: 'checkpoint', data });
+  }
+
   /** Host: remove a peer from the room. */
   kick(peerId: string): void {
     this.raw({ op: 'kick', peerId });
@@ -302,8 +338,9 @@ export class NetClient extends Emitter<NetClientEvents> {
 
   /** Host only: stream a binary frame to every client. */
   sendBinary(buf: ArrayBuffer): void {
+    const ws = this.ws;
     this.later(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(buf);
+      if (this.ws === ws && ws?.readyState === WebSocket.OPEN) ws.send(buf);
     });
   }
 
@@ -315,6 +352,8 @@ export class NetClient extends Emitter<NetClientEvents> {
   /** Leave deliberately: the relay frees the seat at once instead of holding it for a reconnect. */
   close(reason = 'Left the room'): void {
     const ws = this.ws;
+    this.generation++;
+    this.stopHeartbeat();
     this.closedReason = reason;
     // Mid-reconnect there is no live room to leave: stop retrying, remember to free the seat, report once.
     if (this.reconnecting) {
@@ -333,16 +372,25 @@ export class NetClient extends Emitter<NetClientEvents> {
   }
 
   private raw(req: RelayRequest): void {
+    const ws = this.ws;
     const text = JSON.stringify(req);
     this.later(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(text);
+      if (this.ws === ws && ws?.readyState === WebSocket.OPEN) ws.send(text);
     });
   }
 
-  private request(req: RelayRequest): Promise<RelayEvent> {
+  private request(req: RelayRequest, timeoutMs = 6000): Promise<RelayEvent> {
     if (this.ws?.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Not connected'));
     return new Promise<RelayEvent>((resolve, reject) => {
-      this.pending = { resolve, reject };
+      const pending = {
+        resolve: (ev: RelayEvent) => { clearTimeout(timer); resolve(ev); },
+        reject: (err: Error) => { clearTimeout(timer); reject(err); },
+      };
+      const timer = setTimeout(() => {
+        if (this.pending === pending) this.pending = null;
+        reject(new Error('Relay response timed out'));
+      }, timeoutMs);
+      this.pending = pending;
       this.raw(req);
     });
   }
@@ -359,6 +407,13 @@ export class NetClient extends Emitter<NetClientEvents> {
       return;
     }
     switch (ev.op) {
+      case 'pong':
+        if (ev.id === this.pingId) this.rttMs = Math.round(performance.now() - this.sentPingAt);
+        break;
+      case 'host-changed':
+        this.hostId = ev.hostId;
+        this.emit('host-changed', ev);
+        break;
       case 'created':
       case 'joined':
         this.pending?.resolve(ev);

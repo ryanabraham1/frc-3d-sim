@@ -167,9 +167,12 @@ referee-judgement rules are not enforced.
 Menu → **Multiplayer** → *Create room* and share the 4-letter code; friends *Join*, pick a driver
 station (or spectate) and bring the robot they configured on the Single player page. The host starts
 the match. The host chooses the season; joining drivers and spectators automatically use that same
-game. After returning to the lobby, the host can switch between 2025 and 2026. The host's browser runs the simulation (keep that tab open — it keeps running in the
-background); everyone else sends inputs and renders 30 Hz snapshots, with client-side prediction so your
-own robot responds instantly. Test latency locally with `?netlag=200` in a client's URL.
+game. After returning to the lobby, the host can switch between 2025 and 2026. The host's browser runs the simulation; everyone else sends inputs and renders 30 Hz snapshots, with
+client-side prediction so your own robot responds instantly. Brief connection drops automatically resume
+the same seat. Casual rooms save compressed recovery checkpoints to the relay every two seconds: if the
+host leaves, a connected player takes over in the same room and resumes the match. An unexpected host
+disconnect gets a 30-second reconnect window before handoff. Recovery may roll back to the latest saved
+checkpoint; ranked matches retain their existing departure adjudication. Test latency locally with `?netlag=200` in a client's URL.
 
 | Command | What it does |
 |---|---|

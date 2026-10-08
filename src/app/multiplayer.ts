@@ -145,7 +145,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
               <li><b>Quick play</b> drops you into an open lobby, or hosts one if none exist.</li>
               <li><b>Private</b> rooms are for friends: share the 4-letter code or an invite link.</li>
               <li>Pick a <b>driver station</b> (or spectate). Up to 6 drivers, 3 per alliance; bots fill the rest.</li>
-              <li>The host's computer runs the match, so the host keeps their tab open. A dropped connection resumes on its own.</li>
+              <li>A dropped connection resumes on its own. If the host leaves a casual room, a connected player takes over from the latest checkpoint.</li>
             </ol>
           </section>
         </div>
@@ -248,7 +248,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
     </div>`;
 
   const footer =
-    `<button class="bbtn" data-mp="leave">${lobby.isHost ? 'Close room' : 'Leave room'}</button><span class="spacer"></span>` +
+    `<button class="bbtn" data-mp="leave">Leave room</button><span class="spacer"></span>` +
     (lobby.isHost
       ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>${L.manualAuto ? 'Set starting positions' : 'Plan autos &amp; positions'}</button>`
       : `<span class="mp-hint">${L.inMatch ? 'Match in progress — joining as a spectator…' : 'Waiting for the host to start…'}</span>`);

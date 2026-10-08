@@ -1,3 +1,4 @@
+import { captureFields, restoreFields } from '@engine/net/recovery';
 import { fitCoralInTool } from './coralVisual';
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
@@ -46,6 +47,23 @@ export interface ReefscapeNetState {
 interface CageGrip { robot: Robot; alliance: Alliance; slot: number; from: { x: number; y: number; z: number }; t: number }
 
 export class ReefscapeRules implements SeasonRules {
+  recoveryState() {
+    return { visible: this.netState(), fields: captureFields(this, 'plannedTargets hpTimer chuteQueue candidates autoKeys autoTrough passThrough alignNoise simTime defenderTime cageContacts protectedContacts notices launchedBy autoAssessed bargeAssessed'.split(' ')),
+      ref: this.ref.recoveryState(), pins: this.pins.recoveryState(), cages: ALLIANCES.flatMap(a => this.refs.cages[a].map(c => c.recoveryState())), grips: this.grips.map(({ robot, ...grip }) => ({ ...grip, robotId: robot.id })) };
+  }
+  restoreRecovery(state: unknown): void {
+    const s = state as ReturnType<ReefscapeRules['recoveryState']>;
+    this.applyNetState(s.visible);
+    restoreFields(this, 'plannedTargets hpTimer chuteQueue candidates autoKeys autoTrough passThrough alignNoise simTime defenderTime cageContacts protectedContacts notices launchedBy autoAssessed bargeAssessed'.split(' '), s.fields);
+    this.ref.restoreRecovery(s.ref);
+    this.pins.restoreRecovery(s.pins);
+    ALLIANCES.flatMap(a => this.refs.cages[a]).forEach((c, i) => c.restoreRecovery(s.cages[i]));
+    this.grips.splice(0, this.grips.length, ...s.grips.flatMap(({ robotId, ...grip }) => {
+      const robot = this.ctx.robots.find(r => r.id === robotId);
+      return robot ? [{ ...grip, robot }] : [];
+    }));
+  }
+
   readonly plannedTargets = new Map<number, { face: number; branch: number }>();
   readonly handlesIntake = true;
   readonly placements: CoralPlacement[] = [];

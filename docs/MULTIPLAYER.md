@@ -89,10 +89,13 @@ Robot ids = index in `robots` (sorted red1…blue3). Built by the host from the 
    (or after 15 s). Keyframe snapshot is sent on each `ready`.
 4. **Match**: clients send commands; host steps, applies remote commands, sends snapshots + toasts.
    Host `P` pauses everyone; client `P` opens a local *Leave match* dialog only.
-5. **End**: host shows results with *Play again* (same lobby, seed+1) / *Back to lobby* / *Close room*;
+5. **End**: host shows results with *Play again* (same lobby, seed+1) / *Back to lobby* / *Leave room*;
    clients see results + "waiting for host" + *Leave*.
-6. **Disconnects**: client leaves → its robot goes idle (toast). Host leaves → relay closes room →
-   clients get a "host left" modal → menu.
+6. **Disconnects**: remote commands expire after one second without a keep-alive. A dropped connection
+   resumes its peer id and station with its secret token, including replacement of a half-open socket.
+   Casual host leaves → relay elects an online peer → new host restores the checkpoint → clients rebuild
+   their snapshot baseline. An unexpected host drop waits the 30-second reconnect window first.
+   Ranked rooms and legacy rooms without checkpoints retain room-close behavior.
 
 ## 4. File map (new/changed)
 
@@ -185,9 +188,16 @@ responsive:
 Debug: append `?perf&fps` for the CPU/network panel, or inspect `game.netStats()`. See [performance diagnostics](PERFORMANCE.md).
 
 ## 7a. Known limitations / next steps
-- **Host is a player's browser.** If the host closes the tab the room ends. Next step: a headless host
-  (Node + Rapier; needs a DOM-free `Game` split — see `src/engine/testing/headless.ts` from the shot-fix
-  session as a starting point) so the relay can own the simulation.
+- **Host is a player's browser.** Casual rooms transfer authority to an online peer when the host leaves.
+  The relay stores a compressed checkpoint every two seconds, including score, clock, piece identity and
+  velocities, inventory, mechanism/climb progress, AUTO progress, RNG, season queues, and referee timers.
+  The promoted host sends the recovered setup to clients so they rebuild their snapshot baselines.
+  Held FUEL becomes logical inventory instead of inheriting the previous host's physical hopper bodies;
+  bot alliance strategy references are rebuilt in the new world. Handoff briefly reloads the field and can
+  roll back up to the most recent uploaded checkpoint (normally about two seconds, longer on a poor link).
+  Relay restarts lose rooms and checkpoints; this is not a persistent or server-authoritative simulation.
+  Ranked rooms keep their existing disconnect adjudication. A future server authority would remove the
+  remaining dependence on a player's simulation performance.
 - Clients don't simulate game pieces; the own-robot prediction ignores FUEL contact (small corrections
   when plowing through balls). Other robots render ~100 ms in the past.
 - A client that closes the tab (or is away past the grace period) cannot rejoin a running match; it rejoins for the next one.
@@ -278,3 +288,18 @@ Vercel can host the static site instead, with the same build command, `dist` out
 
 The simple single-service option is still available: deploy just the `render.yaml` blueprint and share
 its `https://<service>.onrender.com` URL. That URL waits through a cold start before displaying the page.
+
+## Host recovery and connection diagnostics
+
+- `NetClient` sends a transport heartbeat every two seconds. After ten seconds with no relay traffic,
+  it detaches the stalled socket and reconnects without waiting for the browser's close handshake.
+- Opening a socket and waiting for a relay reply both have deadlines. Socket generation checks stop
+  cancelled reconnect attempts or artificial-latency packets from leaking into another connection.
+- Snapshots and driver commands respect socket backpressure. Offline host snapshots retain pending
+  piece deltas, and clients keep requesting their initial/recovery keyframe until one arrives.
+- `?perf&fps` / `window.game.netStats()` include `relayRttMs` and `socketQueuedBytes` alongside input RTT,
+  missed snapshots, interpolation jitter, and host simulation load. Relay RTT measures transport latency;
+  input RTT also includes host scheduling and snapshot acknowledgement.
+- `SeasonRules.recoveryState/restoreRecovery` is separate from visual `netState/applyNetState`: visual
+  replication alone does not contain processing queues, violation timers, or exact inventory identities.
+- Focused regression coverage: `host-recovery`, `net-client-recovery`, `relay`, `lobby-churn`, and `netsync`.

@@ -61,10 +61,14 @@ export type RelayRequest =
   | { op: 'join'; room: string; name: string; client?: string }
   /** Give up a seat I couldn't tell the relay about (I left while reconnecting). */
   | { op: 'forget'; room: string; token: string }
-  /** Resume a dropped connection (same peer id) within RECONNECT_GRACE_MS. */
+  /** Resume the same peer id; its token can also supersede a half-open socket. */
   | { op: 'rejoin'; room: string; token: string }
   /** Ask for the public room list. */
   | { op: 'list' }
+  /** Host only: opaque recovery checkpoint, retained in memory for a replacement host. */
+  | { op: 'checkpoint'; data: unknown }
+  /** Transport heartbeat detects half-open browser connections before a seat expires. */
+  | { op: 'ping'; id: number }
   /** Host only: update what the public list shows (and flip public/private). */
   | { op: 'meta'; meta: RoomMeta }
   /** Host only: remove a peer from the room; they cannot return while it exists. */
@@ -135,6 +139,9 @@ export type RelayEvent =
   | { op: 'peer-back'; peerId: string }
   | { op: 'host-lost' }
   | { op: 'host-back' }
+  | { op: 'pong'; id: number }
+  /** Checkpoint is sent only to the elected host; peers names include reconnecting seats. */
+  | { op: 'host-changed'; hostId: string; previousHostId: string; peers: { peerId: string; name: string }[]; checkpoint?: unknown }
   | { op: 'room-closed'; reason: string }
   | { op: 'msg'; from: string; data: unknown };
 

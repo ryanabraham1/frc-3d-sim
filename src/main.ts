@@ -1,5 +1,5 @@
 import './app/styles.css';
-import type { Game } from '@engine/core/game';
+import type { Game, GameRecovery } from '@engine/core/game';
 import type { GameSettings } from '@engine/core/season';
 import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
@@ -64,7 +64,7 @@ async function startGame(settings: GameSettings): Promise<void> {
   (window as unknown as { game: Game }).game = game;
 }
 
-async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise<void> {
+async function startNetGame(setup: MatchSetup, role: 'host' | 'client', recovery?: GameRecovery): Promise<void> {
   stopGame();
   const gen = generation;
   app.innerHTML = '<div class="loading">LOADING FIELD + PHYSICS…</div>';
@@ -87,8 +87,9 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client'): Promise
       ...(ranked ? {} : { onPlayAgain: () => { lobby.backToLobby(); lobby.beginPlacement(); }, onBackToLobby: () => lobby.backToLobby() }),
       onResults: (res, scores) => lobby.reportResult(res.winner, scores.red, scores.blue),
     },
-    { role, client: lobby.client, setup },
+    { role, client: lobby.client, setup, recovering: !!recovery, onCheckpoint: state => lobby.updateRecovery(state) },
   );
+  if (recovery) game.restoreRecovery(recovery);
   game.start();
   (window as unknown as { game: Game }).game = game;
 }
@@ -99,6 +100,7 @@ function menu(page?: 'multiplayer' | 'ranked'): void {
 }
 
 lobby.onStart = (setup, role) => void startNetGame(setup, role);
+lobby.onRecover = (setup, role, recovery) => void startNetGame(setup, role, recovery);
 lobby.onToLobby = () => menu(lobby.lobby?.ranked ? 'ranked' : 'multiplayer');
 // While a match is running, the Game shows its own "Disconnected" dialog; the menu re-renders itself.
 

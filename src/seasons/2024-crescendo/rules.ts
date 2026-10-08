@@ -1,3 +1,4 @@
+import { captureFields, restoreFields } from '@engine/net/recovery';
 import * as THREE from 'three';
 import { ALLIANCES, opponent, type Alliance, type FieldPoint } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
@@ -37,6 +38,18 @@ interface Launch {
  * hood opening, passes, SOURCE drops, HIGH NOTE throws. Assisted (animation): AMP deposits, chain climbs, TRAP.
  */
 export class CrescendoRules implements SeasonRules {
+  recoveryState() {
+    return { visible: this.netState(), fields: captureFields(this, 'left launches g414 contacts notices sourceTimer autoHpTimer prevZ leaveAssessed stageAssessed'.split(' ')),
+      ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
+  }
+  restoreRecovery(state: unknown): void {
+    const s = state as ReturnType<CrescendoRules['recoveryState']>;
+    this.applyNetState(s.visible);
+    restoreFields(this, 'left launches g414 contacts notices sourceTimer autoHpTimer prevZ leaveAssessed stageAssessed'.split(' '), s.fields);
+    this.ref.restoreRecovery(s.ref);
+    this.pins.restoreRecovery(s.pins);
+  }
+
   readonly handlesIntake = true;
   /** AMP NOTES banked toward AMPLIFICATION (0–2) [M 6.5.3]. */
   bank: Record<Alliance, number> = { blue: 0, red: 0 };

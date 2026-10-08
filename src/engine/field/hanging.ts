@@ -1,3 +1,4 @@
+import { bodyState, restoreBody } from '../net/recovery';
 import * as THREE from 'three';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { FieldFrame } from '../coords';
@@ -139,6 +140,13 @@ export class HangingElement {
 
   /** Give it a push (world-frame impulse at the origin), e.g. in tests. */
   push(fx: number, fy: number): void { this.body.applyImpulse(this.frame.velToWorld(fx, fy, 0, this.tmp), true); }
+
+  recoveryState() { return { body: bodyState(this.body), held: this.held }; }
+  restoreRecovery(state: ReturnType<HangingElement['recoveryState']>): void {
+    this.replica = false;
+    this.held = state.held;
+    restoreBody(this.body, state.body);
+  }
 
   netState(): HangingNetState {
     const t = this.body.translation(), q = this.body.rotation();

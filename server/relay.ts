@@ -65,6 +65,8 @@ interface Room {
   bots: boolean;
   /** IPs removed by the host. */
   banned: Set<string>;
+  checkpoint?: unknown;
+  ranked?: boolean;
 }
 
 export interface Relay {
@@ -160,7 +162,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
   };
   server.on('upgrade', onUpgrade);
 
-  const MEMBERSHIP = new Set(['peer-joined', 'peer-left', 'peer-lost', 'peer-back']);
+  const MEMBERSHIP = new Set(['peer-joined', 'peer-left', 'peer-lost', 'peer-back', 'host-changed']);
   const send = (p: Peer, ev: RelayEvent) => {
     if (p.ws.readyState === WebSocket.OPEN) p.ws.send(JSON.stringify(ev));
     // A host that is briefly offline must still learn who came and went while it was away.
@@ -198,6 +200,7 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
         peers: new Map(),
         visibility: 'private',
         title: 'Ranked match',
+        ranked: true,
         season: '',
         drivers: members.length,
         seats: 6,
@@ -261,15 +264,25 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
     room.peers.delete(p.id);
     ranked.peerLeft(p.id);
     if (room.host === p) {
-      ranked.roomClosed(room.code);
-      rooms.delete(room.code);
-      for (const o of room.peers.values()) {
-        if (o.lostTimer) clearTimeout(o.lostTimer);
-        o.lostTimer = null;
-        o.room = null;
-        send(o, { op: 'room-closed', reason });
+      const successor = room.checkpoint ? [...room.peers.values()].find(o => !o.lost && o.ws.readyState === WebSocket.OPEN) : undefined;
+      if (successor) {
+        room.host = successor;
+        const checkpoint = room.checkpoint;
+        const peers = [...room.peers.values()].map(o => ({ peerId: o.id, name: o.name }));
+        for (const o of room.peers.values()) send(o, { op: 'host-changed', hostId: successor.id, previousHostId: p.id, peers,
+          ...(o === successor ? { checkpoint } : {}) });
+        log(`room ${room.code} host changed to ${successor.id}`);
+      } else {
+        ranked.roomClosed(room.code);
+        rooms.delete(room.code);
+        for (const o of room.peers.values()) {
+          if (o.lostTimer) clearTimeout(o.lostTimer);
+          o.lostTimer = null;
+          o.room = null;
+          send(o, { op: 'room-closed', reason });
+        }
+        log(`room ${room.code} closed (${reason})`);
       }
-      log(`room ${room.code} closed (${reason})`);
     } else {
       send(room.host, { op: 'peer-left', peerId: p.id });
     }
@@ -343,6 +356,12 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
       }
       if (!req || typeof req !== 'object') return;
       switch (req.op) {
+        case 'ping':
+          if (typeof req.id === 'number' && Number.isFinite(req.id)) send(peer, { op: 'pong', id: req.id });
+          break;
+        case 'checkpoint':
+          if (room && !room.ranked && room.host === peer && req.data && typeof req.data === 'object') room.checkpoint = req.data;
+          break;
         case 'create': {
           if (exceeded(hits.creates, ip, limits.creates)) return send(peer, { op: 'error', message: 'You are creating rooms too quickly — wait a moment' });
           record(hits.creates, ip);
@@ -391,7 +410,8 @@ export function attachRelay(server: Server, opts: RelayOptions = {}): Relay {
         case 'rejoin': {
           if (joinBlocked()) return;
           const r = rooms.get(normalizeRoomCode(String(req.room ?? '')));
-          const ghost = r && [...r.peers.values()].find((p) => p.lost && p.token === req.token);
+          // A half-open old socket may not have failed server-side yet. The secret authenticates replacement.
+          const ghost = r && [...r.peers.values()].find((p) => p.token === req.token);
           if (!r || !ghost) return badJoin('That room is no longer available');
           if (ghost.lostTimer) clearTimeout(ghost.lostTimer);
           ghost.lostTimer = null;

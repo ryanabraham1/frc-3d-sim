@@ -395,3 +395,77 @@ describe('relay', () => {
     });
   });
 });
+
+describe('host handoff', () => {
+  it('keeps the room code and routes traffic to the elected host after a deliberate departure', async () => {
+    const host = await peer(); host.send({ op: 'create', name: 'Host', meta: { visibility: 'public' } });
+    const made = await host.next('created');
+    const a = await peer(); a.send({ op: 'join', room: made.room, name: 'Alice' });
+    const aj = await a.next('joined'); await host.next('peer-joined');
+    const b = await peer(); b.send({ op: 'join', room: made.room, name: 'Bob' });
+    await b.next('joined'); await host.next('peer-joined');
+    const checkpoint = { version: 1, secretAuto: 'preserve only for the new authority' };
+    host.send({ op: 'checkpoint', data: checkpoint });
+    host.send({ op: 'ping', id: 1 }); await host.next('pong'); // checkpoint is processed
+    host.ws.close(4000, 'leave');
+    expect(await a.next('host-changed')).toMatchObject({ hostId: aj.peerId, previousHostId: made.peerId, checkpoint });
+    const notice = await b.next('host-changed');
+    expect(notice.hostId).toBe(aj.peerId);
+    expect(notice).not.toHaveProperty('checkpoint');
+    expect(relay.roomCount()).toBe(1);
+    b.send({ op: 'send', data: { t: 'cmd' } });
+    expect((await a.next('msg')).data).toEqual({ t: 'cmd' });
+    a.ws.send(Buffer.from([4, 5, 6]));
+    expect([...(await b.nextBin())]).toEqual([4, 5, 6]);
+    b.send({ op: 'list' });
+    expect((await b.next('rooms')).rooms[0]).toMatchObject({ code: made.room, host: 'Alice', players: 2 });
+  });
+
+  it('waits for the reconnect window and skips offline successors, supporting repeated handoffs', async () => {
+    const host = await peer(); host.send({ op: 'create', name: 'Host' });
+    const made = await host.next('created');
+    const offline = await peer(); offline.send({ op: 'join', room: made.room, name: 'Offline' });
+    await offline.next('joined'); await host.next('peer-joined');
+    const a = await peer(); a.send({ op: 'join', room: made.room, name: 'Alice' });
+    const aj = await a.next('joined'); await host.next('peer-joined');
+    const b = await peer(); b.send({ op: 'join', room: made.room, name: 'Bob' });
+    const bj = await b.next('joined'); await host.next('peer-joined');
+    host.send({ op: 'checkpoint', data: { clock: 50 } });
+    host.send({ op: 'ping', id: 1 }); await host.next('pong');
+    offline.ws.terminate(); await host.next('peer-lost');
+    host.ws.terminate();
+    await a.next('host-lost');
+    expect(a.events.some(e => e.op === 'host-changed')).toBe(false);
+    expect((await a.next('host-changed')).hostId).toBe(aj.peerId);
+    await b.next('host-changed');
+    a.ws.close(4000, 'leave');
+    expect((await b.next('host-changed')).hostId).toBe(bj.peerId);
+    expect(relay.roomCount()).toBe(1);
+  });
+
+  it('ignores checkpoints submitted by a guest', async () => {
+    const host = await peer(); host.send({ op: 'create', name: 'Host' });
+    const made = await host.next('created');
+    const guest = await peer(); guest.send({ op: 'join', room: made.room, name: 'Guest' });
+    await guest.next('joined'); await host.next('peer-joined');
+    guest.send({ op: 'checkpoint', data: { malicious: true } });
+    guest.send({ op: 'ping', id: 2 }); await guest.next('pong');
+    host.ws.close(4000, 'leave');
+    expect((await guest.next('room-closed')).reason).toBe('host left');
+  });
+});
+
+it('replaces a half-open socket with its secret before the server detects a drop', async () => {
+  const host = await peer(); host.send({ op: 'create', name: 'Host' });
+  const made = await host.next('created');
+  const guest = await peer(); guest.send({ op: 'join', room: made.room, name: 'Guest' });
+  const joined = await guest.next('joined'); await host.next('peer-joined');
+  const replacement = await peer();
+  replacement.send({ op: 'rejoin', room: made.room, token: joined.token });
+  expect(await replacement.next('joined')).toMatchObject({ peerId: joined.peerId, hostId: made.peerId, resumed: true });
+  await host.next('peer-back');
+  expect(guest.ws.readyState).not.toBe(WebSocket.OPEN);
+  replacement.send({ op: 'send', data: { t: 'cmd', s: 2 } });
+  expect((await host.next('msg')).from).toBe(joined.peerId);
+  expect(relay.roomCount()).toBe(1);
+});

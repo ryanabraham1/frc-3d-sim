@@ -47,6 +47,7 @@ export class ClientSync {
   gotKeyframe = false;
   bytesReceived = 0;
   snapshots = 0;
+  lastReceivedAt = -Infinity;
   /** Snapshots that never arrived (sequence gaps). */
   missed = 0;
   /** Current render delay behind host time (s); adapts to network jitter. */
@@ -57,7 +58,7 @@ export class ClientSync {
   private offset: number | null = null;
   private lastSeq = -1;
   private lastResyncAt = -Infinity;
-  private needsKeyframe = false;
+  private needsKeyframe = true;
   /** Last full rules state (rules patches are merged into it). */
   private rulesState: Record<string, unknown> | null = null;
   /** Pieces whose replica pose already sits at their newest sample (nothing to interpolate). */
@@ -106,6 +107,7 @@ export class ClientSync {
     }
     this.bytesReceived += buf.byteLength;
     this.snapshots++;
+    this.lastReceivedAt = localMs;
     // Deltas are only safe when none were lost (the relay drops frames for peers that fall behind).
     if (this.lastSeq >= 0 && s.seq !== this.lastSeq + 1 && !s.meta.key) {
       this.missed += Math.max(1, s.seq - this.lastSeq - 1);
@@ -262,6 +264,7 @@ export class ClientSync {
 
   /** Send the local driver's command: immediately on button changes, else ≤30 Hz, plus a 4 Hz keep-alive. */
   sendCommand(cmd: RobotCommand, localMs: number): number | null {
+    if (!this.client.connected || this.client.buffered > 16 * 1024) return null;
     const packed = packCommand(cmd);
     const key = packed.join(',');
     const buttons = `${packed[3]},${packed[4]},${packed[5] ?? ''}`;
