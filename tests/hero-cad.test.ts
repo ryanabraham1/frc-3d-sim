@@ -40,3 +40,11 @@ for(const alliance of ['blue','red'] as const)it(`Mantis collects from both phys
   }
  }finally{sim.dispose();}
 });
+it('Mantis draws its held bubbles and marks both side intakes',()=>{
+ const c=heroTeamRobots()[0].config,visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
+ const m=robotModelBuilder(c.model)!({config:c,visual,turret,alliance:'blue',fp:{length:.81,width:.76},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
+ const spheres=()=>{let n=0;visual.traverse(o=>{if(o instanceof THREE.Mesh&&o.geometry instanceof THREE.SphereGeometry&&o.visible)n++;});return n;};
+ m.update({...idle,fill:0});expect(spheres()).toBe(0);
+ m.update({...idle,fill:.5});expect(spheres()).toBe(3);
+ m.update({...idle,fill:1});expect(spheres()).toBe(6);
+});
