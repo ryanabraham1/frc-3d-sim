@@ -6,7 +6,7 @@ import { mat, robotModelBuilder, type RobotAnimState } from '../src/engine/robot
 import { coralTransferPose } from '../src/seasons/2025-reefscape/transferVisual';
 
 const state: RobotAnimState = {dt:1/60,time:0,enabled:true,intaking:false,firing:0,passing:false,aiming:false,hood:1,fill:0,climb:0,blocker:0,place:null,vx:0,vz:0,omega:0};
-const season = SEASONS.find(s => s.year === 2025)!;
+const season = SEASONS.find(s => s.id === '2025-reefscape')!;
 function fixture(id: string) {
   const config = cloneConfig(season.teamRobots!.find(t => t.id === id)!.config);
   const visual = new THREE.Group(), turret = new THREE.Group(); visual.add(turret);

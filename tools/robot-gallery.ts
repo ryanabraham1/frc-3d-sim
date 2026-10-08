@@ -25,7 +25,7 @@ const pmrem = new THREE.PMREMGenerator(renderer);
 setRobotEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
 pmrem.dispose();
 const seasonSelect = document.querySelector<HTMLSelectElement>('#season')!;
-for (const s of SEASONS) seasonSelect.add(new Option(`${s.year} ${s.name}`, s.id));
+for (const s of SEASONS) seasonSelect.add(new Option(s.label ?? `${s.year} ${s.name}`, s.id));
 const requestedSeason = new URLSearchParams(location.search).get('season');
 if (SEASONS.some(s => s.id === requestedSeason)) seasonSelect.value = requestedSeason!;
 const pose = document.querySelector<HTMLSelectElement>('#pose')!;
@@ -66,6 +66,8 @@ function build() {
   const s = SEASONS.find(s => s.id === seasonSelect.value)!;
   const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS];
   const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || detailedIds.includes(t.config.model ?? '')).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
+  // Standalone games without real robots (WCP CADathon) show their derived archetype presets.
+  if (!configs.length) configs.push(...(s.robotPresets ?? []).map(p => ({ name: p.label, config: p.config })));
   for (const [index, entry] of configs.entries()) {
     const el = document.createElement('div'); el.className = 'card';
     const label = document.createElement('div'); label.className = 'label'; label.textContent = entry.name;

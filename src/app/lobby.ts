@@ -1,6 +1,6 @@
 import { cleanAutoPlan, type AutoPlan } from '@engine/ai/autoPlan';
 import { fillBotStations } from '@engine/ai/matchSetup';
-import type { AiSkill, GameSettings } from '@engine/core/season';
+import { seasonLabel, type AiSkill, type GameSettings } from '@engine/core/season';
 import { NetClient } from '@engine/net/netClient';
 import {
   CHAT_HISTORY,
@@ -292,7 +292,7 @@ export class LobbyController {
   private async doCreate(name: string, visibility: RoomVisibility, title: string): Promise<void> {
     const s = this.settings;
     const season = s ? getSeason(s.seasonId) : null;
-    await this.client.create(name, { visibility, title, season: season ? `${season.year} ${season.name}` : '', drivers: 1, seats: SLOTS.length, state: 'lobby', bots: true });
+    await this.client.create(name, { visibility, title, season: season ? seasonLabel(season) : '', drivers: 1, seats: SLOTS.length, state: 'lobby', bots: true });
     this.rooms = null;
     this.lastMeta = '';
     this.lobby = {
@@ -941,7 +941,7 @@ export class LobbyController {
     let season = '';
     try {
       const d = getSeason(l.seasonId);
-      season = `${d.year} ${d.name}`;
+      season = seasonLabel(d);
     } catch {
       /* unknown season */
     }

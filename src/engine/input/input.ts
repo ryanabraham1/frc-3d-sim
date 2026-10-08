@@ -25,6 +25,10 @@ export interface DriverInput {
   levelUp: boolean;
   levelDown: boolean;
   setLevel: number | null;
+  /** Step the selected shot target (-1 / +1), or 0. */
+  targetStep: number;
+  /** Go back to automatic target selection. */
+  targetAuto: boolean;
   cameraNext: boolean;
   /** Swing the chase camera between the intake side and the shooter side. */
   cameraFlip: boolean;
@@ -101,6 +105,8 @@ export class InputManager {
     const precision = this.k('precision');
     let levelUp = this.edge('levelUp');
     let levelDown = this.edge('levelDown');
+    let targetStep = (this.edge('targetNext') ? 1 : 0) - (this.edge('targetPrev') ? 1 : 0);
+    const targetAuto = this.edge('targetAuto');
     let setLevel: number | null = this.edge('level1') ? 1 : this.edge('level2') ? 2 : this.edge('level3') ? 3 : this.edge('level4') ? 4 : null;
     let cameraNext = this.edge('cameraNext');
     const cameraFlip = this.edge('cameraFlip');
@@ -147,6 +153,7 @@ export class InputManager {
       levelDown ||= e(13);
       pause ||= e(9);
       toggleBlocker ||= e(10);
+      if (e(11)) targetStep = 1;
       if (e(14)) setLevel = 1;
       if (e(15)) setLevel = 3;
     }
@@ -167,6 +174,8 @@ export class InputManager {
       levelUp,
       levelDown,
       setLevel,
+      targetStep,
+      targetAuto,
       cameraNext,
       cameraFlip,
       pause,

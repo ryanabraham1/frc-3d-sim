@@ -243,8 +243,14 @@ export interface AutoRoutine {
 
 export interface SeasonDefinition {
   id: string;
+  /** Source year (an FRC season, or a standalone game's manual date). Engine behaviour keys off `id`, never the year. */
   year: number;
   name: string;
+  /**
+   * Menu/lobby display name. Default `${year} ${name}` (FRC seasons); standalone games such as a CADathon set their own
+   * so they are not presented as an FRC season.
+   */
+  label?: string;
   subtitle: string;
   manualVersion: string;
   summary: string;
@@ -259,6 +265,8 @@ export interface SeasonDefinition {
   foulValues: Record<FoulKind, number>;
 
   timeline: MatchPeriod[];
+  /** Seconds before the end of TELEOP when climbers deploy and endgame rules start (default 30). */
+  endgameSeconds?: number;
   gamePiece: GamePieceSpec;
   /**
    * Animate captured pieces travelling through each robot (intake → stow → shooter; see robot/pieceFlow.ts). Off for
@@ -285,6 +293,11 @@ export interface SeasonDefinition {
   mapShapes?: MapShape[];
   /** How the red half mirrors the blue `mapShapes`: rotational (default, L−x, W−y) or mirror (L−x, y). */
   mapSymmetry?: 'rotational' | 'mirror';
+  /**
+   * Shot targets a driver can pick by hand (`,` / `.` cycle, `Z` = automatic), carried as `RobotCommand.aimTarget`.
+   * The rules decide whether a picked target is reachable.
+   */
+  aimTargets?: { id: number; label: string }[];
   /** Number of human-player buttons (1 = H only; 2 adds B / gamepad LB; 3 adds N; 4 adds M). Default 1. */
   humanPlayerButtons?: number;
   /**
@@ -341,6 +354,11 @@ export interface SeasonDefinition {
    * tested): legal scoring positions and a way to count pieces that entered the goal.
    */
   testing?: SeasonTesting;
+}
+
+/** How menus and lobbies name a season: `2026 REBUILT`, or a standalone game's own label. */
+export function seasonLabel(s: Pick<SeasonDefinition, 'year' | 'name' | 'label'>): string {
+  return s.label ?? `${s.year} ${s.name}`;
 }
 
 export interface SeasonTesting {

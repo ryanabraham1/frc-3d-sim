@@ -5,7 +5,7 @@ import { HeadlessSim } from '../src/engine/testing/headless';
 import { cloneConfig } from '../src/engine/robot/config';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 
-const season = () => SEASONS.find(s => s.year === 2026)!;
+const season = () => SEASONS.find(s => s.id === '2026-rebuilt')!;
 const make = (config = season().robotDefaults, load?: number) => {
   const sim = new HeadlessSim(season(), RAPIER, { robot: cloneConfig(config), alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
   sim.robot.enabled = true;

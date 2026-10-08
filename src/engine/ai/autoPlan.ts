@@ -26,10 +26,10 @@ export interface AutoStep {
 }
 export interface AutoPlan { seasonId: string; steps: AutoStep[] }
 
-export function cleanAutoPlan(value: unknown, season: Pick<SeasonDefinition, 'id' | 'year' | 'fieldLength' | 'fieldWidth'>): AutoPlan | undefined {
+export function cleanAutoPlan(value: unknown, season: Pick<SeasonDefinition, 'id' | 'fieldLength' | 'fieldWidth'>): AutoPlan | undefined {
   const p = value as AutoPlan | null;
   if (!p || p.seasonId !== season.id || !Array.isArray(p.steps) || p.steps.length > 80) return undefined;
-  const allowed = ['drive', 'intake', 'shoot', 'wait', ...(season.year === 2025 ? ['reef', 'station'] : season.year === 2024 ? ['note'] : [])];
+  const allowed = ['drive', 'intake', 'shoot', 'wait', ...(season.id === '2025-reefscape' ? ['reef', 'station'] : season.id === '2024-crescendo' ? ['note'] : [])];
   const steps: AutoStep[] = [];
   for (const s of p.steps) {
     if (!s || !allowed.includes(s.action) || ![s.x, s.y, s.duration].every(Number.isFinite) || s.x < 0 || s.x > season.fieldLength || s.y < 0 || s.y > season.fieldWidth || s.duration < 0 || s.duration > 10) return undefined;
@@ -119,9 +119,9 @@ export class PlannedAutoPilot implements AutoPilot {
     }
     if (!this.travelBudget) this.travelBudget = Math.hypot(goal.x - r.pose.x, goal.y - r.pose.y) / Math.max(0.5, r.config.maxSpeed * 0.3) + s.duration + 5;
     let waypoint: { x: number; y: number } = goal;
-    if (this.season.year === 2024) waypoint = aroundCircles(r.pose, goal, stageObstacles(r).map(o => ({ ...o, r: Math.min(o.r, Math.hypot(goal.x - o.x, goal.y - o.y) - .03) })));
-    if (this.season.year === 2026) waypoint = routeThroughBands(r.pose, goal, BANDS, r.footprint.width / 2, r.config.height);
-    if (this.season.year === 2025) waypoint = aroundCircles(r.pose, goal, (['blue', 'red'] as const).map(a => ({ ...Reef.reefCenter(a), r: Math.min(Reef.REEF_APOTHEM / Math.cos(Math.PI / 6) + Math.max(r.footprint.length, r.footprint.width) / 2 + 0.08, Math.hypot(goal.x - Reef.reefCenter(a).x, goal.y - Reef.reefCenter(a).y) - 0.03) })));
+    if (this.season.id === '2024-crescendo') waypoint = aroundCircles(r.pose, goal, stageObstacles(r).map(o => ({ ...o, r: Math.min(o.r, Math.hypot(goal.x - o.x, goal.y - o.y) - .03) })));
+    if (this.season.id === '2026-rebuilt') waypoint = routeThroughBands(r.pose, goal, BANDS, r.footprint.width / 2, r.config.height);
+    if (this.season.id === '2025-reefscape') waypoint = aroundCircles(r.pose, goal, (['blue', 'red'] as const).map(a => ({ ...Reef.reefCenter(a), r: Math.min(Reef.REEF_APOTHEM / Math.cos(Math.PI / 6) + Math.max(r.footprint.length, r.footprint.width) / 2 + 0.08, Math.hypot(goal.x - Reef.reefCenter(a).x, goal.y - Reef.reefCenter(a).y) - 0.03) })));
     const drive = arrive(r.pose, waypoint, Math.min(3.2, r.config.maxSpeed * 0.8), intermediate ? .3 : .65);
     cmd.vx = drive.vx; cmd.vy = drive.vy;
     if (s.action === 'drive' && drive.dist > 0.2) yaw = Math.atan2(drive.vy, drive.vx) + r.intakeYawOffset;
@@ -151,5 +151,5 @@ export class PlannedAutoPilot implements AutoPilot {
     if (this.elapsed > this.travelBudget) this.advance();
     return cmd;
   }
-  private advance(): RobotCommand { if (this.season.year === 2025) (this.rules as ReefscapeRules).plannedTargets.delete(this.robot.id); this.index++; this.pathIndex = 0; this.atTarget = this.elapsed = this.travelBudget = 0; return { ...IDLE_COMMAND, intake: !this.robot.isClimbing && this.robot.capacityLeft > 0 }; }
+  private advance(): RobotCommand { if (this.season.id === '2025-reefscape') (this.rules as ReefscapeRules).plannedTargets.delete(this.robot.id); this.index++; this.pathIndex = 0; this.atTarget = this.elapsed = this.travelBudget = 0; return { ...IDLE_COMMAND, intake: !this.robot.isClimbing && this.robot.capacityLeft > 0 }; }
 }

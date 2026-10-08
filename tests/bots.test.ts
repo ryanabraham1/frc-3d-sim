@@ -53,8 +53,10 @@ describe.each(SEASONS)('$name AI', (season) => {
     expect(settings.robot).toEqual(easy.robots[0].config);
     // Without orders the opponents play real team robots (their own models) from the season's lineup.
     const lineup = localSetup({ ...settings, aiDifficulty: 'hard' }, season).robots.filter((r) => r.alliance !== settings.alliance);
-    for (const r of lineup) expect((season.teamRobots ?? []).some((t) => t.config.model === r.config.model)).toBe(true);
-    if (season.year === 2024) for (const r of lineup) { expect(r.config.launcher.turret).toBe(false); expect(r.config.intake.ground).toBe(true); }
+    // A standalone game with no real robots yet (WCP CADathon) plays its derived archetype presets instead.
+    const builds = season.teamRobots?.length ? season.teamRobots : season.robotPresets ?? [];
+    for (const r of lineup) expect(builds.some((t) => t.config.model === r.config.model)).toBe(true);
+    if (season.id === '2024-crescendo') for (const r of lineup) { expect(r.config.launcher.turret).toBe(false); expect(r.config.intake.ground).toBe(true); }
   });
 
   it.each(['blue', 'red'] as const)('collects and scores repeated TELEOP cycles for %s', (alliance) => {
@@ -89,9 +91,9 @@ describe.each(SEASONS)('$name Hard challenge', (season) => {
         const red = settings.alliance === 'blue' ? 'red' : 'blue';
         total += res.score[red];
         console.log(season.id, difficulty, seed, res.score[red], JSON.stringify(res.categories[red]));
-        if (difficulty === 'hard' && season.year !== 2026) { // stock 2026 robots have no climbers
+        if (difficulty === 'hard' && season.id !== '2026-rebuilt') { // stock 2026 robots have no climbers
           const cat = res.categories[red];
-          expect((cat.onstage ?? 0) + (cat.barge ?? 0) + (cat.towerTeleop ?? 0)).toBeGreaterThan(0);
+          expect((cat.onstage ?? 0) + (cat.barge ?? 0) + (cat.towerTeleop ?? 0) + (cat.tower ?? 0)).toBeGreaterThan(0);
         }
       }
       totals.push(total);
@@ -112,12 +114,12 @@ describe.each(SEASONS)('$name all-AI match', (season) => {
     for (const a of ['blue', 'red'] as const) {
       expect(res.fouls[a]).toBeLessThan(res.score[a === 'blue' ? 'red' : 'blue'] * 0.15);
       const cat = res.categories[a];
-      if (season.year === 2024) { expect(cat.speakerAmplified ?? 0).toBeGreaterThan(0); expect((cat.onstage ?? 0) + (cat.park ?? 0)).toBeGreaterThan(0); }
+      if (season.id === '2024-crescendo') { expect(cat.speakerAmplified ?? 0).toBeGreaterThan(0); expect((cat.onstage ?? 0) + (cat.park ?? 0)).toBeGreaterThan(0); }
       // AUTO: every robot's preload on L4 (3 × 7). Station cycles on top depend on traffic: AI robots have no speed edge
       // over players, so one 15 s AUTO may not fit an extra cycle (benchmark seeds 5-6: 56 AUTO CORAL points).
-      if (season.year === 2025) { expect(cat.autoCoral ?? 0).toBeGreaterThanOrEqual(21); expect(cat.barge ?? 0).toBeGreaterThanOrEqual(24); }
+      if (season.id === '2025-reefscape') { expect(cat.autoCoral ?? 0).toBeGreaterThanOrEqual(21); expect(cat.barge ?? 0).toBeGreaterThanOrEqual(24); }
       // Stock 2026 robots have no climbers (TOWER skipped for a bigger hopper).
-      if (season.year === 2026) { expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
+      if (season.id === '2026-rebuilt') { expect(res.counters[a].fuelActive).toBeGreaterThan(400); }
     }
   }, 300_000);
 });
@@ -224,7 +226,7 @@ it('REBUILT Hard steals opposing fuel and physically feeds it home during its in
 });
 
 it('a beached robot calls for help, a teammate pushes, then backs off if it will not come free', () => {
-  const season = SEASONS.find((s) => s.year === 2026)!;
+  const season = SEASONS.find((s) => s.id === '2026-rebuilt')!;
   const config = season.botRobotConfig!('hard');
   const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', station: 2, pose: { x: 2.5, y: 4.5, yaw: 0 },
     extraRobots: [{ config, alliance: 'blue', station: 1, pose: { x: 2.5, y: 6.8, yaw: 0 }, id: 1 }] });

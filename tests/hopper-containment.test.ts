@@ -7,7 +7,7 @@ import { cloneConfig } from '../src/engine/robot/config';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import type { RobotCommand } from '../src/engine/robot/robot';
 
-const season = () => SEASONS.find(s => s.year === 2026)!;
+const season = () => SEASONS.find(s => s.id === '2026-rebuilt')!;
 const robots = () => [
   { id: 'default', config: season().robotDefaults },
   ...(season().robotPresets ?? []).map((p: any) => ({ id: `preset-${p.id ?? p.name}`, config: p.config ?? p })),

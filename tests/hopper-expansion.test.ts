@@ -7,7 +7,7 @@ import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import * as C from '../src/seasons/2026-rebuilt/constants';
 
-const season = SEASONS.find(s => s.year === 2026)!;
+const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
 const sims: HeadlessSim[] = [];
 beforeAll(async () => { await RAPIER.init(); });
 afterEach(() => { for (const sim of sims.splice(0)) sim.dispose(); });

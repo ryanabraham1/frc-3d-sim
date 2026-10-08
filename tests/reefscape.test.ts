@@ -49,7 +49,7 @@ function linedUp(a: Alliance, level: number, offsetIn = 0, config = cloneConfig(
 
 describe('2025 REEFSCAPE manual implementation', () => {
   it('registers every year and uses the manual match timing and scoring values', () => {
-    expect(SEASONS.map((s) => s.year)).toEqual([2026, 2025, 2024]);
+    expect(SEASONS.map((s) => s.id)).toEqual(['2026-rebuilt', '2025-reefscape', '2024-crescendo', 'wcp-hero-heist']);
     expect(season.timeline.filter((p) => p.mode !== 'disabled').reduce((t, p) => t + p.duration, 0)).toBe(150);
     expect(season.foulValues).toEqual({ minor: 2, major: 6 });
   });

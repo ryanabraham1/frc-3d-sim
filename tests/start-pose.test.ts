@@ -44,6 +44,11 @@ for (const season of SEASONS) {
     const area = season.startArea!;
     const robot = season.robotDefaults;
     const fp = footprint(robot);
+    /** Headings at which the footprint fits the zone at all (a 40 in Hero Heist TOWER ZONE only fits a square-on robot). */
+    const fits = (yaw: number) => {
+      const c = Math.abs(Math.cos(yaw)), s = Math.abs(Math.sin(yaw));
+      return fp.length * c + fp.width * s <= area.rect.x1 - area.rect.x0 + 1e-9 && fp.length * s + fp.width * c <= area.rect.y1 - area.rect.y0 + 1e-9;
+    };
 
     it('declares a start area', () => expect(area).toBeDefined());
 
@@ -63,10 +68,11 @@ for (const season of SEASONS) {
     it('rejects spots outside the zone, on field elements, and rotated ones that poke out', () => {
       const r = area.rect;
       expect(checkStartSpot(area, { x: r.x1 + 0.5, y: (r.y0 + r.y1) / 2, yaw: 0 }, fp.length, fp.width).ok).toBe(false);
-      const k = area.keepOut![0];
-      const cx = k.reduce((a, p) => a + p[0], 0) / k.length;
-      const cy = k.reduce((a, p) => a + p[1], 0) / k.length;
-      expect(checkStartSpot(area, { x: cx, y: cy, yaw: 0 }, fp.length, fp.width).ok).toBe(false);
+      for (const k of area.keepOut?.slice(0, 1) ?? []) {
+        const cx = k.reduce((a, p) => a + p[0], 0) / k.length;
+        const cy = k.reduce((a, p) => a + p[1], 0) / k.length;
+        expect(checkStartSpot(area, { x: cx, y: cy, yaw: 0 }, fp.length, fp.width).ok).toBe(false);
+      }
       // Flush against the wall facing the field is legal; turned 45° the corners cross the wall.
       const mid = (r.y0 + r.y1) / 2;
       const flush = { x: r.x0 + fp.length / 2, y: mid, yaw: 0 };
@@ -74,7 +80,7 @@ for (const season of SEASONS) {
     });
 
     it('clamping keeps any heading inside the rectangle', () => {
-      for (const yaw of [0, 0.7, Math.PI / 2, 2.4]) {
+      for (const yaw of [0, 0.7, Math.PI / 2, 2.4].filter(fits)) {
         const c = clampToArea(area, { x: -5, y: -5, yaw }, fp.length, fp.width);
         const poly = footprintPoly(c, fp.length, fp.width);
         for (const [x, y] of poly) {
@@ -110,13 +116,14 @@ for (const season of SEASONS) {
     it('a legal custom spot becomes the start pose, an illegal one falls back to the preset', () => {
       const f = fieldDims(season);
       const preset = season.startPose('blue', 2);
+      const heading = fits(1.1) ? 1.1 : Math.PI;
       let legal: StartSpot | null = null;
-      for (let x = area.rect.x0; x <= area.rect.x1 && !legal; x += 0.1)
-        for (let y = area.rect.y0; y <= area.rect.y1 && !legal; y += 0.1) if (checkStartSpot(area, { x, y, yaw: 1.1 }, fp.length, fp.width).ok) legal = { x, y, yaw: 1.1 };
+      for (let x = area.rect.x0; x <= area.rect.x1 && !legal; x += 0.02)
+        for (let y = area.rect.y0; y <= area.rect.y1 && !legal; y += 0.1) if (checkStartSpot(area, { x, y, yaw: heading }, fp.length, fp.width).ok) legal = { x, y, yaw: heading };
       expect(legal).not.toBeNull();
       const pose = resolveStartPose(f, area, 'blue', legal, preset, fp.length, fp.width);
       expect(pose).toMatchObject({ x: legal!.x, y: legal!.y });
-      expect(pose.yaw).toBeCloseTo(1.1);
+      expect(Math.cos(pose.yaw)).toBeCloseTo(Math.cos(heading));
       const illegal = { x: area.rect.x1 + 3, y: preset.y, yaw: 0 };
       expect(resolveStartPose(f, area, 'blue', illegal, preset, fp.length, fp.width)).toEqual(preset);
       expect(resolveStartPose(f, area, 'blue', { x: NaN, y: 0, yaw: 0 }, preset, fp.length, fp.width)).toEqual(preset);

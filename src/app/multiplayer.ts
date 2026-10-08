@@ -1,5 +1,5 @@
 import { autoPlanner, bindAutoPlanner } from './autoPlanner';
-import type { AiSkill, GameSettings, SeasonDefinition } from '@engine/core/season';
+import { seasonLabel, type AiSkill, type GameSettings, type SeasonDefinition } from '@engine/core/season';
 import { SLOTS, slotAlliance, slotLabel, slotStation, type SlotId } from '@engine/net/protocol';
 import { footprint } from '@engine/robot/config';
 import { footprintPoly } from '@engine/startPose';
@@ -182,7 +182,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
         <button class="bbtn" data-mp="copy">Copy code</button>
         <button class="bbtn" data-mp="copy-link">Copy invite link</button>
       </div>
-      <div class="mp-room-meta">${L.title ? `<b>${esc(L.title)}</b> · ` : ''}${ctx.season.year} ${esc(ctx.season.name)} · ${L.players.length} player${L.players.length === 1 ? '' : 's'} · ${drivers} driving${L.inMatch ? ' · <b>match in progress</b>' : ''}</div>
+      <div class="mp-room-meta">${L.title ? `<b>${esc(L.title)}</b> · ` : ''}${esc(seasonLabel(ctx.season))} · ${L.players.length} player${L.players.length === 1 ? '' : 's'} · ${drivers} driving${L.inMatch ? ' · <b>match in progress</b>' : ''}</div>
     </div>
     ${lobby.reconnecting ? '<div class="mp-error">Connection lost — reconnecting…</div>' : lobby.hostAway ? '<div class="mp-error">The host lost connection — waiting for them to return…</div>' : ''}
     <div class="mp-grid">

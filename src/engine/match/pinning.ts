@@ -26,6 +26,8 @@ export interface PinRule {
   countSeconds: number;
   /** The manual's 6 ft / 72 in separation distance (m). */
   separation: number;
+  /** Every pin foul is this kind (e.g. a TECHNICAL FOUL each time); default MINOR first, then MAJOR. */
+  kind?: FoulKind;
 }
 
 /** 6 ft, the separation distance in all three manuals. */
@@ -197,7 +199,7 @@ export class PinTracker {
       const due = Math.floor(rec.count / countSeconds);
       while (rec.fouls < due) {
         rec.fouls++;
-        out.fouls.push({ pinner: r, pinned: o, n: rec.fouls, kind: rec.fouls === 1 ? 'minor' : 'major', rule, seconds: rec.count });
+        out.fouls.push({ pinner: r, pinned: o, n: rec.fouls, kind: this.rule.kind ?? (rec.fouls === 1 ? 'minor' : 'major'), rule, seconds: rec.count });
         rec.cueIn = 0;
       }
       rec.cueIn -= dt;

@@ -7,7 +7,7 @@ export type ActionId =
   | 'forward' | 'backward' | 'left' | 'right' | 'rotateLeft' | 'rotateRight' | 'precision'
   | 'shoot' | 'pass' | 'intake' | 'toggleIntake' | 'climb' | 'descend' | 'toggleBlocker'
   | 'humanPlayer' | 'humanPlayerB' | 'humanPlayerN' | 'humanPlayerM'
-  | 'levelUp' | 'levelDown' | 'level1' | 'level2' | 'level3' | 'level4'
+  | 'levelUp' | 'levelDown' | 'level1' | 'level2' | 'level3' | 'level4' | 'targetPrev' | 'targetNext' | 'targetAuto'
   | 'cameraNext' | 'cameraFlip' | 'pause' | 'restart' | 'toggleHelp';
 
 export const SLOTS = 2;
@@ -42,6 +42,9 @@ export const ACTIONS: ActionDef[] = [
   def('level2', 'Robot', 'Select level 2', 'Digit2'),
   def('level3', 'Robot', 'Select level 3', 'Digit3'),
   def('level4', 'Robot', 'Select level 4', 'Digit4'),
+  def('targetPrev', 'Robot', 'Previous shot target (games with selectable targets)', 'Comma'),
+  def('targetNext', 'Robot', 'Next shot target', 'Period'),
+  def('targetAuto', 'Robot', 'Automatic shot target', 'KeyZ'),
   def('humanPlayer', 'Human player', 'Human player button 1 (chute drop)', 'KeyH'),
   def('humanPlayerB', 'Human player', 'Human player button 2', 'KeyB'),
   def('humanPlayerN', 'Human player', 'Human player button 3', 'KeyN'),

@@ -66,7 +66,7 @@ it('a back-mounted ground intake takes pieces behind the robot and ignores ones 
 });
 
 it('protects balls at a short robot shooter while allowing balls outside its chassis', () => {
-  const season = SEASONS.find(s => s.year === 2026)!;
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const cfg = cloneConfig(season.robotDefaults);
   cfg.height = 0.55;
   const sim = new HeadlessSim(season, RAPIER, { robot: cfg, alliance: 'blue', pose: { x: 5, y: 4, yaw: Math.PI / 2 } });
@@ -78,7 +78,7 @@ it('protects balls at a short robot shooter while allowing balls outside its cha
 });
 
 it('prefers a higher shot arc while still reaching the target on descent', () => {
-  const season = SEASONS.find(s => s.year === 2026)!;
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: 5, y: 4, yaw: 0 } });
   const from = new THREE.Vector3(0, 0.6, 0);
   const target = { point: new THREE.Vector3(4, 1.8, 0) };

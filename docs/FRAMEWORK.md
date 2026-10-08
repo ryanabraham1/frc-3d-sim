@@ -102,6 +102,12 @@ where a season implements scoring auto-align (2025 reef). `RobotConfig.options` 
 flags. `robotOptions` are the menu's mechanism choices; each `set` should re-run the season's normalize. See
 INSTRUCTIONS.md §3b and `docs/ROBOT-ARCHETYPES.md`.
 
+**Standalone games** (e.g. the WCP CADathon, `src/seasons/wcp-hero-heist`): set `label` for menus and lobbies
+(`seasonLabel(season)` falls back to `${year} ${name}`); `year` is only provenance. Engine and app behaviour key off
+`season.id`, never the year, so a game with a 2025 manual never picks up REEFSCAPE's planner or menu branches.
+`endgameSeconds` (default 30) sets when climbers deploy; `aimTargets` lists shot targets drivers can pick by hand (`,` / `.`, `Z` = automatic, gamepad R3), sent as `RobotCommand.aimTarget` (packed in multiplayer commands); `PinRule.kind` makes every pin foul one kind (Hero Heist G11:
+a TECHNICAL FOUL each time).
+
 **Coordinates:** season code uses WPILib field coordinates (meters, blue wall at x = 0). This is
 the same frame as robot code and the official AprilTag JSON, so positions copy straight across.
 

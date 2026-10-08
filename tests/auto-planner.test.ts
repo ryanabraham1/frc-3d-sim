@@ -10,7 +10,7 @@ import type { HostMsg, LobbyState } from '../src/engine/net/protocol';
 let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
 it('rejects malformed, cross-season and invalid target plans', () => {
-  const season = SEASONS.find(s => s.year === 2025)!;
+  const season = SEASONS.find(s => s.id === '2025-reefscape')!;
   const valid = { seasonId: season.id, steps: [targetStep(season, 'reef', 11)] };
   expect(cleanAutoPlan(valid, season)).toMatchObject({ seasonId: valid.seasonId, steps: [{ action: 'reef', target: 11 }] });
   for (const steps of [[{ ...valid.steps[0], x: NaN }], [{ ...valid.steps[0], target: 12 }], [{ ...valid.steps[0], level: 5 }], [{ ...valid.steps[0], duration: -1 }], [{ ...valid.steps[0], action: 'note' }]]) expect(cleanAutoPlan({ ...valid, steps }, season)).toBeUndefined();
@@ -28,14 +28,14 @@ it.each(SEASONS)('$year physically follows a planned drive and stops', season =>
     sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
     const start = { ...sim.robot.pose };
     const goal = { x: start.x + .6, y: start.y };
-    if (season.year === 2025) goal.y += .6;
+    if (season.id === '2025-reefscape') goal.y += .6;
     const pilot = new PlannedAutoPilot(sim.ctx, sim.rules, sim.robot, season, { seasonId: season.id, steps: [{ action: 'drive', ...goal, duration: 2 }] });
     for (let i = 0; i < 4 / sim.physics.dt; i++) sim.step(pilot.update(sim.physics.dt));
     expect(Math.hypot(sim.robot.pose.x - goal.x, sim.robot.pose.y - goal.y)).toBeLessThan(.2);
     expect(pilot.update(.1).vx).toBe(0);
   } finally { sim.dispose(); }
 });
-it.each(SEASONS.filter(s => s.year !== 2025))('$year planned preload shoots through real scoring physics', season => {
+it.each(SEASONS.filter(s => s.id !== '2025-reefscape'))('$year planned preload shoots through real scoring physics', season => {
   const pose = season.testing!.scoringSpots('blue')[0];
   const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', pose });
   try {
@@ -46,7 +46,7 @@ it.each(SEASONS.filter(s => s.year !== 2025))('$year planned preload shoots thro
   } finally { sim.dispose(); }
 });
 it('shares plans only with alliance teammates and strips them from match-start clients', () => {
-  const season = SEASONS.find(s => s.year === 2025)!;
+  const season = SEASONS.find(s => s.id === '2025-reefscape')!;
   const plan = { seasonId: season.id, steps: [targetStep(season, 'reef', 0)] };
   vi.stubGlobal('location', { protocol: 'http:', host: 'localhost' });
   const lobby = new LobbyController();
@@ -76,7 +76,7 @@ it('shares plans only with alliance teammates and strips them from match-start c
 });
 
 it('2025 places the preload on the selected branch through mechanisms', () => {
-  const season = SEASONS.find(s => s.year === 2025)!;
+  const season = SEASONS.find(s => s.id === '2025-reefscape')!;
   const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', pose: season.startPose('blue', 2) });
   try {
     sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
@@ -86,7 +86,7 @@ it('2025 places the preload on the selected branch through mechanisms', () => {
   } finally { sim.dispose(); }
 });
 it('2024 picks up a chosen wing note and returns to shoot', () => {
-  const season = SEASONS.find(s => s.year === 2024)!;
+  const season = SEASONS.find(s => s.id === '2024-crescendo')!;
   const sim = new HeadlessSim(season, R, { robot: { ...season.robotDefaults, preload: 0 }, alliance: 'blue', pose: season.startPose('blue', 2) });
   try {
     sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
@@ -96,7 +96,7 @@ it('2024 picks up a chosen wing note and returns to shoot', () => {
   } finally { sim.dispose(); }
 });
 it('2025 takes a real station-fed coral before advancing', () => {
-  const season = SEASONS.find(s => s.year === 2025)!;
+  const season = SEASONS.find(s => s.id === '2025-reefscape')!;
   const sim = new HeadlessSim(season, R, { robot: { ...season.robotDefaults, preload: 0 }, alliance: 'blue', pose: { x: 2, y: 1.5, yaw: 0 } });
   try {
     sim.ctx.humanPlayerIsAuto = () => true;
@@ -108,7 +108,7 @@ it('2025 takes a real station-fed coral before advancing', () => {
 });
 
 it('collapses old sampled drawings into one path without losing corners or shooting stops', () => {
-  const season = SEASONS.find(s => s.year === 2026)!;
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const points = [{ x: 2, y: 2 }, { x: 2.5, y: 2 }, { x: 3, y: 2 }, { x: 3, y: 2.5 }, { x: 3, y: 3 }];
   const plan = cleanAutoPlan({ seasonId: season.id, steps: [...points.map(p => ({ action: 'drive', ...p, duration: 2 })), { action: 'shoot', x: 3, y: 3, duration: 3, yaw: Math.PI / 2 }] }, season)!;
   expect(plan.steps).toHaveLength(2);
@@ -118,7 +118,7 @@ it('collapses old sampled drawings into one path without losing corners or shoot
   expect(cleanAutoPlan({ seasonId: season.id, steps: [{ action: 'drive', x: 3, y: 3, duration: 2, path: [{ x: NaN, y: 2 }] }] }, season)).toBeUndefined();
 });
 it('driving runs the intake automatically and follows a grouped path with a chosen final heading', () => {
-  const season = SEASONS.find(s => s.year === 2026)!;
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
   try {
     sim.rules.stage(); sim.rules.onPeriodChange(sim.ctx.clock.start());
@@ -133,7 +133,7 @@ it('driving runs the intake automatically and follows a grouped path with a chos
 });
 
 it('zero-second intake actions keep moving to the next location with intake running', () => {
-  const season = SEASONS.find(s => s.year === 2026)!;
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const sim = new HeadlessSim(season, R, { robot: { ...season.robotDefaults, preload: 0 }, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
   try {
     sim.rules.stage();
@@ -147,7 +147,7 @@ it('zero-second intake actions keep moving to the next location with intake runn
 });
 
 it('shoot-while-driving paths keep the flag and fire while still travelling', () => {
-  const season = SEASONS.find(s => s.year === 2026)!;
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const plan = cleanAutoPlan({ seasonId: season.id, steps: [{ action: 'drive', x: 9, y: 2, path: [{ x: 6, y: 2 }], duration: 2, fire: true }] }, season)!;
   expect(plan.steps[0].fire).toBe(true);
   const sim = new HeadlessSim(season, R, { robot: season.robotDefaults, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });

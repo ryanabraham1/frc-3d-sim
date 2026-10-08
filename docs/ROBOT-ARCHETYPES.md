@@ -133,6 +133,30 @@ shooter)*, *AMP + TRAP specialist*. See [CRESCENDO.md](CRESCENDO.md#robot-archet
 Presets: *Turret trench bot* (default), *Dumper + auto-align*, *Big-hopper BUMP bot*, *OUTPOST-fed
 shooter*.
 
+## WCP CADathon: Hero Heist (standalone game) — derived, not observed
+
+No robots exist for this CADathon, so every preset is **derived** from the manual's tasks plus past FRC robots.
+
+Task table (manual pp. 4-18, heights from the field CAD):
+
+| Task | Acquired from | Goal geometry | Constraint |
+| --- | --- | --- | --- |
+| SPEECH BUBBLES (7 in foam balls) | Carpet grid, SQUAD WALL chute | 20 in windows: 45° slope (UPTOWN), flat top hole (DOWNTOWN), vertical funnel up to 2.9 m (FOOTHILLS) | Launch only fully inside the LAUNCH ZONE; MYSTIC 6, GADGETEER 3/4 |
+| STORY PANELS (24 in, ½ in rings) | Carpet by the SQUAD WALL, slide slots at 0.65 m | Slits ~1 in wider than the panel (DOWNTOWN horizontal, UPTOWN 45°), top-fed baskets with rims at 0.78 / 2.23 m | Never launched; COMMANDER 3, GADGETEER 1/2 |
+| TOWER climb | 66 in truss, three pads | Bottom clearance 35 / 45 in | No part above 78 in |
+
+Past analogs: bubbles = 2020/2022 power-cell/cargo shooters (hopper + flywheel, turret or chassis aim); panels = 2019
+hatch panels (wide flat piece into a narrow slot, vision alignment, station-fed vs floor rollers) and 2023/2025 lifts for
+placement height; mixed robots = 2019 hatch + cargo dual-mechanism robots; climber = 2020/2022 bar climbs under a fixed
+ceiling. Class rules (manual p. 18) decide what a robot may hold, and the CAD heights decide which baskets a lift
+reaches: low baskets need a 55 in panel lift (GADGETEER and up), high baskets 113 in (COMMANDER only); the 78 in climb
+ceiling limits robots taller than 33 in to MEDIUM and taller than 43 in to LOW.
+
+Presets: *Gadgeteer · dual mechanisms* (default), *Gadgeteer · shared tool*, *Commander · panel magazine*, *Commander ·
+station gripper*, *Mystic · turret shooter*, *Mystic · chassis shooter*. Options: hero class, floor + station vs
+station-only collection, chassis assist / turret / manual aim, MAILBOX reach, panel vision assist, panel preload,
+climber level.
+
 ## Earlier seasons (patterns only, not yet in the simulator)
 
 - **2022 RAPID REACT**: turret + Limelight auto-aim shooters that shoot on the move; ground intakes universal;

@@ -32,7 +32,7 @@ it('governor sheds hoppers after sustained sim load, shadows after sustained low
 
 it('a full hopper can be shed to the particle pile mid-match without losing a ball', async () => {
   await RAPIER.init();
-  const season = SEASONS.find((s) => s.year === 2026)!;
+  const season = SEASONS.find((s) => s.id === '2026-rebuilt')!;
   const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: 4, y: 4, yaw: 0 } });
   try {
     const r = sim.robot;

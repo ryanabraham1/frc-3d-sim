@@ -160,7 +160,7 @@ describe('CAD mechanism paths', () => {
       settle(model,state({ aiming:true }));
       const paths = [model.flow!.feed!(0),model.flow!.feed!(1)];
       expect(paths[0].at(-1)!.z).toBeLessThan(0); expect(paths[1].at(-1)!.z).toBeGreaterThan(0);
-      const season = SEASONS.find(s => s.year === 2026)!;
+      const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
       const sim = new HeadlessSim(season,RAPIER,{ robot:k.config, alliance:'blue', pose:{ x:2,y:2,yaw:0 } });
       try {
         const r=sim.robot; r.projectile={ radius:season.gamePiece.radius, airDamping:.02 };

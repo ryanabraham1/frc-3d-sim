@@ -128,15 +128,23 @@ export class Hud {
     this.bannerTimer = seconds;
   }
 
-  toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance): void {
-    const el = document.createElement('div');
+  /** With `key`, a toast already showing under that key is updated in place instead of stacking another one. */
+  toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance, key?: string): void {
+    let el = key ? this.keyed.get(key) : undefined;
+    if (!el || !el.isConnected) {
+      el = document.createElement('div');
+      this.toasts.prepend(el);
+      if (key) this.keyed.set(key, el);
+    }
     el.className = `hud-toast ${kind} ${alliance ?? ''}`;
     el.textContent = msg;
-    this.toasts.prepend(el);
     while (this.toasts.children.length > 6) this.toasts.lastElementChild?.remove();
-    setTimeout(() => el.classList.add('fade'), 3200);
-    setTimeout(() => el.remove(), 3800);
+    const shown = el, stamp = (Number(shown.dataset.stamp ?? 0) + 1).toString();
+    shown.dataset.stamp = stamp;
+    setTimeout(() => { if (shown.dataset.stamp === stamp) shown.classList.add('fade'); }, 3200);
+    setTimeout(() => { if (shown.dataset.stamp === stamp) shown.remove(); }, 3800);
   }
+  private readonly keyed = new Map<string, HTMLElement>();
 
   /** An AI radio callout ("Blue 2: AMPLIFY in 3"), newest at the bottom; fades after a few seconds. */
   radio(from: string, text: string, alliance: Alliance): void {

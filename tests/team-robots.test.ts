@@ -26,7 +26,8 @@ function pose(root: THREE.Object3D): number[] {
 describe('real team robots', () => {
   it('every season with team robots offers top teams, each with a registered model and a legal, stable config', () => {
     const withTeams = SEASONS.filter((s) => s.teamRobots?.length);
-    expect(withTeams.map((s) => s.id).sort()).toEqual(SEASONS.map((s) => s.id).sort());
+    // Every FRC season has real robots; a standalone game (e.g. the WCP CADathon, `label` set) has none yet.
+    expect(withTeams.map((s) => s.id).sort()).toEqual(SEASONS.filter((s) => !s.label).map((s) => s.id).sort());
     for (const season of withTeams) {
       const ids = new Set<string>();
       for (const t of season.teamRobots!) {
@@ -52,9 +53,9 @@ describe('real team robots', () => {
 
   it('the published capabilities that the configs encode', () => {
     const team = (season: string, id: string) => SEASONS.find((s) => s.id === season)!.teamRobots!.find((t) => t.id === id)!.config;
-    const y24 = SEASONS.find((s) => s.year === 2024)!.id;
-    const y25 = SEASONS.find((s) => s.year === 2025)!.id;
-    const y26 = SEASONS.find((s) => s.year === 2026)!.id;
+    const y24 = SEASONS.find((s) => s.id === '2024-crescendo')!.id;
+    const y25 = SEASONS.find((s) => s.id === '2025-reefscape')!.id;
+    const y26 = SEASONS.find((s) => s.id === '2026-rebuilt')!.id;
     expect(team(y24, 'vortex-254').launcher.turret).toBe(true);
     expect(team(y24, 'doppler-1690').height).toBeLessThan(0.3); // 11 in
     expect(team(y24, 'doppler-1690').maxSpeed).toBeCloseTo(5.6);
@@ -98,7 +99,7 @@ describe('real team robots', () => {
   }
 
   it('every REEFSCAPE team carries its held piece in the moving end effector at L4', () => {
-    const season = SEASONS.find(s => s.year === 2025)!;
+    const season = SEASONS.find(s => s.id === '2025-reefscape')!;
     for (const team of season.teamRobots!) {
       const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(team.config), alliance: 'blue', pose: season.testing!.scoringSpots('blue')[0] });
       sims.push(sim);

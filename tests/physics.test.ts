@@ -11,7 +11,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { SEASONS } from '../src/seasons/index';
-import type { SeasonDefinition } from '../src/engine/core/season';
+import { seasonLabel, type SeasonDefinition } from '../src/engine/core/season';
 import { runShotTrial } from '../src/engine/testing/shotHarness';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { cloneConfig, RobotConfig } from '../src/engine/robot/config';
@@ -46,7 +46,7 @@ const VARIANTS: Variant[] = [
 ];
 
 for (const season of SEASONS) {
-  describe(`${season.year} ${season.name} — physics`, () => {
+  describe(`${seasonLabel(season)} — physics`, () => {
     it('defines a testing hook (required for every season)', () => {
       expect(season.testing).toBeDefined();
       expect(season.testing!.scoringSpots('blue').length).toBeGreaterThan(5);

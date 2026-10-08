@@ -1,7 +1,7 @@
 import { autoPlanner, bindAutoPlanner, loadAutoPlan, autoPlannerDragging } from './autoPlanner';
 import type { CameraMode } from '@engine/camera/cameras';
 import { detectTier, qualityPref, setQualityPref, type QualityPref } from '@engine/core/quality';
-import { normalizeSkill, type GameSettings, type SeasonDefinition } from '@engine/core/season';
+import { normalizeSkill, seasonLabel, type GameSettings, type SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
 import { ACTIONS, codeLabel, keybinds, SLOTS, type ActionId } from '@engine/input/keybinds';
 import { cloneConfig, DEFAULT_WHEEL_COF, footprint, RobotConfig } from '@engine/robot/config';
@@ -109,7 +109,7 @@ function numFields(season: SeasonDefinition): Record<string, NumField> {
     acc.set = season.shotAccuracy.set;
     acc.step = 1;
   }
-  if (season.year === 2026) {
+  if (season.id === '2026-rebuilt') {
     for (const f of list) {
       if (['speed', 'accel', 'cap', 'rate', 'cspd'].includes(f.key)) delete f.max;
     }
@@ -318,7 +318,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         : s.autoHumanPlayer ? 'The chute feeds you automatically.' : 'Press H to open the chute door yourself.';
     const settings = `
       <section class="panel settings">
-        <div class="panel-head"><span>Match setup</span><span class="dim">${season.year} ${esc(season.name)} · ${formatClock(matchLength())} match</span></div>
+        <div class="panel-head"><span>Match setup</span><span class="dim">${esc(seasonLabel(season))} · ${formatClock(matchLength())} match</span></div>
         <div class="settings-grid">
           ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
           ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
@@ -380,12 +380,12 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     ];
     const spec = `
       <section class="panel spec-panel">
-        <div class="panel-head"><span>Robot</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${season.year} defaults</button></div>
+        <div class="panel-head"><span>Robot</span><button class="link" data-k="resetRobot">${icon.reset(13)} Reset to ${esc(season.label ?? String(season.year))} defaults</button></div>
         ${teamPicker}
         ${profiles}
         <div class="tune-opts">${options}</div>
         <div class="tune">${fields.filter((k) => F[k]).map((k) => numInput(F[k])).join('')}</div>
-        ${season.robotHint ? `<div class="config-note">${esc(season.robotHint)}<br/>Speeds, cycle times and accuracy are simulator tuning; mechanism choices mirror real ${season.year} robot archetypes.</div>` : ''}
+        ${season.robotHint ? `<div class="config-note">${esc(season.robotHint)}<br/>Speeds, cycle times and accuracy are simulator tuning; mechanism choices mirror ${season.label ? 'archetypes derived from past FRC robots' : `real ${season.year} robot archetypes`}.</div>` : ''}
       </section>`;
     const summary = `
       <section class="panel">
@@ -500,7 +500,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     el.innerHTML = `
       <header class="topbar">
         <span class="brand">FRC Sim</span><span class="brand-sep"></span>
-        <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch || lobby.lobby.ranked) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${x.year} ${esc(x.name)}</option>`).join('')}</select></label>
+        <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch || lobby.lobby.ranked) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${esc(seasonLabel(x))}</option>`).join('')}</select></label>
         <div class="team-chip"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i>Team ${s.robot.teamNumber}</div>
       </header>
       <main class="main">

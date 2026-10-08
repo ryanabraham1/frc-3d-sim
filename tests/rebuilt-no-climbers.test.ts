@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { SEASONS } from '../src/seasons';
 import { cloneConfig } from '../src/engine/robot/config';
 
-const season = SEASONS.find(s => s.year === 2026)!;
+const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
 it('every 2026 stock robot starts without a climber, including after normalization', () => {
   const configs = [season.robotDefaults, ...season.robotPresets!.map(p => p.config), ...season.teamRobots!.map(t => t.config)];
   for (const config of configs) {

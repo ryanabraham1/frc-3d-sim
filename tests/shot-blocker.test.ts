@@ -9,7 +9,7 @@ import { inch, lb } from '../src/engine/units';
 import * as C from '../src/seasons/2026-rebuilt/constants';
 import { GROUPS } from '../src/engine/physics/world';
 
-const season = SEASONS.find(s => s.year === 2026)!;
+const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
 const team = (n: number) => cloneConfig(season.teamRobots!.find(t => t.team === n)!.config);
 const sims: HeadlessSim[] = [];
 beforeAll(async () => { await RAPIER.init(); });

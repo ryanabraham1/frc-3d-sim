@@ -181,6 +181,8 @@ export class Game {
   private tipNotified = false;
   climbLevel: number;
   scoringLevel = 4;
+  /** Driver-selected shot target (season `aimTargets` id), -1 = automatic. */
+  aimChoice = -1;
   private results: MatchResults | null = null;
   private pausedFrom: GameState = 'countdown';
   /** Client-side modal currently shown. */
@@ -543,7 +545,7 @@ export class Game {
     // Host / solo: draw between the last two fixed physics steps (clients draw their own interpolated snapshots).
     const alpha = this.role === 'client' ? 1 : clamp(this.acc / this.physics.dt, 0, 1);
     for (const r of this.robots) {
-      r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= 30;
+      r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= (this.season.endgameSeconds ?? 30);
       r.syncVisual(undefined, alpha);
     }
     this.pool.syncVisuals(alpha);
@@ -620,6 +622,15 @@ export class Game {
       if (inp.levelUp) this.climbLevel = clamp(this.climbLevel + 1, 1, Math.max(1, maxLvl));
       if (inp.levelDown) this.climbLevel = clamp(this.climbLevel - 1, 1, Math.max(1, maxLvl));
     }
+    const targets = this.season.aimTargets;
+    if (targets?.length && (inp.targetStep || inp.targetAuto)) {
+      if (inp.targetAuto) this.aimChoice = -1;
+      else {
+        const k = targets.findIndex((t) => t.id === this.aimChoice);
+        this.aimChoice = targets[k < 0 ? (inp.targetStep > 0 ? 0 : targets.length - 1) : (k + inp.targetStep + targets.length) % targets.length].id;
+      }
+      this.hud.toast(this.aimChoice < 0 ? 'Target: automatic' : `Target: ${targets.find((t) => t.id === this.aimChoice)!.label} · Z = automatic`, 'info', undefined, 'aim-target');
+    }
     if (inp.toggleIntake) {
       this.autoIntake = !this.autoIntake;
       this.hud.toast(`Auto-intake ${this.autoIntake ? 'ON' : 'OFF'}`);
@@ -672,6 +683,7 @@ export class Game {
       descend: inp.descend,
       ...(this.blockerUp && (robot.config.shotBlocker || robot.manualHopper) ? { block: true } : {}),
       ...(this.season.maxScoringLevel ? { scoringLevel: this.scoringLevel } : {}),
+      ...(this.season.aimTargets?.length ? { aimTarget: this.aimChoice } : {}),
     };
   }
 

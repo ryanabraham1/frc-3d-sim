@@ -18,7 +18,7 @@ beforeAll(async () => {
 describe('photo-fitted CAD mechanisms', () => {
   for (const id of ADAPTED_CAD_MODEL_IDS) it(`${id}: owns detailed donor geometry and stays coherent through aim, rotation and travel`, () => {
     setCadModelsEnabled(true);
-    const config = cloneConfig(SEASONS.find(s => s.year === 2026)!.teamRobots!.find(r => r.id === id)!.config);
+    const config = cloneConfig(SEASONS.find(s => s.id === '2026-rebuilt')!.teamRobots!.find(r => r.id === id)!.config);
     const visual = new THREE.Group(), turret = new THREE.Group(); visual.add(turret);
     const model = robotModelBuilder(id)!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
     if (id === 'kepler-1690') {
@@ -81,7 +81,7 @@ describe('photo-fitted CAD mechanisms', () => {
 
 describe('imported 2026 CAD models', () => {
   for (const id of CAD_MODEL_IDS.filter(id => ['toploader-604','limestone-1678','rubble-581'].includes(id))) it(`${id}: real asset decodes, retains mechanisms, and animates within a finite envelope`, () => {
-    const config = cloneConfig(SEASONS.find(s => s.year === 2026)!.teamRobots!.find(r => r.id === id)!.config);
+    const config = cloneConfig(SEASONS.find(s => s.id === '2026-rebuilt')!.teamRobots!.find(r => r.id === id)!.config);
     const visual = new THREE.Group(), turret = new THREE.Group(); visual.add(turret);
     const model = cadRobotModelBuilder(id)!({ config, visual, turret, alliance: 'blue', fp: { length: config.frameLength, width: config.frameWidth }, groundSide: -1, stationSide: -1,
       mats: { dark: new THREE.MeshStandardMaterial(), alu: new THREE.MeshStandardMaterial(), bumper: new THREE.MeshStandardMaterial() } });

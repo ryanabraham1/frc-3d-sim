@@ -32,6 +32,8 @@ export interface RobotCommand {
   descend: boolean;
   /** Season scoring selection, e.g. REEFSCAPE elevator L1-L4. */
   scoringLevel?: number;
+  /** Driver-selected shot target (season `aimTargets` id); -1 or omitted = the season picks. */
+  aimTarget?: number;
   /** Hold the shot blocker out (robots with config.shotBlocker). */
   block?: boolean;
   /** Square the chassis onto the shot target (auto-align robots) without firing, like a driver holding the aim button. */
