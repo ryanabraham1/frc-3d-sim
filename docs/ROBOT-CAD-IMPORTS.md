@@ -162,6 +162,81 @@ References: user-supplied CAD and photos; local TBA contact sheets under `refs/<
 Validation for the 2024 batch: 86 affected CAD, roster and CRESCENDO scoring tests pass, including decoded export/report bounds, mechanism sweeps, fixed-frame stability and NOTE paths. The final five CAD tests and production build pass after the finish corrections; `git diff --check` passes. Browser checks cover all five in export, aiming and reverse-side endgame poses. The broader run records 610 passing tests and the known CRESCENDO Hard-versus-Normal failure (499 vs 644); an early CAD test run before assets existed was superseded by the successful focused run. Screenshot: `/tmp/2024-cad-final.jpg`. Changes are local; no push or deployment was requested.
 
 
+## Public Onshape 2024 CRESCENDO batch (next five by EPA)
+
+Five public team documents, exported as GLB through the Onshape API (Z-up, meters) and reduced with
+`npm run cad:prepare -- <dir> <id>`. Joint origins come from each document's mates (assembly API,
+`includeMateFeatures`), mapped through the occurrence transforms; 3467's document refused the assembly API (403), so its
+pivot is the arm shaft's centre. None of these teams had a 2024 roster entry; all five are new `moreCrescendoTeamRobots`
+entries with procedural fallbacks (`registerRobotModel`). Specs use the new `classify({full,name,bounds,group})` hook in
+`tools/prepare-robot-cad.mjs` to split sub-assemblies by part name or position, `offsetZ`, and an opt-in `finalPass`
+(the bounded 0.5 mm pass 2910 already used) to stay near the size budget. Bumpers are omitted (2024 rule) and drawn by the
+simulator.
+
+| Team | Onshape source | Runtime axes | Asset MB | Triangles |
+| --- | --- | --- | ---: | ---: |
+| 1678 Nik | [1678 2024 "Epsilon"](https://cad.onshape.com/documents/05760c4d8b40fba37db8fa48/w/f31b499c519e8471cced93dc/e/b53dde24ab8b46d679af9944) | `(Y,Z,X)`, +25.4 mm floor | 9.35 | 600,537 |
+| 1706 Riot | [CR-000-00](https://cad.onshape.com/documents/a41c17fdc034d46f856ebcc7/w/934e52886a6f6873c4be7558/e/a351f37bcb33c52e479db756) | `(-Y,Z,-X)` + (-.1555, .0025, -.2735) | 8.24 | 529,211 |
+| 3005 Surge | [3005 2024: FULL ROBOT (PUBLIC)](https://cad.onshape.com/documents/f1c0c9ce2309b0be3a22a379/w/c8169ca8774f2b499875ab45/e/b1639093afdfd702347929f0) | `(Y,Z,X)` | 11.14 | 718,867 |
+| 3847 Ultraviolet | [2024 Ultraviolet](https://cad.onshape.com/documents/b6dec321d434a78b0c8b1f4a/w/e95933a4dd5ad878cfc66b01/e/273aa0ab00603937671346c1) | `(-Y,Z,-X)` + (0, 0, .006) | 8.51 | 566,901 |
+| 3467 Nocturne | [Nocturne - 2024](https://cad.onshape.com/documents/2fc7c67cf0caa47d6fd88b44/w/50f8171b9e5f18a6a9f1f1d8/e/6bf3af59f010e7afe9e0d482) | `(Y,Z,X)` + (-.128, .003, 0) | 10.64 | 726,148 |
+
+Rig files carry the CLAUDE.md checklist (archetype, intake/scoring ends, colours, capacity and sources) in their header:
+`nik1678CadModel.ts`, `riot1706CadModel.ts`, `surge3005CadModel.ts`, `ultraviolet3847CadModel.ts`, `nocturne3467CadModel.ts`.
+All five keep the unanimated CAD-export pose (bounds checked against the report) and the 2024 `climb` convention
+(1 = deployed/reaching, 0.25 = pulled in).
+
+### 1678 Nik (`nik-1678`)
+The public assembly is named "Epsilon"; 1678's C2024-Public README calls the 2024 robot Nik and the code's
+`isEpsilon` switch selects this robot's 15 deg intake deploy. Groups: `intake` (E-0800 below the frame line), `shooter`
+(E-1000), `amp` (E-0900 carriage plates, roller head and its bearing blocks), `climber` (P-1108..1121 arms),
+`climber-strut`/`climber-rod` (gas springs), frame. Joints (sim m): shooter pivot `[.0248,.189]` (root Revolute 1),
+intake hinge `[-.2969,.16]`, climber arms `[-.0687,.4461]`, AMP slide along `(-.342,.94)`. Code limits: hood 15-62 deg
+(CAD at 15), intake stow 128.1 / deploy 15 deg (CAD deployed), elevator 0 / 0.303 AMP / 0.42 TRAP at 1 m/s. The export
+elevator extension (0.42 m) and the folded climber-arm angle (-0.95 rad) are [EST]; gas-spring struts re-aim at the arm
+attachment and the rod slides along the strut. The CANdle LED and the bumper shells (Part 14/15) are omitted.
+
+### 1706 Riot (`riot-1706`)
+Groups: `shooter` (CR200, rack-and-pinion pivot `[-.0941,.2533]`, CAD exit 8 deg), `elevator-stage` (CR600 inner
+stage), `carriage` (CR800, Slider 2 axis `(-.276,.961)`), `climber`/`climber-mid` (TTB 2-stage telescopes, split by tube
+size). The floor roller train runs from the front bumper (squish wheels at x +.29) to the rear (indexer wheels at x -.28),
+so the roster entry sets `dualSideIntake`. The team's code release confirms the elevator TRAP ("hold Y to put the elevator
+at max height after the driver climbed"); AMP 0.30 m / TRAP 0.55 m carriage travel and the 0.45 m climber stroke are [EST]
+from rail and tube overlaps. Bumpers (CR-900) and Limelights are omitted.
+
+### 3005 Surge (`surge-3005`)
+Reveal: "under-the-bumper, double-sided intake", "pivoting launcher with a diverter to allow for amp and speaker shots",
+"single telescoping climber" ([Chief Delphi](https://www.chiefdelphi.com/t/456489)). Groups: `shooter` (3: Launcher plus
+the diverter's side links that ride its pivot shaft, pivot `[-.2222,.3302]`, CAD 18.4 deg), `diverter` (5: Diverter head,
+nose pivot `[.2685,.4983]`, child of the launcher), `climber`/`climber-mid` (7: Telescoping Climber, axis
+`(0,.994,-.108)`). The grey appearance swatch on the launcher plates is recoloured black (the team: plates are SRPP, not
+carbon fibre). Launcher range 10-60 deg, AMP pose 55 deg, diverter swing -1.6 rad and 0.45 m climb stroke are [EST]; the
+lead-screw drive stays fixed. Roster: `dualSideIntake`, chain climb without TRAP.
+
+### 3847 Ultraviolet (`ultraviolet-3847`)
+Groups: `shooter` (Launcher, pivot `[0,.2604]`, 0 deg = horizontal = export pose), `amp` (AmpTrap inner rail, cross bar,
+lower bearing blocks and the roller Tower on the 15 deg "Elevator Motion" slider `(-.259,.966)`), `climber` (5-01 slides on
+Slider 1/2 `(-.748,.663)`). Spectrum's 2024-Ultraviolet code gives percent setpoints (pivot subwoofer 81 / intoAmp 78,
+elevator amp 15 / trap 5 of 29.8 rotations, climber top 100 / bottom 0); the 72 deg full pivot travel, 0.45 m elevator
+stroke and 0.35 m slide stroke behind those numbers are [EST]. The back under-bumper intake is fixed. No usable TBA photo
+existed (both imgur links are gone), so the purple/silver finish is the CAD's own.
+
+### 3467 Nocturne (`nocturne-3467`)
+Groups: `arm` (arm tubes and chain hooks above the shaft) and `shooter` (the "Current" head, blower, harmony hooks and
+the loose top-level head plates), both on one joint at `[.165,.5145]`; the front tower stays with the frame. The source
+faces the shooter toward -Y, so the spec maps `(Y,Z,X)` to put the flywheel exit at +X and the under-bumper intake at -X.
+Skip-5.14-Nocturne constants give arm setpoints in degrees from a stop 19 deg below horizontal (STOWED 0, SUBWOOFER 1,
+PODIUM 23, WING 30, CLIMB 88, AMP 93, HARMONY 122); the CAD is at 78, and the exit (-26 deg in the CAD) gives a shot
+elevation of 52 deg minus the arm angle. The hanging angle (30) is [EST]. No TRAP (team build blog). The field elements
+in the document (SOURCE, AMP, stage), spare swerve modules and bumpers are omitted.
+
+Verification: `npx tsc --noEmit`; `tests/crescendo-cad.test.ts` (decode, export bounds, sweep, fixed frame, floor
+clearance, asset budget), `tests/crescendo-cad-imports.test.ts` (measured joints move the right parts, HeadlessSim pickup
+from the real mouth and rejection at the shooter end, both faces for 1706/3005, saved-preset normalization),
+`tests/team-robots.test.ts`, `tests/crescendo.test.ts`. Workshop screenshots (`/tools/robot-gallery.html?cad=1`) were
+compared against the TBA sheets in `refs/<team>-2024/` in export, stowed, AMP, endgame and hang poses. The workshop
+does not run the physics-loop shooter pitch, so aim poses were checked through the unit tests rather than screenshots.
+
 ### 2910 Spectre (2025 pivotvator)
 
 Supplied `2025 2910glb` replaces the existing `spectre-2910` roster model, preserving its ID. Source coordinates map (-Y, Z, -X) to simulator (X, Y, Z). Optimized output is 8,153,356 bytes and 538,010 triangles from 234,970,028 bytes and 9,550,984 triangles. Bumpers, origin/reference solids, hidden fasteners and electrical detail are omitted; the real drivebase, brass ballast, fixed A-frame, gearbox, nested rails, powered wrist and cage gripper are retained.

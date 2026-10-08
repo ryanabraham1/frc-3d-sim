@@ -1,0 +1,28 @@
+{
+  "id": "surge-3005",
+  "sourceFile": "2024-3005.glb",
+  "inputBytes": 551178600,
+  "outputBytes": 11137552,
+  "inputTriangles": 31985506,
+  "outputTriangles": 718867,
+  "omittedOccurrences": 1651,
+  "bounds": {
+    "min": [
+      -0.33994040638208384,
+      0.000017214566469192505,
+      -0.3365499973297119
+    ],
+    "max": [
+      0.3663680760516677,
+      0.6818225979804993,
+      0.37596139311790466
+    ]
+  },
+  "groups": [
+    "diverter",
+    "shooter",
+    "climber",
+    "frame",
+    "climber-mid"
+  ]
+}

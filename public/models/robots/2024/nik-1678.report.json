@@ -1,0 +1,30 @@
+{
+  "id": "nik-1678",
+  "sourceFile": "2024-1678.glb",
+  "inputBytes": 310899028,
+  "outputBytes": 9350568,
+  "inputTriangles": 19049138,
+  "outputTriangles": 600537,
+  "omittedOccurrences": 518,
+  "bounds": {
+    "min": [
+      -0.616640448570252,
+      3.069639195607543e-10,
+      -0.35718749940861017
+    ],
+    "max": [
+      0.40763390064240473,
+      1.1886073043293748,
+      0.3571874898625538
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake",
+    "shooter",
+    "amp",
+    "climber",
+    "climber-rod",
+    "climber-strut"
+  ]
+}

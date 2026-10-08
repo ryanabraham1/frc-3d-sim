@@ -1,0 +1,29 @@
+{
+  "id": "riot-1706",
+  "sourceFile": "2024-1706.glb",
+  "inputBytes": 232747752,
+  "outputBytes": 8237424,
+  "inputTriangles": 32138780,
+  "outputTriangles": 529211,
+  "omittedOccurrences": 2235,
+  "bounds": {
+    "min": [
+      -0.33065701518885937,
+      -0.000015436610810895535,
+      -0.35876897430419924
+    ],
+    "max": [
+      0.32974302244186426,
+      0.6977851222606303,
+      0.3587810500860219
+    ]
+  },
+  "groups": [
+    "frame",
+    "carriage",
+    "shooter",
+    "elevator-stage",
+    "climber",
+    "climber-mid"
+  ]
+}

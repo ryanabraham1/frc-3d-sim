@@ -1,0 +1,27 @@
+{
+  "id": "ultraviolet-3847",
+  "sourceFile": "2024-3847.glb",
+  "inputBytes": 340883484,
+  "outputBytes": 8508756,
+  "inputTriangles": 18409188,
+  "outputTriangles": 566901,
+  "omittedOccurrences": 561,
+  "bounds": {
+    "min": [
+      -0.3746500015258789,
+      0.000018000602722181847,
+      -0.37080900096893316
+    ],
+    "max": [
+      0.37680900096893316,
+      0.6886793971061707,
+      0.3828090009689331
+    ]
+  },
+  "groups": [
+    "frame",
+    "climber",
+    "shooter",
+    "amp"
+  ]
+}

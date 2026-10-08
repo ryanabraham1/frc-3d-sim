@@ -83,6 +83,9 @@ export function normalizeCrescendoConfig(config: RobotConfig): RobotConfig {
     c.launcher.mounts = [{forward:.1397, side:0}];
     c.launcher.muzzleForward = .305 - .1397;
   }
+  // 1706 and 3005 run one under-bumper roller train out of both bumper faces; a preset saved before this
+  // option existed still takes NOTES on both sides. Front-only/back-only edits stay as saved.
+  if ((c.model === 'riot-1706' || c.model === 'surge-3005') && c.options.dualSideIntake === undefined) c.options.dualSideIntake = true;
   c.autoAlign ??= !c.launcher.turret;
   return c;
 }
