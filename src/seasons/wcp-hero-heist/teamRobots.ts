@@ -3,6 +3,7 @@ import { lb, deg } from '@engine/units';
 import { heroRobotDefaults, normalizeHeroConfig } from './config';
 import { registerRobotModel, drivebase, box, bar, mat, roller, type ModelKit } from '@engine/robot/models';
 import * as THREE from 'three';
+import { fireweedTeamRobot } from './fireweed1540';
 
 // Lightweight source-shaped fallback for headless play or a failed CAD load.
 registerRobotModel('hero-mantis-6800',(k:ModelKit)=>{
@@ -26,5 +27,5 @@ export function heroTeamRobots(): TeamRobot[] {
   c.launcher={...c.launcher,turret:true,height:.72425,muzzleForward:.107,mounts:[{forward:.155,side:0}],rate:3,angle:deg(49),minAngle:deg(15),maxAngle:deg(70)};
   // Medium pending full folded-body clearance validation; sheet claims High.
   c.climber={maxLevel:2,secondsPerLevel:1.7};
-  return [{id:'hero-mantis-6800',team:6800,name:'Mantis',description:'Valor’s Hero Heist Mystic: dual side intakes, six-bubble spindexer, turret and roller hood, folding magazine and telescoping suction climb. Drive speed, joint travel and playing mass are estimates.',source:'https://cad.onshape.com/documents/e4397ae1ed0ebe3445466e8a/w/dc22b6503a48cdc0a163c772/e/579f1fa8cfef57db8f7205ca',config:normalizeHeroConfig(c)}];
+  return [{id:'hero-mantis-6800',team:6800,name:'Mantis',description:'Valor’s Hero Heist Mystic: dual side intakes, six-bubble spindexer, turret and roller hood, folding magazine and telescoping suction climb. Drive speed, joint travel and playing mass are estimates.',source:'https://cad.onshape.com/documents/e4397ae1ed0ebe3445466e8a/w/dc22b6503a48cdc0a163c772/e/579f1fa8cfef57db8f7205ca',config:normalizeHeroConfig(c)},fireweedTeamRobot()];
 }

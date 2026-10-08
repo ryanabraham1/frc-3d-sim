@@ -1,0 +1,41 @@
+{
+  "id": "hero-fireweed-1540",
+  "sourceFile": "hero-1540-source.gltf",
+  "inputBytes": 346816938,
+  "outputBytes": 9852280,
+  "inputTriangles": 7977924,
+  "outputTriangles": 783563,
+  "omittedOccurrences": 909,
+  "bounds": {
+    "min": [
+      -0.7186477482318878,
+      0.000010021242798696761,
+      -0.3801110088825226
+    ],
+    "max": [
+      0.3801110088825226,
+      0.8088875003159046,
+      0.3801110088825226
+    ]
+  },
+  "groups": [
+    "frame",
+    "climb-cup",
+    "climb-tube",
+    "intake",
+    "intake-ee",
+    "wheel-0",
+    "hood",
+    "wheel-1",
+    "wheel-2",
+    "wheel-3",
+    "wheel-4",
+    "wheel-5",
+    "wheel-6",
+    "wheel-7",
+    "wheel-8",
+    "wheel-9",
+    "wheel-10",
+    "elevator-carriage"
+  ]
+}

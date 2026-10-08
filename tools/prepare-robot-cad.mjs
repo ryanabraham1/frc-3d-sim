@@ -18,6 +18,13 @@ const specs = {
     ['magazine',/Cartidge/], ['magazine-mount',/Turret Mount|Latch Arms/],
     ['spindexer',/Assembly 1 <6>/],
   ]},
+  // Team 1540 Fireweed (Hero Heist Gadgeteer). Onshape Z-up export: source +Y is the shooter side, so (Y,Z,X) puts the intake on robot -X.
+  'hero-fireweed-1540': {file:'hero-1540-source.gltf',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,omit:/Story Panel|Speech Bubble|Origin Cube|Bumper Foam/,groups:[
+    ['climb-tube',/bi-stable reeled composite tube/], ['climb-cup',/Vacuum Cup|Billet Vacuum Mount/],
+    ['hood',/shooter hood/],
+    ['elevator-carriage',/Elevator Carriage AS/],
+    ['intake',/2\. Intake/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -173,7 +180,7 @@ for (const id of ids) {
   axes.elements[12] = spec.offsetX ?? 0;
   axes.elements[13] = spec.offsetY ?? 0;
   const retained = [];
-  let omitted = 0;
+  let omitted = 0, wheelCount = 0;
   const surfaces = new Set();
   for (const n of nodes) {
     if (!n.getMesh()) continue;
@@ -211,6 +218,9 @@ for (const id of ids) {
       } else if (group === 'climber' && bounds.min[2] > .60) group = 'climb-pad';
       if (/^intake-/.test(group) && (bounds.max[2] < .30 && Math.max(Math.abs(bounds.min[0]),Math.abs(bounds.max[0])) < .24)) group='frame';
     }
+    if (id === 'hero-fireweed-1540' && /Stealth Wheel/.test(n.getName()) && /Indexshooteer/.test(full)) group = `wheel-${wheelCount++}`;
+    // 1540's intake is a double-jointed arm: the panel end effector is the second link (joint axle at source y -0.608, z 0.15).
+    if (id === 'hero-fireweed-1540' && group === 'intake' && (/^(?:panel intake|panel inner intake plate|polycarb panel|3\/4 axle panel intake|36t Aluminum Plate Sprocket)/.test(n.getName()) || (/^cf tube/.test(n.getName()) && bounds.max[1] < -.65))) group = 'intake-ee';
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';
     if (id === 'sublime-1678' && group === 'carriage' && bounds.min[2] < .2) group = 'frame';
     if (id === 'wildstang-111' && group === 'carriage' && bounds.min[2] < .45) group = 'frame';
@@ -268,6 +278,9 @@ for (const id of ids) {
         const m = p.getMaterial().clone().setName('clear-hopper-sheet').setBaseColorFactor([.8,.86,.91,.25]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.3);
         if (sheet) m.setExtras({cadSheet:true});
         p.setMaterial(m);
+      } else if (id === 'hero-fireweed-1540' && /^Indexer (?:Left|Right) Plate$/.test(n.getName())) {
+        // Clear side plates so the held bubbles in the indexer stay visible from both sides.
+        p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.72,.84,.92,.26]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.3).setName('clear-indexer-plate'));
       } else if (id === 'limestone-1678' && /^(?:Part 60|Part 58(?:-Mirrored)?|1678-26c-1529|part 26|1678-26c-1118)$/i.test(n.getName())) {
         p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.64,.72,.76,.20]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.38).setName('clear-hopper-sheet'));
       } else if (/polycarb|coroplast/i.test(n.getName()) && !/roller|plug|shaft/i.test(n.getName())) {
