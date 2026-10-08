@@ -61,6 +61,10 @@ const specs = {
     ['intake',/Intake Rollers Assembly/], ['claw',/Disk Manipulator Claw Assembly/], ['claw-base',/Disk Manipulator Pivot Assembly/],
     ['pad',/Sunction Pad Assembly/], ['hood',/^(?:Hood|Hood Plate)\/.*Turret Assembly <\d+>/], ['turret',/(?:^|\/)(?:occurrence of )?Turret Assembly <\d+>/],
   ]},
+  // 1923 Sentinel (Gadgeteer): swerve, front-over-bumper roller intake, side panel arm, fixed ball tunnel shooter.
+  'hero-sentinel-1923': {file:'hero-sentinel-1923-source.gltf',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,omit:/Robot Battery|Power Distribution Hub|RSL|Robot Signal Light|Main Breaker|Anderson/,groups:[
+    ['flywheel',/4" Stealth Wheel/], ['hood',/(?:^|\/)(?:occurrence of )?(?:Hood|80t Pocketed Steel Spur Gear)(?:\/|$)/], ['intake-arm',/Ground Intake Assy/], ['arm',/Pink Arm Assy/], ['tunnel',/Ball tunnel Assy/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -264,6 +268,20 @@ for (const id of ids) {
     // 1540's intake is a double-jointed arm: the panel end effector is the second link (joint axle at source y -0.608, z 0.15).
     if (id === 'hero-fireweed-1540' && group === 'intake' && (/^(?:panel intake|panel inner intake plate|polycarb panel|3\/4 axle panel intake|36t Aluminum Plate Sprocket)/.test(n.getName()) || (/^cf tube/.test(n.getName()) && bounds.max[1] < -.65))) group = 'intake-ee';
     if (id === 'hero-multiclass-5800' && group === 'flywheel') group = `flywheel-${Math.round(((bounds.min[0]+bounds.max[0])/2-.06)/.03)}`;
+    if (id === 'hero-sentinel-1923') {
+      const nm = n.getName();
+      // Molded bumper shell: the simulator draws alliance bumpers.
+      if (nm === 'Part 2' && bounds.max[0]-bounds.min[0] > .8) { n.setMesh(null); omitted++; continue; }
+      if (group === 'intake-arm' && /GIMount|GITubeMt|Antilever|LLMount|Minimal|Kraken|MAXPlanetary|SprocketSpacer|^0\.196|66L #25|24t Aluminum Sprocket|8mm SplineXS|88T|15t Aluminum Pulley \(HTD 5mm, 9mm|Rounded Hex \(2\.438/.test(nm)) group = 'frame';
+      else if (group === 'arm') {
+        if (/PAMount|PASideMount|GBMount|^Tube 2"x1"x(?:9|12)"|Kraken|MAXPlanetary|MAXSpline|12t Steel Sprocket|54L #25|REV-21-2581/.test(nm)) group = 'frame';
+        else if (/Claw|Compliant Intake Wheel|NEO 550|550Spacer|8t Steel Spur|30t Steel Spur|^Tube 2"x2"x16|^0\.196/.test(nm) || (bounds.min[1] > .17 && !/^Tube 2"x1"x17/.test(nm))) group = 'arm-slide';
+      }
+    }
+    if (id === 'hero-sentinel-1923' && /Ground Intake Assy/.test(full) && /Compliant Wheel|Flex Wheel/.test(n.getName())) {
+      // Every intake roller is orange so the intake face reads at a glance.
+      for (const p of n.getMesh().listPrimitives()) if (p.getMaterial()) p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.96,.4,.04,1]).setName('intake-orange'));
+    }
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';
     if (id === 'sublime-1678' && group === 'carriage' && bounds.min[2] < .2) group = 'frame';
     if (id === 'wildstang-111' && group === 'carriage' && bounds.min[2] < .45) group = 'frame';

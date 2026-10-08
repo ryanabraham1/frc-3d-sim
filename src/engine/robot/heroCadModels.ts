@@ -5,6 +5,7 @@ import { buildConstantineCad } from './heroConstantineCad';
 import { buildMulticlass5800 } from './hero5800Model';
 import { buildNomadCad } from './heroNomadModel';
 import { buildPoofs254Cad } from './hero254CadModel';
+import { buildSentinel1923Cad } from './heroSentinelCad';
 
 /** Mantis source axes (-Y,Z,-X), meters. Joint centers measured from source shafts. */
 export function buildHeroCad(_id: string, root: THREE.Group, k: ModelKit, animated: () => boolean): RobotModel {
@@ -12,6 +13,7 @@ export function buildHeroCad(_id: string, root: THREE.Group, k: ModelKit, animat
   if (_id.startsWith('hero-multiclass-5800')) return buildMulticlass5800(root, k, animated);
   if (_id === 'hero-nomad-6995') return buildNomadCad(root, k, animated);
   if (_id === 'hero-poofs-254') return buildPoofs254Cad(root, k, animated);
+  if (_id === 'hero-sentinel-1923') return buildSentinel1923Cad(root, k, animated);
   const get = (name: string) => root.getObjectByName(name);
   const pivot = (name: string, at: [number,number,number], parts: string[], parent: THREE.Object3D = root) => {
     const g = new THREE.Group(); g.name = `cad-${name}-pivot`; g.position.fromArray(at); parent.add(g);

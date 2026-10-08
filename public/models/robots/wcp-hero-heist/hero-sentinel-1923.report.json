@@ -1,0 +1,30 @@
+{
+  "id": "hero-sentinel-1923",
+  "sourceFile": "hero-sentinel-1923-source.gltf",
+  "inputBytes": 344051222,
+  "outputBytes": 7867056,
+  "inputTriangles": 6515324,
+  "outputTriangles": 578483,
+  "omittedOccurrences": 506,
+  "bounds": {
+    "min": [
+      -0.6821623352804165,
+      -0.041264981031417736,
+      -0.36829999089241106
+    ],
+    "max": [
+      0.3682999908924103,
+      0.4331055326789598,
+      0.3682999908924105
+    ]
+  },
+  "groups": [
+    "frame",
+    "intake-arm",
+    "arm-slide",
+    "arm",
+    "tunnel",
+    "flywheel",
+    "hood"
+  ]
+}
