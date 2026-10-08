@@ -373,8 +373,12 @@ for (const id of ids) {
     if ((id === 'rotor-604-donor' && !/DPC Rotor Assembly/.test(full)) || (id === 'shooter-581-donor' && (!/Shooter Assem/.test(full) || /(?:^|\/)Hopper <|^Triad\//.test(full))) || (id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
       || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
-    if (spec.classify) group = spec.classify({ full, name: n.getName(), bounds, group });
-    if (group === null) { n.setMesh(null); omitted++; continue; }
+    // Per-robot hooks for flat Onshape exports: return a group name, null/'omit' to drop the mesh, or nothing to keep it.
+    if (spec.classify) {
+      const c = spec.classify({ full, name: n.getName(), bounds, group });
+      if (c === null || c === 'omit') { n.setMesh(null); omitted++; continue; }
+      if (c) group = c;
+    }
     if (id === 'hero-mantis-6800') {
       if (group === 'climber' && /GreyT Telescope/.test(full)) {
         group = /WCP-0418/.test(full) || bounds.min[2] > .61 ? 'climb-end'
@@ -407,12 +411,6 @@ for (const id of ids) {
         else if (/1902|1943|1928|1915|1935/.test(n.getName())) group='hopper-lift';
       }
       if (/1500 Single Roller Intake/.test(full) && /^part 26$|^Part 41$|^Part 73$|1519/i.test(n.getName())) group='hopper-front';
-    }
-    // Per-robot hooks (2026 batch two): bounds-aware grouping and omission for flat Onshape exports.
-    if (spec.classify) {
-      const c = spec.classify({ full, name: n.getName(), bounds, group });
-      if (c === 'omit') { n.setMesh(null); omitted++; continue; }
-      if (c) group = c;
     }
     // Some exported configurations repeat the same wall in exactly the same place.
     const signature = n.getName() + '/' + [...bounds.min, ...bounds.max].map(v => v.toFixed(6)).join(',');
