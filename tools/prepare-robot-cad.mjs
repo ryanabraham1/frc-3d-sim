@@ -25,6 +25,17 @@ const specs = {
     ['elevator-carriage',/Elevator Carriage AS/],
     ['intake',/2\. Intake/],
   ]},
+  // 1318 "Constantine" (Mystic). Intake and shooter exit are both at CAD -Y, which becomes sim +X (front).
+  'hero-constantine-1318': {file:'hero-constantine-1318-source.gltf',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,
+    omit:/Bumper Assembly|Power Distribution Hub|Origin Cube|Battery|RoboRIO|Radio/,groups:[
+    ['hood',/Shooter Hood|180t 10DP External|Stealth Wheel/],
+    ['flywheel',/Brass Flywheel|4" Solid Roller Wheel/],
+    ['intake-fixed',/Gear Box|Plate No Gearboxx|Motor Plate|Kraken X44.*Intake|MAXPlanetary Kraken X44|REV-21-2103|Rounded Hex Gear|Pocketed Gear|Hex Bore Gear|Rounded Hex Bore Hub 25 Chain|#25 chain|Rounded Hex Shaft - 2\.0in/],
+    ['intake-links',/4 Bar (?:Front|Back)|Part 11(?!\d)|36t Aluminum Plate Sprocket/],
+    ['intake',/Intake Assembly|WCP-1755/],
+    ['climb-top',/(?:Vacuum Cup|Constant Force Spring|WCP-041[89]|Nutstrip).*Suction Climber/],
+    ['climb-mid',/Tube 2"x2"x24".*Suction Climber/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -188,6 +199,8 @@ for (const id of ids) {
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
     if (spec.omit?.test(full)) { n.setMesh(null); omitted++; continue; }
+    // An unnamed 0.2 m block hangs past the 1318 back bumper (not part of the robot structure).
+    if(id==='hero-constantine-1318' && !n.getName() && getBounds(n).min[1]>.31){n.setMesh(null);omitted++;continue;}
     if(id==='domotron-604' && /(?:^|\/)\s*(?:occurrence of )?Note(?:\/|$)/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='roti-5940' && /clothed noodle|noodle|bumper/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='spectre-2910' && /Bumper|Origin Cube|Battery|RoboRIO|Power Distribution|Radio Power|Reference/i.test(full)){n.setMesh(null);omitted++;continue;}

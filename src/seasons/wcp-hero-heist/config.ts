@@ -79,7 +79,8 @@ export function normalizeHeroConfig(config: RobotConfig): RobotConfig {
   c.options.placeAlign=c.options.placeAlign!==false;
   c.intake.primary=s.bubbles>0;c.intake.secondary=s.panels>0;
   c.intake.enabled=s.panels+s.bubbles>0 && (c.intake.ground!==false||!!c.intake.station);
-  c.intake.groundSide='back';c.intake.stationSide='back';
+  // CLAUDE.md default is a back intake; a real team build that intakes and shoots on the same end sets options.intakeSide='front'.
+  c.intake.groundSide=c.options.intakeSide==='front'?'front':'back';c.intake.stationSide='back';
   c.launcher.enabled=s.bubbles>0;
   if(!c.launcher.enabled){c.launcher.turret=false;c.autoAlign=false;}
   const tier=Math.min(maxMailboxTier(hero),Math.max(1,Math.round(c.placement?.maxLevel??1)));
