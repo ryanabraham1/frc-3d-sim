@@ -5,6 +5,11 @@ import { buildPrestoCad } from './prestoCadModel';
 import { buildDomotronCad } from './domotronCadModel';
 import { buildSnoopyCad } from './snoopyCadModel';
 import { buildRotiCad } from './rotiCadModel';
+import { buildNikCad } from './nik1678CadModel';
+import { buildRiotCad } from './riot1706CadModel';
+import { buildSurgeCad } from './surge3005CadModel';
+import { buildUltravioletCad } from './ultraviolet3847CadModel';
+import { buildNocturneCad } from './nocturne3467CadModel';
 import type { ModelKit, RobotModel } from './models';
 
 /** Supplied 2024 assemblies in meters. +X points toward the shooter.
@@ -19,6 +24,11 @@ export function buildCrescendoCad(id: string, root: THREE.Group, k: ModelKit, an
   if (id === 'snoopy-6036') return buildSnoopyCad(root, k, animated);
   if (id === 'roti-5940') return buildRotiCad(root, k, animated);
   if (id === 'domotron-604') return buildDomotronCad(root, k, animated);
+  if (id === 'nik-1678') return buildNikCad(root, k, animated);
+  if (id === 'riot-1706') return buildRiotCad(root, k, animated);
+  if (id === 'surge-3005') return buildSurgeCad(root, k, animated);
+  if (id === 'ultraviolet-3847') return buildUltravioletCad(root, k, animated);
+  if (id === 'nocturne-3467') return buildNocturneCad(root, k, animated);
   const doppler = id === 'doppler-1690';
   const typhoon = id === 'typhoon-2910', twister = id === 'twister-118', rush = id === 'gold-rush-27', domotron = id === 'domotron-604';
   if (twister) root.traverse(o => {
