@@ -98,6 +98,22 @@ export function rebuiltRobotDefaults(): RobotConfig {
   return c;
 }
 
+/** 6329 Roman II CAD dimensions (Drivetrain tubes: 30 in wide x 24 in long; CAD top 0.548 m) and its fixed drum [EST 70 deg]. */
+export const ROMAN_CAPACITY = 40;
+export function romanII(c: RobotConfig): void {
+  c.frameLength = inch(24); c.frameWidth = inch(30); c.height = .55;
+  c.launcher.height = .56; c.launcher.exitSpan = .75;
+  c.launcher.angle = c.launcher.minAngle = c.launcher.maxAngle = 70 * Math.PI / 180;
+  c.intake.reach = .2; c.intake.width = .62;
+  c.maxSpeed = 4.6; setRebuiltAccuracy(c, 86);
+}
+
+/** 7769 CHUNK CAD dimensions (chassis 25 in long x 29 in wide; CAD top 0.557 m, collision box at trench height). */
+export function chunkCad(c: RobotConfig): void {
+  c.frameLength = inch(25); c.frameWidth = inch(29); c.height = .55;
+  c.launcher.height = .52; c.intake.reach = .2; c.intake.width = .62;
+}
+
 /** R104/R107 size limits plus defaults for mechanism options added after configs were first saved. */
 export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   const c = sanitizeConfig(config, C.MAX_ROBOT_HEIGHT, C.MAX_ROBOT_PERIMETER);
@@ -105,6 +121,13 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
+  // Saved picks of the former turret ROMAN I preset (47 FUEL, 14/s, turret) become the imported Roman II drum robot.
+  if (c.model === 'roman-6329' && c.launcher.turret && c.hopperCapacity === 47 && c.launcher.rate === 14) {
+    c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 16;
+    romanII(c);
+  }
+  // Saved CHUNK picks from before the CAD import carry the generic 27 x 27 x 21 in box: adopt the measured CAD size.
+  if (c.model === 'chunk-7769' && Math.abs(c.frameLength - inch(27)) < 1e-6 && Math.abs(c.frameWidth - inch(27)) < 1e-6 && Math.abs(c.height - inch(21)) < 1e-6) chunkCad(c);
   // Migrate only former 2910 size defaults; preserve custom dimensions and tuning.
   if (c.model === 'reblitz-2910') {
     if (Math.abs(c.frameLength-inch(27))<1e-6) c.frameLength=.6985;
