@@ -8,10 +8,11 @@ import { buildReefscapeCad } from './reefscapeCadModels';
 import { buildCrescendoCad } from './crescendoCadModels';
 import { buildHeroCad } from './heroCadModels';
 import { buildFireweed1540 } from './heroFireweed1540';
+import { build9408Cad } from './gadgeteerCadModel';
 import { cadHopper } from './cadHopper';
 import { build9470Cad, build6800Cad, build971Cad, build1114Cad, build2910Cad } from './additionalCadModels';
 
-export const HERO_CAD_MODEL_IDS = ['hero-constantine-1318','hero-sentinel-1923','hero-mantis-6800','hero-fireweed-1540', 'hero-multiclass-5800', 'hero-multiclass-5800-gadgeteer', 'hero-nomad-6995','hero-poofs-254'] as const;
+export const HERO_CAD_MODEL_IDS = ['hero-constantine-1318','hero-sentinel-1923','hero-mantis-6800','hero-fireweed-1540', 'hero-multiclass-5800', 'hero-multiclass-5800-gadgeteer', 'hero-nomad-6995','hero-poofs-254','hero-gadgeteer-9408'] as const;
 /** Model ids that reuse another model's CAD file (every real team robot needs its own id; see shot-blocker.test.ts). */
 const CAD_ALIASES: Record<string, string> = { 'hero-multiclass-5800-gadgeteer': 'hero-multiclass-5800' };
 const setAsset = (id: string, scene: THREE.Group) => { assets.set(id, scene); for (const [alias, target] of Object.entries(CAD_ALIASES)) if (target === id) assets.set(alias, scene); };
@@ -71,6 +72,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   root.userData.cadModel = id;
   k.visual.add(root);
   if (id === 'hero-fireweed-1540') return buildFireweed1540(id,root,k,()=>animated);
+  if (id === 'hero-gadgeteer-9408') return build9408Cad(root,k,()=>animated);
   if ((HERO_CAD_MODEL_IDS as readonly string[]).includes(id)) return buildHeroCad(id,root,k,()=>animated);
   if ((CAD_2024_MODEL_IDS as readonly string[]).includes(id)) return buildCrescendoCad(id,root,k,()=>animated);
   if ((CAD_2025_MODEL_IDS as readonly string[]).includes(id)) return buildReefscapeCad(id,root,k,()=>animated);

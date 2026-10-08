@@ -65,6 +65,15 @@ const specs = {
   'hero-sentinel-1923': {file:'hero-sentinel-1923-source.gltf',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,omit:/Robot Battery|Power Distribution Hub|RSL|Robot Signal Light|Main Breaker|Anderson/,groups:[
     ['flywheel',/4" Stealth Wheel/], ['hood',/(?:^|\/)(?:occurrence of )?(?:Hood|80t Pocketed Steel Spur Gear)(?:\/|$)/], ['intake-arm',/Ground Intake Assy/], ['arm',/Pink Arm Assy/], ['tunnel',/Ball tunnel Assy/],
   ]},
+  // 9408 Gadgeteer (Hero Heist). Onshape export is Z-up; source +Y is the floor intake, so sim -X.
+  'hero-gadgeteer-9408': {file:'hero-gadgeteer-9408-source.glb',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,
+    omit:/Bumper Assembly|Power Distribution Hub|Battery|RoboRIO|Origin Cube|Starting Configuration|Main Breaker/,groups:[
+    ['flywheel',/^(?:2" OD 1\/2" Hex ID Stealth Wheel 60A|1\/2" Thunderhex Shaft \(10\.51"\)).*Shooter Assembly <1>/],
+    ['climb-pad',/^Part 1\/occurrence of Part 1\/Assembly 1 <1>/], ['climb-end',/3 Stage End/],
+    ['climb-mid2',/3 Stage Mid2|WCP-0418/], ['climb-mid1',/3 Stage Mid1|WCP-0419/],
+    ['intake',/Intake Assembly <1>/], ['shooter',/Shooter Assembly <1>/], ['elevator',/4\. Elevator/],
+    ['arm',/5A\. Arm/], ['manip',/5B\. Manipulator/], ['climber',/Assembly 1 <1>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -245,6 +254,8 @@ for (const id of ids) {
     if (id === 'simbot-tim-1114' && !n.getName()) { n.setMesh(null); omitted++; continue; }
     // Keep structure and mechanism geometry; remove fasteners and electrical interiors.
     const bounds = getBounds(n);
+    // 9408's export carries every fastener and spacer: drop parts under 25 mm, which are invisible at robot scale.
+    if (id === 'hero-gadgeteer-9408' && Math.max(...bounds.max.map((v,i)=>v-bounds.min[i])) < .025) { n.setMesh(null); omitted++; continue; }
     // Limestone's export includes an unnamed six-triangle reference sheet outside the robot.
     const looseReference = id === 'limestone-1678' && !n.getName() && bounds.max[1] > .8;
     const hardware = /screw|washer|blind rivet|locknut|hex nut|nutstrip|nut strip|spacer|bearing|bushing|crush block/i.test(n.getName())
@@ -397,9 +408,9 @@ for (const id of ids) {
   await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
   // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
   // A final bounded 0.5 mm pass reduces those faces without quantizing positions.
-  if (id === 'reblitz-2910') {
+  if (id === 'reblitz-2910' || id === 'hero-gadgeteer-9408') {
     for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
-      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: .40, error: .0005 });
+      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: id === 'reblitz-2910' ? .40 : .45, error: id === 'reblitz-2910' ? .0005 : .001 });
     }
     await doc.transform(prune());
   }

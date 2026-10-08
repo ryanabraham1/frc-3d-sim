@@ -41,6 +41,9 @@ registerRobotModel('hero-nomad-6995',(k:ModelKit)=>{
   return {replaces:['chassis','launcher','hopper','intakeRollers','climber','funnel'],update(s){db.update(s);slap.rotation.z=s.enabled?.95:0;stage.scale.y=1;}};
 });
 export function heroTeamRobots(): TeamRobot[] {
+  return [...mantis6800(), ...gadgeteer9408()];
+}
+function mantis6800(): TeamRobot[] {
   const c=heroRobotDefaults();
   c.teamNumber=6800;c.options={...c.options,heroClass:'mystic',archetype:'mantis-6800',bubbleCapacity:6,panelCapacity:0,panelPreload:0,dualSideIntake:true};
   c.frameLength=.6604;c.frameWidth=.6096;c.height=.905818;c.mass=lb(131);
@@ -77,4 +80,29 @@ function nomad6995(): TeamRobot {
   n.placement={...n.placement!,maxLevel:2,liftSpeed:1.2};
   n.climber={maxLevel:0,secondsPerLevel:2.2}; // park only (sheet: Park)
   return {id:'hero-nomad-6995',team:6995,name:'Nomad',description:'Gadgeteer: floor slapdown for STORY PANELS and a linear BUBBLE intake on one end (up to 2 panels or 4 bubbles), midtake belts, a fixed hooded shooter and a 2-stage belted elevator with a pivoting end effector (low FOOTHILL baskets). Park only. Speed, shooter rate, hood range and joint travel are estimates.',source:'https://cad.onshape.com/documents/dc43b19f2e46981255d7d233/w/0a4080792ce2fab8a15b6f4c/e/e2fb5b73bb40afbd07be44d8',config:normalizeHeroConfig(n)};
+}
+
+// Lightweight source-shaped fallback for headless play or a failed CAD load: swerve frame, floor intake arm on the back,
+// elevator mast with claw, shooter drum and the telescoping climber.
+registerRobotModel('hero-gadgeteer-9408',(k:ModelKit)=>{
+  const db=drivebase(k),dark=mat(0x171b20),steel=mat(0xb9c0c8),orange=mat(0xff7a1a),purple=mat(0x6a3fa0);
+  const arm=new THREE.Group();arm.position.set(-.198,.177,0);k.visual.add(arm);
+  for(const z of [-.34,.34])bar(arm,[0,0,z],[-.42,-.04,z],.02,mat(0x2f9a3c));
+  roller(arm,.02,.62,orange,-.42,-.04,0).rotation.x=Math.PI/2;
+  box(k.visual,.09,.70,.09,purple,0,.40,.2);
+  const drum=roller(k.visual,.07,.5,dark,.03,.709,0);
+  const climb=box(k.visual,.05,.5,.05,steel,.082,.30,-.241);
+  return {replaces:['chassis','launcher','hopper','intakeRollers','climber'],update(s){db.update(s);arm.rotation.z=s.enabled&&!s.climb?0:-1.3;drum.rotation.z+=s.aiming?60*s.dt:0;climb.scale.y=1+s.climb*1.8;}};
+});
+function gadgeteer9408(): TeamRobot[] {
+  const c=heroRobotDefaults();
+  // [EST] values: the sheet gives 4 bubbles, 2 panels, HIGH climb; the binder was not accessible for speeds/rates.
+  c.teamNumber=9408;c.options={...c.options,heroClass:'gadgeteer',archetype:'gadgeteer-9408',bubbleCapacity:4,panelCapacity:2,panelPreload:1};
+  c.frameLength=.7112;c.frameWidth=.7112;c.height=.762;c.mass=lb(120);
+  c.preload=3;c.maxSpeed=4.4;c.maxAccel=7.5;
+  c.intake={...c.intake,width:.60,reach:.20,groundSide:'back',station:true,stationSide:'back'};
+  c.launcher={...c.launcher,turret:false,height:.709,muzzleForward:.08,mounts:[{forward:.025,side:0}],rate:2,angle:deg(55),minAngle:deg(30),maxAngle:deg(75)};
+  c.placement={...c.placement!,enabled:true,maxLevel:2,reach:.45};
+  c.climber={maxLevel:3,secondsPerLevel:2};
+  return [{id:'hero-gadgeteer-9408',team:9408,name:'Gadgeteer',description:'Gadgeteer 9408: swerve with an over-the-bumper floor intake, four-bubble hopper into a roller shooter, elevator with a two-panel claw and a three-stage suction-pad climber. Speeds, rates, joint travel and playing mass are estimates.',source:'https://cad.onshape.com/documents/62596cdc81bb8ddb30be7a64/w/bca4094c412230aacf299609/e/e2ba57da6aec137f2ef4fe0b',config:normalizeHeroConfig(c)}];
 }
