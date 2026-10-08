@@ -84,6 +84,14 @@ const specs = {
     ['flywheel',/4" SDS Flywheel|\(am-2647\)|Hex \(11\.059 in\)/], ['hood',/hood assembly <1>/],
     ['feeder',/\(am-4716\)/], ['intake',/full intake <1>/],
   ]},
+  // Team 498's CADathon Mystic: one over-the-bumper intake on the back, turret + hood shooter, telescoping winch climber.
+  'hero-mystic-498': {file:'hero-498-source.gltf',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,
+    omit:/SWYFT Bumper|Robot Battery|120A Main Breaker|Origin Sphere|Power Distribution Hub|Simplified PDH|Climber Rope/,groups:[
+    ['intake-rollers',/Rollers <1>.*Intake <1>/], ['intake-gearbox',/Gearbox <1>.*Intake <1>/], ['intake-indexer',/Indexer <1>.*Intake <1>/],
+    ['flywheel',/4" Solid Roller Wheel.*Active Turret/], ['turret-static',/Static Turret <1>.*Shooter <1>/], ['turret',/Active Turret <1>.*Shooter <1>/], ['hood',/Active Hood <1>.*Shooter <1>/],
+    ['climb-stage1',/Stage 1 <1>.*Climber <2>/], ['climb-carriage',/Carriage <1>.*Climber <2>/], ['climb-wrench',/Wrench <1>.*Climber <2>/],
+    ['climb-base',/Base Stage <1>.*Climber <2>/], ['hopper',/Hopper <1>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -338,7 +346,7 @@ for (const id of ids) {
     surfaces.add(signature);
     const dims = bounds.max.map((v,i) => v-bounds.min[i]);
     const simbotSheet = id === 'simbot-tim-1114' && /^S26-IN-P(?:301|315|318|321|322|330)$/.test(n.getName());
-    const sheet = simbotSheet || /wall|coroplast|panel|plate|bellypan|polycarb/i.test(n.getName()) || (Math.min(...dims)<.012 && dims.filter(v=>v>.15).length>=2) || (id === 'limestone-1678' && /^Part 60$/.test(n.getName()));
+    const sheet = simbotSheet || /wall|coroplast|panel|plate|bellypan|polycarb/i.test(n.getName()) || (Math.min(...dims)<.012 && dims.filter(v=>v>.15).length>=2) || (id === 'limestone-1678' && /^Part 60$/.test(n.getName())) || (id === 'hero-mystic-498' && /Wrench Tube|Wrench Gusset/.test(n.getName()));
     const themed = !spec.preserveColors && spec.year !== 2025 && spec.year !== 2024 && (/arm plate|hood plate|slider mount|slot reinforcement|sponsor panel|printed|wire guide/i.test(n.getName()) || (id === 'limestone-1678' && /1678-26c-16(?:14|85)/.test(n.getName())));
     // Retain CAD colors, with rubber and clear-sheet finishes identified by part names.
     for (const p of n.getMesh().listPrimitives()) {

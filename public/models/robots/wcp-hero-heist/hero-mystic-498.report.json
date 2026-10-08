@@ -1,0 +1,36 @@
+{
+  "id": "hero-mystic-498",
+  "sourceFile": "hero-498-source.gltf",
+  "inputBytes": 260292122,
+  "outputBytes": 10014684,
+  "inputTriangles": 6815226,
+  "outputTriangles": 771829,
+  "omittedOccurrences": 568,
+  "bounds": {
+    "min": [
+      -0.330959714949181,
+      3.7252902981149694e-7,
+      -0.7396883964538574
+    ],
+    "max": [
+      0.4400087910756111,
+      1.2289890348911285,
+      0.33406079933047295
+    ]
+  },
+  "groups": [
+    "frame",
+    "turret-static",
+    "turret",
+    "flywheel",
+    "hood",
+    "intake-gearbox",
+    "intake-rollers",
+    "intake-indexer",
+    "hopper",
+    "climb-carriage",
+    "climb-stage1",
+    "climb-base",
+    "climb-wrench"
+  ]
+}
