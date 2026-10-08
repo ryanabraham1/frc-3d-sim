@@ -10,12 +10,25 @@ beforeAll(async()=>{const b=readFileSync('public/models/robots/wcp-hero-heist/he
 it('Mantis remains selectable after normalization and carries six bubbles with no panels',()=>{
  const c=normalizeHeroConfig(heroTeamRobots()[0].config);expect(c.model).toBe('hero-mantis-6800');expect(storage(c)).toEqual({panels:0,bubbles:6});expect(c.launcher.mounts).toEqual([{forward:.155,side:0}]);
 });
+it('the flywheel sits on the exit side: the turret faces the commanded yaw',()=>{
+ const c=heroTeamRobots()[0].config,visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
+ const m=robotModelBuilder(c.model)!({config:c,visual,turret,alliance:'blue',fp:{length:.81,width:.76},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
+ const centre=(n:string)=>new THREE.Box3().setFromObject(visual.getObjectByName(n)!).getCenter(new THREE.Vector3());
+ for(const yaw of [0,.7,-1.9,3]){
+  turret.rotation.y=yaw;m.update(idle);visual.updateMatrixWorld(true);
+  const pivot=visual.getObjectByName('cad-turret-pivot')!.getWorldPosition(new THREE.Vector3());
+  const fw=centre('flywheel').sub(pivot);
+  // Field heading of the flywheel from the turret axis equals the launch yaw (field y = -z).
+  expect(Math.cos(Math.atan2(-fw.z,fw.x)-yaw)).toBeGreaterThan(.99);
+ }
+});
 it('actual CAD follows turret yaw, deploys both side intakes, folds and extends the separate telescope stages',()=>{
  const c=heroTeamRobots()[0].config,visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
  const m=robotModelBuilder(c.model)!({config:c,visual,turret,alliance:'blue',fp:{length:.81,width:.76},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
  m.update(idle);const frame=visual.getObjectByName('frame')!;visual.updateMatrixWorld(true);const fixed=frame.matrixWorld.clone();
  for(let i=0;i<90;i++) {turret.rotation.y=(i/89-.5)*Math.PI*2;m.update({...idle,dt:1/60,enabled:true,intaking:true,aiming:true,hood:.26+i/89*.96,climb:i>60?1:0});visual.updateMatrixWorld(true);visual.traverse(o=>expect(o.matrixWorld.elements.every(Number.isFinite)).toBe(true));expect(frame.matrixWorld.equals(fixed)).toBe(true);}
- expect(visual.getObjectByName('cad-turret-pivot')!.rotation.y).toBeCloseTo(Math.PI);
+ // The CAD shooter exits toward -x, so the pivot is the commanded yaw plus half a turn (here pi + pi).
+ expect(Math.cos(visual.getObjectByName('cad-turret-pivot')!.rotation.y)).toBeCloseTo(1);
  expect(Math.abs(visual.getObjectByName('cad-fold-pivot')!.rotation.z)).toBeGreaterThan(.5);
  expect(visual.getObjectByName('climb-end')!.position.y).toBeGreaterThan(.3);
  const b=new THREE.Box3().setFromObject(visual);expect(b.max.y).toBeLessThan(2.1);expect(b.min.y).toBeGreaterThan(-.25);
