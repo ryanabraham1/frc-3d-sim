@@ -1,0 +1,29 @@
+{
+  "id": "taiyaki-5940",
+  "sourceFile": "2025-5940.glb",
+  "inputBytes": 234692708,
+  "outputBytes": 8081360,
+  "inputTriangles": 8544486,
+  "outputTriangles": 532386,
+  "omittedOccurrences": 630,
+  "bounds": {
+    "min": [
+      -0.7009354252367814,
+      0.00007350370287895897,
+      -0.37909498810768116
+    ],
+    "max": [
+      0.5152825840340364,
+      1.0541000440716743,
+      0.37909498810768133
+    ]
+  },
+  "groups": [
+    "effector",
+    "frame",
+    "intake",
+    "climber",
+    "elevator-stage",
+    "carriage"
+  ]
+}

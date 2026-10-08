@@ -7,6 +7,7 @@ import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
 import { bodiesTouching } from '@engine/physics/contacts';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
+import { groundSideSign } from '@engine/robot/config';
 import { clamp, inch } from '@engine/units';
 import { convexOverlap } from '@engine/zones';
 import * as C from './constants';
@@ -229,6 +230,16 @@ export class CrescendoRules implements SeasonRules {
     return false;
   }
 
+  /** Double-ended under-bumper intakes (1706 Riot, 3005 Surge) take NOTES at both bumper faces through one
+   * set of rollers: a mirrored mouth on the side opposite `groundSide`, with the same width/reach/height limits. */
+  private oppositeMouth(robot: Robot, p: { x: number; y: number; z: number }, radius: number): boolean {
+    const c = robot.config;
+    if (!c.options?.dualSideIntake || !c.intake.enabled || c.intake.ground === false || robot.climbPhase !== 'none' || robot.tippedOver) return false;
+    const { f, l, h } = robot.toLocal(p);
+    const out = -groundSideSign(c) * f - robot.footprint.length / 2;
+    return out > -.06 && out < c.intake.reach + radius && Math.abs(l) < c.intake.width / 2 && h < c.intake.maxHeight;
+  }
+
   private intake(robot: Robot): void {
     const { pool } = this.ctx;
     for (let i = 0; i < C.NOTE_COUNT && robot.capacityLeft > 0; i++) {
@@ -237,7 +248,7 @@ export class CrescendoRules implements SeasonRules {
       if (launched?.robotId === robot.id && this.now - launched.t < 0.6) continue;
       const p = pool.position(i);
       // Ground intake: NOTES on the carpet. SOURCE intake: NOTES falling out of the CHUTE in front of the robot.
-      const ground = p.y <= 0.2 && robot.intakeContains(p, C.NOTE_OUTER_RADIUS * 0.6);
+      const ground = p.y <= 0.2 && (robot.intakeContains(p, C.NOTE_OUTER_RADIUS * 0.6) || this.oppositeMouth(robot, p, C.NOTE_OUTER_RADIUS * 0.6));
       if (ground || robot.stationContains(p, C.NOTE_OUTER_RADIUS * 0.6)) {
         robot.noteCapture(p);
         pool.hold(i, robot.id);

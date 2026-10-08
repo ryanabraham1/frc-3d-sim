@@ -108,6 +108,67 @@ const specs = {
     ['shooter',/3\. Pod Shooter/], ['intake',/2\. Intake/],
     ['carriage',/1\.3 Stage 2/], ['elevator-stage',/1\.2 Stage 1/],
   ]},
+  // Public Onshape "1678-2024-E-0000 CAD Release" / Epsilon. Joints come from the document's mates.
+  'nik-1678': {file:'2024-1678.glb',year:2024,finalPass:true,axes:'yzx',offsetY:.0254,
+    omit:/Reference [Cc]ube|sw-005|VH-109|6455K43|CANdle|(?:^|\/)(?:occurrence of )?Part 1[45]\/1678-2024-E-0700 Drivetrain/,
+    groups:[['intake',/1678-2024-E-0800 Intake/], ['amp',/1678-2024-E-0900 AMP/],
+      ['climber',/1678-2024-E-1100 Climber/], ['shooter',/1678-2024-E-1000 </]],
+    classify:({full,name,bounds,group})=>{
+      // Fixed pivot/motor plates and the deploy chain stay on the chassis; the arm starts at the 0.2969 m hinge.
+      if (group==='intake') return bounds.max[1] < -.26 ? 'intake' : 'frame';
+      // Single-stage AMP elevator: the inner P-0909 stage and its roller head slide on the fixed 20 degree rails.
+      if (group==='amp') return bounds.max[2] < .3 ? 'frame' : bounds.min[2] > .69 || /P-09(?:09|01|11|15|17|19|21|24|25|26|36|37|40|44)|^COPY$/.test(name)
+        || (/WCP-0199-|WCP-0212|WCP-0474|WCP-0039/.test(name) && bounds.min[2] > .49 && bounds.min[2] < .6) ? 'amp' : 'frame';
+      // Hook arms, their top carriage and the upper gas-spring bodies ride on the gas springs.
+      if (group==='climber') return /P-11(?:08|09|10|11|14|15|18|20|21)|^Bushing$/.test(name) ? 'climber' : /Gas Spring/.test(full) ? ((bounds.min[2]+bounds.max[2])/2 > .30 ? 'climber-rod' : 'climber-strut') : 'frame';
+      return group;
+    }},
+  // Public Onshape "Riot-PUBLIC" / 1706-RIOT. Shooter and elevator joints come from the document's mates.
+  'riot-1706': {file:'2024-1706.glb',year:2024,finalPass:true,axes:'negative-y',offsetX:-.1555,offsetY:.0025,offsetZ:-.2735,
+    omit:/CR-900|Limelight Ass|LL3GSIMPLIFIED/,
+    groups:[['shooter',/CR200-Shooter/], ['carriage',/CR800-CarraigeOnly/], ['elevator-stage',/CR600-Elevator/], ['climber',/CR-400-Climber/]],
+    classify:({full,name,bounds,group})=>{
+      if (group==='elevator-stage') return /Inner Stage|^CR-600-00[1256]$|Top Bearing Block|Top Block|^Dowel$|^Part 7$|60355K246|^1\/4-20 x 0\.875$/.test(name) ? 'elevator-stage' : 'frame';
+      if (group==='climber') {
+        // TTB 2-stage telescopes: 2 in outer tube stays, 1.5 in middle and 1 in inner stages carry the hook.
+        if (name==='Telescope Tube') { const w = bounds.max[0]-bounds.min[0]; return w > .045 ? 'frame' : w > .03 ? 'climber-mid' : 'climber'; }
+        if (/1\.5" Top Cap|1\.5" End Block/.test(full)) return 'climber-mid';
+        if (/1" End Block|^CR-400-0(?:06|10)$|^Part 2$/.test(name) || /1" End Block/.test(full)) return 'climber';
+        return 'frame';
+      }
+      return group;
+    }},
+  // Public Onshape "3005 2024: FULL ROBOT (PUBLIC)" / Surge. Launcher and diverter joints come from the document's mates.
+  'surge-3005': {file:'2024-3005.glb',year:2024,finalPass:true,axes:'yzx',omit:/9: Bumpers|LL3GSIMPLIFIED/,
+    groups:[['shooter',/3: Launcher/], ['diverter',/5: Diverter/], ['climber',/7: Telescoping Climber/]],
+    classify:({full,name,group})=>{
+      // The diverter's long side links ride on the launcher pivot shaft; the roller head pivots at the launcher nose.
+      if (group==='diverter' && /^5C0[123]$|REV-29-1016|REV-21-2597/.test(name)) return 'shooter';
+      if (group==='climber') return /^7A02|^7B01|2x2StageInternalEndBlock/.test(name) || /1\.5x1\.5 Slider/.test(full) ? 'climber-mid'
+        : /^7A03|^7A20|^7B02|^92395A515$/.test(name) ? 'climber' : 'frame';
+      return group;
+    }},
+  // Public Onshape "0. 2024 Ultraviolet". Launcher, AMP/TRAP elevator and climber slides come from the document's mates.
+  'ultraviolet-3847': {file:'2024-3847.glb',year:2024,axes:'negative-y',offsetZ:.006,omit:/Reference Cube|LL3GSIMPLIFIED|LimelightV2/,
+    groups:[['shooter',/\/Launcher <1>\/3\. Launcher/], ['amp',/(?:Elevator|Tower) <1>\/4\. AmpTrap/], ['climber',/5\. Climber/]],
+    classify:({full,name,bounds,group})=>{
+      // Stray electronics occurrences exported outside the frame.
+      if (/Electronics <1>/.test(full) && (bounds.max[0] > .45 || bounds.min[2] < -.01)) return null;
+      // Inner rail, its lower bearing blocks and the roller tower ride the 15 degree elevator; outer rails stay.
+      if (group==='amp') return /Tower <1>/.test(full) || /4-06-Elevator Inner Rail|4-07-Elevator Cross Bar|^Part [12]$|LaserCAN|TTB Chain Attachment/.test(name) || /Inline Clamping Block <[34]>/.test(full) ? 'amp' : 'frame';
+      if (group==='climber') return /5-01-Slide/.test(name) ? 'climber' : 'frame';
+      return group;
+    }},
+  // Public Onshape "Nocturne - 2024" / NOCTURNE. The document also carries field elements and spare swerve modules.
+  'nocturne-3467': {file:'2024-3467.glb',year:2024,finalPass:true,axes:'yzx',offsetX:-.128,offsetY:.003,
+    omit:/Assembly 2 <|Source \(GE-24000\)|Simple Amp|simpstage_sideless|bumper chassy/,
+    groups:[['shooter',/Current <1>|Blower|HARMONY HOOKS/], ['arm',/arm <1>/]],
+    classify:({full,name,bounds,group})=>{
+      if (group==='arm') return /Tube 2"x1"x16\.5"|betahooks/.test(name) || bounds.min[2] > .56 ? 'arm' : 'frame';
+      // Loose top-level parts above the pivot (head side plates "Part 11", cross tube, brackets) ride the arm.
+      if (group==='frame' && /^[^/]+\/occurrence of [^/]+\/NOCTURNE(?:\/[^/]*)?$/.test(full) && bounds.min[2] > .55) return 'shooter';
+      return group;
+    }},
   'spectre-2910': {file:'2025 2910glb',year:2025,axes:'negative-y',groups:[
     ['effector',/53 - 2025 Intake & Wrist V3/], ['climber',/41 - 2025 Climber/],
     ['carriage',/Phantom Arm V2, Stage 2/], ['elevator-stage',/Phantom Arm V2, Stage 1/],
@@ -176,6 +237,83 @@ const specs = {
     ['intake', /25W4100 - OTB Moving/], ['carriage', /25W2300 - Carriage/],
     ['elevator-stage', /25W2200 - Extension Stage/],
   ] },
+  // 2025 public Onshape releases (Spectrum CAD Collection), next five by EPA. Each spec owns its
+  // omissions and regrouping so robots stay independent; bounds are source meters (Z up).
+  'taiyaki-5940': { file: '2025-5940.glb', year: 2025, axes: 'yzx', finePass: true,
+    omit: /Bumpers <|Pi-Motel|Power Distribution Hub|Rio Shroud|Battery|Cams Assembly|CAN ?[Rr]ange|PCB|(?:^|\/)Connector(?:\/|$)|(?:^|\/)cable chain(?:\/|$)|(?:^|\/)occurrence of Coral(?:\/|$)/,
+    groups: [
+      ['effector', /A-0500 End Effector/], ['carriage', /Stage 2 \(carriage\)/], ['elevator-stage', /Stage 1 </],
+      ['intake', /A-0300 Intake/], ['climber', /A-0600 Climber/],
+    ],
+    regroup(group, name, full, b) {
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2);
+      // Pivot hub on the carriage turns with the cantilevered end effector (X-contact bearing axis).
+      if (group === 'carriage' && Math.hypot(c[1] - .1905, c[2] - .2476) < .004 && c[0] > -.12 && !/Bushing|X-Contact|Kraken/.test(name)) return 'effector';
+      // The deploy gearbox, side mounts and drive chain stay on the chassis; the hinge is the 48T sprocket shaft.
+      if (group === 'intake' && c[1] > -.29) return 'frame';
+      // Coral Protector Plate is a fixed chassis cover beside the climber.
+      // Only the spear/fly-swatter arm above the bushings at (x .3429, z .437) swings; post, winch and spring stay put.
+      if (group === 'climber' && !/^(?:P-060[25789]|P-061[134]|Bushing|Tube Connecting Nut)/.test(name)) return 'frame';
+    } },
+  'wisp-422': { file: '2025-422.glb', year: 2025, axes: 'yzx', finePass: true,
+    omit: /Bumpers Mk2|Battery Lead|Arducam|Radio Case|Energy Chain|Retracted Belt Run|Photo Mount|ASSEMBLY_55816|139700_EP01/,
+    groups: [
+      ['effector', /Manipulator Assembly/], ['intake', /Ground Coral Mk2/], ['climber', /Climber Mk2/], ['elevator-stage', /Elevator Assembly/],
+    ],
+    regroup(group, name, full, b) {
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2), x = Math.abs(c[0]);
+      // The elevator assembly is flat: sort continuous-belt stages by their nested side-tube spacing (1st .197, 2nd .165, 3rd .133, carriage .10).
+      if (group === 'elevator-stage') {
+        if (/2nd Stage/.test(name)) return 'elevator-stage';
+        if (/3rd Stage/.test(name)) return 'elevator-stage-2';
+        if (/^Carriage|Tension/.test(name)) return 'carriage';
+        if (c[1] < .06 || c[2] < .07 || b.max[0] - b.min[0] > .3) return 'frame';
+        return x < .12 ? (c[2] < .5 ? 'carriage' : 'elevator-stage-2') : x < .148 ? 'elevator-stage-2' : x < .18 ? 'elevator-stage' : 'frame';
+      }
+      // Ground CORAL arm turns on the 36T sprocket shaft (y -.1956, z .3023); side plates, motor and chain stay fixed.
+      if (group === 'intake' && c[2] < .29) return 'frame';
+      // Climber: post, gearbox and winch are fixed; L plates and hooks pivot on the bushings at (x .337, z .4056).
+      if (group === 'climber' && !/Climber L Plate|Hook Piece|Not Hook|Reaction Bar|Climber Cross|Bushing|tap both end|1" x 1" Tube Plug|Tap 0.4375|Oil-Embedded/.test(name)) return 'frame';
+    } },
+  'singularity-1706': { file: '2025-1706.glb', year: 2025, axes: 'negative-x', finePass: true, offsetX: .3555, offsetY: .026,
+    omit: /RS-900-Bumpers|(?:^|\/)Algae(?:\/|$)|Battery|Robot Radio|radio mount|Robot Signal Light|USB4125|SxB-PH|12AWG Wire|C_0805/,
+    // The elevator assembly carries an unnamed 1 m reference body around the robot.
+    drop: (name, full, b) => !name && Math.max(...b.max.map((v, i) => v - b.min[i])) > .6,
+    groups: [
+      ['effector', /RS400-000/], ['carriage', /RS-300-000/], ['intake', /RS-500/], ['climber', /RS-600/], ['elevator-stage', /RS-200-Elevator/],
+    ],
+    regroup(group, name, full, b) {
+      if (group !== 'elevator-stage') return;
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2), d = b.max.map((v, i) => v - b.min[i]), y = Math.abs(c[1]);
+      // Flat elevator: three nested tube pairs (fixed 1st stage at |y| .2413, 2nd .2032, 3rd .1651) between x .254-.305.
+      if (c[2] < .085 || c[0] < .235 || c[0] > .335 || /Side-Side|gearbox|Stiff|Wire Passthru|Mount Cable Chain|Stage 1 Top/i.test(name)) return 'frame';
+      if (d[1] > .3) return Math.abs(d[1] - .4318) < .01 ? 'elevator-stage' : d[1] < .4 ? 'elevator-stage-2' : 'frame';
+      return y > .145 && y < .1855 ? 'elevator-stage-2' : y >= .1855 && y < .222 ? 'elevator-stage' : 'frame';
+    } },
+  // The largest source (38 M triangles): a 1 mm final pass keeps it near the other assets. Pure-blue CAD swatches are
+  // the team's black printed parts and plates in the match photos.
+  'relay-3005': { file: '2025-3005.glb', year: 2025, axes: 'negative-y', finePass: .001,
+    recolor: c => c[0] < .05 && c[1] < .05 && c[2] > .95 ? [.11, .115, .125, c[3]] : null,
+    // Block-CAD wiring harnesses (pink multi-body routing), the bumpers and the reference CORAL are not robot structure.
+    omit: /1-02: Bumpers|BLOCK CAD - ELECTRONICS|(?:^|\/)Wiring(?:\/|$)|Coral \(Deployed\)/,
+    groups: [
+      ['algae', /7: Algae Gripper/], ['climber', /8-03: Climber Arm/], ['effector', /3-01\.2: Carriage|4: Coral Ejector/],
+      ['carriage', /2-04: Stage 3|3-02: Laterator Base/], ['elevator-stage-2', /2-03: Stage 2/], ['elevator-stage', /2-02: Stage 1/],
+    ] },
+  'redundancy-190': { file: '2025-190.glb', year: 2025, axes: 'yzx', finePass: true,
+    // Origin cubes, the battery and the one-piece bumper (Part 22 of the drivetrain) are not mechanism geometry.
+    omit: /Origin Cube|Robot Battery|^Part 22\/[^/]*\/A-25B-1000/,
+    groups: [
+      ['algae', /A-25B-4002/], ['effector', /A-25B-4001/], ['carriage', /A-25B-2003/], ['elevator-stage', /A-25B-2002/],
+      ['climber', /A-25A-5000/], ['intake', /A-25B-6000/],
+    ],
+    regroup(group, name, full, b) {
+      const c = b.min.map((v, i) => (v + b.max[i]) / 2);
+      // Climber: the gearbox and side plates stay on the chassis; the gas-spring arm and grappling hook swing.
+      if (group === 'climber' && c[2] < .3 && !/P-25A-0216/.test(name)) return 'frame';
+      // Over-the-bumper roller: the side racks slide out with the roller carriage; the camera mounts stay on the chassis.
+      if (group === 'intake' && /Limelight|Limlighty|^Minimal$/.test(name)) return 'frame';
+    } },
   'simbot-tim-1114': { file: 'S26-A000.glb', axes: 'yzx', offsetX: .3048, groups: [
     ['intake', /^(?:S26-IN-P(?:303|311|326)|Part (?:42|43|44|46|52))\//],
   ] },
@@ -212,6 +350,114 @@ const specs = {
     ['intake', /1500 Single Roller Intake/], ['climber', /1900 Climber/],
     ['flywheel', /Drum silicone/], ['hood', /Hood silicone|1678-26c-16(?:06|09|10|11|12|13|14|15|17|74|75|85)(?:\/|$)/],
   ] },
+  // 6329 Roman II public release (Onshape GLB, Z up, meters). Source +Y is the drum (front), -Y the four-bar intake.
+  // Rollers are grouped per measured axis (source Y/Z centre) so each spins about its own shaft.
+  'roman-6329': { file: '2026-6329.glb', axes: 'yzx', lossless: true, preserveColors: true,
+    omit: /Back Bumper|Origin Cube|Robot Battery|RoboRIO|Power Distribution|PDH|Robot Radio|120A Main Breaker|CANStar/,
+    groups: [], classify: ({ full, name, bounds }) => {
+      const cy = (bounds.min[1]+bounds.max[1])/2, cz = (bounds.min[2]+bounds.max[2])/2, near = (y, z, t = .02) => Math.hypot(cy-y, cz-z) < t;
+      const wide = bounds.max[0]-bounds.min[0] > .3;
+      if (/Shooter \(6329/.test(full)) {
+        if (/Drum Tube|Drum Print|Shooter Drum Cat Tongue|Drum Washer|Drum Bushing|Drum Inner Bushing/.test(name) || (wide && near(.2285,.4825,.01))) return 'flywheel';
+        if (/Hood Roller|Cat Tongue Tape|Feed Roller/.test(name) || wide) {
+          const rollers = [[.0335,.527],[.0285,.487],[.0565,.375],[.0695,.2985]];
+          const i = rollers.findIndex(([y,z]) => near(y,z,.012));
+          if (i >= 0) return `shooter-roller-${i}`;
+        }
+        return 'frame';
+      }
+      if (/Roller Floor/.test(full) && /Poly Tube|Cat Tongue|Flex Wheel|Front Roller|Stub Roller Hub/.test(name)) {
+        const rollers = [[.0015,.133],[-.0515,.148],[-.104,.163],[-.156,.178],[-.209,.193],[-.2665,.2095]];
+        const i = rollers.findIndex(([y,z]) => near(y,z,.015));
+        if (i >= 0) return `floor-roller-${i}`;
+      }
+      if (/Intake \(6329/.test(full)) {
+        if (/Dropdown/.test(name)) return 'intake-dropdown';
+        if (/Driving 4B Arm|SplineXL Driving Plate/.test(name)) return 'intake-drive-arm';
+        if (/Driven CC 4B Arm|Driven 4B Arm Rib/.test(name)) return 'intake-driven-arm';
+        if (/Versaroller Tube|30A Wheel|Double Channel 30T/.test(name) || (wide && bounds.min[1] < -.45)) {
+          if (near(-.5335,.165,.03)) return 'intake-roller-0';
+          if (near(-.489,.2685,.03)) return 'intake-roller-1';
+        }
+        if (bounds.min[1] < -.33 && !/Hopper Side Panels|Left Intake Mount Plate/.test(name)) return 'intake';
+        return 'frame';
+      }
+      return 'frame';
+    },
+    // TBA photos: clear polycarbonate side, drum-end and intake-deflector panels (exported as opaque grey).
+    finish: ({ name }) => /Hopper Side Panels|^Front Plate$|Front Deflector Plate/.test(name) ? { name: 'clear-hopper-sheet', color: [.8,.86,.91,.22], metal: 0, rough: .3 } : undefined },
+  // 1706 Mirage (Champs) public release. Source +X front (twin turrets), -X intake; Z up, meters. Bumpers omitted.
+  'mirage-1706': { file: '2026-1706.glb', axes: 'xzy', lossless: true, preserveColors: true,
+    omit: /Robot Battery|RoboRIO|PDP 2\.0|Power Distribution|PDH|Robot Radio|Main Breaker|Origin Cube/,
+    groups: [], classify: ({ full, name, bounds }) => {
+      if (/A-RB-90-1XX/.test(full) && (/Bumper|Corner Bracket/.test(name) || bounds.max[2] < .16)) return 'omit';
+      const side = (bounds.min[1]+bounds.max[1]) > 0 ? 'left' : 'right';
+      const cx = (bounds.min[0]+bounds.max[0])/2, cy = (bounds.min[1]+bounds.max[1])/2;
+      if (/A-RB-50-SHOOTER/.test(full)) return /Aluminum Flywheel/.test(name) ? `flywheel-${side}` : /3" Solid Urethane Wheel/.test(name) ? `wheels-${side}` : `turret-${side}`;
+      if (/A-RB-80-TURRET/.test(full)) return `turret-${side}`;
+      // Twin spindexer floors: FOREHEAD disc, cone, hub adapter and driven plate share each measured vertical axis.
+      if (/A-RB-70-Spindexer/.test(full) && /RB-70-FOREHEAD|^Part 1(?:-Mirrored)?$|3D-Print Adapter|WCP-0972|^Part 7$/.test(name) && Math.hypot(cx+.0885, Math.abs(cy)-.1775) < .03) return `rotor-${side}`;
+      if (/C-RB-20-INTAKE/.test(full)) {
+        if (/TUBE_ROLLER_BOTTOM/.test(name)) return 'intake-roller-0';
+        if (/TUBE_ROLLER_TOP/.test(name)) return 'intake-roller-1';
+        // Slide mounts, pivot plates and the drive motor stay on the chassis; the head and extension box move.
+        return cx < -.30 ? 'intake' : 'frame';
+      }
+      return 'frame';
+    } },
+  // 7769 CHUNK public "Full Robot" (assembly "Chunk"). Source +Y shooter (front), -Y racked intake; Z up, meters.
+  // The "Limits" assembly is the team's trench/height envelope reference, not robot geometry.
+  'chunk-7769': { file: '2026-7769.glb', axes: 'yzx', lossless: true, preserveColors: true,
+    omit: /^(?:Max Height|Max Height Extensions|Trench Extensions|Trench Height)\/|Bumpers <1>|Bumper Bracket|Origin Cube|Rio w\/ Canivore|PDH\+ Pigeon|Power Distribution|Robot Radio|Breaker Mount|SB50 Mount|Battery/,
+    groups: [], classify: ({ full, name, bounds }) => {
+      const cy = (bounds.min[1]+bounds.max[1])/2, cz = (bounds.min[2]+bounds.max[2])/2, near = (y, z, t = .02) => Math.hypot(cy-y, cz-z) < t;
+      const wide = bounds.max[0]-bounds.min[0] > .3;
+      if (/L1 Climb Arm/.test(full)) return 'climber';
+      if (/Kick Bar <1>/.test(full)) return 'kick-bar';
+      if (/Intake <1>/.test(full) && /Moving <1>/.test(full)) {
+        if (/Intake Roller|Cat Tongue|Driven Hub|ThunderHex \(25\.5 in\)/.test(name) || (wide && near(-.578,.175,.03))) return 'intake-roller';
+        return 'intake';
+      }
+      if (/Shooter <1>/.test(full)) {
+        if (/Stealth Wheel/.test(name) || (wide && near(.2285,.4955,.012))) return 'flywheel';
+        if (/Adjust Hood|^Hood Plate|^Hood Tube|32t Aluminum Plate Sprocket/.test(name)) return 'hood';
+        if (/Compliant Wheel/.test(name) || (wide && near(.106,.3175,.012))) return 'feeder';
+      }
+      return 'frame';
+    },
+    // Hopper side walls are smoked polycarbonate carrying the sponsor decals (TBA photo); the CAD swatch is mid grey.
+    finish: ({ name }) => /^Hopper (?:Stationary|Moving) Side(?: Opp)?$/.test(name) ? { name: 'smoked-hopper-sheet', color: [.06,.065,.075,.82], metal: 0, rough: .25 } : undefined },
+  // 1987 Cyclone public release "2026_1987_Main": turret over a dye rotor, floating hood, sliding intake.
+  'cyclone-1987': { file: '2026-1987.glb', axes: 'yzx', lossless: true, preserveColors: true,
+    omit: /Comp Bumpers|Origin Cube|Electrical Assembly|Robot Battery|RoboRIO|Robot Radio|Main Breaker/,
+    // "v2 turret structure" is the fixed cell-tower column, turret motor and chain: it stays with the frame.
+    groups: [], classify: ({ full, name }) => {
+      if (/V3 shooter hood/.test(full)) return 'hood';
+      if (/V3 shooter structure/.test(full)) return /4" Urethane Wheel|Flywheel Pulley Hub/.test(name) ? 'flywheel' : 'turret';
+      if (/V5 intake slip & slide/.test(full)) return 'intake';
+      if (/Hopper <1>/.test(full) && !/Hopper Assembly/.test(full)) return 'rotor';
+      return 'frame';
+    },
+    // The intake-end hopper wall and its side wings are clear polycarbonate on the robot (TBA photos), grey in the CAD.
+    finish: ({ full, name }) => /V5 intake slip & slide/.test(full) && /^Front Hopper Wall$|^Part 14$/.test(name) ? { name: 'clear-hopper-sheet', color: [.8,.86,.91,.22], metal: 0, rough: .3 } : undefined },
+  // 9496 LYNK Matterhorn public release.
+  'matterhorn-9496': { file: '2026-9496.glb', axes: 'yzx', lossless: true, preserveColors: true,
+    omit: /Bumper <1>|Origin Cube|PDP 2\.0|Robot Battery|RoboRIO|Robot Radio|Main Breaker/,
+    groups: [], classify: ({ full, name, bounds }) => {
+      const cy = (bounds.min[1]+bounds.max[1])/2, cz = (bounds.min[2]+bounds.max[2])/2, wide = bounds.max[0]-bounds.min[0] > .3;
+      const nearest = (pts, t) => { let best = -1, d = t; pts.forEach(([y, z], i) => { const e = Math.hypot(cy-y, cz-z); if (e < d) { d = e; best = i; } }); return best; };
+      if (/Comp Shooter V2/.test(full)) {
+        if (/^Drum$|Brass Flywheel/.test(name) || (wide && nearest([[.127,.454]], .012) === 0)) return 'flywheel';
+        return 'frame';
+      }
+      if (/Feeder V3/.test(full)) { const i = /Plate/.test(name) ? -1 : nearest([[.158,.28],[.158,.334],[.158,.388]], .014); return i >= 0 ? `feeder-roller-${i}` : 'frame'; }
+      if (/Intake V2/.test(full)) { const i = wide ? nearest([[-.511,.256],[-.576,.161]], .02) : -1; return i >= 0 ? `intake-roller-${i}` : 'intake'; }
+      // Slotted side panels and the end panel telescope out with the intake; the fixed panels stay.
+      if (/Comp Hopper V5/.test(full) && !/Fixed Panel/.test(name)) return 'hopper-ext';
+      return 'frame';
+    },
+    // The drum is black (grip tape) between its brass flywheels on the robot (TBA photo); the CAD swatch is pale grey.
+    finish: ({ name }) => /^Drum$/.test(name) ? { name: 'drum-grip', color: [.07,.07,.08,1], metal: 0, rough: .85 } : undefined },
   'rubble-581': { file: '2026 Dumper Champs Bot581.glb', axes: 'xzy', groups: [
     ['hopper-roof', /^Part 22\/.*Hopper </],
     ['hood', /Hood Assem/], ['flywheel', /#1: 4.*Roller Shaft/],
@@ -242,10 +488,12 @@ for (const id of ids) {
   const inputTriangles = triangleCount();
   // CAD exports use Z up. Preserve meters; turn the real intake toward robot -X.
   const axes = spec.axes === 'negative-z' ? new Matrix4().set(0,0,-1,0, 0,1,0,0, 1,0,0,0, 0,0,0,1) : spec.axes === 'identity' ? new Matrix4() : spec.axes === 'zy-x' ? new Matrix4().set(0,0,1,0, 0,1,0,0, -1,0,0,0, 0,0,0,1) : spec.axes === 'negative-y' ? new Matrix4().set(0,-1,0,0, 0,0,1,spec.offsetY??0, -1,0,0,0, 0,0,0,1) : spec.axes === 'yzx' ? new Matrix4().set(0,1,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,1)
+    : spec.axes === 'negative-x' ? new Matrix4().set(-1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,1)
     : new Matrix4().set(1,0,0,0, 0,0,1,0, 0,-1,0,0, 0,0,0,1);
   const nodes = root.listNodes();
   axes.elements[12] = spec.offsetX ?? 0;
   axes.elements[13] = spec.offsetY ?? 0;
+  axes.elements[14] = spec.offsetZ ?? 0;
   const retained = [];
   let omitted = 0, wheelCount = 0;
   const surfaces = new Set();
@@ -255,6 +503,7 @@ for (const id of ids) {
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
     if (spec.omit?.test(full)) { n.setMesh(null); omitted++; continue; }
+    if (spec.drop?.(n.getName(), full, getBounds(n))) { n.setMesh(null); omitted++; continue; }
     // An unnamed 0.2 m block hangs past the 1318 back bumper (not part of the robot structure).
     if(id==='hero-constantine-1318' && !n.getName() && getBounds(n).min[1]>.31){n.setMesh(null);omitted++;continue;}
     if(id==='domotron-604' && /(?:^|\/)\s*(?:occurrence of )?Note(?:\/|$)/i.test(full)){n.setMesh(null);omitted++;continue;}
@@ -281,6 +530,13 @@ for (const id of ids) {
     if ((id === 'rotor-604-donor' && !/DPC Rotor Assembly/.test(full)) || (id === 'shooter-581-donor' && (!/Shooter Assem/.test(full) || /(?:^|\/)Hopper <|^Triad\//.test(full))) || (id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
       || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
+    // Per-robot hooks for flat Onshape exports: return a group name, null/'omit' to drop the mesh, or nothing to keep it.
+    if (spec.classify) {
+      const c = spec.classify({ full, name: n.getName(), bounds, group });
+      if (c === null || c === 'omit') { n.setMesh(null); omitted++; continue; }
+      if (c) group = c;
+    }
+    if (spec.regroup) group = spec.regroup(group, n.getName(), full, getBounds(n)) ?? group;
     if (id === 'hero-poofs-254') {
       if (/Elevator Assy/.test(full) && group === 'frame') group = bounds.min[2] >= .95 ? 'stage3' : bounds.min[2] >= .58 ? 'stage2' : 'frame';
       if (group === 'turret' && /^(?:Lower Roller Tube|Shaft)\//.test(full) && bounds.min[0] > .0 && bounds.min[2] > .70) group = 'flywheel';
@@ -356,6 +612,10 @@ for (const id of ids) {
         if(c[0]>c[1]*1.15 && c[2]>c[1]*1.15) m.setBaseColorFactor([.68,.7,.73,1]).setMetallicFactor(.45);
         p.setMaterial(m);
       }
+      if (spec.recolor) {
+        const next = spec.recolor(p.getMaterial().getBaseColorFactor());
+        if (next) p.setMaterial(p.getMaterial().clone().setBaseColorFactor(next));
+      }
       if (sheet || themed) {
         const m = p.getMaterial().clone().setExtras({ cadSheet: sheet, cadSmoothSheet: simbotSheet });
         if (themed) {
@@ -396,6 +656,17 @@ for (const id of ids) {
         .setBaseColorFactor(color).setMetallicFactor(brass?.75:rubber||motor?.05:gold?.4:.65).setRoughnessFactor(brass?.34:rubber||motor?.8:gold?.48:.42);
       p.setMaterial(material);
     }
+    // Per-robot finishes for CAD manufacturing swatches (photo-fitted, see docs/ROBOT-CAD-IMPORTS.md).
+    if (spec.finish) for (const p of n.getMesh().listPrimitives()) {
+      const f = p.getMaterial() && spec.finish({ full, name: n.getName(), group, color: p.getMaterial().getBaseColorFactor() });
+      if (!f) continue;
+      const m = p.getMaterial().clone().setName(f.name ?? 'cad-finish').setBaseColorFactor(f.color);
+      if (f.metal !== undefined) m.setMetallicFactor(f.metal);
+      if (f.rough !== undefined) m.setRoughnessFactor(f.rough);
+      if (f.color[3] < 1) m.setAlphaMode('BLEND').setDoubleSided(true);
+      m.setExtras({ ...m.getExtras(), cadFinish: true, ...(sheet ? { cadSheet: true } : {}) });
+      p.setMaterial(m);
+    }
     if (id === 'hero-nomad-6995' && group === 'frame' && /Intake <1>/.test(full) && bounds.min[2] >= .33) group = 'slapdown';
     const turned = id === 'hero-nomad-6995' && /Elevator <1>/.test(full) ? new Matrix4().makeRotationZ(Math.PI) : new Matrix4();
     const matrix = axes.clone().multiply(turned).multiply(new Matrix4().fromArray(n.getWorldMatrix())).toArray();
@@ -415,6 +686,7 @@ for (const id of ids) {
   for (const n of groups.values()) scene.addChild(n);
   // Onshape exports flat CAD colors. Set a useful PBR finish and retain color distinctions.
   for (const m of root.listMaterials()) {
+    if (m.getExtras().cadFinish) continue;
     const c = m.getBaseColorFactor();
     m.setMetallicFactor(Math.max(...c.slice(0,3)) - Math.min(...c.slice(0,3)) < .1 && c[0] > .45 ? .55 : .12);
     if (m.getName() !== 'rubber') m.setRoughnessFactor(.55);
@@ -429,10 +701,11 @@ for (const id of ids) {
   };
   await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
   // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
-  // A final bounded 0.5 mm pass reduces those faces without quantizing positions.
-  if (id === 'reblitz-2910' || id === 'hero-gadgeteer-9408') {
+  // A final bounded pass reduces those faces without quantizing positions (0.5 mm unless the robot or a spec's `finePass` sets it).
+  // Specs opt in with `finalPass: true` or `finePass` when the joined asset still exceeds the size budget.
+  if (id === 'reblitz-2910' || id === 'hero-gadgeteer-9408' || spec.finalPass || spec.finePass) {
     for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
-      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: id === 'reblitz-2910' ? .40 : .45, error: id === 'reblitz-2910' ? .0005 : .001 });
+      simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: id === 'hero-gadgeteer-9408' ? .45 : .40, error: id === 'hero-gadgeteer-9408' ? .001 : typeof spec.finePass === 'number' ? spec.finePass : .0005 });
     }
     await doc.transform(prune());
   }

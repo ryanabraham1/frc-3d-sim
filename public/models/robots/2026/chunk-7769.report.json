@@ -1,0 +1,31 @@
+{
+  "id": "chunk-7769",
+  "sourceFile": "2026-7769.glb",
+  "inputBytes": 158212032,
+  "outputBytes": 7298676,
+  "inputTriangles": 6110946,
+  "outputTriangles": 594685,
+  "omittedOccurrences": 275,
+  "bounds": {
+    "min": [
+      -0.6254830891266465,
+      3.729319644390591e-7,
+      -0.37306249095126987
+    ],
+    "max": [
+      0.32385000586509705,
+      0.5572125278413307,
+      0.3730624616146089
+    ]
+  },
+  "groups": [
+    "frame",
+    "climber",
+    "kick-bar",
+    "intake",
+    "intake-roller",
+    "feeder",
+    "flywheel",
+    "hood"
+  ]
+}

@@ -2,13 +2,13 @@ import { scoringApproach } from '@engine/robot/scoringReadiness';
 import { adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, fourBarIntake, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
+import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, fourBarIntake, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { hopperNetCeiling, launcherExitOffsets } from '@engine/robot/config';
 import { motor } from '@engine/robot/mechanicalDetail';
 import { slidingHopper } from '@engine/robot/slidingHopper';
-import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
+import { build, normalizeRebuiltConfig, setRebuiltAccuracy, ROMAN_CAPACITY, chunkCad, romanII } from './config';
 
 /**
  * Five more real 2026 REBUILT robots. Looks follow each team's published CAD / reveal photos, drawn in the clean,
@@ -113,58 +113,47 @@ function shell(k: ModelKit, o: { x?: number; lengthK?: number; widthK?: number; 
   return { y0, h, length, width };
 }
 
-// ── 6329 ROMAN (TBA 2026 photos + CAD): a clear polycarbonate box the full width of the frame on SILVER pocketed side
-//    plates with purple 3D-printed brackets, a black net lid, a big spindexer drum with the turret over its centre, and
-//    a wide roller bank (black rollers with yellow / purple rings) on long four-bar arms that folds up over the top ──
+// ── 6329 ROMAN II (TBA 2026 photos + public "Roman II" CAD): a clear polycarbonate box the full width of the frame on
+//    SILVER pocketed side plates with purple 3D-printed brackets and a black net lid; a full-width black cat-tongue drum
+//    across the FRONT with two powered hood rollers behind it (fixed hood, no turret: FUEL climbs a feed column into the
+//    drum gap); a roller floor sloping down to the feed column; and a two-roller head (yellow / purple 30A wheels) on long
+//    four-bar arms at the BACK. Lightweight fallback for the imported CAD (romanCadModel.ts). ──
 registerRobotModel('roman-6329', (k: ModelKit) => {
   const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop, side = k.groundSide;
   const purple = mat(0x7b4bd6, { metal: 0.25, rough: 0.45 }), steel = tubeMat(0xaeb4bd), steelM = mat(0xaeb4bd, { metal: 0.7, rough: 0.35 }), black = mat(0x17181b, { metal: 0.3, rough: 0.5 });
   const db = drivebase(k, { tube: steel, motorRing: 0x7b4bd6 });
   const sh0 = shell(k, { wall: clearMat(), frame: steel });
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity });
+  const fill = fillBlock(k.visual, { x: -L * 0.12, y0: bt + 0.03, length: L * 0.7, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity });
   for (const sz of [-1, 1]) {
     sidePlate(k.visual, { x0: -L * 0.46, x1: L * 0.46, y0: bt, y1: bt + 0.17, z: sz * (W * 0.48 + 0.004), m: steelM, holes: 8 });
     for (const x of [-L * 0.3, 0, L * 0.3]) box(k.visual, 0.05, 0.03, 0.02, purple, x, bt + 0.19, sz * (W * 0.48 + 0.01));
-    decal(k.visual, '6329', { w: 0.2, h: 0.07, color: '#e8eef8', x: -side * 0.0, y: bt + 0.3, z: sz * (W * 0.48 + 0.006), rotY: sz > 0 ? 0 : Math.PI });
+    decal(k.visual, '6329', { w: 0.2, h: 0.07, color: '#e8eef8', x: 0, y: bt + 0.3, z: sz * (W * 0.48 + 0.006), rotY: sz > 0 ? 0 : Math.PI });
+    // Shooter side plates carry the drum and hood-roller shafts down to the frame rail.
+    plate(k.visual, [[-0.02, bt], [L * 0.48, bt], [L * 0.48, H - 0.01], [-0.02, H - 0.01]], 0.006, steelM, sz * (W * 0.47), [[L * 0.2, bt + 0.12, 0.04], [L * 0.32, bt + 0.2, 0.035]]);
   }
-  // Spectrum row 70: Roman I retains the spindexer/turret; Roman II is a different fixed drum shooter.
-  // Long triangular pocketed side frames support the clear walls and the four-bar pivots.
-  for (const sz of [-1, 1]) {
-    lattice(k.visual, [-side * L * 0.43, bt + 0.16, sz * W * 0.47], [side * L * 0.82, 0, 0], [0, H - bt - 0.21, 0], { cells: 4, w: 0.013, m: steelM, zig: true });
-  }
-  netRoof(k.visual, { x: 0, y: H - 0.02, length: L * 0.96, width: W * 0.96, opening: { x: 0.02, z: 0, radius: 0.2 } });
-  // Drum 20.75 in across with a ~6 in centre; the turret stands over its centre.
-  const R = inch(20.75) / 2, cx = 0.02;
-  const drum = spindexer(k.visual, { x: cx, y0: bt + 0.01, R, wallH: 0.1, coneH: 0.07, plate: black, rib: purple, cone: purple, rim: purple });
-  // Roller floor from the intake to the drum: purple rollers, wide and uninterrupted.
+  if (!c.hopperExpansion) netRoof(k.visual, { x: -L * 0.2, y: H - 0.005, length: L * 0.56, width: W * 0.96 });
+  // Fixed full-width drum at the front, two hood rollers behind it and two feed rollers below them.
+  const drum = roller(k.visual, 0.051, W * 0.8, black, side * -0.2285 + 0, c.height - 0.065);
+  const hoodRolls = [[0.0335, H - 0.02], [0.0285, H - 0.06], [0.0565, H - 0.17], [0.0695, H - 0.25]].map(([x, y]) => roller(k.visual, 0.016, W * 0.82, black, -side * x, y));
   const floorRollers: THREE.Group[] = [];
-  for (let i = 0; i < 4; i++) floorRollers.push(roller(k.visual, 0.02, W * 0.9, purple, side * (R + 0.03 + i * 0.05) + cx, bt + 0.03));
-  for (const sz of [-1, 1]) for (const sx of [-1, 1]) bar(k.visual, [cx + sx * 0.1, bt + 0.11, sz * 0.1], [cx + sx * 0.1, H - 0.1, sz * 0.1], 0.016, steel); // open tower
-  const t = k.turret;
-  t.position.set(cx, H - 0.07, 0);
-  const sh = turretShooter(t, { width: 0.19, wheel: mat(0x7b4bd6, { rough: 0.5 }), plate: black, accent: purple, height: 0.15, topY: 0.06 });
-  const turretRing = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.018, 8, 32), purple);
-  turretRing.rotation.x = Math.PI / 2; turretRing.position.y = -0.015; t.add(turretRing);
-  // Four-bar intake: two long silver arms and a black roller bank with yellow / purple rings, folded up over the top.
-  const intake = fourBarIntake(k, { reach: c.intake.reach, frame: steel, stow: Math.PI * 0.92, rollerMaterial: black });
-  const slide = slidingHopper(k);
-  wheelShaft(intake.tip, 0, 0, { n: 10, r: 0.035, w: 0.02, span: c.intake.width * 0.9, colors: [0x7b4bd6] });
-  box(intake.tip, 0.016, 0.075, c.intake.width * 0.65, black, -side * 0.04, 0.065, 0);
-  decal(intake.tip, '6329', { w: c.intake.width * 0.6, h: 0.06, x: -side * 0.052, y: 0.065, z: 0, rotY: side > 0 ? -Math.PI / 2 : Math.PI / 2 });
+  for (let i = 0; i < 5; i++) floorRollers.push(roller(k.visual, 0.016, W * 0.75, purple, side * (0.0015 - i * 0.052) * -1, bt + 0.04 + i * 0.015));
+  // Four-bar intake: two long silver arms and the two-roller head, folded up over the back when stowed.
+  const intake = fourBarIntake(k, { reach: c.intake.reach, frame: steel, stow: 1.0, rollerMaterial: black });
+  wheelShaft(intake.tip, 0, 0, { n: 8, r: 0.028, w: 0.025, span: c.intake.width * 0.9, colors: [0x7b4bd6, 0xe8c21a] });
   const d = { v: 0 };
-  let spinRate = 0;
-  const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
+  const pile = hopperStow({ x: -L * 0.12, y0: bt + 0.03, length: L * 0.6, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-side * L * 0.35, H - 0.01, W * 0.38],
-    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: columnFeed(k, cx, sh.flywheel, R * 0.8, FUEL_R) },
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow,
+      feed: (shot = 0) => { const z = ((shot % 4) - 1.5) * 0.15; return [new THREE.Vector3(0, bt + 0.06, z), new THREE.Vector3(0.11, H - 0.25, z), flowAt(k, drum, -0.115, 0.02, 0).setZ(z), flowAt(k, drum, -0.09, 0.11, 0).setZ(z)]; } },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
-      spinRate = approach(spinRate, !s.enabled ? 0 : s.firing > 0 ? 7 : -1, 6, s.dt);
-      spin(drum.floor, spinRate, s.dt, 'y');
-      for (const r of floorRollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 18 : 0), s.dt);
-      sh.update(s);
+      intake.update(s, latch(d, s));
+      const feeding = s.enabled && (s.intaking || s.firing > 0);
+      for (const r of floorRollers) spin(r, -18 * (feeding ? 1 : 0), s.dt);
+      spin(drum, s.enabled && (s.aiming || s.firing > 0) ? -55 : 0, s.dt);
+      for (const r of hoodRolls) spin(r, s.enabled && (s.aiming || s.firing > 0 || feeding) ? 40 : 0, s.dt);
     },
   };
 });
@@ -597,9 +586,9 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
       source: 'Spectrum CAD Collection row 10; Team 581 CAD and code release https://www.chiefdelphi.com/t/521762',
       config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 65, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); c.hopperCovered = true; c.hopperExpansion = { startCount: 42, fullHeight: inch(27) }; /* Packed real-size FUEL: 42 rigid + 23 under the stretched net [EST]. */ /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 86); }) },
     { id: 'roman-6329', team: 6329, name: 'ROMAN',
-      description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056). Turret over a 20.75 in spindexer drum fed by a wide, uninterrupted roller floor, an \"upkicker\" lifting FUEL into the shooter, and a long-armed four-bar intake that folds out of the way on impacts. Capacity, rate and speed are simulator estimates.",
-      source: 'Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN" (reveal Q&A and Roman II CAD release)',
-      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'turret', hopper: 47, tall: false, rate: 14, climb: 0 }, (c) => { c.maxSpeed = 4.6; setRebuiltAccuracy(c, 88); }) },
+      description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056), championship ROMAN II rebuild. Fixed full-width cat-tongue drum with two powered hood rollers at the front, fed by a vertical feed column off a sloped roller floor, and a long driven four-bar intake whose two-roller head reaches out over the back bumper. 30 x 24 in frame, black net roof over clear walls. Capacity, rate and speed are simulator estimates.",
+      source: 'Onshape public release "6329-2026.2, Roman II - Public Release" https://cad.onshape.com/documents/014716f840fdbd882c1d691f; Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN"; TBA 2026 photos',
+      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'align', dumper: true, hopper: ROMAN_CAPACITY, tall: false, rate: 16, climb: 0 }, (c) => romanII(c)) },
     { id: 'hailstorm-1778', team: 1778, name: 'HAILSTORM',
       description: '1778 Chill Out. Compact turret over a spindexer with a grip-taped "bottle rocket" cone (copied from 4180) for a tight, steady stream; simple spindexer chosen over a dye rotor. A reliable, consistent mid-high build. Capacity, rate and speed are simulator estimates.',
       source: 'Chief Delphi "1778 2026 CAD & Code Release" (HAILSTORM Q&A: spindexer, bottle-rocket cone, turret encoders)',
@@ -609,9 +598,9 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
       source: 'Chief Delphi "5940 BREAD 2026 Double Turret CAD Release" (Croquembouche, Q&A on brownouts)',
       config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 33, tall: false, rate: 16, climb: 0 }, (c) => { c.maxSpeed = 4.3; c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .12, side: sign * c.frameWidth * .25 })); c.launcher.muzzleForward = .08; setRebuiltAccuracy(c, 84); }) },
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
-      description: '7769 The CREW (5 blue banners). Wide static-hood shooter on 4 in stealth wheels, black sponsor-plated polycarb hopper, intake on independently driven racks that slides out and shuffles while firing to prevent jams. Under-trench box, so it holds about 37 FUEL [EST: packed into the modeled box; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Shoots from the TRENCH without being pushed under. Rate and speed are estimates.',
-      source: 'Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
+      description: '7769 The CREW (5 blue banners). Wide fixed shooter on 4 in Stealth wheels with a compliant-wheel feeder; the hood swings up around the flywheel shaft to shoot and drops for the TRENCH. Black sponsor-plated polycarb hopper under a net; the intake rides out on independently driven racks and shuffles while firing to prevent jams. Loads the public CAD. Under-trench box, so it holds about 37 FUEL [EST: packed into the modeled box; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Its L1 climb arm is modeled but, like every stock 2026 robot, it starts without a climb. Rate and speed are estimates.',
+      source: 'Onshape public "Full Robot" (assembly "Chunk") https://ostcse.onshape.com/documents/692fc43a78732f76f6a7fc01; Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 15, climb: 0 }, (c) => { chunkCad(c); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. 45 FUEL total following user tuning, including its intake-side hopper extension; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',

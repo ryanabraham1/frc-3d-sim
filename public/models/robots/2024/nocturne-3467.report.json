@@ -1,0 +1,26 @@
+{
+  "id": "nocturne-3467",
+  "sourceFile": "2024-3467.glb",
+  "inputBytes": 623884744,
+  "outputBytes": 10637108,
+  "inputTriangles": 62259316,
+  "outputTriangles": 726148,
+  "omittedOccurrences": 2719,
+  "bounds": {
+    "min": [
+      -0.4716777777969837,
+      0.00048083046870194565,
+      -0.33644941449165344
+    ],
+    "max": [
+      0.38490642015495913,
+      1.0921796248050843,
+      0.3413603901863099
+    ]
+  },
+  "groups": [
+    "frame",
+    "shooter",
+    "arm"
+  ]
+}

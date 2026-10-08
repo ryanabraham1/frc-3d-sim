@@ -1,0 +1,30 @@
+{
+  "id": "wisp-422",
+  "sourceFile": "2025-422.glb",
+  "inputBytes": 301067340,
+  "outputBytes": 8203804,
+  "inputTriangles": 17382550,
+  "outputTriangles": 526949,
+  "omittedOccurrences": 521,
+  "bounds": {
+    "min": [
+      -0.3594654281857643,
+      0.0007193304336396977,
+      -0.3669177293777466
+    ],
+    "max": [
+      0.36648809909821045,
+      0.9515309939160943,
+      0.36733565572649246
+    ]
+  },
+  "groups": [
+    "effector",
+    "frame",
+    "climber",
+    "intake",
+    "elevator-stage",
+    "elevator-stage-2",
+    "carriage"
+  ]
+}

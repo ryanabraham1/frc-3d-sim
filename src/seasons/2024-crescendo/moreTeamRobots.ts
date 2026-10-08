@@ -238,6 +238,119 @@ registerRobotModel('gold-rush-27', (k: ModelKit) => {
   return {replaces:['chassis','launcher','intakeRollers','climber'],update(s){base.update(s);intake.update(s);head.rotation.z=s.aiming?s.hood-.3:0;climb.rotation.z=s.climb*1.7;}};
 });
 
+// Nik fallback (1678): silver frame, front pivot shooter with orange wheels, green over-bumper intake
+// at the back under a tilted AMP/TRAP elevator (C2024-Public + TBA photos). Motion follows the CAD rig.
+registerRobotModel('nik-1678', (k: ModelKit) => {
+  const silver = tubeMat(0xc4c9cf), black = mat(0x1d1f22), orange = mat(0xe8742a), green = mat(0x3fae49), W = k.config.frameWidth, L = k.config.frameLength;
+  const base = drivebase(k, { tube: silver });
+  const head = pivot(k.visual, .02, .19);
+  sidePlates(head, [[0, -.03], [.38, .05], [.38, .17], [0, .12]], W * .3, silver);
+  const wheels = [roller(head, .04, W * .55, orange, .14, .07), roller(head, .04, W * .55, orange, .34, .13)];
+  const arm = pivot(k.visual, -L / 2 + .03, .16);
+  sidePlates(arm, [[0, -.03], [-.3, -.09], [-.3, -.02], [0, .03]], W * .4, black);
+  const intakeRollers = [roller(arm, .03, W * .8, green, -.28, -.06), roller(arm, .03, W * .8, green, -.15, -.03)];
+  const tower = new THREE.Group(); k.visual.add(tower);
+  for (const z of [-W * .3, W * .3]) bar(k.visual, [-.12, .2, z], [-.3, .72, z], .025, silver);
+  for (const z of [-W * .27, W * .27]) bar(tower, [-.25, .5, z], [-.4, .78, z], .02, silver);
+  roller(tower, .03, W * .5, black, -.4, .77);
+  let deploy = 0, lift = 0;
+  return { replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    update(s) { base.update(s);
+      deploy = approach(deploy, s.intaking ? 0 : -1.97, 7, s.dt); arm.rotation.z = deploy;
+      lift = approach(lift, s.climb > 0 ? .42 : s.amp ? .303 : 0, 1, s.dt); tower.position.set(-.342 * lift, .94 * lift, 0);
+      head.rotation.z = s.aiming || s.firing > 0 ? Math.max(0, s.hood - .26) : 0;
+      for (const w of wheels) spin(w, -flywheel(s), s.dt); for (const r of intakeRollers) spin(r, s.intaking ? 25 : 0, s.dt);
+    } };
+});
+
+// Riot fallback (1706): front rack-driven pivot shooter, back-leaning elevator carriage, two-ended under-bumper
+// intake and twin telescoping hooks (public CAD + TBA photos). Motion follows the CAD rig.
+registerRobotModel('riot-1706', (k: ModelKit) => {
+  const silver = tubeMat(0xc0c5cb), blue = mat(0x2c5fd1), orange = mat(0xe56a24), W = k.config.frameWidth, L = k.config.frameLength;
+  const base = drivebase(k, { tube: silver });
+  const front = underBumperIntake(k, { n: 2 });
+  const frontRoller = roller(k.visual, .028, W * .8, orange, L / 2 + .03, .07, 0); // the second mouth
+  const head = pivot(k.visual, -.09, .25);
+  sidePlates(head, [[0, -.05], [.38, .02], [.38, .16], [0, .14]], W * .3, blue);
+  const wheels = [roller(head, .05, W * .55, orange, .36, .04), roller(head, .05, W * .55, orange, .34, .17)];
+  for (const z of [-W * .4, W * .4]) bar(k.visual, [-.1, .15, z], [-.24, .66, z], .03, silver);
+  const carriage = new THREE.Group(); k.visual.add(carriage); roller(carriage, .03, W * .7, blue, -.22, .6);
+  const hooks = new THREE.Group(); k.visual.add(hooks);
+  for (const z of [-W * .45, W * .45]) { bar(k.visual, [.12, .03, z], [.12, .38, z], .04, silver); bar(hooks, [.12, .3, z], [.12, .5, z], .025, silver); }
+  let lift = 0, reach = 0;
+  return { replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    update(s) { base.update(s); front.update(s);
+      head.rotation.z = s.aiming || s.firing > 0 ? Math.max(0, s.hood - .14) : 0;
+      lift = approach(lift, s.climb > 0 && s.climb <= .5 ? .55 : s.amp ? .3 : 0, 1.2, s.dt); carriage.position.set(-.276 * lift, .961 * lift, 0);
+      reach = approach(reach, s.climb > 0 ? (s.climb > .5 ? .45 : .08) : 0, .8, s.dt); hooks.position.y = reach;
+      for (const w of wheels) spin(w, -flywheel(s), s.dt); spin(frontRoller, s.intaking ? 28 : 0, s.dt);
+    } };
+});
+
+// Surge fallback (3005): long black launcher pivoting at the back with an AMP diverter on its nose, two-ended
+// under-bumper intake and a single telescoping hook (public CAD + reveal). Motion follows the CAD rig.
+registerRobotModel('surge-3005', (k: ModelKit) => {
+  const grey = tubeMat(0xa9aeb5), black = mat(0x1c1d20), W = k.config.frameWidth, L = k.config.frameLength;
+  const frontRoller = roller(k.visual, .028, W * .8, grey, L / 2 + .03, .07, 0); // the second mouth
+  const base = drivebase(k, { tube: grey }), intake = underBumperIntake(k, { n: 2 });
+  const launcher = pivot(k.visual, -.22, .33);
+  sidePlates(launcher, [[0, -.05], [.5, .1], [.52, .22], [0, .08]], W * .3, black);
+  const wheels = [roller(launcher, .04, W * .55, grey, .25, .1), roller(launcher, .04, W * .55, grey, .45, .16)];
+  const nose = pivot(launcher, .49, .17); box(nose, .1, .08, W * .55, black, .04, .02, 0);
+  const hook = new THREE.Group(); k.visual.add(hook);
+  bar(k.visual, [0, .03, -.2], [0, .45, -.25], .05, grey); bar(hook, [0, .35, -.24], [0, .75, -.28], .03, grey);
+  let reach = 0;
+  return { replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    update(s) { base.update(s); intake.update(s);
+      launcher.rotation.z = s.amp ? .64 : s.aiming || s.firing > 0 ? Math.max(-.15, s.hood - .32) : 0;
+      nose.rotation.z = s.amp ? -1.6 : 0;
+      reach = approach(reach, s.climb > 0 ? (s.climb > .5 ? .45 : .06) : 0, .8, s.dt); hook.position.y = reach;
+      for (const w of wheels) spin(w, -flywheel(s), s.dt); spin(frontRoller, s.intaking ? 28 : 0, s.dt);
+    } };
+});
+
+// Ultraviolet fallback (3847): purple frame, front pivot launcher, AmpTrap roller tower on a back-leaning
+// elevator over the back under-bumper intake, slanted climber slides (public CAD + 2024-Ultraviolet code).
+registerRobotModel('ultraviolet-3847', (k: ModelKit) => {
+  const purple = tubeMat(0x6a2c9e), silver = tubeMat(0xc2c6cc), black = mat(0x1b1c1f), W = k.config.frameWidth;
+  const base = drivebase(k, { tube: purple }), intake = underBumperIntake(k, { n: 2 });
+  const launcher = pivot(k.visual, 0, .26);
+  sidePlates(launcher, [[-.08, -.1], [.34, -.1], [.34, .12], [-.08, .12]], W * .24, purple);
+  const wheels = [roller(launcher, .025, W * .45, black, .22, .04), roller(launcher, .025, W * .45, black, .32, .04)];
+  for (const z of [-W * .36, W * .36]) bar(k.visual, [-.12, .05, z], [-.29, .68, z], .025, purple);
+  const tower = new THREE.Group(); k.visual.add(tower); roller(tower, .03, W * .6, black, -.3, .65); roller(tower, .03, W * .6, black, -.24, .58);
+  const slides = new THREE.Group(); k.visual.add(slides);
+  for (const z of [-W * .4, W * .4]) bar(slides, [.36, .18, z], [-.17, .66, z], .025, silver);
+  let lift = 0, reach = 0;
+  return { replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    update(s) { base.update(s); intake.update(s);
+      launcher.rotation.z = s.aiming || s.firing > 0 ? Math.min(1.26, Math.max(0, s.hood)) : s.amp ? .98 : 0;
+      lift = approach(lift, s.amp ? .226 : s.climb > 0 && s.climb <= .5 ? .075 : 0, 1.2, s.dt); tower.position.set(-.259 * lift, .966 * lift, 0);
+      reach = approach(reach, s.climb > .5 ? .35 : 0, .7, s.dt); slides.position.set(-.748 * reach, .663 * reach, 0);
+      for (const w of wheels) spin(w, -flywheel(s), s.dt);
+    } };
+});
+
+// Nocturne fallback (3467): dark tower at the front carrying an arm with the black shooter head and chain
+// hooks; back under-bumper intake below the stowed head (public CAD, Skip-5.14-Nocturne code, TBA photo).
+registerRobotModel('nocturne-3467', (k: ModelKit) => {
+  const dark = tubeMat(0x3a3d42), black = mat(0x16171a), W = k.config.frameWidth;
+  const base = drivebase(k, { tube: dark }), intake = underBumperIntake(k, { n: 2 });
+  for (const z of [-W * .2, W * .2]) bar(k.visual, [.17, .08, z], [.17, .52, z], .035, dark);
+  const arm = pivot(k.visual, .165, .515);
+  for (const z of [-W * .14, W * .14]) bar(arm, [0, 0, z], [-.39, -.13, z], .03, dark);
+  const head = new THREE.Group(); head.position.set(-.39, -.13, 0); arm.add(head);
+  sidePlates(head, [[-.06, -.08], [.2, -.08], [.2, .12], [-.06, .12]], W * .26, black);
+  const wheels = [roller(head, .05, W * .45, black, .16, .06), roller(head, .05, W * .45, black, .05, .1)];
+  let angle = 0;
+  return { replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    update(s) { base.update(s); intake.update(s);
+      const target = s.climb > 0 ? (s.climb > .5 ? 88 : 30) : s.amp ? 93 : s.aiming || s.firing > 0 ? Math.min(60, Math.max(0, 52 - s.hood * 180 / Math.PI)) : 0;
+      angle = approach(angle, target, 230, s.dt); arm.rotation.z = -angle * Math.PI / 180;
+      for (const w of wheels) spin(w, -flywheel(s), s.dt);
+    } };
+});
+
 const cfg = (team: number, model: string, o: { turret?: boolean; speed: number; accel: number; climb: number; height: number; frame?: [number, number]; intake?: number; mass?: number }, level: 0 | 1 | 2 = 2) => {
   const c = build({ ground: true, source: true, shooter: 'pivot', aim: o.turret ? 'turret' : 'align', amp: true, climb: level });
   if (model === 'snoopy-6036') { c.intake.groundSide = 'front'; c.intake.stationSide = 'front'; }
@@ -272,6 +385,26 @@ export function moreCrescendoTeamRobots(): TeamRobot[] {
       description: 'Team RUSH. 2024 CRESCENDO robot with a chassis-aimed pivot shooter, floor intake, AMP mechanism and chain climber. Drive performance and timing are simulator estimates.',
       source: 'User-supplied 0000_2024RobotTopLevelAssembly.STEP; Team RUSH 2024 reveal; FIRST 2024 robot name',
       config: cfg(27, 'gold-rush-27', { speed: 4.8, accel: 10, climb: 2.2, height: 25, intake: 24 }, 1) },
+    { id: 'nik-1678', team: 1678, name: 'Nik',
+      description: '1678 Citrus Circuits. Over-the-bumper deploying intake at the back, front shooter that pivots 15-62 degrees, tilted AMP/TRAP elevator over the intake and gas-spring climber arms. Hood, intake and elevator limits come from the team code; drive speed and climb time are simulator estimates.',
+      source: 'Public Onshape 1678 2024 "Epsilon" assembly; 1678 C2024-Public code (Nik); TBA 2024 photos',
+      config: cfg(1678, 'nik-1678', { speed: 5.0, accel: 11, climb: 1.8, height: 31, intake: 26, frame: [26,26] }, 2) },
+    { id: 'riot-1706', team: 1706, name: 'Riot',
+      description: '1706 Ratchet Rockers. Under-bumper intake that takes NOTES at both bumpers, rack-driven pivot shooter at the front, back-leaning elevator carriage for the AMP and TRAP and twin telescoping hooks. Elevator and climber travel, drive speed and timing are simulator estimates.',
+      source: 'Public Onshape 1706 2024 "CR-000-00" robot; Chief Delphi 1706 2024 CAD release; TBA 2024 photos',
+      config: cfg(1706, 'riot-1706', { speed: 4.9, accel: 10, climb: 2.0, height: 28, intake: 24, frame: [26,28] }, 2) },
+    { id: 'surge-3005', team: 3005, name: 'Surge',
+      description: '3005 RoboChargers. Two-ended under-bumper intake feeding a long lead-screw pivot launcher with a flip-down AMP diverter on its nose, single telescoping chain hook. Launcher range, diverter swing, drive speed and climb time are simulator estimates.',
+      source: 'Public Onshape "3005 2024: FULL ROBOT (PUBLIC)"; Chief Delphi 3005 Surge reveal; TBA 2024 photos',
+      config: cfg(3005, 'surge-3005', { speed: 4.9, accel: 10, climb: 2.0, height: 24, intake: 24, frame: [27,27] }, 1) },
+    { id: 'ultraviolet-3847', team: 3847, name: 'Ultraviolet',
+      description: '3847 Spectrum. Under-bumper intake at the back, front pivoting launcher, AmpTrap roller tower on a back-leaning elevator for the AMP and TRAP, and slanted telescoping climber slides. Pivot, elevator and climber poses come from the team code; travel lengths, drive speed and timing are simulator estimates.',
+      source: 'Public Onshape "2024 Ultraviolet"; Spectrum3847/2024-Ultraviolet code',
+      config: cfg(3847, 'ultraviolet-3847', { speed: 4.9, accel: 10, climb: 2.0, height: 27, intake: 26, frame: [28,28] }, 2) },
+    { id: 'nocturne-3467', team: 3467, name: 'Nocturne',
+      description: '3467 Windham Windup. Front tower with one arm carrying the whole shooter head and the chain hooks: the arm aims, scores the AMP and climbs. Back under-bumper intake feeds the stowed head. No TRAP. Arm setpoints come from the team code; drive speed and climb time are simulator estimates.',
+      source: 'Public Onshape "Nocturne - 2024"; WHS-FRC-3467 Skip-5.14-Nocturne code; TBA 2024 photo',
+      config: cfg(3467, 'nocturne-3467', { speed: 4.9, accel: 10, climb: 2.0, height: 27, intake: 24, frame: [27,27] }, 1) },
     { id: 'skyfall-1114', team: 1114, name: 'Skyfall',
       description: '1114 Simbotics Skyfall 2.0. Red open A-frame carrying a broad pivoting shooter tray, white and purple rollers, exposed pivot gears, and arm-mounted climbing hooks. Quick and consistent; a mid-weight SPEAKER cycler. Drive, accel and climb time are simulator estimates.',
       source: 'Chief Delphi "Team 1114 - Simbot Skyfall" reveal photo; Team 1114 2024 code release',

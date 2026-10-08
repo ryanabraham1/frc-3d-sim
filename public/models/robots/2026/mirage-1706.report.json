@@ -1,0 +1,35 @@
+{
+  "id": "mirage-1706",
+  "sourceFile": "2026-1706.glb",
+  "inputBytes": 159309960,
+  "outputBytes": 9363524,
+  "inputTriangles": 4556622,
+  "outputTriangles": 728944,
+  "omittedOccurrences": 301,
+  "bounds": {
+    "min": [
+      -0.6223000288009781,
+      -0.0031749978661536338,
+      -0.3841750025749197
+    ],
+    "max": [
+      0.3254374861717224,
+      0.5476875011809169,
+      0.384175002574922
+    ]
+  },
+  "groups": [
+    "frame",
+    "rotor-left",
+    "rotor-right",
+    "turret-left",
+    "wheels-left",
+    "flywheel-left",
+    "intake",
+    "intake-roller-1",
+    "intake-roller-0",
+    "turret-right",
+    "flywheel-right",
+    "wheels-right"
+  ]
+}
