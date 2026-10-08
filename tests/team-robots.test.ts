@@ -26,8 +26,9 @@ function pose(root: THREE.Object3D): number[] {
 describe('real team robots', () => {
   it('every season with team robots offers top teams, each with a registered model and a legal, stable config', () => {
     const withTeams = SEASONS.filter((s) => s.teamRobots?.length);
-    // Every FRC season has real robots; a standalone game (e.g. the WCP CADathon, `label` set) has none yet.
-    expect(withTeams.map((s) => s.id).sort()).toEqual(SEASONS.filter((s) => !s.label).map((s) => s.id).sort());
+    // Every FRC season has real robots; a standalone game (e.g. the WCP CADathon, `label` set) may add some (6800 Mantis).
+    const seasonIds = withTeams.map((s) => s.id);
+    for (const s of SEASONS.filter((s) => !s.label)) expect(seasonIds, s.id).toContain(s.id);
     for (const season of withTeams) {
       const ids = new Set<string>();
       for (const t of season.teamRobots!) {
