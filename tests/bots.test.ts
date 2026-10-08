@@ -54,7 +54,7 @@ describe.each(SEASONS)('$name AI', (season) => {
     // Without orders the opponents play real team robots (their own models) from the season's lineup.
     const lineup = localSetup({ ...settings, aiDifficulty: 'hard' }, season).robots.filter((r) => r.alliance !== settings.alliance);
     // A standalone game with no real robots yet (WCP CADathon) plays its derived archetype presets instead.
-    const builds = season.teamRobots?.length ? season.teamRobots : season.robotPresets ?? [];
+    const builds = season.id === 'wcp-hero-heist' ? [...(season.teamRobots ?? []), ...(season.robotPresets ?? [])] : season.teamRobots?.length ? season.teamRobots : season.robotPresets ?? [];
     for (const r of lineup) expect(builds.some((t) => t.config.model === r.config.model)).toBe(true);
     if (season.id === '2024-crescendo') for (const r of lineup) { expect(r.config.launcher.turret).toBe(false); expect(r.config.intake.ground).toBe(true); }
   });
