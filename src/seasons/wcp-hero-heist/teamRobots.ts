@@ -23,11 +23,11 @@ registerRobotModel('hero-mantis-6800',(k:ModelKit)=>{
 // Lightweight fallback for headless play or a failed CAD load: frame, front roller bar, same-side shooter and side mast.
 registerRobotModel('hero-constantine-1318',(k:ModelKit)=>{
   const db=drivebase(k),dark=mat(0x171b20),steel=mat(0x9aa3ad);
-  roller(k.visual,.026,.60,dark,.30,.16,0).rotation.x=Math.PI/2;
+  const intakeBar=roller(k.visual,.026,.60,dark,.30,.16,0);intakeBar.rotation.x=Math.PI/2;
   const wheel=roller(k.visual,.05,.18,dark,-.07,.56,0);wheel.rotation.x=Math.PI/2;
   box(k.visual,.22,.20,.22,steel,-.02,.50,0);
   box(k.visual,.05,.60,.05,steel,0,.66,-.20);
-  return {replaces:['chassis','launcher','hopper','intakeRollers','climber'],update(s){db.update(s);wheel.rotation.z-=s.aiming?45*s.dt:0;}};
+  return {replaces:['chassis','launcher','hopper','intakeRollers','climber'],update(s){db.update(s);intakeBar.position.set(s.enabled?.51:.30,s.enabled?.07:.16,0);wheel.rotation.z-=s.aiming?45*s.dt:0;}};
 });
 // Lightweight source-shaped fallback for headless play or a failed CAD load: intake low at the back, midtake, shooter and panel lift at the front.
 registerRobotModel('hero-nomad-6995',(k:ModelKit)=>{
