@@ -10,7 +10,7 @@ import { coralTransferPose } from '../src/seasons/2025-reefscape/transferVisual'
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
-import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2024_MODEL_IDS, CAD_2025_MODEL_IDS, ADAPTED_CAD_MODEL_IDS } from '../src/engine/robot/cadModels';
+import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2024_MODEL_IDS, CAD_2025_MODEL_IDS, ADAPTED_CAD_MODEL_IDS, HERO_CAD_MODEL_IDS } from '../src/engine/robot/cadModels';
 await prepareCadModels();
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -64,7 +64,7 @@ function build() {
   const grid = document.querySelector('#grid')!;
   grid.innerHTML = '';
   const s = SEASONS.find(s => s.id === seasonSelect.value)!;
-  const detailedIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS];
+  const detailedIds: readonly string[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS];
   const configs = [...(s.teamRobots ?? []).filter(t => !new URLSearchParams(location.search).has('cad') || detailedIds.includes(t.config.model ?? '')).map(t => ({ name: `${t.team} · ${t.name}`, config: t.config }))];
   // Standalone games without real robots (WCP CADathon) show their derived archetype presets.
   if (!configs.length) configs.push(...(s.robotPresets ?? []).map(p => ({ name: p.label, config: p.config })));

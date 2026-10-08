@@ -6,9 +6,11 @@ import type { ModelKit, RobotModel, RobotModelBuilder } from './models';
 import { getRobotEnvironment } from './models';
 import { buildReefscapeCad } from './reefscapeCadModels';
 import { buildCrescendoCad } from './crescendoCadModels';
+import { buildHeroCad } from './heroCadModels';
 import { cadHopper } from './cadHopper';
 import { build9470Cad, build6800Cad, build971Cad, build1114Cad, build2910Cad } from './additionalCadModels';
 
+export const HERO_CAD_MODEL_IDS = ['hero-mantis-6800'] as const;
 export const CAD_2024_MODEL_IDS = ['doppler-1690','typhoon-2910','twister-118','gold-rush-27','domotron-604','roti-5940','presto-6328','snoopy-6036'] as const;
 export const CAD_2025_MODEL_IDS = ['spectre-2910','whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
 export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
@@ -31,15 +33,15 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 }
 
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
-export async function prepareCadModels(ids: readonly (string | undefined)[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS]): Promise<void> {
+export async function prepareCadModels(ids: readonly (string | undefined)[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS]): Promise<void> {
   if (typeof document === 'undefined') return;
   const requested = ids.flatMap(id => id ? [id,...(CAD_DONOR_DEPENDENCIES[id] ?? [])] : []);
-  const assetIds: readonly string[] = [...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor'];
+  const assetIds: readonly string[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor'];
   await Promise.all([...new Set(requested)].filter(id => assetIds.includes(id)).map(id => {
     if (assets.has(id)) return Promise.resolve();
     let request = pending.get(id);
     if (!request) {
-      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${id}.glb`)
+      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(HERO_CAD_MODEL_IDS as readonly string[]).includes(id) ? 'wcp-hero-heist' : (CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${id}.glb`)
         .then(gltf => { assets.set(id, gltf.scene); })
         .catch(error => { console.warn(`CAD model ${id} unavailable; using procedural model.`, error); })
         .finally(() => { pending.delete(id); });
@@ -64,6 +66,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   root.name = `cad-${id}`;
   root.userData.cadModel = id;
   k.visual.add(root);
+  if ((HERO_CAD_MODEL_IDS as readonly string[]).includes(id)) return buildHeroCad(id,root,k,()=>animated);
   if ((CAD_2024_MODEL_IDS as readonly string[]).includes(id)) return buildCrescendoCad(id,root,k,()=>animated);
   if ((CAD_2025_MODEL_IDS as readonly string[]).includes(id)) return buildReefscapeCad(id,root,k,()=>animated);
   if (id === 'reblitz-2910') return build2910Cad(root,k,()=>animated);

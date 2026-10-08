@@ -8,6 +8,16 @@ import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer
 import { Matrix4 } from 'three';
 
 const specs = {
+  // Hero Heist Mantis is distinct from Valor's 2026 Downpour. Keep source
+  // assemblies separate for the measured articulated runtime rig.
+  'hero-mantis-6800': {file:'hero-mantis-6800-source.glb',year:'wcp-hero-heist',axes:'negative-y',lossless:true,preserveColors:true,omit:/\[1120\] Bumper|\[1130\] Electrical|Robot Battery|120A Main Breaker|Anderson SB120/,groups:[
+    ['hood',/Assembly 2 <1>.*Assembly 1 <5>/], ['flywheel',/4" Solid Urethane Wheel.*Assembly 1 <5>/], ['turret',/Assembly 3 <1>.*Assembly 1 <5>/],
+    ['climb-mid1',/3 Stage Mid1.*Assembly 1 <4>/], ['climb-mid2',/3 Stage Mid2.*Assembly 1 <4>/], ['climb-end',/3 Stage End.*Assembly 1 <4>/],
+    ['intake-left',/Assembly 1 <2>/], ['intake-right',/Assembly 1 <3>/],
+    ['climber',/Assembly 1 <4>/], ['shooter',/Assembly 1 <5>/],
+    ['magazine',/Cartidge/], ['magazine-mount',/Turret Mount|Latch Arms/],
+    ['spindexer',/Assembly 1 <6>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -170,6 +180,7 @@ for (const id of ids) {
     const names = [n.getName()];
     for (let p = n.getParentNode(); p; p = p.getParentNode()) names.push(p.getName());
     const full = names.join('/');
+    if (spec.omit?.test(full)) { n.setMesh(null); omitted++; continue; }
     if(id==='domotron-604' && /(?:^|\/)\s*(?:occurrence of )?Note(?:\/|$)/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='roti-5940' && /clothed noodle|noodle|bumper/i.test(full)){n.setMesh(null);omitted++;continue;}
     if(id==='spectre-2910' && /Bumper|Origin Cube|Battery|RoboRIO|Power Distribution|Radio Power|Reference/i.test(full)){n.setMesh(null);omitted++;continue;}
@@ -192,6 +203,14 @@ for (const id of ids) {
     if ((id === 'rotor-604-donor' && !/DPC Rotor Assembly/.test(full)) || (id === 'shooter-581-donor' && (!/Shooter Assem/.test(full) || /(?:^|\/)Hopper <|^Triad\//.test(full))) || (id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
       || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
+    if (id === 'hero-mantis-6800') {
+      if (group === 'climber' && /GreyT Telescope/.test(full)) {
+        group = /WCP-0418/.test(full) || bounds.min[2] > .61 ? 'climb-end'
+          : /WCP-0419/.test(full) || bounds.min[2] > .565 ? 'climb-mid2'
+          : /WCP-0420/.test(full) && bounds.min[2] < .10 ? 'climb-mid1' : 'climber';
+      } else if (group === 'climber' && bounds.min[2] > .60) group = 'climb-pad';
+      if (/^intake-/.test(group) && (bounds.max[2] < .30 && Math.max(Math.abs(bounds.min[0]),Math.abs(bounds.max[0])) < .24)) group='frame';
+    }
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';
     if (id === 'sublime-1678' && group === 'carriage' && bounds.min[2] < .2) group = 'frame';
     if (id === 'wildstang-111' && group === 'carriage' && bounds.min[2] < .45) group = 'frame';
@@ -224,7 +243,7 @@ for (const id of ids) {
     const dims = bounds.max.map((v,i) => v-bounds.min[i]);
     const simbotSheet = id === 'simbot-tim-1114' && /^S26-IN-P(?:301|315|318|321|322|330)$/.test(n.getName());
     const sheet = simbotSheet || /wall|coroplast|panel|plate|bellypan|polycarb/i.test(n.getName()) || (Math.min(...dims)<.012 && dims.filter(v=>v>.15).length>=2) || (id === 'limestone-1678' && /^Part 60$/.test(n.getName()));
-    const themed = spec.year !== 2025 && spec.year !== 2024 && (/arm plate|hood plate|slider mount|slot reinforcement|sponsor panel|printed|wire guide/i.test(n.getName()) || (id === 'limestone-1678' && /1678-26c-16(?:14|85)/.test(n.getName())));
+    const themed = !spec.preserveColors && spec.year !== 2025 && spec.year !== 2024 && (/arm plate|hood plate|slider mount|slot reinforcement|sponsor panel|printed|wire guide/i.test(n.getName()) || (id === 'limestone-1678' && /1678-26c-16(?:14|85)/.test(n.getName())));
     // Retain CAD colors, with rubber and clear-sheet finishes identified by part names.
     for (const p of n.getMesh().listPrimitives()) {
       if (!p.getMaterial()) continue;
@@ -310,7 +329,7 @@ for (const id of ids) {
   }
   const outputTriangles = triangleCount();
   const bounds = getBounds(scene);
-  if (spec.year === 2025 || spec.year === 2024 || id === 'reblitz-2910') {
+  if (spec.lossless || spec.year === 2025 || spec.year === 2024 || id === 'reblitz-2910') {
     // Keep occurrence transforms lossless: these assemblies reuse curved parts
     // across differently transformed meshes, making per-mesh quantization unsafe.
     await io.write(`/tmp/${id}-reduced.glb`, doc);

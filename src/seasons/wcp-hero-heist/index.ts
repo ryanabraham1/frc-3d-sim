@@ -11,6 +11,7 @@ import { HeroHud } from './hud';
 import { HERO_PIECES } from './pieces';
 import { HeroHeistRules } from './rules';
 import './robotModels';
+import { heroTeamRobots } from './teamRobots';
 
 const rect = (x0: number, y0: number, x1: number, y1: number): [number, number][] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
 const mapShapes = (): MapShape[] => [
@@ -50,6 +51,7 @@ export const heroHeist: SeasonDefinition = {
   robotDefaults: heroRobotDefaults(),
   normalizeRobotConfig: normalizeHeroConfig,
   robotPresets: heroRobotPresets(),
+  teamRobots: heroTeamRobots(),
   robotOptions: heroRobotOptions,
   robotFields: ['team', 'height', 'len', 'wid', 'speed', 'accel', 'weight', 'pre', 'rate', 'acc'],
   robotHint: 'Pick a hero class first: it sets the frame, height and how many STORY PANELS / SPEECH BUBBLES the robot may hold.',

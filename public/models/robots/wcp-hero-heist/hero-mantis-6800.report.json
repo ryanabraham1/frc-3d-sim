@@ -1,0 +1,38 @@
+{
+  "id": "hero-mantis-6800",
+  "sourceFile": "hero-mantis-6800-source.glb",
+  "inputBytes": 112421496,
+  "outputBytes": 7367364,
+  "inputTriangles": 5488024,
+  "outputTriangles": 523960,
+  "omittedOccurrences": 831,
+  "bounds": {
+    "min": [
+      -0.3302000015974045,
+      0.00029891729354859786,
+      -0.4930108312584543
+    ],
+    "max": [
+      0.33528000116348267,
+      0.9058179979076586,
+      0.5520551609806716
+    ]
+  },
+  "groups": [
+    "frame",
+    "spindexer",
+    "intake-right",
+    "intake-left",
+    "climb-pad",
+    "climber",
+    "climb-end",
+    "climb-mid1",
+    "climb-mid2",
+    "shooter",
+    "hood",
+    "turret",
+    "flywheel",
+    "magazine-mount",
+    "magazine"
+  ]
+}
