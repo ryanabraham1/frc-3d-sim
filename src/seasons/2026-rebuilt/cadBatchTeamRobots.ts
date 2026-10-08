@@ -132,7 +132,7 @@ const cfg = (team: number, model: string, o: Parameters<typeof build>[0], tweak:
   return normalizeRebuiltConfig(c);
 };
 
-export const MIRAGE_CAPACITY = 50, CYCLONE_CAPACITY = 45, MATTERHORN_CAPACITY = 45;
+export const MIRAGE_CAPACITY = 40, CYCLONE_CAPACITY = 35, MATTERHORN_CAPACITY = 40;
 
 export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
   return [
