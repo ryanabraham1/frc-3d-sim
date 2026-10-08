@@ -2,6 +2,11 @@ import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { transferFold } from '../../seasons/2025-reefscape/transferVisual';
 import { buildSpectreCad } from './spectreCadModel';
+import { buildTaiyakiCad } from './taiyakiCadModel';
+import { buildWispCad } from './wispCadModel';
+import { buildSingularityCad } from './singularityCadModel';
+import { buildRelayCad } from './relayCadModel';
+import { buildRedundancyCad } from './redundancyCadModel';
 import { bar, tubeMat } from './models';
 import type { ModelKit, RobotModel } from './models';
 
@@ -35,6 +40,11 @@ const fits:Record<string,Fit> = {
 
 export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):RobotModel {
   if(id==='spectre-2910')return buildSpectreCad(root,k,animated);
+  if(id==='taiyaki-5940')return buildTaiyakiCad(root,k,animated);
+  if(id==='wisp-422')return buildWispCad(root,k,animated);
+  if(id==='singularity-1706')return buildSingularityCad(root,k,animated);
+  if(id==='relay-3005')return buildRelayCad(root,k,animated);
+  if(id==='redundancy-190')return buildRedundancyCad(root,k,animated);
   if(id==='wildstang-111')return wildstang(root,k,animated);
   if(id==='zuma-581'||id==='subzero-1778')return sideScorer(id,root,k,animated);
   const f=fits[id], carriage=pivot(root,'carriage',[0,0,0]), stage=root.getObjectByName('elevator-stage');

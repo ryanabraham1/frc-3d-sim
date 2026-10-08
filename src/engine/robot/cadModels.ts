@@ -12,7 +12,7 @@ import { build9470Cad, build6800Cad, build971Cad, build1114Cad, build2910Cad } f
 
 export const HERO_CAD_MODEL_IDS = ['hero-mantis-6800'] as const;
 export const CAD_2024_MODEL_IDS = ['doppler-1690','typhoon-2910','twister-118','gold-rush-27','domotron-604','roti-5940','presto-6328','snoopy-6036'] as const;
-export const CAD_2025_MODEL_IDS = ['spectre-2910','whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778'] as const;
+export const CAD_2025_MODEL_IDS = ['spectre-2910','whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778','taiyaki-5940','wisp-422','singularity-1706','relay-3005','redundancy-190'] as const;
 export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114'] as const;
 export const ADAPTED_CAD_MODEL_IDS = ['overload-254', 'sandspit-3476', 'ripcurrent-4414', 'madtown-2026-1323', 'kepler-1690', 'croquembouche-5940'] as const;
 export const CAD_DONOR_DEPENDENCIES: Record<string, readonly string[]> = {

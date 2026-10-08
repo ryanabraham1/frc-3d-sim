@@ -169,3 +169,60 @@ Supplied `2025 2910glb` replaces the existing `spectre-2910` roster model, prese
 Groups are fixed `frame`, `arm` (Phantom Stage 0), `elevator-stage` (Stage 1), `carriage` (Stage 2), `effector` (53 Intake & Wrist V3), and `climber` (41 Climber). Measured shoulder is `[-.26035,.32385,0]`; wrist shaft is `[.47110156,1.79530156,0]`. The source rail angle is 68 degrees and the source extension is fitted to the team's 40.5 inch maximum pose. Cascade translation is split equally between nested stages; the wrist rotates independently about its real shaft. Held CORAL crosses the tool on local Z. ALGAE uses the same tool, without simultaneous storage. The end effector itself collects from the front; front and rear scoring are supported in both CAD and fallback models.
 
 References inspected: three TBA pit/match photos (including CORAL carry, ALGAE carry, and hanging), the [team reveal](https://www.chiefdelphi.com/t/2910-robot-reveal-2025-spectre/494648), the [team-authored Onshape explanation](https://www.onshape.com/en/blog/spectre-2025-first-world-championship-robot-built-in-cloud-native-cad), and [public ArmPoseConstants](https://github.com/FRCTeam2910/2025CompetitionRobot-Public/blob/main/src/main/java/org/frc2910/robot/constants/ArmPoseConstants.java). The public code specifies 110 degree climb collection, -5 degree pull-in, 3.25 inch lock extension, and 7.5 inch cage-carriage collection travel. The simulation interpolates these poses through its existing endgame/alignment/climb states; it does not simulate the team's actuator dynamics or motor-current cage detection. Intake/wrist aiming between the published poses and visual ALGAE compression remain fitted estimates.
+
+## 2025 REEFSCAPE: next five by EPA (Spectrum CAD collection)
+
+The next five 2025 teams by EPA with public Onshape CAD (5940, 422, 1706, 3005 and 190) are new roster entries
+(`src/seasons/2025-reefscape/topEpaCadRobots.ts`). Each has its own rig file (`taiyakiCadModel.ts`, `wispCadModel.ts`,
+`singularityCadModel.ts`, `relayCadModel.ts`, `redundancyCadModel.ts`) sharing the helpers in `reefscapeCadRig.ts`.
+The headless simulator and no-asset runs use a light procedural fallback with the same layout. All five keep the unanimated
+CAD-export mode. Source GLBs are the default Onshape GLB export (Z up, meters). Heavy specs use the bounded 0.5 mm `finePass`
+reduction (lossless, no quantization). Unpublished rates (lift, cycle, harvest, climb, drive speed where not stated) are
+simulator estimates. 3005 is the largest source (502 MB, 38 M triangles); it uses a 1 mm final pass and still lands at
+12 MB, above the usual 10 MB budget but near 581's 11.2 MB.
+
+| Team | Model ID | Source (public Onshape) | Optimized size | Triangles |
+| --- | --- | --- | ---: | ---: |
+| 5940 | `taiyaki-5940` | [5940 BREAD 2025 - Taiyaki](https://cad.onshape.com/documents/96a5f9f437337066b2987626/w/9644a0c5069d0349ab3cf5a6/e/01df3e1fb18f1f03077c9c5d) | 8.08 MB | 532,386 |
+| 422 | `wisp-422` | [Wisp Public / Main Assembly](https://cad.onshape.com/documents/2bae4024a467119e47dc96b0/w/6c850cd2bf85d2162a5bb7d6/e/b4c78beff50beb69b98ad0b6) | 8.20 MB | 526,949 |
+| 1706 | `singularity-1706` | [RS-000 Singularity - Public Release](https://cad.onshape.com/documents/4b02abefda59b1f999042049/w/bf40141578ddedca6b900af0/e/5e919c0d868af85f4440ce2a) | 9.66 MB | 617,642 |
+| 3005 | `relay-3005` | [3005 2025: FULL ROBOT (PUBLIC)](https://cad.onshape.com/documents/be7ecb57773083221899273d/w/3ffbf14ecde31212fdcb4a6a/e/fe6648ecf44d2b65b2b452a4) | 12.00 MB | 764,011 |
+| 190 | `redundancy-190` | [A-25B-0000 (V2 Redundancy)](https://frc190.onshape.com/documents/b6c840749d995b1ac1b29215/v/c2f65e25658d56c674449d2f/e/271cc80064eb69c77815f945) | 6.89 MB | 448,288 |
+
+### 5940 BREAD Taiyaki
+
+- Mapping `yzx` (source Y forward). Groups: `effector` (A-0500 End Effector, plus the pivot hub regrouped off the carriage), `carriage` (Stage 2), `elevator-stage` (Stage 1), `intake` (A-0300, minus its fixed deploy gearbox and side mounts), `climber` (only the spear/fly-swatter arm parts).
+- Omitted: bumpers, electronics (Pi-Motel, PDH, Rio shroud, battery, cameras, CANrange, PCBs, connectors), the cable chain (exported extended to 1.65 m) and the reference CORAL.
+- Joints (robot-local m): effector pivot `[.1905,.2476,-.0953]` (X-contact bearing), intake 48T deploy shaft `[-.3091,.3112,0]`, climber bushings `[.0254,.437,.3429]` (axis X). Two-stage cascade: stage 1 moves half the carriage travel (1.62 m max). Elevator + pivot IK puts the CORAL / ALGAE seats on the rules' placement point.
+- The CAD pose has the intake deployed; it stows by folding up 1.9 rad and stays down through the conveyor handoff (the indexer carries floor CORAL forward to the fingers). The torsion-spring climber arm unfolds outward to +Z in the endgame.
+- Estimates: CORAL seat against the finger-tip wheels, climber unfold angle, cycle and harvest times. References: binder and CAD release [CD 501347](https://www.chiefdelphi.com/t/501347), TBA match photos.
+
+### 422 Mech Tech Dragons Wisp
+
+- Mapping `yzx`. The elevator assembly is flat; parts are sorted into `elevator-stage` (2nd stage), `elevator-stage-2` (3rd stage) and `carriage` by name and by their nested side-tube spacing (|x| .197 / .165 / .133 / .10 m). `effector` = Manipulator Assembly (no wrist), `intake` = Ground Coral Mk2 arm (its side plates, motor and chain stay fixed), `climber` = L plates, hooks and reaction bar only.
+- Omitted: bumpers, battery leads, cameras and mounts, radio case, energy chain and a retracted belt-run reference.
+- Joints: ground arm shaft `[-.1956,.3023,0]` (deploys 2.0 rad over the back bumper, star wheels on the carpet, and flips CORAL up into the funnel during the fold handoff), climber bushings `[-.051,.4056,.337]` (axis X). Continuous elevator split 1/3, 2/3, 1 over 1.6 m.
+- The linked technical binder ([CD 501340](https://www.chiefdelphi.com/t/501340)) was deleted, so behaviour comes from CAD, the reveal ([CD 497928](https://www.chiefdelphi.com/t/497928)) and TBA pit photos. Estimates: ALGAE seat, deploy and climber angles, all rates.
+
+### 1706 Ratchet Rockers Singularity
+
+- New `negative-x` mapping: source (-X, Z, Y) to robot (X, Y, Z), with `offsetX .3555` (the export origin is at a frame corner) and `offsetY .026` (wheel contact).
+- Groups: `effector` (RS400 arm), `carriage` (RS-300), `elevator-stage` / `elevator-stage-2` (the flat RS-200 sorted by nested tube pairs at |y| .2032 / .1651; the fixed stage at .2413 stays in `frame`), `intake` (RS-500 front ALGAE roller on curved racks), `climber` (RS-600 harpoon).
+- Omitted: bumpers, the reference ALGAE ball, battery, radio, signal light, loose wiring and an unnamed 1 m reference body (dropped with the new `drop` hook).
+- Joints: arm shaft `[.0761,.3745,0]`, harpoon sprocket shaft `[-.3049,.4641,0]`, ALGAE rack pitch-circle centre `[.283,.69,0]` (888T at 20 DP = 0.564 m radius; the fixed pinion sits on this circle). The arm's narrow channel holds CORAL lengthwise (`coralAxis` along the channel) and the front stealth wheels hold ALGAE, so it carries one of each. Funnel-fed CORAL only. Floor ALGAE comes in at the front (`groundYaw 0`).
+- Estimates: CORAL seat, rack retraction (0.7 rad), harpoon swing, three-stage cascade split and all rates. TBA has no 2025 photos; references are the teaser video frames ([CD 495400](https://www.chiefdelphi.com/t/495400)), the CAD/code release ([CD 510177](https://www.chiefdelphi.com/t/510177)) and the code README's subsystem list.
+
+### 3005 RoboChargers Relay
+
+- Mapping `negative-y` (source -Y forward; the chute is at +Y). Groups: `elevator-stage` (Stage 1), `elevator-stage-2` (Stage 2), `carriage` (Stage 3 + Laterator Base Stage), `effector` (laterator carriage + Coral Ejector), `algae` (Algae Gripper), `climber` (Climber Arm V2).
+- Finishes: the CAD's pure-blue swatch (printed parts and plates) is recoloured near-black via the new `recolor` spec hook, matching the black robot in the TBA photo.
+- Omitted: bumpers, the pink block-CAD wiring harnesses (`BLOCK CAD - ELECTRONICS`, `Wiring`) and the reference `Coral (Deployed)`, whose pose sets the CORAL seat and axis.
+- Joints: ALGAE gripper sprocket `[.31,.406,0]` (stows up and back, swings 1.2 rad forward for ALGAE), climber sprocket `[.031,.459,.315]` (axis X, swings up and out over the right bumper). Three-stage chain elevator split 1/3, 2/3, 1 over 1.75 m.
+- The laterator's sideways slide is not animated: the sim has no lateral-alignment state, so the ejector stays centred. Estimates: gripper and climber angles, ALGAE seat, all rates. References: reveal ([CD 493529](https://www.chiefdelphi.com/t/493529)), CAD release ([CD 504887](https://www.chiefdelphi.com/t/504887)), TBA match photo.
+
+### 190 Gompei and the H.E.R.D. Redundancy (V2)
+
+- Mapping `yzx`. Groups: `elevator-stage` (A-25B-2002), `carriage` (2003), `effector` ("Gustav", 4001), `algae` ("The Claw", 4002), `intake` (6000 roller assembly sliding out on its racks; only the camera mounts stay fixed), `climber` (5000 gas-spring arm and grappling hook above the gearbox).
+- Omitted: origin cubes, battery, one-piece bumper.
+- Joints: claw pivot shaft `[.133,.688,0]` (hangs at its floor pose, tilts 0.9 rad for REEF / NET ALGAE), climber shaft `[-.222,.133,0]` [EST], front roller slide 0.25 m [EST]. Two-stage elevator split 1/2, 1 over 1.5 m.
+- The clapping funnel flaps are not animated. Estimates: CORAL seat in Gustav, claw ALGAE seat, roller travel and purpose (floor ALGAE, read from the CAD), climber pivot and swing, all rates. References: CAD release ([CD 503355](https://www.chiefdelphi.com/t/503355)), reveal ([CD 493653](https://www.chiefdelphi.com/t/493653)), TBA photos (V1 and V2).
