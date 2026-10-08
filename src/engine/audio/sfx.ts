@@ -1,6 +1,7 @@
 /**
  * Match sound cues in the style of an FRC field (AUTO charge, AUTO-end buzzer, TELEOP bells, END GAME train whistle,
- * match-end buzzer, a ding for other period changes), synthesized with WebAudio so there are no audio assets to ship.
+ * match-end buzzer, shift changes), using locally bundled field recordings.
+ * WebAudio synthesis remains a fallback if a recording cannot be played.
  * Muting is a per-browser preference.
  */
 const KEY = 'frc-sim:sound';
@@ -11,8 +12,22 @@ export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private _muted = false;
+  private clips = new Map<Cue, HTMLAudioElement>();
+  private disposed = false;
 
   constructor() {
+    if (typeof Audio !== 'undefined') {
+      const files: Record<Cue, string> = {
+        start: 'start', autoEnd: 'end', teleop: 'resume',
+        period: 'shift_change', endgame: 'warning', end: 'end',
+      };
+      for (const [cue, file] of Object.entries(files)) {
+        const clip = new Audio(`${import.meta.env.BASE_URL}audio/frc/${file}.wav`);
+        clip.preload = 'auto';
+        clip.volume = 0.5;
+        this.clips.set(cue as Cue, clip);
+      }
+    }
     try {
       this._muted = localStorage.getItem(KEY) === 'off';
     } catch {
@@ -32,6 +47,7 @@ export class Sfx {
       // Not persisted.
     }
     if (this.master) this.master.gain.value = m ? 0 : 0.5;
+    for (const clip of this.clips.values()) clip.muted = m;
   }
 
   /** Lazily open the audio context (browsers only allow it after a user gesture, which starting a match is). */
@@ -51,6 +67,21 @@ export class Sfx {
   }
 
   play(cue: Cue): void {
+    if (this._muted || this.disposed) return;
+    const clip = this.clips.get(cue);
+    if (clip) {
+      // Stop the previous cue when a match is restarted or periods change quickly.
+      for (const other of this.clips.values()) other.pause();
+      clip.currentTime = 0;
+      void clip.play().catch(() => {
+        if (!this.disposed && !this._muted) this.synthesize(cue);
+      });
+      return;
+    }
+    this.synthesize(cue);
+  }
+
+  private synthesize(cue: Cue): void {
     const ctx = this.audio();
     if (!ctx || !this.master) return;
     const t = ctx.currentTime + 0.02;
@@ -141,6 +172,13 @@ export class Sfx {
   }
 
   dispose(): void {
+    this.disposed = true;
+    for (const clip of this.clips.values()) {
+      clip.pause();
+      clip.removeAttribute('src');
+      clip.load();
+    }
+    this.clips.clear();
     void this.ctx?.close();
     this.ctx = null;
   }
