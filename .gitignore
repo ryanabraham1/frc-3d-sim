@@ -9,15 +9,3 @@ refs/
 # Cloudflare local state and server-only secrets
 .wrangler/
 .dev.vars*
-
-# Cloudflare local state and server-only secrets
-.wrangler/
-.dev.vars*
-
-# Cloudflare local state and server-only secrets
-.wrangler/
-.dev.vars*
-
-# Cloudflare local state and server-only secrets
-.wrangler/
-.dev.vars*
