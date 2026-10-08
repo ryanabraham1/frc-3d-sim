@@ -185,7 +185,7 @@ describe('additional supplied CAD',()=>{
       expect(intake.position.x).toBeCloseTo(0,4);
       expect(root.getObjectByName('hopper-slide')!.position.x).toBeCloseTo(intake.position.x,5);
     } else {
-      const extension=visual.getObjectByName('cad-9470-hopper-extension')!;
+      const extension=root.getObjectByName('hopper-slide')!;
       expect(extension).toBeDefined();
       expect(extension.position.x).toBeCloseTo(intake.position.x,5);
       const fuel=visual.getObjectByName('hopper-fuel-pile')!;
@@ -193,10 +193,15 @@ describe('additional supplied CAD',()=>{
       expect(fuel.userData.fuelSlots).toBe(config.hopperCapacity);
       model.update(idle);
       expect(extension.position.x).toBeCloseTo(.22);
-      expect(deployedLength-fuel.userData.fuelBin.length).toBeCloseTo(.225);
+      expect(deployedLength-fuel.userData.fuelBin.length).toBeCloseTo(.22);
       model.update({...idle,enabled:true,fill:1,aiming:true,hood:.5});
-      const donor=root.getObjectByName('adapted-581-intake');expect(donor).toBeTruthy();
-      expect(new THREE.Box3().setFromObject(donor!,true).getSize(new THREE.Vector3()).z).toBeGreaterThan(.5);
+      expect(root.getObjectByName('indexer')).toBeTruthy();
+      expect(root.getObjectByName('adapted-581-intake')).toBeUndefined();
+      expect(new THREE.Box3().setFromObject(root.getObjectByName('intake')!,true).getSize(new THREE.Vector3()).z).toBeGreaterThan(.6);
+      const walls=root.getObjectByName('hopper-walls')!;
+      let sheets=0;walls.traverse(o=>{if(o instanceof THREE.Mesh)for(const m of (Array.isArray(o.material)?o.material:[o.material])) {expect(m.transparent).toBe(true);expect(m.opacity).toBeLessThan(.3);expect(m.depthWrite).toBe(false);sheets++;}});
+      expect(sheets).toBeGreaterThan(0);
+      expect(root.getObjectByName('hopper-roof')!.visible).toBe(false);
     }
     const hood=root.getObjectByName(id==='mixtape-971'?'cad-hood-left-pivot':'cad-hood-pivot')!;
     const low=hood.quaternion.clone();model.update({...idle,enabled:true,fill:1,aiming:true,hood:1.25});

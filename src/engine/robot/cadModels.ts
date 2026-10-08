@@ -17,7 +17,6 @@ export const CAD_DONOR_DEPENDENCIES: Record<string, readonly string[]> = {
   'overload-254': ['shooter-581-donor'], 'sandspit-3476': ['shooter-581-donor'],
   'ripcurrent-4414': ['rotor-604-donor','mixtape-971'], 'madtown-2026-1323': ['rotor-604-donor','mixtape-971'],
   'kepler-1690': ['mixtape-971'], 'croquembouche-5940': ['mixtape-971'],
-  'ctrl-alt-defeat-9470': ['intake-581-donor'],
 };
 const assets = new Map<string, THREE.Group>();
 const pending = new Map<string, Promise<void>>();
@@ -69,7 +68,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   if ((CAD_2025_MODEL_IDS as readonly string[]).includes(id)) return buildReefscapeCad(id,root,k,()=>animated);
   if (id === 'reblitz-2910') return build2910Cad(root,k,()=>animated);
   if (id === 'simbot-tim-1114') return build1114Cad(root,k,()=>animated);
-  if (id === 'ctrl-alt-defeat-9470') return build9470Cad(root,k,()=>animated,assets.has('intake-581-donor') ? ownedClone(assets.get('intake-581-donor')!.getObjectByName('intake')!) : undefined);
+  if (id === 'ctrl-alt-defeat-9470') return build9470Cad(root,k,()=>animated);
   if (id === 'downpour-6800') return build6800Cad(root,k,()=>animated);
   if (id === 'mixtape-971') return build971Cad(root,k,()=>animated);
   const get = (name: string) => root.getObjectByName(name);

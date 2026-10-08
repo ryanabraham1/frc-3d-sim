@@ -104,6 +104,9 @@ const specs = {
   'intake-581-donor': { file:'2026 Dumper Champs Bot581.glb',axes:'xzy',groups:[['intake',/Champs Intake Assembly/]] },
   'ctrl-alt-defeat-9470': { file: '9470-2026-MAIN.glb', axes:'yzx', groups:[
     ['flywheel', /9470-2026-DRUMROLLER/], ['hood', /9470-2026-HOODROLLER|SHO-ALU25-HOOD/],
+    ['hopper-roof-slide', /^extension ceiling\//], ['hopper-roof', /^hopper ceiling flat\//],
+    ['hopper-slide', /^(?:horiz extension(?: front)?|extension spacer)\//],
+    ['hopper-walls', /^main bent [lr]\//], ['intake', /INTAKE <|roller yoink/], ['indexer', /hopprerdcmp/],
   ] },
   'downpour-6800': { file: 'VR26A-0000 Main.glb', axes:'yzx', groups:[
     ['hopper-slide', /7200F Horizontal/], ['intake', /5000M Intake/],
@@ -241,7 +244,7 @@ for (const id of ids) {
         p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.028,.032,.036,1]).setMetallicFactor(0).setRoughnessFactor(.85).setName('rubber'));
       } else if (id === 'downpour-6800' && /Side Plate|Back Plate|Crossbar|Hood Backing/.test(n.getName()) && !/Motor|Battery/.test(n.getName())) {
         p.setMaterial(p.getMaterial().clone().setBaseColorFactor([.09,.10,.12,1]).setMetallicFactor(.2).setRoughnessFactor(.7));
-      } else if ((id === 'downpour-6800' && /7200F Horizontal|7100F Stationary/.test(full) && /polycarb|wall|panel/i.test(n.getName())) || (id === 'mixtape-971' && /Hooper Walls/.test(full))) {
+      } else if ((id === 'ctrl-alt-defeat-9470' && /^(?:hopper-walls|hopper-slide|hopper-roof)/.test(group)) || (id === 'downpour-6800' && /7200F Horizontal|7100F Stationary/.test(full) && /polycarb|wall|panel/i.test(n.getName())) || (id === 'mixtape-971' && /Hooper Walls/.test(full))) {
         const m = p.getMaterial().clone().setName('clear-hopper-sheet').setBaseColorFactor([.8,.86,.91,.25]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(.3);
         if (sheet) m.setExtras({cadSheet:true});
         p.setMaterial(m);

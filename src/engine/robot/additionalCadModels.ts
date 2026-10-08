@@ -7,7 +7,7 @@ import { hopperNetCeiling } from './config';
 // Source: user-supplied 9470 MAIN, Valor VR26A and 971 Championship assemblies.
 // Dimensions/pivots below are in meters, measured from the exported shafts/rings.
 // Photo references: refs/{9470,6800,971}-2026/sheet.jpg (TBA, three or more views).
-// 9470's file omits hopper/intake: photo-fitted panels and adapted 581 rack intake are estimates.
+// 9470's complete export supplies its intake, indexer and sliding hopper; retraction travel remains estimated.
 // 6800's supplied wide-shooter variant differs from the turret in Valor's earlier binder.
 // 971 keeps both imported turrets, with a shared simulated aim and alternating feeds.
 const ease = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;
@@ -81,40 +81,29 @@ export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     }};
 }
 
-/** Wide fixed drum, raw metal and clear white-roof hopper; supplemental pieces fit source photos. */
-export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean,donor?:THREE.Object3D):RobotModel {
+/** Complete supplied wide-drum robot with a clear, horizontally extending hopper. */
+export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):RobotModel {
   const p=articulation(root),wheel=p('flywheel',[.24765,.492823,0]),hood=p('hood',[.24765,.492823,0]);
-  const clear=mat(0xd9e2e8,{opacity:.22,metal:0,rough:.35}),alu=mat(0xaeb5bd,{metal:.5});
-  const supplement=new THREE.Group();supplement.name='cad-missing-hopper-panels';k.visual.add(supplement);
-  for(const z of [-.315,.315]) {
-    box(supplement,.60,.37,.003,clear,-.035,.36,z);
-    bar(supplement,[-.335,.15,z],[-.335,.55,z],.012,alu);
-    bar(supplement,[-.335,.55,z],[.265,.55,z],.012,alu);
-  }
-  if(!k.config.hopperExpansion)box(supplement,.37,.003,.63,mat(0xe5e7e9,{rough:.8}),-.145,.55,0);
-  const intake=new THREE.Group(); intake.name='cad-intake-pivot';root.add(intake);
-  if(donor) {donor.name='adapted-581-intake';donor.scale.z=.93;intake.add(donor);}
-  const tip=new THREE.Object3D();tip.position.set(-.62,.09,0);intake.add(tip);
-  // The source omits the sliding hopper. Reconstruct its clear side walls, floor and roof over the rear pickup.
-  // It translates with the intake; a single persistent pile uses the same deployed and compact front edges.
-  const extension=new THREE.Group();extension.name='cad-9470-hopper-extension';k.visual.add(extension);
+  const intake=p('intake',[0,0,0]),extension=root.getObjectByName('hopper-slide')!;
+  const roof=root.getObjectByName('hopper-roof')!,slideRoof=root.getObjectByName('hopper-roof-slide')!;
+  // The supplied export is deployed. Keep its actual intake and sliding walls together.
+  // Robot renders the flexible net in place of the CAD's flat ceiling sheets.
+  roof.visible=slideRoof.visible=!k.config.hopperExpansion;
+  for(const panel of [root.getObjectByName('hopper-walls')!,extension,roof,slideRoof])panel.traverse(o=>{
+    if(!(o instanceof THREE.Mesh))return;
+    o.castShadow=false;
+    for(const material of (Array.isArray(o.material)?o.material:[o.material]))material.depthWrite=false;
+  });
   extension.userData.fuelStructure=true;
-  for(const z of [-.315,.315]) {
-    box(extension,.22,.37,.003,clear,-.445,.36,z);
-    bar(extension,[-.555,.15,z],[-.555,.55,z],.012,alu);
-    bar(extension,[-.555,.55,z],[-.335,.55,z],.012,alu);
-  }
-  box(extension,.003,.37,.63,clear,-.555,.36,0);
-  box(extension,.22,.008,.63,alu,-.445,.15,0);
-  if(!k.config.hopperExpansion)box(extension,.22,.003,.63,mat(0xe5e7e9,{rough:.8}),-.445,.55,0);
-  const pile=fuel(k,-.55,.20,.15,.545,.62,-.325);
+  const tip=new THREE.Object3D();tip.position.set(-.61,.10,0);intake.add(tip);
+  const pile=fuel(k,-.628,.014,.205,.545,.64,-.408);
   let deploy=0,angle=0;
   return {replaces,lightAt:[0,.56,.28],intakeAnchor:tip,
-    flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.25,.25,0)],stow:pile.stow,feed:(shot=0)=>{
+    flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.28,.24,0)],stow:pile.stow,feed:(shot=0)=>{
       const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.2,.24,z),new THREE.Vector3(.07,.33,z),point(k,wheel,-.05,0,z),point(k,wheel,.025,.07,z)];}},
     update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return; intake.position.x=(1-deploy)*.22;
-      extension.position.x=intake.position.x;
+      extension.position.x=slideRoof.position.x=intake.position.x;
       angle=scoringEase(angle,s.aiming?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.43:0,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};

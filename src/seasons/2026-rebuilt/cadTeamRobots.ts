@@ -40,10 +40,10 @@ function config(team:number,id:string,capacity:number,rate:number,height:number,
   const c=build({intake:'both',aim:'align',dumper:true,hopper:capacity,tall:false,rate,climb:0});
   c.teamNumber=team;c.model=id;c.frameLength=c.frameWidth=.6858;c.height=height;c.maxSpeed=4.7;
   if(team===9470)c.hopperCovered=true;
-  if(net){c.hopperCovered=true;c.hopperExpansion={...net,area:team===9470?{cx:-.175,sx:.375,sz:.315}:{cx:-.295,sx:.32,sz:.325}};}
+  if(net){c.hopperCovered=true;c.hopperExpansion={...net,area:team===9470?{cx:-.307,sx:.321,sz:.32}:{cx:-.295,sx:.32,sz:.325}};}
   c.launcher.exitSpan=.59;setRebuiltAccuracy(c,86);return normalizeRebuiltConfig(c);
 }
 export function cadRebuiltTeamRobots():TeamRobot[] {return [
-  {id:'ctrl-alt-defeat-9470',team:9470,name:'Ctrl-Alt-Defeat',description:'9470. Supplied CAD chassis and wide drum shooter with photo-fitted clear hopper with a sliding intake-side extension under a flexible net (40 FUEL below the rim, 52 with stretch) and an adapted 581 CAD intake. Capacity, rate and drive speed are simulator estimates.',source:'User supplied 9470-2026-MAIN.glb; https://www.thebluealliance.com/team/9470/2026',config:config(9470,'ctrl-alt-defeat-9470',52,16,.55,{startCount:40,fullHeight:inch(25.5)})},
+  {id:'ctrl-alt-defeat-9470',team:9470,name:'Ctrl-Alt-Defeat',description:'9470. Complete supplied CAD with a wide drum shooter, clear hopper and sliding intake-side extension under a flexible net (40 FUEL below the rim, 52 with stretch) and its supplied intake and indexer. Capacity, rate and drive speed are simulator estimates.',source:'User supplied 9470-2026-MAIN.glb; https://www.thebluealliance.com/team/9470/2026',config:config(9470,'ctrl-alt-defeat-9470',52,16,.55,{startCount:40,fullHeight:inch(25.5)})},
   {id:'downpour-6800',team:6800,name:'Downpour',description:'6800 Valor. Supplied wide drum variant with an adjustable roller hood, translating intake and horizontally expanding hopper under a black net roof: 31 FUEL in the rigid hopper, 41 with the net stretched (past 31 it bulges above TRENCH height). Capacity, rate and drive speed are simulator estimates.',source:'User supplied VR26A-0000 Main.glb; https://www.chiefdelphi.com/t/frc-6800-valor-2026-robot-cad-release/520715',config:config(6800,'downpour-6800',41,18,.55,{startCount:31,fullHeight:inch(25.5)})},
 ];}

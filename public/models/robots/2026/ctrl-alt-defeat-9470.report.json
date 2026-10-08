@@ -1,26 +1,32 @@
 {
   "id": "ctrl-alt-defeat-9470",
   "sourceFile": "9470-2026-MAIN.glb",
-  "inputBytes": 93016748,
-  "outputBytes": 1791884,
-  "inputTriangles": 4224968,
-  "outputTriangles": 313024,
-  "omittedOccurrences": 819,
+  "inputBytes": 88100628,
+  "outputBytes": 2320840,
+  "inputTriangles": 2930124,
+  "outputTriangles": 397361,
+  "omittedOccurrences": 1166,
   "bounds": {
     "min": [
-      -0.35401248931884766,
+      -0.6413500390587685,
       0,
-      -0.3540124893188477
+      -0.35401248931884766
     ],
     "max": [
-      0.35401248931884766,
-      0.5472423502335291,
-      0.3540124893188476
+      0.3540124893188479,
+      0.5540375012205914,
+      0.35401248931884766
     ]
   },
   "groups": [
+    "indexer",
     "frame",
     "hood",
-    "flywheel"
+    "flywheel",
+    "hopper-walls",
+    "hopper-roof",
+    "hopper-slide",
+    "hopper-roof-slide",
+    "intake"
   ]
 }
