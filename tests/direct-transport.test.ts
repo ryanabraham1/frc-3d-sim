@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DirectTransport } from '../src/engine/net/directTransport';
 
 class Channel {
-  label = 'frc-game';
+  constructor(public label = 'frc-game', public options: RTCDataChannelInit = {}) {}
   readyState = 'connecting';
   binaryType = '';
   bufferedAmount = 0;
@@ -24,9 +24,13 @@ class PC {
   onconnectionstatechange: (() => void) | null = null;
   ondatachannel: ((e: { channel: Channel }) => void) | null = null;
   channel = new Channel();
+  snapshots: Channel | null = null;
   calls: string[] = [];
   constructor() { PC.instances.push(this); }
-  createDataChannel() { return this.channel; }
+  createDataChannel(label: string, options: RTCDataChannelInit) {
+    if (label === 'frc-game') return this.channel;
+    return (this.snapshots = new Channel(label, options));
+  }
   async createOffer() { return { type: 'offer', sdp: 'offer' }; }
   async createAnswer() { return { type: 'answer', sdp: 'answer' }; }
   async setLocalDescription(d: { type: string; sdp: string }) {
@@ -97,6 +101,41 @@ describe('direct host connections', () => {
     pc.channel.bufferedAmount = 0;
     expect(transport.send('guest', new ArrayBuffer(70000))).toBe(false);
     expect(pc.channel.sent).toHaveLength(0);
+  });
+
+  it('sends snapshots on an unreliable unordered channel and keeps commands on the reliable one', async () => {
+    await transport.offer('guest');
+    const pc = PC.instances[0];
+    expect(pc.snapshots?.options).toEqual({ ordered: false, maxRetransmits: 0 });
+    pc.channel.open();
+    pc.snapshots!.open();
+    expect(transport.send('guest', new ArrayBuffer(20))).toBe(true);
+    expect(transport.send('guest', 'cmd')).toBe(true);
+    expect(pc.snapshots!.sent).toHaveLength(1);
+    expect(pc.channel.sent).toEqual(['cmd']);
+    pc.snapshots!.onmessage?.({ data: new ArrayBuffer(5) });
+    expect(received).toHaveLength(1);
+    // Losing only the snapshot channel keeps the link: snapshots go back to the reliable channel.
+    pc.snapshots!.close();
+    expect(transport.peers).toEqual(['guest']);
+    expect(transport.send('guest', new ArrayBuffer(20))).toBe(true);
+    expect(pc.channel.sent).toHaveLength(2);
+  });
+
+  it('accepts the host snapshot channel as a client', async () => {
+    transport.handleSignal('host', { session: 's', description: { type: 'offer', sdp: 'sdp' } }, true);
+    await vi.advanceTimersByTimeAsync(0);
+    const pc = PC.instances[0];
+    const snap = new Channel('frc-snap');
+    const other = new Channel('other');
+    pc.ondatachannel?.({ channel: pc.channel });
+    pc.ondatachannel?.({ channel: snap });
+    pc.ondatachannel?.({ channel: other });
+    expect(other.readyState).toBe('closed');
+    pc.channel.open();
+    snap.open();
+    snap.onmessage?.({ data: new ArrayBuffer(8) });
+    expect(received).toEqual([{ peer: 'host', data: new ArrayBuffer(8) }]);
   });
 
   it('leaving cancels queued offers before they can create a connection in another room', async () => {
