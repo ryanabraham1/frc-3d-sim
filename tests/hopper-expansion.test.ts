@@ -2,7 +2,7 @@ import { afterEach, beforeAll, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { SEASONS } from '../src/seasons';
-import { cloneConfig, loadedRobotHeight } from '../src/engine/robot/config';
+import { cloneConfig, hopperNetArea, hopperNetCeiling, loadedRobotHeight } from '../src/engine/robot/config';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import * as C from '../src/seasons/2026-rebuilt/constants';
@@ -59,7 +59,7 @@ for (const team of [254,4414]) it(`${team}: expanded net physically blocks a ful
 });
 
 it('net and telescoping expansion do not inflate the requested total capacities', () => {
-  for(const [team,capacity] of [[254,50],[1678,60],[2910,40],[971,33]]) {
+  for(const [team,capacity] of [[254,52],[1678,65],[2910,40],[604,85],[9470,52],[9128,45],[971,35],[581,55],[6800,41],[4414,85],[1323,64]]) {
     const c=season.teamRobots!.find(t=>t.team===team)!.config;
     expect(c.hopperCapacity).toBe(capacity);
     expect(season.normalizeRobotConfig!(cloneConfig(c)).hopperCapacity).toBe(capacity);
@@ -112,11 +112,12 @@ for (const [team, oldHeight] of [[971, 0.638352], [6800, 0.63]]) it(`${team} mig
   expect(season.normalizeRobotConfig!(c).height).toBe(0.762);
 });
 
-for(const team of [971,6800]) it(`${team} uses its compact travel height and physically clears the trench with a full hopper`,()=>{
+for(const team of [971,6800]) it(`${team} uses its compact travel height and physically clears the trench with a trench-safe load`,()=>{
   const c=cloneConfig(season.teamRobots!.find(t=>t.team===team)!.config);
   expect(c.height).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
   const sim=new HeadlessSim(season,RAPIER,{robot:c,alliance:'blue',pose:{x:C.HUB_CENTER.x-2,y:C.TRENCH_OPENING_CENTER_Y,yaw:0}});sims.push(sim);
-  sim.load(c.hopperCapacity);
+  // 6800's net bulges above the TRENCH past its rigid load; up to that load it clears.
+  sim.load(c.hopperExpansion?.startCount ?? c.hopperCapacity);
   expect(sim.robot.clearanceHeight).toBeLessThan(C.TRENCH_CLEARANCE);
   sim.run(4,{...IDLE_COMMAND,vx:2});
   expect(sim.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x+C.TRENCH_DEPTH/2+.5);
@@ -127,21 +128,21 @@ it('1678 manually toggles capacity and clearance, preserves excess fuel, and can
   const c = cloneConfig(season.teamRobots!.find(t => t.team === 1678)!.config);
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
   const r = sim.robot;
-  expect(r.hopperCapacity).toBe(40);
-  sim.load(40);
+  expect(r.hopperCapacity).toBe(50);
+  sim.load(50);
   expect(r.capacityLeft).toBe(0);
   expect(r.clearanceHeight).toBe(c.height);
   r.drive({ ...IDLE_COMMAND, block: true }, .02);
-  expect(r.hopperCapacity).toBe(60);
-  expect(r.capacityLeft).toBe(20);
+  expect(r.hopperCapacity).toBe(65);
+  expect(r.capacityLeft).toBe(15);
   expect(r.clearanceHeight).toBe(c.hopperExpansion!.fullHeight);
-  sim.load(20);
+  sim.load(15);
   r.drive(IDLE_COMMAND, .02);
   expect(r.hopperRaised).toBe(true);
-  expect(r.held.length).toBe(60);
-  for (const i of r.held.splice(40)) sim.pool.reserve(i);
+  expect(r.held.length).toBe(65);
+  for (const i of r.held.splice(50)) sim.pool.reserve(i);
   r.drive(IDLE_COMMAND, .02);
-  expect(r.hopperCapacity).toBe(40);
+  expect(r.hopperCapacity).toBe(50);
   expect(r.clearanceHeight).toBe(c.height);
   r.overheadLimit = C.TRENCH_SAFE_HEIGHT;
   r.drive({ ...IDLE_COMMAND, block: true }, .02);
@@ -153,4 +154,68 @@ it('1678 manually toggles capacity and clearance, preserves excess fuel, and can
   r.drive(IDLE_COMMAND, .02);
   for(let i=0;i<60;i++) r.syncVisual(.05);
   expect(r.visual.getObjectByName('telescoping-hopper-roof')!.position.y).toBe(0);
+});
+
+for (const team of [581, 6800, 1323, 9470]) it(`${team}: its net stays at the rim up to the rigid load and stretches past TRENCH height when full`, () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
+  const e = c.hopperExpansion!;
+  expect(e.mechanism).toBeUndefined();
+  const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
+  const r = sim.robot;
+  sim.load(e.startCount);
+  expect(r.clearanceHeight).toBe(c.height);
+  sim.load(c.hopperCapacity - e.startCount);
+  expect(r.held.length).toBe(c.hopperCapacity);
+  expect(r.clearanceHeight).toBeCloseTo(e.fullHeight);
+  expect(r.clearanceHeight).toBeGreaterThan(C.TRENCH_SAFE_HEIGHT);
+});
+
+it('a FUEL entering a slack net lands at the rim, not up in the fully stretched dome', () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === 6800)!.config);
+  const ceiling = hopperNetCeiling(c, 0.5);
+  const cx = hopperNetArea(c).cx;
+  expect(ceiling(cx, 0)).toBeCloseTo(c.hopperExpansion!.fullHeight);
+  ceiling.setStretch(0);
+  expect(ceiling(cx, 0)).toBeCloseTo(0.5);
+  ceiling.setStretch(0.5);
+  expect(ceiling(cx, 0)).toBeCloseTo((0.5 + c.hopperExpansion!.fullHeight) / 2);
+  // Robot drives the stretch from its drawn net: a lightly loaded net robot keeps its pile ceiling at the rim.
+  const m = cloneConfig(season.teamRobots!.find(t => t.team === 1323)!.config);
+  const sim = new HeadlessSim(season, RAPIER, { robot: m, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
+  sim.load(5);
+  for (let i = 0; i < 30; i++) sim.robot.syncVisual(.05);
+  let tallest = 0;
+  sim.robot.visual.traverse(o => { const f = o.userData.fuelCeiling; if (f) tallest = Math.max(tallest, f(-m.frameLength * 0.1, 0)); });
+  expect(tallest).toBeGreaterThan(0);
+  expect(tallest).toBeLessThan(m.height + 0.01);
+});
+
+it('the stretching net rises only where actual balls push it, while its rim stays anchored', () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === 254)!.config);
+  const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
+  const r = sim.robot;
+  r.detachPool(sim.pool);
+  r.held.length = c.hopperCapacity;
+  // Isolate fabric response from the pile solver: no contact points, despite a full requested load.
+  let positions = new Float32Array();
+  r.visual.traverse(o => {
+    if (o.userData.fuelSurface) o.userData.fuelSurface = () => ({ positions, count: positions.length / 3, radius: .075 });
+  });
+  const net = r.visual.getObjectByName('stretching-hopper-net') as THREE.LineSegments;
+  const maxY = () => {
+    const p = net.geometry.getAttribute('position'); let top = 0;
+    for (let i = 0; i < p.count; i++) top = Math.max(top, p.getY(i));
+    return top;
+  };
+  for (let i = 0; i < 60; i++) r.syncVisual(.05);
+  expect(maxY()).toBeLessThanOrEqual(c.height + .001);
+  // A single upper ball raises the cloth locally. The rest remains tied to the rigid rim.
+  positions = new Float32Array([-c.frameLength * .1, c.hopperExpansion!.fullHeight - .075, 0]);
+  for (let i = 0; i < 60; i++) r.syncVisual(.05);
+  expect(maxY()).toBeGreaterThan(c.height + .04);
+  const p = net.geometry.getAttribute('position'), grid = net.userData.grid as number[];
+  for (let i = 0; i < p.count; i++) {
+    if (Math.abs(grid[i * 3]) === 1 || Math.abs(grid[i * 3 + 2]) === 1) expect(p.getY(i)).toBeCloseTo(c.height, 3);
+  }
+  expect(net.getObjectByName('stretching-hopper-cords')).toBeDefined();
 });

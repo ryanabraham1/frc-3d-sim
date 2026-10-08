@@ -8,6 +8,7 @@ import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, hood
 import { adaptedDumper, adaptedRotorColumn, adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
+import { hopperNetCeiling } from '@engine/robot/config';
 import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, INTAKE_RATE_BOOST, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
@@ -62,7 +63,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
     decal(k.visual, 'fabworks.', { w: L * .42, h: .055, x: -.08, y: H - .15, z: sz * W * .491, rotY: sz > 0 ? 0 : Math.PI });
     decal(k.visual, 'RIPCURRENT', { w: .18, h: .035, x: .10, y: bt + .06, z: sz * W * .491, rotY: sz > 0 ? 0 : Math.PI });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-(L*.05),z) > .095 });
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-(L*.05),z) > .095, ceiling: hopperNetCeiling(c) });
   // Dye rotor: pocketed spinning plate in a fenced tub, spiral guide wall into the open tower under the turret.
   const rr = Math.min(L, W) * 0.44;
   const dye = dyeRotor(k.visual, { x: L * 0.05, y0: bt + 0.02, R: rr, wallH: 0.1, towerX: L * 0.05, towerR: 0.09, towerTop: H - 0.08, plate: black, accent: teal, motors: 2 });
@@ -133,7 +134,8 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
     decal(k.visual, 'AT', { w: 0.07, h: 0.05, x: 0, y: H - 0.15, z, rotY });
     decal(k.visual, 'MADTOWN', { w: 0.15, h: 0.035, x: L * 0.22, y: H - 0.16, z, rotY });
   }
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: hopH * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x,z) > .095 });
+  // The net roof stretches over the load: FUEL past the rigid box rides up into its dome.
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x,z) > .095, ceiling: hopperNetCeiling(c) });
   // Concentric floor rotor, feed column and turret bearing at the center of the chassis.
   const tx = 0;
   const rr = Math.min(L, W) * 0.42;
@@ -219,7 +221,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
   const hopH = H - bt - 0.03;
   hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: hx, y0: bt, length: hl, width: W * 0.98, height: hopH, m: smoke });
   // Flexible net roof is drawn by Robot from hopperExpansion, following actual load.
-  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity });
+  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, ceiling: hopperNetCeiling(c) });
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
     const z = sz * (W * 0.49 + 0.006);
@@ -690,23 +692,27 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     ...cadRebuiltTeamRobots(),
     {
       id: 'ripcurrent-4414', team: 4414, name: 'RIPCURRENT',
-      description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake to hold 85 FUEL; net bulges above 70 FUEL and loses TRENCH clearance. No climber.',
+      description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake, under a very stretchy net roof: 57 FUEL fit the rigid box and the net stretches over 28 more for the binder’s 85, bulging up to about 29.5 in (just under the 30 in limit) and losing TRENCH clearance past 57. No climber.',
       source: '4414 2026 Technical Binder (2026.team4414.com); Chief Delphi "Team 4414 HighTide 2026 Tech Binder - RIPCURRENT"',
       config: teamConfig(4414, 'ripcurrent-4414', { intake: 'both', aim: 'turret', hopper: 85, tall: false, rate: 15, climb: 0 }, (c) => {
         // 25 × 32 in frame with chamfered back corners, inside the 110 in perimeter: modeled as an equal-perimeter box.
         c.frameLength = inch(24);
         c.frameWidth = inch(31);
-        c.hopperExpansion = { startCount: 70, fullHeight: inch(27) }; // [EST] net expansion above ~70 FUEL
+        // Packing real-size FUEL into this hopper: 57 under the rigid rim; the binder's 85 needs the net stretched to
+        // about 29.5 in (+28), which this very elastic net does. [EST]
+        c.hopperExpansion = { startCount: 57, fullHeight: inch(29.5) };
         setRebuiltAccuracy(c, 90); // [EST] precomputed robust shot map
         c.maxSpeed = 4.4; // [EST] geared 7.67:1 for low current draw
       }),
     },
     {
       id: 'madtown-2026-1323', team: 1323, name: 'MadTown',
-      description: '1323 MadTown Robotics (2026 World Champions). A trench-height turret robot in the RIPCURRENT mould: dye rotor feeding a turret that shoots on the move, slightly smaller hopper (70 FUEL) and lower fire rate (13 FUEL/s) than 4414. Its signature SHOT BLOCKER, a slatted panel hinged on the intake-side top edge, swings out 12 in and up to the 30 in height limit over a neighbouring trench robot\'s shooter (F / gamepad L3). Raised, it hits the TRENCH arm, so the robot cannot drive under, and it cannot be raised under the arm. The intake is off while it is up. No climber [EST].',
+      description: '1323 MadTown Robotics (2026 World Champions). A trench-height turret robot in the RIPCURRENT mould: dye rotor feeding a turret that shoots on the move, a net-roofed hopper (50 FUEL in the rigid box, about 14 more as the net stretches: 64) and a lower fire rate (13 FUEL/s) than 4414; past 50 the net bulges above TRENCH height. Its signature SHOT BLOCKER, a slatted panel hinged on the intake-side top edge, swings out 12 in and up to the 30 in height limit over a neighbouring trench robot\'s shooter (F / gamepad L3). Raised, it hits the TRENCH arm, so the robot cannot drive under, and it cannot be raised under the arm. The intake is off while it is up. No climber [EST].',
       source: 'Match photos/video (2026 Champs, Einstein); Chief Delphi "How does 1323 get away with such a complicated robot?" ("turreted dye rotor with a shot blocker"); user tuning relative to 4414',
-      config: teamConfig(1323, 'madtown-2026-1323', { intake: 'both', aim: 'turret', hopper: 70, tall: false, rate: 13, climb: 0 }, (c) => {
+      config: teamConfig(1323, 'madtown-2026-1323', { intake: 'both', aim: 'turret', hopper: 64, tall: false, rate: 13, climb: 0 }, (c) => {
         c.hopperCovered = true; // net over the hopper
+        // Capacity from packing real-size FUEL into this hopper: 50 under the rigid rim, +14 under the stretched net. [EST]
+        c.hopperExpansion = { startCount: 50, fullHeight: inch(25) };
         c.frameLength = inch(27); // [EST] near-square frame in photos
         c.frameWidth = inch(27);
         // [R: 12 in extension past the FRAME PERIMETER, on the intake side so the intake and blocker share one side;
@@ -718,11 +724,12 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, 50-FUEL total net hopper, 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, 52 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
-      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 50, tall: false, rate: 25, climb: 0 }, (c) => {
+      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 52, tall: false, rate: 25, climb: 0 }, (c) => {
         c.hopperCovered = true; // net hopper
-        c.hopperExpansion = { startCount: 40, fullHeight: inch(28) }; // [EST] net bulges when over trench-safe load
+        // Capacity from packing real-size FUEL into this hopper: 40 under the rigid rim, +12 under the stretched net. [EST]
+        c.hopperExpansion = { startCount: 40, fullHeight: inch(25) };
         c.launcher.exits = 3; // [EST] wide multi-wheel shooter
       }),
     },
@@ -730,7 +737,7 @@ export function rebuiltTeamRobots(): TeamRobot[] {
       id: 'kepler-1690', team: 1690, name: 'Kepler',
       description: '1690 Orbit. Turret on an 8 in bearing, gear-driven (beltless) shooter with an adjustable hood, intake deployed by surgical tubing, spiked tread for pushing.',
       source: 'Chief Delphi "FRC Orbit 1690 2026 Robot CAD Release"',
-      config: teamConfig(1690, 'kepler-1690', { intake: 'both', aim: 'turret', hopper: 40, tall: false, rate: 12, climb: 0 }, (c) => {
+      config: teamConfig(1690, 'kepler-1690', { intake: 'both', aim: 'turret', hopper: 39, tall: false, rate: 12, climb: 0 }, (c) => {
         c.wheelCOF = 1.3; // [EST] spiked tread
         c.maxSpeed = 5.0; // [EST]
       }),
@@ -740,7 +747,7 @@ export function rebuiltTeamRobots(): TeamRobot[] {
       description: '9483 Overcharge — an over-the-BUMP robot (too tall for the TRENCH). A giant hopper over a grip-taped spindexer bowl, turret shooter on three Kraken X60s, intake on silver arms; went 12-0 as the #1 seed at Istanbul.',
       source: 'Chief Delphi "Team 9483 Presents: Enigma"; "What 1678\'s Robot Reveal Reveals About REBUILT"; The Blue Alliance 2026 media',
       config: teamConfig(9483, 'enigma-9483', { intake: 'both', aim: 'turret', hopper: 80, tall: true, rate: 14, climb: 0 }, (c) => {
-        c.hopperCapacity = 90; // [EST] "giant hopper"
+        c.hopperCapacity = 86; // [EST] "giant hopper": real-size FUEL packed into the modeled box
       }),
     },
     {
@@ -748,7 +755,7 @@ export function rebuiltTeamRobots(): TeamRobot[] {
       description: '4946 The Alpha Dogs — an over-the-BUMP "roomba": a half-circle robot about 30 in tall with a 35 in round hopper, a dye rotor feeding an 11 in turret on a center column (~14 FUEL/s single stream, shoots on the fly), and an intake whose bottom piece rides up over the BUMP on omni wheels.',
       source: '4946 2026 Engineering Report; Chief Delphi "4946 The Alpha Dogs 2026 Robot: Moto Moto" and CAD/documentation release',
       config: teamConfig(4946, 'motomoto-4946', { intake: 'both', aim: 'turret', hopper: 80, tall: true, rate: 14, climb: 0 }, (c) => {
-        c.hopperCapacity = 100; // [EST] 35 in round hopper
+        c.hopperCapacity = 88; // [EST] real-size FUEL packed into the 35 in round hopper
         // Half circle of 16.375 in radius with a 30 in flat edge: modeled as a 30 × 25 in box (110 in perimeter).
         c.frameWidth = inch(30);
         c.frameLength = inch(25);

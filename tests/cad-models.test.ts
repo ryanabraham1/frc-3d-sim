@@ -87,6 +87,7 @@ describe('imported 2026 CAD models', () => {
       mats: { dark: new THREE.MeshStandardMaterial(), alu: new THREE.MeshStandardMaterial(), bumper: new THREE.MeshStandardMaterial() } });
     const root = visual.getObjectByName(`cad-${id}`)!;
     expect(root).toBeTruthy();
+    expect(visual.getObjectByName('hopper-fuel-pile')!.userData.fuelSlots).toBe(config.hopperCapacity);
     for (const name of ['intake','hood','flywheel']) {
       const part = root.getObjectByName(name)!;
       expect(part, name).toBeTruthy();
@@ -156,6 +157,7 @@ describe('additional supplied CAD',()=>{
     const visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
     const model=cadRobotModelBuilder(id)!({config,visual,turret,alliance:'blue',fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
     const root=visual.getObjectByName(`cad-${id}`)!;
+    expect(visual.getObjectByName('hopper-fuel-pile')!.userData.fuelSlots).toBe(config.hopperCapacity);
     const report=JSON.parse(readFileSync(`public/models/robots/2026/${id}.report.json`,'utf8'));
     expect(report.outputBytes).toBeLessThan(6_000_000);
     expect(report.outputTriangles/report.inputTriangles).toBeLessThan(.2);
@@ -183,6 +185,16 @@ describe('additional supplied CAD',()=>{
       expect(intake.position.x).toBeCloseTo(0,4);
       expect(root.getObjectByName('hopper-slide')!.position.x).toBeCloseTo(intake.position.x,5);
     } else {
+      const extension=visual.getObjectByName('cad-9470-hopper-extension')!;
+      expect(extension).toBeDefined();
+      expect(extension.position.x).toBeCloseTo(intake.position.x,5);
+      const fuel=visual.getObjectByName('hopper-fuel-pile')!;
+      const deployedLength=fuel.userData.fuelBin.length;
+      expect(fuel.userData.fuelSlots).toBe(config.hopperCapacity);
+      model.update(idle);
+      expect(extension.position.x).toBeCloseTo(.22);
+      expect(deployedLength-fuel.userData.fuelBin.length).toBeCloseTo(.225);
+      model.update({...idle,enabled:true,fill:1,aiming:true,hood:.5});
       const donor=root.getObjectByName('adapted-581-intake');expect(donor).toBeTruthy();
       expect(new THREE.Box3().setFromObject(donor!,true).getSize(new THREE.Vector3()).z).toBeGreaterThan(.5);
     }

@@ -203,8 +203,11 @@ export class FuelPile {
     const b = this.bin, j = i * 3, p = this.positions, v = this.velocity;
     const r = this.radius * this.seeds[i].s, ry = r * (this.seeds[i].sy ?? 0.94);
     const minX = b.x - b.length / 2 + r, maxX = b.x + b.length / 2 - r, minZ = -b.width / 2 + r, maxZ = b.width / 2 - r;
-    // Above the lip there is no side wall. Pair contacts can roll the ball across the rim continuously.
-    const overLip = this.open && (p[j + 1] > b.y0 + b.height || Math.abs(p[j] - b.x) > b.length / 2 || Math.abs(p[j + 2]) > b.width / 2);
+    // Above the lip there is no side wall. Pair contacts can roll the ball across the rim continuously. A ball beside
+    // the wall but still down in the bin is not leaving: the bin shrank under it (an intake-side extension retracting),
+    // so the wall sweeps it back in instead of dumping the load on the field.
+    const rim = b.y0 + b.height;
+    const overLip = this.open && (p[j + 1] > rim || (p[j + 1] > rim - r && (Math.abs(p[j] - b.x) > b.length / 2 || Math.abs(p[j + 2]) > b.width / 2)));
     const x = overLip ? p[j] : THREE.MathUtils.clamp(p[j], minX, maxX), z = overLip ? p[j + 2] : THREE.MathUtils.clamp(p[j + 2], minZ, maxZ);
     if (!overLip && ((p[j] < minX && v[j] < 0) || (p[j] > maxX && v[j] > 0))) v[j] *= -0.08;
     if (!overLip && ((p[j + 2] < minZ && v[j + 2] < 0) || (p[j + 2] > maxZ && v[j + 2] > 0))) v[j + 2] *= -0.08;

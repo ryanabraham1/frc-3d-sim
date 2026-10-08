@@ -626,9 +626,13 @@ export class Game {
     }
     if (inp.toggleBlocker && this.player) {
       if (this.player.manualHopper) {
-        if (this.blockerUp && this.player.held.length > this.player.config.hopperExpansion!.startCount) this.hud.toast('Shoot down to 40 FUEL before lowering the hopper');
+        if (this.blockerUp && this.player.held.length > this.player.config.hopperExpansion!.startCount) this.hud.toast(`Shoot down to ${this.player.config.hopperExpansion!.startCount} FUEL before lowering the hopper`);
         else if (!this.blockerUp && this.player.overheadLimit < this.player.config.hopperExpansion!.fullHeight) this.hud.toast('Cannot raise the hopper under the TRENCH');
-        else { this.blockerUp = !this.blockerUp; this.hud.toast(`Hopper ${this.blockerUp ? 'UP · 60 FUEL' : 'DOWN · 40 FUEL'}`); }
+        else {
+          this.blockerUp = !this.blockerUp;
+          const capacity = this.blockerUp ? this.player.config.hopperCapacity : this.player.config.hopperExpansion!.startCount;
+          this.hud.toast(`Hopper ${this.blockerUp ? 'UP' : 'DOWN'} · ${capacity} FUEL`);
+        }
       } else if (!this.player.config.shotBlocker) this.hud.toast('This robot has no shot blocker');
       else {
         this.blockerUp = !this.blockerUp;

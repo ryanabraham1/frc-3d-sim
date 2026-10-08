@@ -210,17 +210,17 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
 export function additionalRebuiltTeamRobots(): TeamRobot[] {
   return [
     { id: 'reblitz-2910', team: 2910, name: 'Re•Blitz',
-      description: '2910 Jack in the Bot (Einstein finalists). Champs rebuild: hard-roof hopper, roller floor, wide drum shooter with an overspeed flywheel and pivoting intake that compresses the hopper. No climber. Simulator tuning: 33 FUEL/s and 40 capacity (user estimates of 30–35 FUEL/s and ~40 balls), 5.3 m/s drive.',
+      description: '2910 Jack in the Bot (Einstein finalists). Champs rebuild: hard-roof hopper, roller floor, wide drum shooter with an overspeed flywheel and pivoting intake that compresses the hopper. No climber. Simulator tuning: 33 FUEL/s (user estimate of 30–35 FUEL/s), 5.3 m/s drive; 40 FUEL capacity following user guidance.',
       source: 'https://www.chiefdelphi.com/t/2910-robot-reveal-2026-blitz/516325?page=5 — Champs rebuild team Q&A; frcteam2910.org 2026 recap',
       config: config(2910,'reblitz-2910',false,40,33,5.3,90) },
     { id: 'limestone-1678', team: 1678, name: 'Limestone',
-      description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. 60 FUEL with the hopper raised. Simulator estimates: 24 FUEL/s, 4.7 m/s drive; F toggles hopper capacity between 40 and 60 FUEL.',
+      description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. 50 FUEL with the hopper down, 65 with it raised (user tuning). Simulator estimates: 24 FUEL/s, 4.7 m/s drive; F toggles hopper capacity between 50 and 65 FUEL.',
       source: 'https://www.chiefdelphi.com/t/1678-2026-robot-limestone/515709 — reveal and team hopper/CAD discussion',
-      config: config(1678,'limestone-1678',false,60,24,4.7,88) },
+      config: config(1678,'limestone-1678',false,65,24,4.7,88) },
     { id: 'mixtape-971', team: 971, name: 'Mixtape',
-      description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. 33 FUEL capacity (user tuning). Simulator estimates: 16 FUEL/s combined, 5.0 m/s drive. Both heads share simulated aim and alternate shots from their own turret throats.',
+      description: '971 Spartan Robotics. Twin turret flywheel shooter; compact precision-cycling alternative to wide drum dumpers. 35 FUEL capacity (packed into the modeled hopper; user tuning was 33). Simulator estimates: 16 FUEL/s combined, 5.0 m/s drive. Both heads share simulated aim and alternate shots from their own turret throats.',
       source: 'https://www.chiefdelphi.com/t/frc-971-spartan-robotics-2026-robot-reveal-mixtape/515582; https://github.com/frc971/971-second-robot-2026',
-      config: config(971,'mixtape-971',true,33,16,5.0,92) },
+      config: config(971,'mixtape-971',true,35,16,5.0,92) },
   ];
 }
 
@@ -230,7 +230,7 @@ function config(team: number, model: string, turret: boolean, capacity: number, 
   if (team === 2910) { c.frameLength = .6985; c.height = .55; c.hopperCovered = true; } // Supplied Robot 2 frame and roof envelope; hard-roof hopper, not open-top.
   if (team === 971) { c.frameLength = .6223; c.frameWidth = .762; c.height = .55; /* CAD compact envelope: 0.54465 m; raised shooting hood is not travel height. */ }
   c.teamNumber = team; c.model = model; c.maxSpeed = speed; c.maxAccel = team === 2910 ? 11 : team === 1678 ? 9 : 10;
-  if (team === 1678) { c.frameLength = c.frameWidth = inch(27); c.hopperExpansion = { startCount: 40, fullHeight: inch(29), mechanism: 'telescoping' }; }
+  if (team === 1678) { c.frameLength = c.frameWidth = inch(27); c.hopperExpansion = { startCount: 50, fullHeight: inch(29), mechanism: 'telescoping' }; } // Lowered / raised capacities follow user tuning.
   if (team === 971) {
     c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .23, side: sign * c.frameWidth * .24 }));
     c.launcher.muzzleForward = .05;

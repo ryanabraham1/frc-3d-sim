@@ -2,6 +2,7 @@ import { scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { box, bar, mat, fillBlock, drivebase, roller, hoodShell } from './models';
 import type { ModelKit, RobotModel } from './models';
+import { hopperNetCeiling } from './config';
 
 // Source: user-supplied 9470 MAIN, Valor VR26A and 971 Championship assemblies.
 // Dimensions/pivots below are in meters, measured from the exported shafts/rings.
@@ -22,9 +23,11 @@ function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
   k.visual.updateMatrixWorld(true);
   return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
 }
-function fuel(k:ModelKit,front:number,back:number,base:number,roof:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean) {
+function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean) {
   const g=new THREE.Group();g.name='cad-hopper-fuel';k.visual.add(g);
-  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,color:0xf2c200,capacity:k.config.hopperCapacity,inside});
+  // A stretching net roof lets FUEL rise above the rigid rim into the net's dome.
+  const e=k.config.hopperExpansion,netted=!!e&&e.mechanism!=='telescoping',roof=netted?e!.fullHeight:rim;
+  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,color:0xf2c200,capacity:k.config.hopperCapacity,inside,ceiling:netted?hopperNetCeiling(k.config,rim):undefined});
   const mesh=g.getObjectByName('hopper-fuel-pile')!;
   let fill=0,deploy=0;
   return {update(f:number,d:number){fill=f;deploy=d;
@@ -34,7 +37,7 @@ function fuel(k:ModelKit,front:number,back:number,base:number,roof:number,width:
     const f=deploy<.5?compactFront:front;
     for(let i=0;i<100;i++) {
       const x=f+.075+Math.random()*(back-f-.15),z=(Math.random()-.5)*(width-.15);
-      if(!inside||inside(x,z))return new THREE.Vector3(x,base+.075+fill*(roof-base-.15),z);
+      if(!inside||inside(x,z))return new THREE.Vector3(x,base+.075+fill*(rim-base-.15),z);
     }
     return new THREE.Vector3((f+back)/2,base+.075,0);
   }};
@@ -88,18 +91,30 @@ export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean,
     bar(supplement,[-.335,.15,z],[-.335,.55,z],.012,alu);
     bar(supplement,[-.335,.55,z],[.265,.55,z],.012,alu);
   }
-  box(supplement,.003,.25,.63,clear,-.335,.425,0);
-  box(supplement,.37,.003,.63,mat(0xe5e7e9,{rough:.8}),-.145,.55,0);
+  if(!k.config.hopperExpansion)box(supplement,.37,.003,.63,mat(0xe5e7e9,{rough:.8}),-.145,.55,0);
   const intake=new THREE.Group(); intake.name='cad-intake-pivot';root.add(intake);
   if(donor) {donor.name='adapted-581-intake';donor.scale.z=.93;intake.add(donor);}
   const tip=new THREE.Object3D();tip.position.set(-.62,.09,0);intake.add(tip);
-  const pile=fuel(k,-.325,.20,.15,.545,.62);
+  // The source omits the sliding hopper. Reconstruct its clear side walls, floor and roof over the rear pickup.
+  // It translates with the intake; a single persistent pile uses the same deployed and compact front edges.
+  const extension=new THREE.Group();extension.name='cad-9470-hopper-extension';k.visual.add(extension);
+  extension.userData.fuelStructure=true;
+  for(const z of [-.315,.315]) {
+    box(extension,.22,.37,.003,clear,-.445,.36,z);
+    bar(extension,[-.555,.15,z],[-.555,.55,z],.012,alu);
+    bar(extension,[-.555,.55,z],[-.335,.55,z],.012,alu);
+  }
+  box(extension,.003,.37,.63,clear,-.555,.36,0);
+  box(extension,.22,.008,.63,alu,-.445,.15,0);
+  if(!k.config.hopperExpansion)box(extension,.22,.003,.63,mat(0xe5e7e9,{rough:.8}),-.445,.55,0);
+  const pile=fuel(k,-.55,.20,.15,.545,.62,-.325);
   let deploy=0,angle=0;
   return {replaces,lightAt:[0,.56,.28],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.25,.25,0)],stow:pile.stow,feed:(shot=0)=>{
       const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.2,.24,z),new THREE.Vector3(.07,.33,z),point(k,wheel,-.05,0,z),point(k,wheel,.025,.07,z)];}},
     update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return; intake.position.x=(1-deploy)*.22;
+      extension.position.x=intake.position.x;
       angle=scoringEase(angle,s.aiming?THREE.MathUtils.clamp(s.hood,.5,1.25)-1.43:0,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};
@@ -113,6 +128,8 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   const tip=new THREE.Object3D();tip.position.set(-.592211,.218235,0);intake.add(tip);
   // Fabric roof is absent from the CAD; the gallery photo shows a black net.
   const roof=new THREE.Group();roof.name='cad-6800-hopper-net';root.add(roof);
+  // With a stretching net configured, Robot draws that net over the load instead of this flat one.
+  roof.visible=!k.config.hopperExpansion;
   const pts:number[]=[];
   for(let i=0;i<=24;i++){const t=i/24;pts.push(t,.514,-.31,t,.514,.31,0,.514,(t-.5)*.62,1,.514,(t-.5)*.62);}
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));

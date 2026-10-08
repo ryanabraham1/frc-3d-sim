@@ -16,6 +16,7 @@ it('2910 replaces donor geometry with bounded, independently articulated source 
   const c=config(),visual=new THREE.Group(),turret=new THREE.Group();visual.add(turret);
   const m=cadRobotModelBuilder(c.model)!({config:c,visual,turret,alliance:'blue',fp:{length:c.frameLength,width:c.frameWidth},groundSide:-1,stationSide:-1,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}});
   const root=visual.getObjectByName('cad-reblitz-2910')!;
+  expect(visual.getObjectByName('hopper-fuel-pile')!.userData.fuelSlots).toBe(c.hopperCapacity);
   for(const name of ['frame','hopper','intake','hood','flywheel','feeder'])expect(root.getObjectByName(name)).toBeDefined();
   const frame=root.getObjectByName('frame')!;visual.updateMatrixWorld(true);const bind=frame.matrixWorld.clone();
   for(let i=0;i<81;i++){

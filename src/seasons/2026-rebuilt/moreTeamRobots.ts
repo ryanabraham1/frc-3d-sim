@@ -5,7 +5,7 @@ import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, box, dyeRotor, decal, deployableIntake, drivebase, fillBlock, flowAt, fourBarIntake, hopperStow, hopperWalls, jitter, lattice, mat, overBumperIntake, pivot, plate, registerRobotModel, roller, spin, wheelShaft, tubeMat, hoodShell, columnFeed, type ModelKit, type RobotAnimState } from '@engine/robot/models';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
-import { launcherExitOffsets } from '@engine/robot/config';
+import { hopperNetCeiling, launcherExitOffsets } from '@engine/robot/config';
 import { motor } from '@engine/robot/mechanicalDetail';
 import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
@@ -22,7 +22,7 @@ import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
  *  - 7769 The CREW CHUNK: black sponsor-plated polycarb walls and net, wide static-hood shooter, racked intake that
  *    slides out (CD CAD relhopper "almost 70", 50–60 in play).
  *  - 9128/10340 Itkan Triple Threat: black hex-perforated hopper, three fixed lanes with tubing-wrapped rollers and a
- *    static hood, twin top intake rollers; 15–16 BPS sustained, 20–25 initial (CD reveal Q&A); capacity 50 [EST], sized like similar compact boxes (254).
+ *    static hood, twin top intake rollers; 15–16 BPS sustained, 20–25 initial (CD reveal Q&A); capacity 45 following user tuning.
  */
 
 const FUEL = 0xf2c200;
@@ -364,8 +364,8 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
     hex.position.set(hx - hl * 0.4 + i * (hl * 0.16) + (row ? hl * 0.08 : 0), bt + 0.09 + row * 0.055, sz * (W * 0.48 + 0.006));
     k.visual.add(hex);
   }
-  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.94, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity });
-  netRoof(k.visual, { x: hx, y: H - 0.03, length: hl, width: W * 0.96, nx: 9, nz: 7, dome: 0.045 });
+  const fill = fillBlock(k.visual, { x: hx, y0: bt + 0.03, length: hl * 0.98, width: W * 0.96, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, ceiling: hopperNetCeiling(c) });
+  if (!c.hopperExpansion) netRoof(k.visual, { x: hx, y: H - 0.03, length: hl, width: W * 0.96, nx: 9, nz: 7, dome: 0.045 });
   // Three fixed lanes at the front: dividers, a tubing-wrapped roller per lane and one static hood across all three.
   const sx = L / 2 - 0.09, rolls: THREE.Group[] = [];
   for (const z of [-W * 0.46, -W * 0.15, W * 0.15, W * 0.46]) plate(k.visual, [[sx - 0.09, bt], [sx + 0.08, bt], [sx + 0.08, H - 0.12], [sx + 0.02, H - 0.04], [sx - 0.09, H - 0.04]], 0.008, black, z);
@@ -475,7 +475,8 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
   const alu = tubeMat(0xbcc4ce), silver = mat(0xbcc4ce, { metal: 0.7 }), black = mat(0x181b1e, { rough: 0.7 });
   const db = drivebase(k, { tube: alu });
   const sh = shell(k, { wall: mat(0x56616a, { opacity: 0.3 }), frame: alu });
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.025, length: L * 0.9, width: W * 0.9, height: sh.h * 0.9, color: FUEL, capacity: c.hopperCapacity });
+  // The net roof stretches over the load: FUEL past the rigid box rides up into its dome.
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.025, length: L * 0.9, width: W * 0.9, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, ceiling: hopperNetCeiling(c, bt + 0.025 + sh.h * 0.9) });
   const tx = -side * L * 0.35, sy = c.launcher.height;
   const feeding: THREE.Group[] = [];
   for (let i = 0; i < 6; i++) feeding.push(roller(k.visual, 0.017, W * 0.84, black, side * (L * 0.35 - i * L * 0.12), bt + 0.03 + i * 0.02));
@@ -484,7 +485,8 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
     bar(k.visual, [tx, sy + 0.04, sz * W * 0.44], [side * L * 0.45, H - 0.04, sz * W * 0.44], 0.022, alu);
     decal(k.visual, 'BLAZING BULLDOGS', { w: 0.34, h: 0.035, x: 0, y: bt + 0.12, z: sz * W * 0.485, rotY: sz > 0 ? 0 : Math.PI });
   }
-  netRoof(k.visual, { x: 0, y: H - 0.015, length: L * 0.9, width: W * 0.9, dome: 0.01 });
+  // With a stretching net configured, Robot draws it over the actual load instead of this fixed lid.
+  if (!c.hopperExpansion) netRoof(k.visual, { x: 0, y: H - 0.015, length: L * 0.9, width: W * 0.9, dome: 0.01 });
   const drum = roller(k.visual, inch(4) / 2, W * 0.83, black, tx, sy - 0.02);
   const hood = pivot(k.visual, tx, sy - 0.02);
   hoodShell(hood, 0.065, W * 0.86, silver);
@@ -589,33 +591,33 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'simbot-tim-1114', team: 1114, name: 'Simbot Tim',
       description: '1114 Simbotics. Simplified supplied CAD intake and tall hopper, with fitted drivetrain and wide drum shooter. Chassis aims; competition climber was removed. Intake travel, capacity, rate, dimensions and speed are simulator estimates.',
       source: 'User supplied S26-A000.glb intake/hopper assembly; Team 1114 Simbot Tim CAD release https://www.chiefdelphi.com/t/522887',
-      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 70, tall: true, rate: 18, climb: 0 }, c => { c.hopperCovered = true; /* magic-blanket cover */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
+      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: true, rate: 18, climb: 0 }, c => { c.hopperCovered = true; /* magic-blanket cover */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
     { id: 'rubble-581', team: 581, name: 'Rubble',
-      description: '581 Blazing Bulldogs. Champs rebuild: full-width drum and adjustable roller hood, translating rack intake, rising roller floor and smoked hopper with a net roof. Capacity, rate and speed are simulator estimates.',
+      description: '581 Blazing Bulldogs. Champs rebuild: full-width drum and adjustable roller hood, translating rack intake, rising roller floor and smoked hopper with a net roof: 42 FUEL in the rigid box, 55 with the net stretched (past 42 it bulges above TRENCH height). Capacity, rate and speed are simulator estimates.',
       source: 'Spectrum CAD Collection row 10; Team 581 CAD and code release https://www.chiefdelphi.com/t/521762',
-      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 86); }) },
+      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); c.hopperCovered = true; c.hopperExpansion = { startCount: 42, fullHeight: inch(25) }; /* Packed real-size FUEL: 42 rigid + 13 under the stretched net [EST]. */ /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 86); }) },
     { id: 'roman-6329', team: 6329, name: 'ROMAN',
       description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056). Turret over a 20.75 in spindexer drum fed by a wide, uninterrupted roller floor, an \"upkicker\" lifting FUEL into the shooter, and a long-armed four-bar intake that folds out of the way on impacts. Capacity, rate and speed are simulator estimates.",
       source: 'Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN" (reveal Q&A and Roman II CAD release)',
-      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'turret', hopper: 45, tall: false, rate: 14, climb: 0 }, (c) => { c.maxSpeed = 4.6; setRebuiltAccuracy(c, 88); }) },
+      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'turret', hopper: 47, tall: false, rate: 14, climb: 0 }, (c) => { c.maxSpeed = 4.6; setRebuiltAccuracy(c, 88); }) },
     { id: 'hailstorm-1778', team: 1778, name: 'HAILSTORM',
       description: '1778 Chill Out. Compact turret over a spindexer with a grip-taped "bottle rocket" cone (copied from 4180) for a tight, steady stream; simple spindexer chosen over a dye rotor. A reliable, consistent mid-high build. Capacity, rate and speed are simulator estimates.',
       source: 'Chief Delphi "1778 2026 CAD & Code Release" (HAILSTORM Q&A: spindexer, bottle-rocket cone, turret encoders)',
-      config: cfg(1778, 'hailstorm-1778', { intake: 'both', aim: 'turret', hopper: 40, tall: false, rate: 11, climb: 0 }, (c) => { c.maxSpeed = 4.7; setRebuiltAccuracy(c, 86); }) },
+      config: cfg(1778, 'hailstorm-1778', { intake: 'both', aim: 'turret', hopper: 47, tall: false, rate: 11, climb: 0 }, (c) => { c.maxSpeed = 4.7; setRebuiltAccuracy(c, 86); }) },
     { id: 'croquembouche-5940', team: 5940, name: 'Croquembouche',
-      description: '5940 BREAD. Their pre-DCMP DOUBLE TURRET robot: two independent turrets over a floor conveyor, black net roof. Twice the stream but power-hungry (brownouts, so they rebuilt into a drum shooter for DCMP). Both turrets share one simulated aim. Holds only about 30 FUEL (user-reported); rate is an estimate.',
+      description: '5940 BREAD. Their pre-DCMP DOUBLE TURRET robot: two independent turrets over a floor conveyor, black net roof. Twice the stream but power-hungry (brownouts, so they rebuilt into a drum shooter for DCMP). Both turrets share one simulated aim. Holds about 33 FUEL packed around the two turrets (user-reported ~30); rate is an estimate.',
       source: 'Chief Delphi "5940 BREAD 2026 Double Turret CAD Release" (Croquembouche, Q&A on brownouts)',
-      config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 30, tall: false, rate: 16, climb: 0 }, (c) => { c.maxSpeed = 4.3; c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .12, side: sign * c.frameWidth * .25 })); c.launcher.muzzleForward = .08; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 33, tall: false, rate: 16, climb: 0 }, (c) => { c.maxSpeed = 4.3; c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .12, side: sign * c.frameWidth * .25 })); c.launcher.muzzleForward = .08; setRebuiltAccuracy(c, 84); }) },
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
-      description: '7769 The CREW (5 blue banners). Wide static-hood shooter on 4 in stealth wheels, black sponsor-plated polycarb hopper, intake on independently driven racks that slides out and shuffles while firing to prevent jams. Under-trench box, so it holds about 45 FUEL [EST; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Shoots from the TRENCH without being pushed under. Rate and speed are estimates.',
+      description: '7769 The CREW (5 blue banners). Wide static-hood shooter on 4 in stealth wheels, black sponsor-plated polycarb hopper, intake on independently driven racks that slides out and shuffles while firing to prevent jams. Under-trench box, so it holds about 37 FUEL [EST: packed into the modeled box; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Shoots from the TRENCH without being pushed under. Rate and speed are estimates.',
       source: 'Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 15, climb: 0 }, (c) => { c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
-      description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. Compact trench-height box, so about 40 FUEL [EST: the quoted ~80 does not fit; a non-expanding trench-height box holds roughly 40]; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
+      description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. 45 FUEL total following user tuning, including its intake-side hopper extension; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
-      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 40, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; setRebuiltAccuracy(c, 82); }) },
+      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; setRebuiltAccuracy(c, 82); }) },
     { id: 'toploader-604', team: 604, name: 'Toploader',
-      description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Holds 80-90 FUEL (user-reported, tall box with a sliding hopper; simulator uses 85). Speed is a simulator estimate.',
+      description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Holds 80–90 FUEL (user-reported; simulator uses 85) in its tall box and sliding hopper. Speed is a simulator estimate.',
       source: 'Chief Delphi "Team 604 Quixilver - 2026 Robot CAD and Code Release" (Toploader); The Blue Alliance 2026 photos',
       config: cfg(604, 'toploader-604', { intake: 'both', aim: 'turret', hopper: 85, tall: true, rate: 14, climb: 0 }, (c) => { c.frameLength = c.frameWidth = inch(27); c.maxSpeed = 4.5; setRebuiltAccuracy(c, 88); }) },
   ];

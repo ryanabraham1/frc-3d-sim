@@ -155,6 +155,11 @@ function frame(now: number) {
         r.held.pop();
       }
     } else if (pose.value !== 'transfer') r.held.length=pose.value==='full'?r.config.hopperCapacity:pose.value==='both'?(r.config.options?.dualPieceStorage||r.config.options?.coralBuffer?1:0):pose.value==='loaded'?Math.round(r.config.hopperCapacity*0.6):pose.value==='aim'?1:0;
+    if (r.manualHopper) {
+      const threshold = r.config.hopperExpansion!.startCount;
+      r.hopperRaised = pose.value === 'full' || pose.value === 'score' || r.held.length > threshold
+        || (['fuel-fill', 'flow'].includes(pose.value) && r.held.length >= threshold);
+    }
     r.syncVisual(dt);
     if (seasonSelect.value === '2026-rebuilt') {
       const audit=r.fuelTransportAudit;

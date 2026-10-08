@@ -215,7 +215,7 @@ not measured team rankings. 2025 profiles vary the actual lift/release/harvest/c
 | --- | --- | --- |
 | 2024 | 1323 MadTown, 118 Twister, 4414 TIDEPOD | Separate AMP arm, turret/diverter, and pivot shooter/forks; drive acceleration and climb timing differ. |
 | 2025 | 1690 WHISPER, 2056 LIGHTNING, 118 Firefly | Vacuum end effector, continuous-belt elevator/gripper, and separate roller channels. Lift speeds 2.2/2.5/1.9 m/s; release delays 0.30/0.40/0.25 s; harvest delays 0.35/0.45/0.30 s. All support full scoring; differences are throughput and mechanism design. |
-| 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 33/24/16 FUEL/s are estimates. Re•Blitz uses 40 capacity and 33 FUEL/s following user guidance (~40 balls, 30–35 FUEL/s). Mixtape holds 33 FUEL following user tuning. Its heads share the engine's one aim and launch point; independent turret streams are not simulated. |
+| 2026 | 2910 Re•Blitz, 1678 Limestone, 971 Mixtape | Champs hard-roof drum/roller-floor rebuild, expanding net hopper, and twin turret model. Rates 33/24/16 FUEL/s are estimates. Re•Blitz uses 40 capacity [user tuning] and 33 FUEL/s following user guidance (~40 balls, 30–35 FUEL/s). Mixtape holds 35 FUEL [packed; previous user tuning 33]. Its heads share the engine's one aim and launch point; independent turret streams are not simulated. |
 
 ### Robots added from CAD / reveal research (3 per past season, 6 for 2026)
 
@@ -226,12 +226,12 @@ robot's hardware so the comparison stays fair.
 
 | Season | Robot | What the sources showed | Stats used |
 | --- | --- | --- | --- |
-| 2026 | 6329 ROMAN | 20.75 in spindexer drum, roller floor, "upkicker", turret, long-armed four-bar intake that folds on impact | cap 45 [EST], 14 FUEL/s, intake 15/s |
-| 2026 | 1778 HAILSTORM | spindexer with grip-taped "bottle rocket" cone (from 4180), compact turret, slapdown intake | cap 40 [EST], 11/s, intake 11/s |
-| 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 30 (user-reported), 16/s [EST], intake 13/s |
-| 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 45 [EST; the team quotes "almost 70" but a non-expanding trench-height hopper holds far less], 15/s [EST], intake 12/s |
-| 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 40 [EST: team's ~80 doesn't fit a non-expanding trench-height box], 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
-| 2026 | 604 Toploader | tall 27 in BUMP robot, single-stream turret over a dye rotor (team prototype ~15 BPS), white corrugated walls, hopper slides out with the intake, no climber | cap 85 (user-reported 80-90), 14/s [team prototype ~15], intake 16/s [EST] |
+| 2026 | 6329 ROMAN | 20.75 in spindexer drum, roller floor, "upkicker", turret, long-armed four-bar intake that folds on impact | cap 47 [packed], 14 FUEL/s, intake 15/s |
+| 2026 | 1778 HAILSTORM | spindexer with grip-taped "bottle rocket" cone (from 4180), compact turret, slapdown intake | cap 47 [packed], 11/s, intake 11/s |
+| 2026 | 5940 Croquembouche | double turret on a floor conveyor, black net roof; later rebuilt because of brownouts | cap 33 [packed; user-reported ~30], 16/s [EST], intake 13/s |
+| 2026 | 7769 CHUNK | static-hood wide shooter on 4 in stealth wheels, intake racks that slide out and shuffle | cap 37 [packed; the team quotes "almost 70" but a non-expanding trench-height hopper holds far less], 15/s [EST], intake 12/s |
+| 2026 | 9128 Triple Threat | three fixed lanes, hex-perforated hopper | cap 45 [user tuning], 16/s sustained (team; 20–25/s first volley), intake 17/s [EST] |
+| 2026 | 604 Toploader | tall 27 in BUMP robot, single-stream turret over a dye rotor (team prototype ~15 BPS), white corrugated walls, hopper slides out with the intake, no climber | cap 85 [user-reported 80-90], 14/s [team prototype ~15], intake 16/s [EST] |
 | 2025 | 1678 SubLime, 971 Fiddler, 341 Miss Daisy | tall-tower tipping arm / truss elevator with maroon claw / continuous elevator + lantern shoulder | lift, cycle and speed [EST] |
 | 2024 | 1114 Skyfall, 2910 Typhoon, 581 Titan | pivoting shooter arm (code repo: arm + intake only) / TURRET with any-angle feed, slow climb / 25.5 × 28.5 in, long hooks | speed, accel, climb time [EST] |
 
@@ -240,15 +240,36 @@ robot's hardware so the comparison stays fair.
 intake's width and how uninterrupted the ball path is (4414 fastest, small slapdown intakes slowest). Together with
 hopper capacity and fire rate it is shown on each robot's picker card.
 
+### 2026 hopper capacity: packed real-size FUEL
+
+The earlier session estimated capacity by packing real-size FUEL (5.91 in) into simplified hopper cavities,
+including slide-out bins. Those estimates are simulator tuning, not measurements of the real robots. User
+corrections take precedence: 2910 uses 40, 604 uses 85, 9128 uses 45, and 1678 uses 50 lowered / 65 raised.
+4414 retains its documented 85. The modeled dimensions, net travel and remaining packing estimates are [EST].
+
+| Robot | Rigid box | Net stretch | Capacity |
+|---|---|---|---|
+| 581 Rubble | 42 | +13 (to 25 in) | 55 |
+| 6800 Downpour | 31 | +10 (to 25.5 in) | 41 |
+| 254 Overload | 40 | +12 (to 25 in) | 52 |
+| 1323 MadTown | 50 | +14 (to 25 in) | 64 |
+| 4414 RIPCURRENT | 57 | +28 (to 29.5 in) | 85 (binder) |
+| 9470 Ctrl-Alt-Defeat | 40 [EST] | +12 (to 25.5 in) | 52 |
+| 1678 Limestone | 50 lowered [user tuning] | telescoping, raised | 65 |
+| 2910 / 971 / 9470 / 1114 | | | 40 [user tuning] / 35 / 52 [extension + net] / 55 |
+| 6329 / 1778 / 5940 / 7769 / 9128 | | | 47 / 47 / 33 / 37 / 45 [user tuning] |
+| 604 / 9483 / 4946 / 3476 / 1690 | | | 85 [user tuning] / 86 / 88 / 70 / 39 |
+
 ### Flexible hopper nets and loaded clearance
 
-254 Overload is configured at 25 FUEL/s, 3476 Sandspit at 20 FUEL/s (requested tuning).
-Overload has 50 total capacity including net stretch, and Limestone has 60 with its hopper raised,
-following user guidance. Expansion starts at 40 for both as simulator tuning; RIPCURRENT keeps 85 total
-with expansion above 70. Full-load roof heights
-(28 in for 254, 27 in for 4414, 29 in for Limestone) are estimates. Above the threshold, `hopperExpansion`
-interpolates the loaded envelope, bows a crossed-strand net upward over visible FUEL, and adds a massless
-upper collider. Emptying lowers both the roof and collider. Robot routing uses `clearanceHeight`, so an
+254 Overload is configured at 25 FUEL/s, 3476 Sandspit at 20 FUEL/s (requested tuning). The net robots (581, 6800,
+254, 1323, 4414, 9470) carry their rigid-box load under TRENCH height; past it the net stretches over more FUEL, a
+taut dome ((1 − u⁴)(1 − v⁴), `hopperNetCeiling`) about 4 in above the rim. 4414's very elastic net stretches to
+about 29.5 in for the binder's 85, an exception to the 10–15 additional FUEL used for the other four nets. The loose FUEL pile's ceiling follows the drawn net (`setStretch`), so a FUEL
+entering a slack net lands on the pile rather than up in the dome. Above the threshold, `hopperExpansion`
+interpolates the allowed envelope and adds a massless
+upper collider. Actual ball surfaces lift the crossed strands locally, with sag between contacts and fixed rim anchors;
+two soft reinforcement seams make the deformation easier to see. Emptying lowers both the roof and collider. Robot routing uses `clearanceHeight`, so an
 overfilled net robot chooses the BUMP instead of planning through the TRENCH. The fixed shooter exit height
 stays unchanged. While a net/telescoping robot is over a TRENCH arm, or within 0.6 m of one, its intake stops taking FUEL once the
 envelope would exceed `TRENCH_SAFE_HEIGHT` (22.25 in minus ½ in), via `SeasonRules.overheadClearance` and
@@ -260,10 +281,9 @@ Use the gallery's “Full hopper (100%)” pose to inspect the bulge and “Stow
 
 Limestone’s `hopperExpansion.mechanism = 'telescoping'` uses a rigid raised rectangular rim,
 exposed nested lift tubes and slider collars. A crossed net bridges the roof to the intake lip;
-it is separate from the elastic domes on 254/4414. The simulator automatically raises and
-contracts this mechanism from held count (40–60 FUEL), so its visual roof, collision height
+it is separate from the elastic domes on 254/4414. F raises this mechanism from 50 to 65 FUEL capacity; lowering waits until the load is at most 50 FUEL, so its visual roof, collision height
 and routing agree. Real Citrus uses hybrid driver/automatic controls; this implementation
-approximates the contract sequence rather than adding another driver button. The 40-FUEL
+uses the hopper toggle to approximate that control sequence. The 50-FUEL
 threshold is simulator tuning, not a published Citrus measurement. Source:
 https://www.chiefdelphi.com/t/1678-citrus-circuits-2026-cad-and-robot-code-release/521535?page=2
 

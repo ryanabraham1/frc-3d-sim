@@ -6,7 +6,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
@@ -378,8 +378,9 @@ export class Robot {
     this.expansionHeight = extra;
     collider.setEnabled(extra > 0.001);
     if (extra <= 0.001) return;
-    collider.setShape(new this.physics.R.Cuboid(this.config.frameLength * 0.32, extra / 2, this.config.frameWidth * 0.42));
-    collider.setTranslationWrtParent({ x: -this.config.frameLength * 0.1, y: this.config.height + extra / 2, z: 0 });
+    const area = hopperNetArea(this.config);
+    collider.setShape(new this.physics.R.Cuboid(area.sx, extra / 2, area.sz));
+    collider.setTranslationWrtParent({ x: area.cx, y: this.config.height + extra / 2, z: 0 });
   }
 
   private buildHopperNet(): void {
@@ -397,6 +398,14 @@ export class Robot {
     this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x25282d }));
     this.hopperNet.name = 'stretching-hopper-net';
     this.hopperNet.userData.grid = positions;
+    // Sewn reinforcement cords give the flexible roof a readable silhouette against dark CAD and yellow FUEL.
+    // Two soft seams follow the same contact surface; they never lift into a separate cage above the balls.
+    const cords = new THREE.InstancedMesh(new THREE.CylinderGeometry(.002, .002, 1, 5),
+      new THREE.MeshStandardMaterial({ color: 0x737779, roughness: .9 }), 2 * segments);
+    cords.name = 'stretching-hopper-cords';
+    cords.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    cords.frustumCulled = false;
+    this.hopperNet.add(cords);
     this.visual.add(this.hopperNet);
 
   }
@@ -428,7 +437,12 @@ export class Robot {
     if (!net) return;
     this.stepNetBulge(dt);
     const c = this.config, extra = this.netShown;
-    const cx = -c.frameLength * 0.1, sx = c.frameLength * 0.38, sz = c.frameWidth * 0.46;
+    // FUEL can only rise as far as the net has actually stretched.
+    const stretch = extra / Math.max(1e-3, (c.hopperExpansion?.fullHeight ?? c.height) - c.height);
+    for (const mesh of this.fuelPiles) mesh.userData.fuelCeiling?.setStretch?.(stretch);
+    const area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
+    // Imported sliding hoppers carry the roof anchors with the moving wall, including when stowed.
+    const cx = bin ? bin.x : area.cx, sx = bin ? bin.length / 2 : area.sx, sz = bin ? bin.width / 2 : area.sz;
     // Uncovered FUEL rides up under the net; its tops are where the strands drape.
     const tops: { x: number; z: number; y: number }[] = [];
     // Drape over the current simulated pile, including articulated extension bins.
@@ -448,27 +462,50 @@ export class Robot {
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const x = grid[i * 3], z = grid[i * 3 + 2];
-      const bow = Math.max(0, (1 - x * x) * (1 - z * z));
+      const bow = Math.max(0, 1 - x ** 4) * Math.max(0, 1 - z ** 4);
       const px = cx + x * sx, pz = z * sz;
       // A slack net hangs lower than the balls it covers: it rests on their tops and drapes over each ball's curve
       // (smoothly blended, like cloth), sagging in the gaps between them.
-      let y = c.height + extra * bow * 0.74 - 0.018 * bow;
+      // Load count sets the allowed expansion, but only actual ball contacts lift the fabric. Between contacts the
+      // taut strands descend toward the fixed rim; an empty pocket must not inflate into a preset dome.
+      let y = c.height - 0.018 * bow;
       const R = Robot.NET_FUEL_R + 0.008;
       for (const t of tops) {
         const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2;
-        if (d2 >= R * R) continue;
-        const cap = t.y + 0.008 - R + Math.sqrt(R * R - d2);
+        const reach = R + Math.max(0, t.y - c.height) / .8;
+        if (d2 >= reach * reach) continue;
+        // Spherical contact over the ball, then tension carries the lift to nearby strands with a sloping falloff.
+        const distance = Math.sqrt(d2);
+        const surface = t.y + .006 - R + Math.sqrt(Math.max(0, R * R - d2));
+        const tension = t.y + .006 - .8 * distance;
+        const cap = Math.max(surface, tension);
         const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
       const maximum = c.hopperExpansion?.fullHeight ?? c.height;
-      y = Math.min(y, maximum);
+      // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
+      y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
       // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
       const previous = p.getY(i);
       const shown = previous === 0 || dt <= 0 ? y : lerp(previous, y, 1 - Math.exp(-(y > previous ? 18 : 8) * Math.min(dt,.1)));
       p.setXYZ(i, px, shown, pz);
     }
     p.needsUpdate = true; net.geometry.computeBoundingSphere();
+    const cords = net.getObjectByName('stretching-hopper-cords') as THREE.InstancedMesh;
+    const transform = new THREE.Object3D(), from = new THREE.Vector3(), to = new THREE.Vector3();
+    const direction = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    let cord = 0;
+    for (const axis of [1]) for (const line of [3, 13]) for (let step = 0; step < 16; step++) {
+      const index = (axis * 17 * 16 + line * 16 + step) * 2;
+      from.fromBufferAttribute(p, index); to.fromBufferAttribute(p, index + 1);
+      direction.subVectors(to, from);
+      const length = direction.length();
+      transform.position.copy(from).add(to).multiplyScalar(.5);
+      transform.quaternion.setFromUnitVectors(up, direction.normalize());
+      transform.scale.set(1, length, 1);
+      transform.updateMatrix(); cords.setMatrixAt(cord++, transform.matrix);
+    }
+    cords.instanceMatrix.needsUpdate = true;
   }
 
   private buildVisual(scene: THREE.Scene): void {

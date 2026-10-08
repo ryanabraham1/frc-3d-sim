@@ -386,6 +386,12 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     slots = pour(r, Math.floor(o.length / (r * 2)) * Math.floor(o.width / (r * 2)) * Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75))));
   }
   if (o.ceiling) slots = slots.filter(q => q.y + r * q.s * (q.sy ?? .94) <= o.ceiling!(q.x,q.z));
+  // Size variation can remove a brim ball after the pour already reached capacity. Retry the same bounded foam
+  // compression with uniform-size close packing so the rendered full load does not silently lose that ball.
+  if (o.capacity && slots.length < o.capacity) {
+    const packed = closePack(r, o.capacity, 1.7);
+    if (packed.length > slots.length) slots = packed;
+  }
   slots.sort((a, b) => a.key - b.key);
   const count = slots.length;
   // One spare particle lets an uncovered hopper attempt pickup at the brim. It is not stored capacity.
@@ -394,6 +400,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   mesh.name = 'hopper-fuel-pile';
   mesh.userData.fuelBin = { x: o.x, y0: o.y0, length: o.length, width: o.width, height: o.height };
   mesh.userData.fuelSlots = count; // how many real-size FUEL this bin physically holds
+  mesh.userData.fuelCeiling = o.ceiling; // a stretching net's ceiling (`setStretch`) is driven by Robot
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   const transform = new THREE.Object3D(), tint = new THREE.Color(o.color);
   // Subtle foam color variation gives the pile depth without textures or extra draw calls.

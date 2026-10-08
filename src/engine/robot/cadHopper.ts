@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { fillBlock } from './models';
 import type { ModelKit } from './models';
+import { hopperNetCeiling } from './config';
 
 /** Imported assemblies omit fabric and deployed configurations. Fit these to the CAD frame. */
 export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3D;lift?:THREE.Object3D;front?:THREE.Object3D}) {
@@ -11,12 +12,14 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
   const width = top ? .67 : limestone ? .65 : .67;
   const front = top ? -.61 : limestone ? -.56 : -.64;
   const roof = top ? .69 : limestone ? .53 : .51;
-  const raised = limestone ? k.config.hopperExpansion?.fullHeight ?? .737 : roof;
+  // A stretching net roof (581): FUEL can rise above the rigid roof into the net's dome.
+  const e = k.config.hopperExpansion, netted = !limestone && !top && !!e && e.mechanism !== 'telescoping';
+  const raised = limestone ? e?.fullHeight ?? .737 : netted ? e!.fullHeight : roof;
   const inside = (x: number, z: number) => !top || Math.hypot(x-.0254,z) > .09;
   // Allocate against the fully deployed cavity; the live roof must not discard the upper expansion's balls.
   let liveFront = front, liveRoof = raised;
   const pile = fillBlock(group, { x:(front+back)/2, y0:base, length:back-front, width, height:raised-base-.006, exactFloor:true, color:0xf2c200, capacity:k.config.hopperCapacity, inside,
-    ceiling: limestone ? x => x < -.31 ? .51+(liveRoof-.51)*THREE.MathUtils.clamp((x-liveFront)/(-.31-liveFront),0,1) : liveRoof : top ? (x,z) => Math.hypot(x-.0254,z) < .23 ? .54 : liveRoof : undefined });
+    ceiling: limestone ? x => x < -.31 ? .51+(liveRoof-.51)*THREE.MathUtils.clamp((x-liveFront)/(-.31-liveFront),0,1) : liveRoof : top ? (x,z) => Math.hypot(x-.0254,z) < .23 ? .54 : liveRoof : netted ? hopperNetCeiling(k.config, roof) : undefined });
   const mesh = group.getObjectByName('hopper-fuel-pile')!;
   const extension = new THREE.Group(); extension.name = 'cad-hopper-extension'; k.visual.add(extension);
   const netGeometry = new THREE.BufferGeometry();
@@ -32,7 +35,7 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
     const lift = limestone && e ? hopperRaised : 0;
     vertical=settle(vertical,lift,dt);
     liveFront = THREE.MathUtils.lerp(top ? -.35 : -.31, front, horizontal);
-    liveRoof = THREE.MathUtils.lerp(roof, raised, vertical);
+    liveRoof = netted ? raised : THREE.MathUtils.lerp(roof, raised, vertical);
     mesh.userData.resizeFuelBin({x:(liveFront+back)/2,length:back-liveFront,height:liveRoof-base-.006});
     pile.set(fraction);
     if(!limestone)return;
