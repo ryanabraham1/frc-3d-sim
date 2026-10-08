@@ -209,7 +209,7 @@ export class HeroHeistRules implements SeasonRules {
         const kind = kindOf(i);
         if (!this.canTake(r, kind)) continue;
         const radius = kind === 'bubble' ? BUBBLE_RADIUS : 0.12;
-        const ground = r.config.intake.ground !== false && f.z <= (kind === 'bubble' ? 0.3 : 0.1) && (r.groundMouthContains(w, radius) || this.oppositeSideMouth(r,w,radius));
+        const ground = r.config.intake.ground !== false && (kind === 'bubble' || r.config.options?.groundPanels !== false) && f.z <= (kind === 'bubble' ? 0.3 : 0.1) && (r.groundMouthContains(w, radius) || this.oppositeSideMouth(r,w,radius));
         const station = !!r.config.intake.station && r.stationContains(w, radius, 0.2);
         if (!ground && !station) continue;
         if (robots.some(o => o !== r && o.shieldsPiece(w, radius))) continue;

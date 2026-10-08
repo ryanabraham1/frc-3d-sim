@@ -2,7 +2,7 @@
 
 Select **WCP CADathon: Hero Heist → team 254 · Cheesy Poofs**. This is Bellarmine's CADathon Gadgeteer (not a 2026 robot).
 
-Source: [Onshape assembly "TLA"](https://team254.onshape.com/documents/e13cf09d6c701404c3324795/w/09bdbe7bc1def77234d6b4e7/e/c0b6c3ba6d288d37dadfce27) (link-shareable and exportable) and row 17 of the [submission sheet](https://docs.google.com/spreadsheets/d/1puhGmcSgHVSIsmb2TWnyxC6fqbZaQrJXKUxNsb7Mt-s/edit?gid=0): Gadgeteer, 3 bubbles, 1 panel, High climb. The sheet's tech-binder column only names "2025 WCP Cadathon Documentation" (no link), so the archetype is read from the CAD itself.
+Source: [Onshape assembly "TLA"](https://team254.onshape.com/documents/e13cf09d6c701404c3324795/w/09bdbe7bc1def77234d6b4e7/e/c0b6c3ba6d288d37dadfce27) (link-shareable and exportable) and row 17 of the [submission sheet](https://docs.google.com/spreadsheets/d/1puhGmcSgHVSIsmb2TWnyxC6fqbZaQrJXKUxNsb7Mt-s/edit?gid=0): Gadgeteer, 3 bubbles, 1 panel, High climb. The [tech binder](https://docs.google.com/document/d/1B9QyclOjR4JL8JTGTpSI1hMwLNpQDcS6Zy7SAngjEeE/edit?tab=t.0) ("Team 254 Presents: Chopshop") states: bubbles are worth far more than panels; disk end effector on a wrist with two rollers (no panel ground intake); suction climb mounted on the manipulator; two 6 in serializer rollers into a 6-7 roller feeder; slapdown bubble intake (22 ft/s, double the robot speed); 25.5 × 29 in frame; 720° turret with adjustable hood. Drive speed is therefore about 11 ft/s (3.35 m/s) and panels come only from the station.
 
 ## What the CAD contains
 
@@ -21,7 +21,7 @@ Rig groups in `hero-poofs-254.glb`: frame, intake, turret, hood, flywheel, stage
 
 ## Estimates and approximations
 
-Drive speed 4.5 m/s, acceleration, playing mass 110 lb, shooter rate 4/s, intake reach, hood travel and the station funnel (the back mouth also takes human-player pieces) are estimates. Frame size (0.737 × 0.661 m), turret centre and flywheel height (0.735 m), elevator travel and claw pivot are measured from the CAD. The stowed CAD is about 0.85 m tall; the config uses the 30 in start limit (0.762 m), which keeps the High climb legal under the 78 in tower limit. The claw's real swing arc and panel hand-off are not documented; they are fitted so the panel reaches the mailboxes.
+Acceleration, playing mass 110 lb, shooter rate 4/s, intake reach, hood travel and the station funnel (the back mouth also takes human-player pieces) are estimates. Frame size (0.737 × 0.661 m), turret centre and flywheel height (0.735 m), elevator travel and claw pivot are measured from the CAD. The stowed CAD is about 0.85 m tall; the config uses the 30 in start limit (0.762 m), which keeps the High climb legal under the 78 in tower limit. The claw's real swing arc and panel hand-off are not documented; they are fitted so the panel reaches the mailboxes.
 
 Reproduce: export the TLA assembly from Onshape as glTF (`POST /api/assemblies/d/{doc}/w/{ws}/e/{el}/translations` with `formatName: GLTF`; the result is JSON glTF with embedded buffers), convert it to `hero-poofs-254-source.glb`, then `npm run cad:prepare -- <dir> hero-poofs-254`. Gallery: `/tools/robot-gallery.html?season=wcp-hero-heist&cad`.
 

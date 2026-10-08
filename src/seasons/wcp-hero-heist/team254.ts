@@ -32,10 +32,10 @@ registerRobotModel('hero-poofs-254', (k: ModelKit) => {
 export function poofs254Robot(): TeamRobot {
   const c = heroRobotDefaults();
   c.teamNumber = 254;
-  c.options = { ...c.options, heroClass: 'gadgeteer', archetype: 'poofs-254', bubbleCapacity: 3, panelCapacity: 1, panelPreload: 1 };
-  // Drivebase from the CAD: 0.661 m (lateral) × 0.737 m; stowed height capped at the 30 in start limit [EST]; playing mass [EST].
+  c.options = { ...c.options, heroClass: 'gadgeteer', archetype: 'poofs-254', bubbleCapacity: 3, panelCapacity: 1, panelPreload: 1, groundPanels: false };
+  // Drivebase 25.5 × 29 in (binder, matches the CAD: 0.661 × 0.737 m); stowed height capped at the 30 in start limit [EST]; playing mass [EST].
   c.frameLength = .7366; c.frameWidth = .6604; c.height = .762; c.mass = lb(110);
-  c.preload = 3; c.maxSpeed = 4.5; c.maxAccel = 7.5;
+  c.preload = 3; c.maxSpeed = 3.35; c.maxAccel = 7.5;
   c.intake = { ...c.intake, width: .58, reach: .22, groundSide: 'back', station: true, stationSide: 'back' };
   // Turret ring centre 0.037 m behind the frame centre; flywheel axis ≈ 0.735 m high (CAD).
   c.launcher = { ...c.launcher, turret: true, height: .735, muzzleForward: .1, mounts: [{ forward: -.0365, side: 0 }], rate: 4, angle: deg(49), minAngle: deg(15), maxAngle: deg(70) };
@@ -43,7 +43,7 @@ export function poofs254Robot(): TeamRobot {
   c.placement = { ...c.placement!, maxLevel: 2, liftSpeed: 1.4, cycleSeconds: .8 };
   return {
     id: 'hero-poofs-254', team: 254, name: 'Cheesy Poofs',
-    description: 'Bellarmine’s Hero Heist Gadgeteer: back floor intake into a three-bubble serializer, turret and hood shooter, three-stage elevator carrying a swinging disk claw for the STORY PANEL and a suction-pad climb. Drive speed, mass, shooter rate and joint travel are estimates.',
+    description: 'Bellarmine’s Hero Heist Gadgeteer: back floor intake into a three-bubble serializer, turret and hood shooter, three-stage elevator carrying a swinging disk claw for the STORY PANEL and a suction-pad climb. Per the team binder: bubble-only slapdown intake (22 ft/s rollers, about 11 ft/s drive), panels only from the station, 720° turret. Mass, shooter rate and joint travel are estimates.',
     source: 'https://team254.onshape.com/documents/e13cf09d6c701404c3324795/w/09bdbe7bc1def77234d6b4e7/e/c0b6c3ba6d288d37dadfce27',
     config: normalizeHeroConfig(c),
   };

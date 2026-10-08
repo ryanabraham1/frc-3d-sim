@@ -114,6 +114,15 @@ describe('254 in the Hero Heist rules', () => {
       expect(s.pool.owner[i] === s.robot.id, `side ${side}`).toBe(side === 1);
     }
   });
+  it('never takes a panel from the floor (binder: no ground panel intake)', () => {
+    const s = sim({ x: 4, y: 4, yaw: 0 }); s.rules.stage(); s.rules.onPeriodChange(s.ctx.clock.start());
+    const held = rules(s).panelCount(s.robot);
+    const i = s.pool.indices('reserve').find(i => pieceIdentity(i).kind === 'panel' && pieceIdentity(i).color === 'blue')!;
+    const q = s.robot.body.rotation(), t = s.robot.body.translation();
+    s.pool.placeWorld(i, new THREE.Vector3(-(s.robot.footprint.length / 2 + .15), .05, 0).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w)).add(new THREE.Vector3(t.x, t.y, t.z)));
+    s.step({ ...IDLE_COMMAND, intake: true });
+    expect(rules(s).panelCount(s.robot)).toBe(held);
+  });
   it('climbs to HIGH under the 78 in limit', () => {
     const s = sim({ x: trussX('blue'), y: PAD_Y[1], yaw: 0 }); s.run(.3);
     s.rules.onPeriodChange(s.ctx.clock.start());
