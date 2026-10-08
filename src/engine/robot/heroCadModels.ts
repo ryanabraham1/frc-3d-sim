@@ -23,11 +23,25 @@ export function buildHeroCad(_id: string, root: THREE.Group, k: ModelKit, animat
   const contact=new THREE.Object3D(); contact.name='mantis-climb-contact'; contact.position.set(-.1423,.80,0); root.add(contact);
   const pad=get('climb-pad'); if(pad)pad.attach(contact);
   const tip=new THREE.Object3D(); tip.position.set(0,.10,-.53);root.add(tip);left.attach(tip);
+  // Both physical side mouths collect, so mark both roller bars like the engine's orange ground intake.
+  const orange=new THREE.MeshStandardMaterial({color:0xff7a1a,roughness:.55,emissive:0xff5a00,emissiveIntensity:.25});
+  for(const [pv,sign] of [[left,-1],[right,1]] as const){
+    const bar=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.56,12),orange);
+    bar.rotation.z=Math.PI/2; bar.position.set(0,.10,sign*.53); root.add(bar); pv.attach(bar);
+  }
+  // Held SPEECH BUBBLES ride in the spindexer (visual only), so the driver can see the load. Shown by fill = held/capacity.
+  const r=.0889, ballMat=new THREE.MeshStandardMaterial({color:k.alliance==='red'?0xe83d4f:0x337fe8,roughness:.7});
+  const ballGeo=new THREE.SphereGeometry(r*.95,14,10), COUNT=6;
+  const balls=Array.from({length:COUNT},(_,n)=>{
+    const a=n/COUNT*Math.PI*2, m=new THREE.Mesh(ballGeo,ballMat);
+    m.position.set(.04+Math.cos(a)*.19,.22,Math.sin(a)*.19); m.visible=false; root.add(m); return m;
+  });
   let deploy=0, folding=0, extension=0, pitch=0;
   return {
     replaces:['chassis','hopper','launcher','climber','intakeRollers','funnel'],
     intakeAnchor:tip,climbAnchor:contact,lightAt:[-.26,.53,.08],
     update(s) {
+      const shown=Math.round(s.fill*COUNT); balls.forEach((b,n)=>b.visible=n<shown);
       if(!animated())return;
       deploy=scoringEase(deploy,s.enabled && !s.climb?1:0,s.dt);
       folding=scoringEase(folding,s.climb>0?1:0,s.dt);
