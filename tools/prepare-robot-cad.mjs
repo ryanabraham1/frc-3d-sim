@@ -36,6 +36,16 @@ const specs = {
     ['climb-top',/(?:Vacuum Cup|Constant Force Spring|WCP-041[89]|Nutstrip).*Suction Climber/],
     ['climb-mid',/Tube 2"x2"x24".*Suction Climber/],
   ]},
+  // 5800 Wolverine Multiclass: elevator + wrist on the +Y (front) side, 4-bar floor intake on -Y (back), turret with three
+  // 4" drive wheels on top. Axes 'yzx': source (x,y,z) -> robot (forward = source +Y, up = Z, right = source +X).
+  'hero-multiclass-5800': {file:'hero-multiclass-5800-source.glb',year:'wcp-hero-heist',axes:'yzx',lossless:true,preserveColors:true,
+    omit:/Bumper <1>|Robot Battery|Origin Cube|Robot Radio|Energy Chain|PDP 2\.0|Main Breaker|roboRIO|RoboRIO|Anderson/,groups:[
+    ['flywheel',/4" Solid Roller Wheel.*Rotation \+ Hood/], ['turret',/Rotation \+ Hood/],
+    ['intake-inner',/Inner Linkage/], ['intake-middle',/Middle Linkage/], ['intake-outer',/Outer Linkage/],
+    ['wrist-roller',/Compliant Intake Wheel.*Manipulator <1>/], ['wrist',/Manipulator <1>/],
+    ['carriage',/Carriage <1>/], ['spindexer-star',/^(?:Part 18|SplineXL \(7" L\)|84t Aluminum MotionX).*Spindexer <1>/],
+    ['elevator-stage',/^(?:Tube 2"x1"x25\.75"|Tube 2"x1"x4\.5"|Tube 2"x1"x9"|Top Crossbar|Side Top Plate)/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -234,6 +244,7 @@ for (const id of ids) {
     if (id === 'hero-fireweed-1540' && /Stealth Wheel/.test(n.getName()) && /Indexshooteer/.test(full)) group = `wheel-${wheelCount++}`;
     // 1540's intake is a double-jointed arm: the panel end effector is the second link (joint axle at source y -0.608, z 0.15).
     if (id === 'hero-fireweed-1540' && group === 'intake' && (/^(?:panel intake|panel inner intake plate|polycarb panel|3\/4 axle panel intake|36t Aluminum Plate Sprocket)/.test(n.getName()) || (/^cf tube/.test(n.getName()) && bounds.max[1] < -.65))) group = 'intake-ee';
+    if (id === 'hero-multiclass-5800' && group === 'flywheel') group = `flywheel-${Math.round(((bounds.min[0]+bounds.max[0])/2-.06)/.03)}`;
     if(id==='whisper-1690' && group==='intake' && /1690-25-268[01]/.test(full)) group='frame';
     if (id === 'sublime-1678' && group === 'carriage' && bounds.min[2] < .2) group = 'frame';
     if (id === 'wildstang-111' && group === 'carriage' && bounds.min[2] < .45) group = 'frame';
