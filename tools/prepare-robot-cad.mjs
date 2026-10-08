@@ -34,6 +34,67 @@ const specs = {
     ['shooter',/3\. Pod Shooter/], ['intake',/2\. Intake/],
     ['carriage',/1\.3 Stage 2/], ['elevator-stage',/1\.2 Stage 1/],
   ]},
+  // Public Onshape "1678-2024-E-0000 CAD Release" / Epsilon. Joints come from the document's mates.
+  'nik-1678': {file:'2024-1678.glb',year:2024,finalPass:true,axes:'yzx',offsetY:.0254,
+    omit:/Reference [Cc]ube|sw-005|VH-109|6455K43|CANdle|(?:^|\/)(?:occurrence of )?Part 1[45]\/1678-2024-E-0700 Drivetrain/,
+    groups:[['intake',/1678-2024-E-0800 Intake/], ['amp',/1678-2024-E-0900 AMP/],
+      ['climber',/1678-2024-E-1100 Climber/], ['shooter',/1678-2024-E-1000 </]],
+    classify:({full,name,bounds,group})=>{
+      // Fixed pivot/motor plates and the deploy chain stay on the chassis; the arm starts at the 0.2969 m hinge.
+      if (group==='intake') return bounds.max[1] < -.26 ? 'intake' : 'frame';
+      // Single-stage AMP elevator: the inner P-0909 stage and its roller head slide on the fixed 20 degree rails.
+      if (group==='amp') return bounds.max[2] < .3 ? 'frame' : bounds.min[2] > .69 || /P-09(?:09|01|11|15|17|19|21|24|25|26|36|37|40|44)|^COPY$/.test(name)
+        || (/WCP-0199-|WCP-0212|WCP-0474|WCP-0039/.test(name) && bounds.min[2] > .49 && bounds.min[2] < .6) ? 'amp' : 'frame';
+      // Hook arms, their top carriage and the upper gas-spring bodies ride on the gas springs.
+      if (group==='climber') return /P-11(?:08|09|10|11|14|15|18|20|21)|^Bushing$/.test(name) ? 'climber' : /Gas Spring/.test(full) ? ((bounds.min[2]+bounds.max[2])/2 > .30 ? 'climber-rod' : 'climber-strut') : 'frame';
+      return group;
+    }},
+  // Public Onshape "Riot-PUBLIC" / 1706-RIOT. Shooter and elevator joints come from the document's mates.
+  'riot-1706': {file:'2024-1706.glb',year:2024,finalPass:true,axes:'negative-y',offsetX:-.1555,offsetY:.0025,offsetZ:-.2735,
+    omit:/CR-900|Limelight Ass|LL3GSIMPLIFIED/,
+    groups:[['shooter',/CR200-Shooter/], ['carriage',/CR800-CarraigeOnly/], ['elevator-stage',/CR600-Elevator/], ['climber',/CR-400-Climber/]],
+    classify:({full,name,bounds,group})=>{
+      if (group==='elevator-stage') return /Inner Stage|^CR-600-00[1256]$|Top Bearing Block|Top Block|^Dowel$|^Part 7$|60355K246|^1\/4-20 x 0\.875$/.test(name) ? 'elevator-stage' : 'frame';
+      if (group==='climber') {
+        // TTB 2-stage telescopes: 2 in outer tube stays, 1.5 in middle and 1 in inner stages carry the hook.
+        if (name==='Telescope Tube') { const w = bounds.max[0]-bounds.min[0]; return w > .045 ? 'frame' : w > .03 ? 'climber-mid' : 'climber'; }
+        if (/1\.5" Top Cap|1\.5" End Block/.test(full)) return 'climber-mid';
+        if (/1" End Block|^CR-400-0(?:06|10)$|^Part 2$/.test(name) || /1" End Block/.test(full)) return 'climber';
+        return 'frame';
+      }
+      return group;
+    }},
+  // Public Onshape "3005 2024: FULL ROBOT (PUBLIC)" / Surge. Launcher and diverter joints come from the document's mates.
+  'surge-3005': {file:'2024-3005.glb',year:2024,finalPass:true,axes:'yzx',omit:/9: Bumpers|LL3GSIMPLIFIED/,
+    groups:[['shooter',/3: Launcher/], ['diverter',/5: Diverter/], ['climber',/7: Telescoping Climber/]],
+    classify:({full,name,group})=>{
+      // The diverter's long side links ride on the launcher pivot shaft; the roller head pivots at the launcher nose.
+      if (group==='diverter' && /^5C0[123]$|REV-29-1016|REV-21-2597/.test(name)) return 'shooter';
+      if (group==='climber') return /^7A02|^7B01|2x2StageInternalEndBlock/.test(name) || /1\.5x1\.5 Slider/.test(full) ? 'climber-mid'
+        : /^7A03|^7A20|^7B02|^92395A515$/.test(name) ? 'climber' : 'frame';
+      return group;
+    }},
+  // Public Onshape "0. 2024 Ultraviolet". Launcher, AMP/TRAP elevator and climber slides come from the document's mates.
+  'ultraviolet-3847': {file:'2024-3847.glb',year:2024,axes:'negative-y',offsetZ:.006,omit:/Reference Cube|LL3GSIMPLIFIED|LimelightV2/,
+    groups:[['shooter',/\/Launcher <1>\/3\. Launcher/], ['amp',/(?:Elevator|Tower) <1>\/4\. AmpTrap/], ['climber',/5\. Climber/]],
+    classify:({full,name,bounds,group})=>{
+      // Stray electronics occurrences exported outside the frame.
+      if (/Electronics <1>/.test(full) && (bounds.max[0] > .45 || bounds.min[2] < -.01)) return null;
+      // Inner rail, its lower bearing blocks and the roller tower ride the 15 degree elevator; outer rails stay.
+      if (group==='amp') return /Tower <1>/.test(full) || /4-06-Elevator Inner Rail|4-07-Elevator Cross Bar|^Part [12]$|LaserCAN|TTB Chain Attachment/.test(name) || /Inline Clamping Block <[34]>/.test(full) ? 'amp' : 'frame';
+      if (group==='climber') return /5-01-Slide/.test(name) ? 'climber' : 'frame';
+      return group;
+    }},
+  // Public Onshape "Nocturne - 2024" / NOCTURNE. The document also carries field elements and spare swerve modules.
+  'nocturne-3467': {file:'2024-3467.glb',year:2024,finalPass:true,axes:'yzx',offsetX:-.128,offsetY:.003,
+    omit:/Assembly 2 <|Source \(GE-24000\)|Simple Amp|simpstage_sideless|bumper chassy/,
+    groups:[['shooter',/Current <1>|Blower|HARMONY HOOKS/], ['arm',/arm <1>/]],
+    classify:({full,name,bounds,group})=>{
+      if (group==='arm') return /Tube 2"x1"x16\.5"|betahooks/.test(name) || bounds.min[2] > .56 ? 'arm' : 'frame';
+      // Loose top-level parts above the pivot (head side plates "Part 11", cross tube, brackets) ride the arm.
+      if (group==='frame' && /^[^/]+\/occurrence of [^/]+\/NOCTURNE(?:\/[^/]*)?$/.test(full) && bounds.min[2] > .55) return 'shooter';
+      return group;
+    }},
   'spectre-2910': {file:'2025 2910glb',year:2025,axes:'negative-y',groups:[
     ['effector',/53 - 2025 Intake & Wrist V3/], ['climber',/41 - 2025 Climber/],
     ['carriage',/Phantom Arm V2, Stage 2/], ['elevator-stage',/Phantom Arm V2, Stage 1/],
@@ -172,6 +233,7 @@ for (const id of ids) {
   const nodes = root.listNodes();
   axes.elements[12] = spec.offsetX ?? 0;
   axes.elements[13] = spec.offsetY ?? 0;
+  axes.elements[14] = spec.offsetZ ?? 0;
   const retained = [];
   let omitted = 0;
   const surfaces = new Set();
@@ -203,6 +265,8 @@ for (const id of ids) {
     if ((id === 'rotor-604-donor' && !/DPC Rotor Assembly/.test(full)) || (id === 'shooter-581-donor' && (!/Shooter Assem/.test(full) || /(?:^|\/)Hopper <|^Triad\//.test(full))) || (id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
       || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
+    if (spec.classify) group = spec.classify({ full, name: n.getName(), bounds, group });
+    if (group === null) { n.setMesh(null); omitted++; continue; }
     if (id === 'hero-mantis-6800') {
       if (group === 'climber' && /GreyT Telescope/.test(full)) {
         group = /WCP-0418/.test(full) || bounds.min[2] > .61 ? 'climb-end'
@@ -321,7 +385,8 @@ for (const id of ids) {
   await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
   // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
   // A final bounded 0.5 mm pass reduces those faces without quantizing positions.
-  if (id === 'reblitz-2910') {
+  // Specs can opt in with `finalPass: true` when the joined asset still exceeds the size budget.
+  if (id === 'reblitz-2910' || spec.finalPass) {
     for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
       simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: .40, error: .0005 });
     }
