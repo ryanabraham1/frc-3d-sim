@@ -69,8 +69,11 @@ registerRobotModel('cyclone-1987', (k: ModelKit) => {
   const alu = mat(0xc4c9d0, { metal: 0.7, rough: 0.35 }), aluTube = tubeMat(0xc4c9d0), black = mat(0x1a1c20, { metal: 0.2, rough: 0.6 });
   const clear = mat(0xdde8f0, { rough: 0.15 }); clear.transparent = true; clear.opacity = .25; clear.depthWrite = false;
   const db = drivebase(k, { tube: aluTube, motorRing: 0xc8202a });
-  hopperWalls(k.visual, { intakeSide: side, floorDepth: .1, x: -L * .1, y0: bt, length: L * .8, width: W * .97, height: H - bt - .01, m: clear, frame: aluTube });
-  const fill = fillBlock(k.visual, { x: -L * .15, y0: bt + .03, length: L * .6, width: W * .85, height: H - bt - .14, color: FUEL, capacity: c.hopperCapacity });
+  // The clear box and the clock-face rotor walls fill the whole frame: FUEL rests around the turret column from the
+  // racked end wall to the front of the rotor bowl (CAD rotor/clock walls span x -.25..+.32). The bin stays below the
+  // turret head (bottom at ~0.39 m).
+  hopperWalls(k.visual, { intakeSide: side, floorDepth: .1, x: -L * .05, y0: bt, length: L * .88, width: W * .97, height: H - bt - .01, m: clear, frame: aluTube });
+  const fill = fillBlock(k.visual, { x: -L * .05, y0: bt + .03, length: L * .82, width: W * .88, height: H - bt - .14, color: FUEL, capacity: c.hopperCapacity });
   const rotor = new THREE.Group(); rotor.position.set(.038, bt + .02, 0); k.visual.add(rotor);
   rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(.19, .19, .01, 36), mat(0x55595f, { metal: .3 })));
   box(rotor, .2, .02, .02, black, -.1, .03, 0); // sweeper arm
@@ -79,7 +82,7 @@ registerRobotModel('cyclone-1987', (k: ModelKit) => {
   const sh = turretShooter(t, { width: .15, wheel: black, plate: black, accent: alu, height: .13, topY: .06 });
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: alu, rollerMaterial: black });
   const d = { v: 0 };
-  const pile = hopperStow({ x: -L * .15, y0: bt + .03, length: L * .5, width: W * .8, height: H - bt - .16, r: FUEL_R });
+  const pile = hopperStow({ x: -L * .05, y0: bt + .03, length: L * .72, width: W * .82, height: H - bt - .16, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * .3, H - .01, W * .38],
@@ -132,7 +135,7 @@ const cfg = (team: number, model: string, o: Parameters<typeof build>[0], tweak:
   return normalizeRebuiltConfig(c);
 };
 
-export const MIRAGE_CAPACITY = 40, CYCLONE_CAPACITY = 35, MATTERHORN_CAPACITY = 40;
+export const MIRAGE_CAPACITY = 40, CYCLONE_CAPACITY = 45, MATTERHORN_CAPACITY = 40;
 
 export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
   return [
