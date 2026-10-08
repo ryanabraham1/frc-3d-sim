@@ -2,9 +2,9 @@
   "id": "hero-gadgeteer-9408",
   "sourceFile": "hero-gadgeteer-9408-source.glb",
   "inputBytes": 256354240,
-  "outputBytes": 10384348,
+  "outputBytes": 10367872,
   "inputTriangles": 14356646,
-  "outputTriangles": 691789,
+  "outputTriangles": 693791,
   "omittedOccurrences": 932,
   "bounds": {
     "min": [
@@ -22,9 +22,11 @@
     "arm",
     "intake",
     "frame",
+    "hood",
     "shooter",
     "flywheel",
     "elevator",
+    "elevator-stage",
     "manip",
     "climber",
     "climb-pad",

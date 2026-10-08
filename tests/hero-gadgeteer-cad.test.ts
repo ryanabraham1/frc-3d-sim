@@ -40,7 +40,10 @@ it('actual CAD deploys the intake, spins the flywheel, extends the climber and k
   expect(visual.getObjectByName('climb-end')!.position.y).toBeGreaterThan(.5);
   m.update({ ...idle, dt: 1 / 60, enabled: false, climb: 0 });
   for (let i = 0; i < 120; i++) m.update({ ...idle, dt: 1 / 60, enabled: false });
-  expect(hinge.rotation.z).toBeLessThan(-1);
+  expect(hinge.rotation.z).toBeLessThan(-1.3);
+  m.update({ ...idle, dt: 1, enabled: true, aiming: true, hood: 1.2 }); expect(visual.getObjectByName('cad-hood-pivot')!.rotation.z).toBeGreaterThan(.1);
+  for (let i = 0; i < 90; i++) m.update({ ...idle, dt: 1 / 60, enabled: true, place: { height: 1.1, forward: .6, level: 2 } });
+  expect(visual.getObjectByName('cad-carriage-pivot')!.position.y).toBeGreaterThan(.2); expect(visual.getObjectByName('cad-elbow-pivot')!.rotation.x).toBeGreaterThan(.5);
   const b = new THREE.Box3().setFromObject(visual); expect(b.min.y).toBeGreaterThan(-.25);
 });
 it('draws held bubbles, a held-panel anchor and an orange intake marker', () => {

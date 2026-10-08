@@ -71,6 +71,8 @@ const specs = {
     ['flywheel',/^(?:2" OD 1\/2" Hex ID Stealth Wheel 60A|1\/2" Thunderhex Shaft \(10\.51"\)).*Shooter Assembly <1>/],
     ['climb-pad',/^Part 1\/occurrence of Part 1\/Assembly 1 <1>/], ['climb-end',/3 Stage End/],
     ['climb-mid2',/3 Stage Mid2|WCP-0418/], ['climb-mid1',/3 Stage Mid1|WCP-0419/],
+    ['hood',/^(?:Part 9|Part 18|Part 16|Spur gear \(190 teeth\))\/occurrence of .*Shooter Assembly <1>/],
+    ['elevator-stage',/^Tube 2"x1"x27"\/occurrence of .*4\. Elevator/],
     ['intake',/Intake Assembly <1>/], ['shooter',/Shooter Assembly <1>/], ['elevator',/4\. Elevator/],
     ['arm',/5A\. Arm/], ['manip',/5B\. Manipulator/], ['climber',/Assembly 1 <1>/],
   ]},
