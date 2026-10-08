@@ -6,6 +6,12 @@ import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
 import { prepareCadModels } from '@engine/robot/cadModels';
 
+// Back/Forward can restore an old running bundle without making an HTTP request.
+// A fresh navigation checks the current HTML and loads the latest hashed game files.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) window.location.reload();
+});
+
 const app = document.getElementById('app')!;
 let game: Game | null = null;
 /** Bumped on every start/stop so a slow load can't install a stale match. */

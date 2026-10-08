@@ -55,7 +55,10 @@ const server = createServer((req, res) => {
   const ext = extname(file);
   res.writeHead(200, {
     'content-type': MIME[ext] ?? 'application/octet-stream',
-    'cache-control': url.pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+    // Cache only content-hashed build assets forever. SPA fallbacks must always fetch current HTML.
+    'cache-control': ext !== '.html' && /^\/assets\/[^/]+-[\w-]{8,}\.(js|css)$/.test(url.pathname)
+      ? 'public, max-age=31536000, immutable'
+      : ext === '.html' ? 'no-store' : 'no-cache, max-age=0, must-revalidate',
   });
   createReadStream(file).pipe(res);
 });

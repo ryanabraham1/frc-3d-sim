@@ -267,6 +267,12 @@ minute to wake. Its static site stays available while the web service sleeps.
    its WebSocket endpoint and shows the elapsed wait. Players can enter a name or join code while it wakes. Creating
    a new room and getting its share code require the relay to be online.
 
+5. On the Render static site's **Headers** settings, add path `/*`, header `Cache-Control`, value
+   `no-cache, max-age=0, must-revalidate`. This makes normal visits revalidate HTML and public models
+   after deployments instead of requiring a hard refresh. Render static-site headers are dashboard
+   settings, so pushing this repository alone does not apply that setting to an existing static site.
+   The included Node server and `vercel.json` apply the policy automatically on their respective hosts.
+
 Vercel can host the static site instead, with the same build command, `dist` output, and
 `VITE_RELAY_URL` setting. Keep Render as the WebSocket relay.
 
