@@ -55,6 +55,12 @@ const specs = {
     // The carriage plates, bearing blocks, belt clamps and pivot gearbox hang directly off the elevator and ride with the end effector.
     ['effector',/^(?!.*(?:Static Stage <1>|Stage 1 <1>)).*Elevator <1>/],
   ]},
+  // Team 254's CADathon Gadgeteer (Bellarmine/Cheesy Poofs): back floor intake, 3-ball serializer/feeder, turret, three-stage elevator
+  // carrying a disk (STORY PANEL) claw and a suction pad. Source axes are Z up, intake toward -Y, so 'yzx' puts the intake at robot -X.
+  'hero-poofs-254': {file:'hero-poofs-254-source.glb',year:'wcp-hero-heist',axes:'yzx',offsetX:-.0115,lossless:true,preserveColors:true,omit:/Bumper Assembly|(?:^|\/)Belt\/|PDP 2\.0|Battery|RoboRIO/,groups:[
+    ['intake',/Intake Rollers Assembly/], ['claw',/Disk Manipulator Claw Assembly/], ['claw-base',/Disk Manipulator Pivot Assembly/],
+    ['pad',/Sunction Pad Assembly/], ['hood',/^(?:Hood|Hood Plate)\/.*Turret Assembly <\d+>/], ['turret',/(?:^|\/)(?:occurrence of )?Turret Assembly <\d+>/],
+  ]},
   'snoopy-6036': {file:'6036.glb',year:2024,axes:'negative-y',groups:[
     ['intake',/INTAKE ASSEMBLY/], ['shooter',/ARM ASSEMBLY/],
     ['pivot-frame',/A FRAME ASSEMBLY/], ['turret',/TURRET ASSEMBLY/],
@@ -242,6 +248,10 @@ for (const id of ids) {
     if ((id === 'rotor-604-donor' && !/DPC Rotor Assembly/.test(full)) || (id === 'shooter-581-donor' && (!/Shooter Assem/.test(full) || /(?:^|\/)Hopper <|^Triad\//.test(full))) || (id === 'intake-581-donor' && (!/Champs Intake Assembly/.test(full) || bounds.max[2] > .4 || /Front Intake Hopper|Side Panels|Stowed Energy Chain/.test(full))) || looseReference || hardware || /PDP 2\.0|Import for Mass/i.test(full)
       || /bumper foam|bumper long side|bumper battery side|bumper GI side|bumper gusset|9470-2026-DRI-FOAM|bumper assembly|26B0000 Bumpers|^Bumpers\/|1200A Bumper|(?:^|\/)thin (?:Gi|side|back) foam|(?:^|\/)9470.*BUMP/i.test(full)) { n.setMesh(null); omitted++; continue; }
     let group = spec.groups.find(([, re]) => re.test(full))?.[0] ?? 'frame';
+    if (id === 'hero-poofs-254') {
+      if (/Elevator Assy/.test(full) && group === 'frame') group = bounds.min[2] >= .95 ? 'stage3' : bounds.min[2] >= .58 ? 'stage2' : 'frame';
+      if (group === 'turret' && /^(?:Lower Roller Tube|Shaft)\//.test(full) && bounds.min[0] > .0 && bounds.min[2] > .70) group = 'flywheel';
+    }
     if (id === 'hero-mantis-6800') {
       if (group === 'climber' && /GreyT Telescope/.test(full)) {
         group = /WCP-0418/.test(full) || bounds.min[2] > .61 ? 'climb-end'
