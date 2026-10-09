@@ -154,14 +154,14 @@ export class Game {
       c.launcher.rate = this.boostBase.rate * 3;
       c.launcher.spread = 0;
       c.launcher.speedError = 0;
-      this.player!.laneSpacing = 0.17;
+      this.player!.packLimit = true;
       if (this.boostBase.intake !== undefined) c.intake.rate = this.boostBase.intake * 3;
     } else if (!on && this.boostBase) {
       c.hopperCapacity = this.boostBase.cap;
       c.launcher.rate = this.boostBase.rate;
       c.launcher.spread = this.boostBase.spread;
       c.launcher.speedError = this.boostBase.speedError;
-      this.player!.laneSpacing = 0;
+      this.player!.packLimit = false;
       c.intake.rate = this.boostBase.intake;
       this.boostBase = null;
     }

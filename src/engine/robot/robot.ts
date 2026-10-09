@@ -1976,8 +1976,6 @@ export class Robot {
     // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
     // (the aim below assumes a level robot, so a rocking or tipping robot misses — as it would for real).
     const pos = this.localToWorld(ex.forward, ex.up, -ex.side, new THREE.Vector3());
-    // Optional lane spacing: successive shots leave side by side (parallel to the solved shot) instead of in one line.
-    const laneShift = this.laneSpacing ? ((this.exitIndex % 3) - 1) * this.laneSpacing : 0;
 
     let speed = c.manualSpeed;
     let theta = c.angle;
@@ -2000,24 +1998,23 @@ export class Robot {
     this.lastShotAngle = theta;
     this.exitIndex++;
     this.burstTime = BURST_HOLD_S;
-    this.fireCooldown = 1 / c.rate;
     this.anim.firing = 1;
     const yawN = aimYaw + rng.gauss(0, c.spread);
     const pitchN = theta + rng.gauss(0, c.spread);
     const sN = speed * (1 + rng.gauss(0, c.speedError));
     const horiz = sN * Math.cos(pitchN);
+    this.fireCooldown = this.packLimit ? Math.max(1 / c.rate, 2.1 * this._projectile.radius / Math.max(.5, horiz)) : 1 / c.rate;
     const vel = new THREE.Vector3(horiz * Math.cos(yawN), sN * Math.sin(pitchN), -horiz * Math.sin(yawN));
     const r = this.body.rotation();
     const tilt = this.q.set(r.x, r.y, r.z, r.w).multiply(new THREE.Quaternion(0, -Math.sin(heading / 2), 0, Math.cos(heading / 2)));
     vel.applyQuaternion(tilt);
     vel.x += rv.x;
     vel.z += rv.z;
-    if (laneShift) this.localToWorld(ex.forward, ex.up, -ex.side - laneShift, pos);
     return { pos, vel };
   }
 
-  /** Meters between the three side-by-side lanes that successive shots cycle through (0 = a single line). */
-  laneSpacing = 0;
+  /** Cap the fire rate so balls in one line stay a full ball apart at the apex of their arc, where they are slowest. */
+  packLimit = false;
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
