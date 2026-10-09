@@ -82,6 +82,8 @@ export class InputManager {
     window.removeEventListener('blur', this.blur);
   }
 
+  isDown(code: string): boolean { return this.keys.has(code); }
+
   /** Is any key bound to this action held? Bindings are read live, so menu changes apply immediately. */
   private k(action: ActionId): boolean {
     return this.virtual.held.has(action) || keybinds.codes(action).some((c) => this.keys.has(c));

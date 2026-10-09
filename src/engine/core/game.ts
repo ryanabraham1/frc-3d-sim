@@ -143,6 +143,21 @@ export class Game {
   private fader!: OcclusionFader;
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
+  private boostBase: { cap: number; rate: number } | null = null;
+  private applyBoost(): void {
+    const c = this.player?.config;
+    if (!c || this.season.id !== '2026-rebuilt') return;
+    const on = this.input.isDown('Period') && this.input.isDown('Slash');
+    if (on && !this.boostBase) {
+      this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate };
+      c.hopperCapacity = this.boostBase.cap * 3;
+      c.launcher.rate = this.boostBase.rate * 3;
+    } else if (!on && this.boostBase) {
+      c.hopperCapacity = this.boostBase.cap;
+      c.launcher.rate = this.boostBase.rate;
+      this.boostBase = null;
+    }
+  }
   /** AUTO-period drivers per robot id (drivers can't control robots in AUTO). */
   private readonly autoPilots = new Map<number, AutoPilot>();
   private readonly botPilots = new Map<number, AutoPilot>();
@@ -548,6 +563,7 @@ export class Game {
       this.simWindowStart = now;
     }
     const inp = this.input.read();
+    this.applyBoost();
     this.handleUiInput(inp);
 
     if (this.role === 'client') {
