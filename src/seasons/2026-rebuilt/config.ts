@@ -108,6 +108,16 @@ export function romanII(c: RobotConfig): void {
   c.maxSpeed = 4.6; setRebuiltAccuracy(c, 86);
 }
 
+/**
+ * A net roof over the hopper that stretches: the rigid box holds the current capacity (trench-safe), and `extra` more
+ * FUEL fit as the net bulges above trench height up to 27 in [EST: extra layers measured from the hopper footprint].
+ */
+export function stretchNet(c: RobotConfig, extra: number): void {
+  c.hopperCovered = true;
+  c.hopperExpansion = { startCount: c.hopperCapacity, fullHeight: inch(27) };
+  c.hopperCapacity += extra;
+}
+
 /** 7769 CHUNK CAD dimensions (chassis 25 in long x 29 in wide; CAD top 0.557 m, collision box at trench height). */
 export function chunkCad(c: RobotConfig): void {
   c.frameLength = inch(25); c.frameWidth = inch(29); c.height = .55;
@@ -124,7 +134,7 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   // Saved picks of the former turret ROMAN I preset (47 FUEL, 14/s, turret) become the imported Roman II drum robot.
   if (c.model === 'roman-6329' && c.launcher.turret && c.hopperCapacity === 47 && c.launcher.rate === 14) {
     c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 16;
-    romanII(c);
+    romanII(c); stretchNet(c, 22); // same net roof as the Roman II preset (40 rigid + 22 stretch)
   }
   // Saved CHUNK picks from before the CAD import carry the generic 27 x 27 x 21 in box: adopt the measured CAD size.
   if (c.model === 'chunk-7769' && Math.abs(c.frameLength - inch(27)) < 1e-6 && Math.abs(c.frameWidth - inch(27)) < 1e-6 && Math.abs(c.height - inch(21)) < 1e-6) chunkCad(c);

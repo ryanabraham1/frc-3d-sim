@@ -1,4 +1,4 @@
-import { scoringEase } from './scoringReadiness';
+import { dyeRotorRate, scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { articulation, ease, fuel, point, replaces } from './additionalCadModels';
@@ -36,8 +36,15 @@ export function build1987Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
   const rotor = p('rotor', [AXIS_X, .07, 0]);
   const intake = p('intake', [0, 0, 0]);
   const tip = new THREE.Object3D(); tip.position.set(-.585, .085, 0); intake.add(tip);
+  // Clear polycarbonate hopper around the rotor bowl: the racked end wall rides with the intake, side walls are fixed.
+  const clear = new THREE.MeshStandardMaterial({ color: 0xdde8f0, roughness: .15, transparent: true, opacity: .25, depthWrite: false });
+  const wall = (parent: THREE.Object3D, sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), clear); m.position.set(x, y, z); parent.add(m);
+  };
+  wall(intake, .008, .34, .62, -.40, .24, 0);
+  for (const z of [-.305, .305]) wall(root, .72, .34, .008, -.04, .24, z);
   const pile = fuel(k, -.58, .27, .1, .54, .70, -.38, (x, z) => Math.hypot(x - AXIS_X, z) > .13 || x < -.2);
-  let deploy = 1, spin = 0, feed = 0, lift = 0;
+  let deploy = 1, spin = 0, feed = 0, lift = 0, rotorRate = 0;
   return {
     replaces, lightAt: [-.25, .56, .3], intakeAnchor: tip,
     flow: {
@@ -55,7 +62,8 @@ export function build1987Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       spin = scoringEase(spin, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
       feed = scoringEase(feed, s.enabled && (s.intaking || s.firing > 0) ? 1 : 0, s.dt);
       flywheel.rotation.z += 60 * spin * s.dt;
-      rotor.rotation.y += (s.enabled ? 1 + 5 * Math.max(feed, s.firing > 0 ? 1 : 0) : 0) * s.dt;
+      rotorRate = dyeRotorRate(rotorRate, s, 8);
+      rotor.rotation.y -= rotorRate * s.dt; // 1987's rotor turns the opposite way to the other dye rotors
       // Floating hood: steeper (closer to the wheel) for short shots, flatter for long ones.
       lift = ease(lift, s.enabled && s.aiming ? THREE.MathUtils.clamp((s.hood - .6) / .6, 0, 1) : 0, s.dt);
       hood.rotation.z = .35 * lift;

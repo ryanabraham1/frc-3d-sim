@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { dyeRotorRate, scoringApproach } from '@engine/robot/scoringReadiness';
 import { cadRebuiltTeamRobots } from './cadTeamRobots';
 import { cadBatchRebuiltTeamRobots } from './cadBatchTeamRobots';
 import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
@@ -462,7 +462,7 @@ registerRobotModel('enigma-9483', (k: ModelKit) => {
       pile.setFill(s.fill);
       { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
-      rate = approach(rate, !s.enabled ? 0 : s.firing > 0 ? 8 : 1.5, 5, s.dt);
+      rate = dyeRotorRate(rate, s, 8);
       spin(spindex, rate, s.dt, 'y');
       sh.update(s);
     },

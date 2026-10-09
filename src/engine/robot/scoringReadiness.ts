@@ -22,3 +22,12 @@ export function scoringActuator(from: number, to: number, rate: number, dt: numb
   const step = rate * dt;
   return scoringPosition(dt > 0 ? from+Math.max(-step,Math.min(step,to-from)) : to, to);
 }
+
+/**
+ * Dye-rotor floor speed (rad/s), shared by every rotor robot: spins up hard while shooting, creeps backwards at idle
+ * to keep FUEL moving, stops when disabled. `dir` flips the rotor for a robot whose floor turns the other way.
+ */
+export function dyeRotorRate(cur: number, s: { enabled: boolean; firing: number; dt: number }, fire = 8, dir: 1 | -1 = 1): number {
+  const target = !s.enabled ? 0 : s.firing > 0 ? fire : -1.2;
+  return (target + (cur - target) * Math.exp(-6 * s.dt)) * dir;
+}

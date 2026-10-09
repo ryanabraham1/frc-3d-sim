@@ -1,4 +1,4 @@
-import { scoringEase } from './scoringReadiness';
+import { dyeRotorRate, scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { articulation, ease, fuel, point, replaces } from './additionalCadModels';
@@ -47,7 +47,7 @@ export function build1706Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
   const tip = new THREE.Object3D(); tip.position.set(-.585, .08, 0); intake.add(tip);
   // FUEL rests on the spindexer floors and the extension box floor, behind the turret rings.
   const pile = fuel(k, -.60, .03, .17, .535, .70, -.30);
-  let deploy = 1, spin = 0, feed = 0;
+  let deploy = 1, spin = 0, feed = 0, rotorRate = 0;
   return {
     replaces, lightAt: [-.2, .56, .33], intakeAnchor: tip,
     flow: {
@@ -65,12 +65,13 @@ export function build1706Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       intake.position.x = (1 - deploy) * MIRAGE_TRAVEL;
       spin = scoringEase(spin, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
       feed = scoringEase(feed, s.enabled && (s.intaking || s.firing > 0) ? 1 : 0, s.dt);
+      rotorRate = dyeRotorRate(rotorRate, s, 9);
       for (const h of sides) {
         // Both heads share the simulated aim; remove each head's own export yaw first.
         h.turret.rotation.y = k.turret.rotation.y - h.yaw;
         h.wheels.rotation.z += 60 * spin * s.dt;
         h.flywheel.rotation.z += 45 * spin * s.dt;
-        h.rotor.rotation.y += (s.enabled ? 1.2 + 6 * Math.max(feed, s.firing > 0 ? 1 : 0) : 0) * s.dt;
+        h.rotor.rotation.y += rotorRate * s.dt;
       }
       for (const r of rollers) r.rotation.z += 30 * feed * s.dt;
     },

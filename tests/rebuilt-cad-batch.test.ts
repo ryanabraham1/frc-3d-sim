@@ -127,7 +127,7 @@ it('saved CHUNK picks adopt the CAD frame without touching capacity, rate or cus
   const old = config('chunk-7769'); old.frameLength = inch(27); old.frameWidth = inch(27); old.height = inch(21);
   const c = season.normalizeRobotConfig!(old);
   expect(c.frameLength).toBeCloseTo(inch(25), 9); expect(c.frameWidth).toBeCloseTo(inch(29), 9); expect(c.height).toBe(.55);
-  expect(c.hopperCapacity).toBe(37); expect(c.launcher.rate).toBe(config('chunk-7769').launcher.rate);
+  expect(c.hopperCapacity).toBe(57); // 37 rigid + 20 under the stretch net expect(c.launcher.rate).toBe(config('chunk-7769').launcher.rate);
   const custom = config('chunk-7769'); custom.frameLength = .6;
   expect(season.normalizeRobotConfig!(custom).frameLength).toBe(.6);
 });

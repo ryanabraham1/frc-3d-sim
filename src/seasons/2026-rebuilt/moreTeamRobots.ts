@@ -8,7 +8,7 @@ import { inch } from '@engine/units';
 import { hopperNetCeiling, launcherExitOffsets } from '@engine/robot/config';
 import { motor } from '@engine/robot/mechanicalDetail';
 import { slidingHopper } from '@engine/robot/slidingHopper';
-import { build, normalizeRebuiltConfig, setRebuiltAccuracy, ROMAN_CAPACITY, chunkCad, romanII } from './config';
+import { build, normalizeRebuiltConfig, setRebuiltAccuracy, ROMAN_CAPACITY, chunkCad, romanII, stretchNet } from './config';
 
 /**
  * Five more real 2026 REBUILT robots. Looks follow each team's published CAD / reveal photos, drawn in the clean,
@@ -588,7 +588,7 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'roman-6329', team: 6329, name: 'ROMAN',
       description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056), championship ROMAN II rebuild. Fixed full-width cat-tongue drum with two powered hood rollers at the front, fed by a vertical feed column off a sloped roller floor, and a long driven four-bar intake whose two-roller head reaches out over the back bumper. 30 x 24 in frame, black net roof over clear walls. Capacity, rate and speed are simulator estimates.",
       source: 'Onshape public release "6329-2026.2, Roman II - Public Release" https://cad.onshape.com/documents/014716f840fdbd882c1d691f; Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN"; TBA 2026 photos',
-      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'align', dumper: true, hopper: ROMAN_CAPACITY, tall: false, rate: 16, climb: 0 }, (c) => romanII(c)) },
+      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'align', dumper: true, hopper: ROMAN_CAPACITY, tall: false, rate: 16, climb: 0 }, (c) => { romanII(c); stretchNet(c, 22); }) },
     { id: 'hailstorm-1778', team: 1778, name: 'HAILSTORM',
       description: '1778 Chill Out. Compact turret over a spindexer with a grip-taped "bottle rocket" cone (copied from 4180) for a tight, steady stream; simple spindexer chosen over a dye rotor. A reliable, consistent mid-high build. Capacity, rate and speed are simulator estimates.',
       source: 'Chief Delphi "1778 2026 CAD & Code Release" (HAILSTORM Q&A: spindexer, bottle-rocket cone, turret encoders)',
@@ -596,11 +596,11 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'croquembouche-5940', team: 5940, name: 'Croquembouche',
       description: '5940 BREAD. Their pre-DCMP DOUBLE TURRET robot: two independent turrets over a floor conveyor, black net roof. Twice the stream but power-hungry (brownouts, so they rebuilt into a drum shooter for DCMP). Both turrets share one simulated aim. Holds about 33 FUEL packed around the two turrets (user-reported ~30); rate is an estimate.',
       source: 'Chief Delphi "5940 BREAD 2026 Double Turret CAD Release" (Croquembouche, Q&A on brownouts)',
-      config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 33, tall: false, rate: 16, climb: 0 }, (c) => { c.maxSpeed = 4.3; c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .12, side: sign * c.frameWidth * .25 })); c.launcher.muzzleForward = .08; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(5940, 'croquembouche-5940', { intake: 'both', aim: 'turret', hopper: 33, tall: false, rate: 16, climb: 0 }, (c) => { stretchNet(c, 17); c.maxSpeed = 4.3; c.launcher.mounts = [1,-1].map(sign => ({ forward: c.frameLength * .12, side: sign * c.frameWidth * .25 })); c.launcher.muzzleForward = .08; setRebuiltAccuracy(c, 84); }) },
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
       description: '7769 The CREW (5 blue banners). Wide fixed shooter on 4 in Stealth wheels with a compliant-wheel feeder; the hood swings up around the flywheel shaft to shoot and drops for the TRENCH. Black sponsor-plated polycarb hopper under a net; the intake rides out on independently driven racks and shuffles while firing to prevent jams. Loads the public CAD. Under-trench box, so it holds about 37 FUEL [EST: packed into the modeled box; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Its L1 climb arm is modeled but, like every stock 2026 robot, it starts without a climb. Rate and speed are estimates.',
       source: 'Onshape public "Full Robot" (assembly "Chunk") https://ostcse.onshape.com/documents/692fc43a78732f76f6a7fc01; Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 15, climb: 0 }, (c) => { chunkCad(c); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 15, climb: 0 }, (c) => { chunkCad(c); stretchNet(c, 20); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. 45 FUEL total following user tuning, including its intake-side hopper extension; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',

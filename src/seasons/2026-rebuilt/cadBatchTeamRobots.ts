@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
+import { dyeRotorRate } from '@engine/robot/scoringReadiness';
 import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, flowAt, hopperStow, hopperWalls, mat, overBumperIntake, registerRobotModel, roller, spin, tubeMat, type ModelKit } from '@engine/robot/models';
 import { turretShooter } from '@engine/robot/turretShooter';
 import { flatNet } from '@engine/robot/rebuiltCadKit';
 import { inch } from '@engine/units';
-import { build, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
+import { build, normalizeRebuiltConfig, setRebuiltAccuracy, stretchNet } from './config';
 
 /**
  * Second batch of imported public CAD for 2026 (next top teams by EPA from the Spectrum CAD Collection). The loaded CAD
@@ -35,6 +36,7 @@ registerRobotModel('mirage-1706', (k: ModelKit) => {
     const cone = new THREE.Mesh(new THREE.CylinderGeometry(.02, .05, .1, 16), blue); cone.position.y = .055; g.add(cone);
     return g;
   });
+  let rotorRate = 0;
   const extension = new THREE.Group(); k.visual.add(extension);
   hopperWalls(extension, { intakeSide: side, floorDepth: .12, x: side * (L / 2 + .07), y0: bt + .06, length: .3, width: W * .95, height: H - bt - .07, m: black });
   const turrets = [-1, 1].map(sz => {
@@ -57,7 +59,8 @@ registerRobotModel('mirage-1706', (k: ModelKit) => {
       const dv = latch(d, s.enabled, s.dt); intake.update(s, dv);
       extension.position.x = side * (dv - 1) * .3;
       for (const t of turrets) { t.g.rotation.y = k.turret.rotation.y; t.sh.update(s); }
-      for (const r of rotors) spin(r, s.enabled ? (s.firing > 0 || s.intaking ? 7 : 1.2) : 0, s.dt, 'y');
+      rotorRate = dyeRotorRate(rotorRate, s, 9);
+      for (const r of rotors) spin(r, rotorRate, s.dt, 'y');
     },
   };
 });
@@ -73,6 +76,10 @@ registerRobotModel('cyclone-1987', (k: ModelKit) => {
   // racked end wall to the front of the rotor bowl (CAD rotor/clock walls span x -.25..+.32). The bin stays below the
   // turret head (bottom at ~0.39 m).
   hopperWalls(k.visual, { intakeSide: side, floorDepth: .1, x: -L * .05, y0: bt, length: L * .88, width: W * .97, height: H - bt - .01, m: clear, frame: aluTube });
+  // hopperWalls leaves the intake side open; 1987's racked end wall closes it (visual only, FUEL still enters over the bumper).
+  const endX = -L * .05 + side * L * .44, endH = H - bt - .01;
+  box(k.visual, .008, endH, W * .97, clear, endX, bt + endH / 2, 0);
+  box(k.visual, .022, .018, W * .97, aluTube, endX, bt + endH, 0);
   const fill = fillBlock(k.visual, { x: -L * .05, y0: bt + .03, length: L * .82, width: W * .88, height: H - bt - .14, color: FUEL, capacity: c.hopperCapacity });
   const rotor = new THREE.Group(); rotor.position.set(.038, bt + .02, 0); k.visual.add(rotor);
   rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(.19, .19, .01, 36), mat(0x55595f, { metal: .3 })));
@@ -82,6 +89,7 @@ registerRobotModel('cyclone-1987', (k: ModelKit) => {
   const sh = turretShooter(t, { width: .15, wheel: black, plate: black, accent: alu, height: .13, topY: .06 });
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: alu, rollerMaterial: black });
   const d = { v: 0 };
+  let rotorRate = 0;
   const pile = hopperStow({ x: -L * .05, y0: bt + .03, length: L * .72, width: W * .82, height: H - bt - .16, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -92,7 +100,8 @@ registerRobotModel('cyclone-1987', (k: ModelKit) => {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       intake.update(s, latch(d, s.enabled, s.dt));
       t.rotation.y = k.turret.rotation.y; sh.update(s);
-      spin(rotor, s.enabled ? (s.firing > 0 || s.intaking ? 6 : 1) : 0, s.dt, 'y');
+      rotorRate = dyeRotorRate(rotorRate, s, 8, -1); // 1987's rotor turns the opposite way
+      spin(rotor, rotorRate, s.dt, 'y');
     },
   };
 });
@@ -164,12 +173,16 @@ export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
         c.maxSpeed = 4.6; setRebuiltAccuracy(c, 85);
       }) },
     { id: 'matterhorn-9496', team: 9496, name: 'Matterhorn',
-      description: '9496 LYNK. Fixed full-width drum shooter with brass inertia flywheels and three printed shot guides, fed by a three-roller vertical feeder from a sloped roller floor; black hopper under a net. The intake pivots out the back on a sector gear and pulls the slotted hopper end out with it. Aimed by turning the chassis. Loads the public CAD. Capacity, rate and speed are simulator estimates.',
+      description: '9496 LYNK. Fixed full-width drum shooter with brass inertia flywheels and three printed shot guides, fed by a three-roller vertical feeder from a sloped roller floor; black hopper under a net. The intake pivots out the back on a sector gear and pulls the slotted hopper end out with it. Aimed by turning the chassis so the intake faces the HUB: the drum throws FUEL out toward the intake end. The net roof stretches (40 FUEL in the rigid box, 62 with the net). Loads the public CAD. Capacity, rate and speed are simulator estimates.',
       source: 'Onshape public release "9496_2026_LYNK_Matterhorn_Public" https://cad.onshape.com/documents/768d7890bafac55a2a891aae; Chief Delphi 9496 build log',
       config: cfg(9496, 'matterhorn-9496', { intake: 'both', aim: 'align', dumper: true, hopper: MATTERHORN_CAPACITY, tall: false, rate: 15, climb: 0 }, c => {
         // Chassis 27 x 27 in; CAD top 0.556 m.
         c.frameLength = inch(27); c.frameWidth = inch(27); c.height = .55;
         c.launcher.height = .50; c.launcher.exitSpan = .57;
+        // The drum throws FUEL toward the intake end from the same exit: the robot lines up with its intake facing the HUB.
+        c.launcher.reversed = true;
+        // Black net over the hopper stretches: 40 FUEL under the rigid rim, about 22 more under the net [EST].
+        stretchNet(c, 22);
         c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle;
         c.intake.reach = .2; c.intake.width = .62;
         c.maxSpeed = 4.6; setRebuiltAccuracy(c, 84);
