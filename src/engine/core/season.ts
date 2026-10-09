@@ -1,4 +1,3 @@
-import type { AutoPlan } from '../ai/autoPlan';
 import type * as THREE from 'three';
 import type { Alliance, FieldFrame, FieldPose } from '../coords';
 import type { FieldBuilder } from '../field/builder';
@@ -32,7 +31,6 @@ export interface GameSettings {
   robot: RobotConfig;
   /** Player robot's autonomous routine id. */
   autoRoutine: string;
-  autoPlan?: AutoPlan;
   /** Player drives during AUTO instead of running an autonomous routine. */
   manualAuto: boolean;
   /** Starting camera. */

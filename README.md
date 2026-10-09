@@ -165,7 +165,7 @@ referee-judgement rules are not enforced.
 ## Multiplayer
 
 Menu → **Multiplayer** → *Create room* and share the 4-letter code; friends *Join*, pick a driver
-station (or spectate) and bring the robot they configured on the Single player page. The host starts
+station (or spectate) and bring the robot they set up in the Garage. The host starts
 the match. The host chooses the season; joining drivers and spectators automatically use that same
 game. After returning to the lobby, the host can switch between 2025 and 2026. The host's browser runs the simulation; everyone else sends inputs and renders 30 Hz snapshots, with
 client-side prediction so your own robot responds instantly. Brief connection drops automatically resume

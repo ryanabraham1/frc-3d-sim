@@ -1,4 +1,3 @@
-import { autoPlanner, bindAutoPlanner } from './autoPlanner';
 import { seasonLabel, type AiSkill, type GameSettings, type SeasonDefinition } from '@engine/core/season';
 import { SLOTS, slotAlliance, slotLabel, slotStation, type SlotId } from '@engine/net/protocol';
 import { footprint } from '@engine/robot/config';
@@ -48,24 +47,42 @@ function saveVisibility(v: RoomVisibility): void {
   }
 }
 
-/** The public room browser rows (also re-rendered in place when a fresh list arrives). */
-export function roomListHtml(all: RoomListing[] | null, busy: boolean): string {
-  const rooms = all && all.filter((r) => !r.ranked); // live ranked matches are watched from the Ranked page
-  if (rooms === null) return '<div class="rl-empty"><span class="mp-dot waking"></span>Looking for lobbies…</div>';
-  if (!rooms.length) return '<div class="rl-empty">No public lobbies right now.<br/>Create one, or press <b>Quick play</b> to host and wait for others.</div>';
+/** What the lobby browser shows: everything, rooms you can join, or matches you can watch. */
+export type RoomFilter = 'all' | 'join' | 'watch';
+let roomFilter: RoomFilter = 'all';
+
+/**
+ * The one list of public rooms: open lobbies to join and live matches (casual and ranked) to watch.
+ * Also re-rendered in place when a fresh list arrives.
+ */
+export function roomListHtml(all: RoomListing[] | null, busy: boolean, filter: RoomFilter = roomFilter): string {
+  if (all === null) return '<div class="rl-empty"><span class="mp-dot waking"></span>Looking for lobbies…</div>';
+  // A ranked room only matters once it is live; before that it is a private draft.
+  const visible = all.filter((r) => !r.ranked || r.state === 'match');
+  const rooms = visible.filter((r) => (filter === 'join' ? r.state !== 'match' : filter === 'watch' ? r.state === 'match' : true));
+  if (!rooms.length) {
+    const msg = filter === 'watch' ? 'No matches are being played right now.' : filter === 'join' ? 'No open lobbies right now.<br/>Create one, or press <b>Quick play</b> to host and wait for others.' : 'No public lobbies or live matches right now.<br/>Create one, or press <b>Quick play</b> to host and wait for others.';
+    return `<div class="rl-empty">${msg}</div>`;
+  }
+  // Open lobbies first, then live matches.
+  rooms.sort((a, b) => Number(a.state === 'match') - Number(b.state === 'match'));
   return rooms
     .map((r) => {
       const full = r.players >= r.max;
-      const status = r.state === 'lobby' ? '<span class="rl-badge open">Open</span>' : r.state === 'placing' ? '<span class="rl-badge">Starting</span>' : '<span class="rl-badge live">In match</span>';
+      const live = r.state === 'match';
+      const status = r.ranked ? '<span class="rl-badge live">Ranked · Live</span>' : r.state === 'lobby' ? '<span class="rl-badge open">Open</span>' : r.state === 'placing' ? '<span class="rl-badge">Starting</span>' : '<span class="rl-badge live">Live</span>';
       return `<div class="rl-row">
-        <div class="rl-main"><b>${esc(r.title)}</b><span>${esc(r.host)}${r.season ? ' · ' + esc(r.season) : ''}${r.bots ? ' · bots fill' : ''}</span></div>
+        <div class="rl-main"><b>${esc(r.title)}</b><span>${esc(r.host)}${r.season ? ' · ' + esc(r.season) : ''}${r.bots && !r.ranked ? ' · bots fill' : ''}</span></div>
         <div class="rl-count" title="Drivers seated / players in room"><b>${r.drivers}/${r.seats}</b> drivers<span>${r.players} in room</span></div>
         ${status}
-        <button class="bbtn ${r.state === 'lobby' && !full ? 'primary' : ''}" data-join-room="${esc(r.code)}" ${busy || full ? 'disabled' : ''}>${full ? 'Full' : r.state === 'match' ? 'Spectate' : 'Join'}</button>
+        <button class="bbtn ${r.state === 'lobby' && !full ? 'primary' : ''}" data-join-room="${esc(r.code)}" ${busy || full ? 'disabled' : ''}>${full ? 'Full' : live ? 'Watch' : 'Join'}</button>
       </div>`;
     })
     .join('');
 }
+
+const filterChips = () =>
+  `<div class="rl-filters" role="group" aria-label="Filter rooms">${(['all', 'join', 'watch'] as const).map((f) => `<button class="chip-btn ${roomFilter === f ? 'on' : ''}" data-room-filter="${f}">${f === 'all' ? 'All' : f === 'join' ? 'Open to join' : 'Live to watch'}</button>`).join('')}</div>`;
 
 export interface MpPageCtx {
   s: GameSettings;
@@ -73,8 +90,10 @@ export interface MpPageCtx {
   rerender(): void;
   /** Which tab is showing (Ranked and Multiplayer share this machinery). */
   page?: 'multiplayer' | 'ranked';
-  /** Switch menu page (e.g. to edit the robot on the Single player page). */
-  goto(page: 'play'): void;
+  /** Name of the robot the player will bring (shown in the lobby). */
+  robotName?: string;
+  /** Switch menu page (e.g. to change the robot in the Garage). */
+  goto(page: 'garage' | 'home' | 'multiplayer' | 'ranked'): void;
 }
 
 let visibilityLoaded = false;
@@ -137,7 +156,8 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
         </section>
         <div class="col">
           <section class="panel mp-card">
-            <div class="panel-head"><span>Public lobbies</span><span class="dim" style="margin-left:auto">${lobby.serverState === 'online' ? 'updates live' : ''}</span></div>
+            <div class="panel-head"><span>Lobbies &amp; live matches</span><span class="dim" style="margin-left:auto">${lobby.serverState === 'online' ? 'updates live' : ''}</span></div>
+            ${filterChips()}
             <div class="rl-list" data-mp="rooms">${lobby.serverState === 'online' ? roomListHtml(lobby.rooms, busy) : '<div class="rl-empty">Connect to the server to see open lobbies.</div>'}</div>
           </section>
           <section class="panel mp-card">
@@ -145,13 +165,13 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
             <ol class="mp-steps">
               <li><b>Quick play</b> drops you into an open lobby, or hosts one if none exist.</li>
               <li><b>Private</b> rooms are for friends: share the 4-letter code or an invite link.</li>
-              <li>Pick a <b>driver station</b> (or spectate). Up to 6 drivers, 3 per alliance; bots fill the rest.</li>
+              <li>Pick a <b>driver station</b>, or just watch: <b>Watch</b> any live match in the list, ranked or casual. Up to 6 drivers, 3 per alliance; bots fill the rest.</li>
               <li>A dropped connection resumes on its own. If the host leaves a casual room, a connected player takes over from the latest checkpoint.</li>
             </ol>
           </section>
         </div>
       </div>`,
-      footer: `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button><span class="spacer"></span>`,
+      footer: `<button class="bbtn" data-page="home"><kbd>Esc</kbd>Back</button><span class="spacer"></span>`,
     };
   }
 
@@ -171,7 +191,6 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   };
   const spectators = L.players.filter((p) => !p.slot);
   const r = ctx.s.robot;
-  const routine = ctx.season.autoRoutines.find((x) => x.id === ctx.s.autoRoutine);
   const drivers = L.players.filter((p) => p.slot).length;
   const isPublic = L.visibility === 'public';
 
@@ -203,12 +222,13 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
       ${chatPanel(L)}
       <div class="col">
         <section class="panel">
-          <div class="panel-head"><span>Your robot</span><button class="link" data-mp="edit">Edit on Single player page</button></div>
+          <div class="panel-head"><span>Your robot</span><button class="link" data-mp="edit">Change robot</button></div>
           <div class="mp-pad mp-robot">
             <div class="mp-team">${r.teamNumber}</div>
             <div>
+              ${ctx.robotName ? `<div><b>${esc(ctx.robotName)}</b></div>` : ''}
               <div>${ctx.season.robotSummary ? esc(ctx.season.robotSummary(r)) : `${(r.maxSpeed / 0.3048).toFixed(1)} ft/s · ${r.hopperCapacity} ${esc(ctx.season.gamePiece.name)} · ${r.launcher.rate}/s · ${ctx.season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel ? `climbs L${r.climber.maxLevel}` : 'no climber')}`}</div>
-              <div class="dim">AUTO: ${L.manualAuto ? 'Drivers control robots' : ctx.s.autoRoutine === 'custom' ? 'Your planned auto' : esc(routine?.label ?? ctx.s.autoRoutine)}</div>
+              <div class="dim">You drive in AUTO too; bots run their routines.</div>
             </div>
           </div>
         </section>
@@ -223,13 +243,6 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
               <input class="mp-title" data-mp="room-title" maxlength="${MAX_TITLE_LENGTH}" placeholder="Room name shown in the public list" value="${esc(L.title ?? '')}" aria-label="Room name"/>
               <div class="mp-hint">${isPublic ? 'Listed in the public lobby browser. Anyone can join.' : 'Hidden from the list. Players need the code or your invite link.'}</div>
             </div>` : ''}
-            <div class="group"><div class="label">AUTO control</div>
-              <div class="seg">
-                <button class="opt ${L.manualAuto ? 'on' : ''}" data-auto-control="manual" ${lobby.isHost && !L.inMatch ? '' : 'disabled'}>Drive in AUTO</button>
-                <button class="opt ${!L.manualAuto ? 'on' : ''}" data-auto-control="planned" ${lobby.isHost && !L.inMatch ? '' : 'disabled'}>Preplanned trajectories</button>
-              </div>
-              <div class="mp-hint">${L.manualAuto ? 'All drivers control their robots during AUTO. Bots still run their routines.' : 'Each driver chooses an auto routine or plans a trajectory with their alliance. Driver control starts in TELEOP.'}</div>
-            </div>
             <div class="group"><div class="label">Open driver stations</div>
               <div class="seg">
                 <button class="opt ${L.fillBots ? 'on' : ''}" data-bots="1" ${lobby.isHost ? '' : 'disabled'}>Fill with bots</button>
@@ -252,7 +265,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   const footer =
     `<button class="bbtn" data-mp="leave">Leave room</button><span class="spacer"></span>` +
     (lobby.isHost
-      ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>${L.manualAuto ? 'Set starting positions' : 'Plan autos &amp; positions'}</button>`
+      ? `<span class="mp-hint">${lobby.canStart() ? '' : 'At least one player needs a driver station'}</span><button class="bbtn primary" data-mp="start" ${lobby.canStart() ? '' : 'disabled'}>Set starting positions</button>`
       : `<span class="mp-hint">${L.inMatch ? 'Match in progress — joining as a spectator…' : 'Waiting for the host to start…'}</span>`);
   return { body, footer };
 }
@@ -337,14 +350,13 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
   }).join('');
   const myProblem = me && problems.get(me.peerId);
   const lock = mine
-    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to edit' : L.manualAuto ? 'Lock in position' : 'Lock in position & auto'}</button>`
+    ? `<button class="bbtn ${me!.ready ? '' : 'primary'} pl-lock" data-mp="lock" ${!me!.ready && myProblem ? 'disabled' : ''}>${me!.ready ? 'Unlock to edit' : 'Lock in position'}</button>`
     : '<div class="mp-hint">You\'re spectating — watch the others place their robots.</div>';
-  const planner = !L.manualAuto && me?.slot ? autoPlanner(ctx.season, ctx.s, { startSpot: me.spot, alliance: slotAlliance(me.slot), station: slotStation(me.slot), disabled: !!me.ready, teammates: L.players.filter(p => p.peerId !== me.peerId && p.slot && slotAlliance(p.slot) === slotAlliance(me.slot!) && p.autoPlan).map(p => ({ name: p.name, station: slotStation(p.slot!), plan: p.autoPlan! })) }) : '';
   const body = `
     ${err}
     <div class="mp-grid place-grid">
       <section class="panel map-panel">
-        <div class="panel-head"><span>${L.manualAuto ? 'Starting positions' : 'Positions &amp; private alliance autos'}</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
+        <div class="panel-head"><span>Starting positions</span><span class="dim" style="margin-left:auto">${readyCount}/${drivers.length} locked in</span></div>
         <div class="map-wrap">${placementMapHtml(lobby, ctx)}</div>
         ${mine ? `<div class="place-wrap">${headingControls(mine.spot.yaw, '<button class="link" data-mp="preset">Station preset</button>')}</div>` : ''}
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw zone"></i>Legal start zone</span><span class="sp">${mine ? 'Drag your robot anywhere in the green zone, drag the knob on its nose to rotate (Shift = 15° steps).' : 'Drivers are choosing their starting positions.'}</span></div>
@@ -353,10 +365,10 @@ function placementPage(lobby: LobbyController, ctx: MpPageCtx): { body: string; 
         <section class="panel">
           <div class="panel-head"><span>Drivers</span></div>
           <div class="pl-list">${rows}</div>
-          <div class="mp-pad">${lock}<div class="mp-hint">${L.manualAuto ? 'Drivers control their robots during AUTO. Lock in your starting position to begin.' : 'Plan with your alliance below. Opponents cannot see your routes. AUTO runs without driver control.'}</div>${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
+          <div class="mp-pad">${lock}<div class="mp-hint">Drivers control their robots during AUTO. Lock in your starting position to begin.</div>${allReady ? '<div class="mp-hint pl-go">Everyone is locked in — starting…</div>' : ''}</div>
         </section>
       </div>
-    </div>${planner}`;
+    </div>`;
   const ranked = !!L.ranked;
   const footer = ranked
     ? `<button class="bbtn" data-mp="leave">Leave match (counts as a loss)</button><span class="spacer"></span><span class="mp-hint">${allReady ? 'Starting…' : 'Starting positions lock in automatically when time runs out'}</span>`
@@ -424,6 +436,10 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   if (quick) quick.onclick = () => void lobby.quickPlay(name());
   const bindRooms = (box: HTMLElement) =>
     box.querySelectorAll<HTMLElement>('[data-join-room]').forEach((b) => (b.onclick = () => void lobby.join(b.dataset.joinRoom!, name())));
+  el.querySelectorAll<HTMLElement>('[data-room-filter]').forEach((b) => (b.onclick = () => {
+    roomFilter = b.dataset.roomFilter as RoomFilter;
+    ctx.rerender();
+  }));
   const roomsBox = q('rooms');
   if (roomsBox) {
     bindRooms(roomsBox);
@@ -462,7 +478,6 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   }
   el.querySelectorAll<HTMLElement>('[data-slot]').forEach((b) => (b.onclick = () => lobby.pickSlot((b.dataset.slot || null) as SlotId | null)));
   el.querySelectorAll<HTMLElement>('[data-hp]').forEach((b) => (b.onclick = () => lobby.setAutoHumanPlayer(b.dataset.hp === '1')));
-  el.querySelectorAll<HTMLElement>('[data-auto-control]').forEach(b => b.onclick = () => lobby.setManualAuto(b.dataset.autoControl === 'manual'));
   el.querySelectorAll<HTMLElement>('[data-bots]').forEach(b => b.onclick = () => lobby.setBots(b.dataset.bots === '1'));
   el.querySelectorAll<HTMLElement>('[data-bot-skill]').forEach(b => b.onclick = () => lobby.setBots(true, b.dataset.botSkill as AiSkill));
   const copyTo = (btn: HTMLElement | null, text: () => string) => {
@@ -497,7 +512,7 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   const log = q('chat-log');
   if (log) log.scrollTop = log.scrollHeight;
   const edit = q('edit');
-  if (edit) edit.onclick = () => ctx.goto('play');
+  if (edit) edit.onclick = () => ctx.goto('garage');
   const leave = q('leave');
   if (leave) leave.onclick = () => lobby.leave();
   const start = q('start');
@@ -508,7 +523,5 @@ export function bindMultiplayer(el: HTMLElement, lobby: LobbyController, ctx: Mp
   if (cancelPlace) cancelPlace.onclick = () => lobby.cancelPlacement();
   if (lobby.lobby?.placing) {
     bindPlacement(el, lobby, ctx);
-    const me = lobby.me;
-    if (!lobby.lobby.manualAuto && me?.slot) bindAutoPlanner(el, ctx.season, ctx.s, ctx.rerender, { alliance: slotAlliance(me.slot), startSpot: me.spot, station: slotStation(me.slot), disabled: !!me.ready, changed: () => lobby.syncMine(true), setStartYaw: yaw => { const m = mineState(lobby, ctx); if (m) lobby.place(rotateSpot(ctx.season, m, yaw), false); } });
   }
 }

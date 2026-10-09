@@ -1,4 +1,3 @@
-import { autoPlanner, bindAutoPlanner, loadAutoPlan, autoPlannerDragging } from './autoPlanner';
 import type { CameraMode } from '@engine/camera/cameras';
 import { detectTier, qualityPref, setQualityPref, type QualityPref } from '@engine/core/quality';
 import { normalizeSkill, seasonLabel, type GameSettings, type SeasonDefinition } from '@engine/core/season';
@@ -21,8 +20,11 @@ const LBF = 4.4482216;
 const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
-type Page = 'play' | 'controls' | 'rules' | 'multiplayer' | 'ranked';
-type PlayTab = 'match' | 'ai' | 'robot';
+type Page = 'home' | 'solo' | 'garage' | 'controls' | 'rules' | 'multiplayer' | 'ranked';
+type PlayTab = 'match' | 'ai';
+/** Pages that are reached from another page and return to it (Garage from the lobby goes back to the lobby). */
+const SIDE_PAGES: Page[] = ['garage', 'controls', 'rules'];
+const PAGE_LABEL: Record<Page, string> = { home: 'home', solo: 'solo setup', garage: 'the garage', controls: 'controls', rules: 'rules', multiplayer: 'the lobby', ranked: 'ranked' };
 
 function load(): Partial<GameSettings> | null {
   try {
@@ -178,11 +180,17 @@ function robotArt(alliance: 'red' | 'blue', team: number, groundSide: 'front' | 
   </svg>`;
 }
 
+/** Saved settings from before the auto planner was removed may still point at its "My planned auto" routine. */
+function dropPlanner(s: GameSettings & { autoPlan?: unknown }, season: SeasonDefinition): void {
+  delete s.autoPlan;
+  if (s.autoRoutine === 'custom' || !season.autoRoutines.some((x) => x.id === s.autoRoutine)) s.autoRoutine = season.autoRoutines[0]?.id ?? 'none';
+}
+
 export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => void, opts: { lobby?: LobbyController; page?: Page } = {}): void {
   const stored = load();
   let season = getSeason(stored?.seasonId ?? SEASONS[0].id);
   let s: GameSettings = { ...defaultSettings(season), ...(stored ?? {}) };
-  s.autoPlan = s.autoPlan ?? loadAutoPlan(season);
+  dropPlanner(s, season);
   if (stored?.robot) {
     const d = season.robotDefaults;
     s.robot = {
@@ -194,7 +202,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       intake: { ...d.intake, ...stored.robot.intake, groundSide: d.intake.groundSide, stationSide: d.intake.stationSide },
     };
   }
-  let page: Page = opts.page ?? 'play';
+  let page: Page = opts.page ?? 'home';
+  /** Where Garage / Controls / Rules return to. */
+  let backTo: Page = 'home';
+  /** Asking before a solo match drops the room the player is in. */
+  let leavePrompt = false;
   let playTab: PlayTab = 'match';
   /** Robot preview images already rendered (seasonId|robot id|alliance → data URL), so re-renders don't flash. */
   const thumbUrls = new Map<string, string>();
@@ -318,11 +330,94 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       ${aiRobotChoices(season).length ? [1, 2, 3].map(oppRow).join('') : ''}`;
   };
 
-  const playPage = () => {
-    const F = numFields(season);
+  const sameRobot = (a: RobotConfig, b: RobotConfig) => JSON.stringify({ ...a, teamNumber: 0 }) === JSON.stringify({ ...b, teamNumber: 0 });
+  const teamRobotNow = () => season.teamRobots?.find((x) => sameRobot(s.robot, x.config));
+  const presetNow = () => (season.robotPresets ?? []).find((x) => sameRobot(s.robot, x.config));
+  const robotName = () => { const x = teamRobotNow(); return x ? `${x.team} ${x.name}` : presetNow()?.label ?? 'Custom build'; };
+  /** The room (or ranked search) the player is in right now, if any: it survives moving between menu pages. */
+  const activity = (): { page: Page; label: string; detail: string } | null => {
+    if (!lobby) return null;
+    if (lobby.status === 'lobby' && lobby.lobby) {
+      const L = lobby.lobby;
+      if (L.ranked) return { page: 'ranked', label: 'Ranked match', detail: 'a ranked match' };
+      return { page: 'multiplayer', label: `Room ${L.room}`, detail: `room ${L.room}` };
+    }
+    if (lobby.status === 'lobby' && lobby.client.room) return { page: 'ranked', label: 'Match found', detail: 'a ranked match' };
+    if (lobby.ranked.searching) return { page: 'ranked', label: 'Searching ranked…', detail: 'your ranked search' };
+    return null;
+  };
+  /** Time-critical online steps (ranked draft, starting positions) keep the player on their page. */
+  const forcedPage = (): Page | null => {
+    if (!lobby || lobby.status !== 'lobby') return null;
+    const L = lobby.lobby;
+    if (L) return L.ranked ? 'ranked' : L.placing ? 'multiplayer' : null;
+    return lobby.client.room ? 'ranked' : null;
+  };
+
+  /** The robot as a thumbnail (a real team's robot) or the isometric sketch (an archetype / custom build). */
+  const robotThumb = () => {
+    const x = teamRobotNow();
+    if (x) {
+      const url = thumbUrls.get(`${season.id}|${x.id}|${s.alliance}`);
+      return `<span class="rs-thumb"><img alt="" data-thumb="${x.id}" ${url ? `src="${url}"` : ''}/></span>`;
+    }
+    return `<span class="rs-thumb art">${robotArt(s.alliance, s.robot.teamNumber, s.robot.intake.groundSide)}</span>`;
+  };
+  /** "Your robot" card with a way to change it: Home (big) and Solo setup (compact). */
+  const robotStrip = (big: boolean) => {
     const r = s.robot;
+    const chips = [`${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in`, `${(r.maxSpeed / FT).toFixed(1)} ft/s`, season.robotSummary?.(r)].filter(Boolean) as string[];
+    return `<section class="panel robot-strip ${big ? 'big' : ''}">
+      ${robotThumb()}
+      <div class="rs-info">
+        <div class="rs-kicker">Your robot</div>
+        <div class="rs-name">Team ${r.teamNumber} · ${esc(robotName())}</div>
+        <div class="rs-chips">${chips.map((c) => `<span>${esc(c)}</span>`).join('')}</div>
+        ${big ? '<div class="rs-hint">Used in Solo and Online matches. Ranked robots are drafted in the match.</div>' : ''}
+      </div>
+      <button class="bbtn" data-page="garage">${icon.sliders(18)} Change robot</button>
+    </section>`;
+  };
+
+  const homePage = () => {
+    const act = activity();
+    const resume = act && act.page !== 'home'
+      ? `<div class="resume"><span class="mp-dot on"></span><div><b>You're in ${esc(act.detail)}</b><span>Your spot is saved while you look around.</span></div><button class="bbtn primary" data-page="${act.page}">Return</button></div>`
+      : '';
+    const mode = (cls: string, ic: string, title: string, desc: string, tags: string[], cta: string, target: Page, extra = '') =>
+      `<article class="mode-card ${cls}">
+        <div class="mode-ic">${ic}</div>
+        <h2>${title}</h2>
+        <p>${desc}</p>
+        <div class="mode-tags">${tags.map((x) => `<span>${x}</span>`).join('')}</div>
+        <div class="mode-actions"><button class="bbtn primary" data-page="${target}">${cta}</button>${extra}</div>
+      </article>`;
+    const help = (season.controlsHelp ?? DEFAULT_CONTROLS_HELP).slice(0, 5);
+    return `
+      <div class="home">
+        ${resume}
+        <div class="home-lead"><h1>Choose how you want to play</h1><p>${esc(seasonLabel(season))} · ${formatClock(matchLength())} match. New here? Start with <b>Solo</b>: it works instantly, no account or friends needed.</p></div>
+        <div class="mode-grid">
+          ${mode('solo', icon.gamepad(26), 'Solo', 'Drive a full match against AI. Play 3 v 3 with AI teammates, or practice alone with the field to yourself.', ['3 v 3 with AI', 'Solo practice', 'Choose your AUTO'], 'Set up &amp; play', 'solo', `<button class="link" data-k="quick" title="Start with your last settings">Quick start ▸</button>`)}
+          ${mode('online', icon.users(26), 'Online', 'Play with friends or strangers. Quick play, browse public lobbies, or share a 4-letter code. Bots fill empty stations.', ['Up to 6 drivers', 'Public &amp; private rooms', 'Chat'], 'Play online', 'multiplayer')}
+          ${mode('ranked', icon.flag(26), 'Ranked', 'Rated matches with a ban/pick robot draft, a rank ladder and a yearly leaderboard.', ['1v1 · 2v2 · 3v3', 'Robot draft', 'Leaderboard'], 'Play ranked', 'ranked')}
+        </div>
+        ${robotStrip(true)}
+        <div class="learn-grid">
+          <section class="panel learn">
+            <div class="panel-head"><span>Basic controls</span><button class="link" data-page="controls">All controls &amp; rebinding</button></div>
+            <div class="learn-keys">${help.map(([k, v]) => `<div><kbd>${esc(k)}</kbd><span>${esc(v)}</span></div>`).join('')}</div>
+          </section>
+          <section class="panel learn">
+            <div class="panel-head"><span>${esc(season.name)} rules</span><button class="link" data-page="rules">Match timeline &amp; key rules</button></div>
+            <p class="learn-sum">${esc(season.summary)}</p>
+          </section>
+        </div>
+      </div>`;
+  };
+
+  const soloPage = () => {
     const routine = season.autoRoutines.find((x) => x.id === s.autoRoutine);
-    const acc = F.acc.get(r);
     const hasAi = s.aiOpponents !== false;
     const hpHint = season.humanPlayerHint
       ? s.autoHumanPlayer ? season.humanPlayerHint.auto : season.humanPlayerHint.manual
@@ -339,7 +434,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
           ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
           ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
           ${group('Graphics quality', `<div class="seg">${(['auto', 'low', 'medium', 'high'] as const).map((q) => opt(`data-quality="${q}"`, q[0].toUpperCase() + q.slice(1), qualityPref() === q)).join('')}</div>`, `Auto picked ${detectTier()} for this device. Lower settings simulate less (hoppers) and draw less; applies to the next match.`, 'wide')}
-          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${[{ id: 'custom', label: 'My planned auto' }, ...season.autoRoutines].map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
+          ${group('Autonomous', `<select class="pick" data-routine-sel aria-label="Autonomous routine">${season.autoRoutines.map((x) => `<option value="${x.id}" ${x.id === s.autoRoutine ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>`, routine?.description ?? '', 'wide')}
         </div>
       </section>`;
     const map = `
@@ -349,17 +444,33 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${season.startArea ? `<div class="place-wrap">${headingControls(curSpot().yaw)}</div>` : ''}
         <div class="map-legend"><span class="lg"><i class="sw"></i>Your robot</span><span class="lg"><i class="sw ring"></i>Station presets</span>${season.startArea ? '<span class="lg"><i class="sw zone"></i>Legal start zone</span>' : ''}<span class="sp">${season.startArea ? 'Drag your robot in the green zone, drag the knob on its nose to rotate (Shift = 15° steps), or click a ring for a station preset.' : 'Click a circle to move to that driver station.'}</span></div>
       </section>`;
-    const matchTab = `<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}</div></div>${autoPlanner(season, s)}`;
+    const matchTab = `${robotStrip(false)}<div class="play-grid"><div class="col">${settings}</div><div class="col">${map}</div></div>`;
     const aiTab = `
       <section class="panel">
         <div class="panel-head"><span>AI opponents &amp; teammates</span><span class="dim">${esc(season.name)}</span></div>
         <div class="settings-grid ai-grid">${aiGroups()}</div>
       </section>`;
+    return playTab === 'ai' && hasAi ? aiTab : matchTab;
+  };
+
+  /** Says what the robot being edited is for and where "Done" returns. */
+  const garageBanner = () => {
+    const where = backTo === 'multiplayer' && activity()?.page === 'multiplayer' ? 'your lobby' : backTo === 'solo' ? 'your solo match' : backTo === 'ranked' ? 'Ranked' : '';
+    const note = backTo === 'ranked'
+      ? 'Ranked matches use robots drafted in the match, so this robot applies to Solo and Online play.'
+      : where ? `Changes apply to ${where} straight away. Press <b>Done</b> to go back.` : 'This robot is used in Solo and Online matches. Changes save automatically.';
+    return `<div class="garage-note">${icon.sliders(16)}<span>${note}</span></div>`;
+  };
+
+  const garagePage = () => {
+    const F = numFields(season);
+    const r = s.robot;
+    const acc = F.acc.get(r);
     const robotCard = `
       <section class="panel robot-card ${s.alliance}">
         <div class="robot-top"><span>Your robot</span><span class="tag ${s.alliance}">${s.alliance === 'red' ? 'Red' : 'Blue'} alliance</span></div>
         <div class="robot-art ${r.model ? 'live' : ''}" ${r.model ? 'data-live' : ''}>${r.model ? '' : robotArt(s.alliance, r.teamNumber, r.intake.groundSide)}</div>
-        <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>Station ${s.station}${s.startSpot ? ' · custom start' : ''}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
+        <div class="robot-id"><div class="robot-num">${r.teamNumber}</div><div class="robot-meta"><b>${esc(robotName())}</b><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in · ${(r.maxSpeed / FT).toFixed(1)} ft/s</span></div></div>
       </section>`;
     const fields = season.robotFields ?? ['team', 'height', 'len', 'wid', 'speed', 'accel', 'cap', 'pre', 'rate', 'acc', 'cspd'];
     const same = (c: RobotConfig) => JSON.stringify({ ...r, teamNumber: 0 }) === JSON.stringify({ ...c, teamNumber: 0 });
@@ -410,8 +521,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
           ${specBar('Climb', season.climberLabels?.[r.climber.maxLevel] ?? (r.climber.maxLevel === 0 ? 'None' : `L${r.climber.maxLevel}`), r.climber.maxLevel / Math.max(1, season.maxClimbLevel))}
         </div>
       </section>`;
-    const robotTab = `<div class="robot-grid"><div class="col">${robotCard}${summary}</div><div class="col">${spec}</div></div>`;
-    return playTab === 'robot' ? robotTab : playTab === 'ai' && hasAi ? aiTab : matchTab;
+    const robotTab = `${garageBanner()}<div class="robot-grid"><div class="col">${robotCard}${summary}</div><div class="col">${spec}</div></div>`;
+    return robotTab;
   };
 
   /** The key slot waiting for a key press on the Controls page, and the last change made. */
@@ -459,12 +570,29 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     }`;
 
   let onKey: (e: KeyboardEvent) => void;
-  const start = () => {
+  /** Move between menu pages; Garage / Controls / Rules remember where they were opened from. */
+  const go = (p: Page) => {
+    if (forcedPage() && p !== forcedPage()) return;
+    if (SIDE_PAGES.includes(p) && !SIDE_PAGES.includes(page)) backTo = page;
+    capturing = null;
+    leavePrompt = false;
+    page = p;
+    render();
+  };
+  const launch = () => {
     save(s);
     document.removeEventListener('keydown', onKey);
     live?.dispose();
     el.remove();
     onStart(s);
+  };
+  /** Start a solo match, asking first if that would drop the room the player is in. */
+  const start = () => {
+    if (activity() && !leavePrompt) {
+      leavePrompt = true;
+      return render();
+    }
+    launch();
   };
 
   const render = () => {
@@ -472,8 +600,6 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       season = getSeason(lobby.lobby.seasonId);
       const teamNumber = s.robot.teamNumber;
       s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
-      s.autoPlan = loadAutoPlan(season);
-      if (s.autoPlan) { s.autoRoutine = 'custom'; s.manualAuto = false; }
       s.robot.teamNumber = teamNumber;
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
@@ -490,45 +616,64 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       chat: el.querySelector<HTMLInputElement>('[data-mp="chat"]')?.value,
       focused: (document.activeElement as HTMLElement | null)?.dataset.mp,
     } : null;
+    const forced = forcedPage();
+    if (forced && page !== forced) page = forced;
+    const act = activity();
+    // The robot or AUTO choices can change on any page (Garage, Solo setup); a room needs to hear about it.
+    if (lobby && lobby.status === 'lobby' && lobby.lobby && !lobby.lobby.ranked && page !== 'multiplayer') lobby.syncMine();
     const titles: Record<Page, { h1: string; sub: string }> = {
-      play: { h1: 'Single player', sub: '' },
+      home: { h1: '', sub: '' },
+      solo: { h1: 'Solo match', sub: 'Set up your match, then press Start.' },
+      garage: { h1: 'Garage', sub: 'Build the robot you drive.' },
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
       rules: { h1: `${season.name} rules`, sub: season.summary },
-      multiplayer: { h1: 'Multiplayer', sub: '' },
-      ranked: { h1: 'Ranked', sub: '' },
+      multiplayer: { h1: 'Online', sub: lobby?.lobby ? '' : 'Join a lobby, host your own, or watch a live match.' },
+      ranked: { h1: 'Online', sub: lobby?.lobby ? '' : 'Rated matches with a robot draft.' },
     };
     // Multiplayer page content lives in multiplayer.ts; the lobby re-renders it on every lobby change.
     const mp =
       online && lobby
-        ? (save(s), multiplayerPage(lobby, { s, season, page: page as 'multiplayer' | 'ranked', rerender: render, goto: (p) => ((page = p), render()) }))
+        ? (save(s), multiplayerPage(lobby, { s, season, page: page as 'multiplayer' | 'ranked', robotName: robotName(), rerender: render, goto: (p) => go(p) }))
         : null;
     const t = titles[page];
     // innerHTML below rebuilds the scroll container; keep the user's place when changing a setting on the same page.
-    if (playTab === 'ai' && s.aiOpponents === false) playTab = 'match';
-    const pageKey = page === 'play' ? `play:${playTab}` : page;
+    const pageKey = page === 'solo' ? `solo:${playTab}` : page;
     const prevPage = el.dataset.page;
     const scrollTop = el.querySelector<HTMLElement>('.main')?.scrollTop ?? 0;
-    const playTabs = `<div class="subtabs" role="tablist">${([['match', 'Match'], ...(s.aiOpponents !== false ? [['ai', 'AI']] : []), ['robot', 'Robot']] as [PlayTab, string][]).map(([id, label]) => `<button class="subtab ${playTab === id ? 'on' : ''}" role="tab" aria-selected="${playTab === id}" data-ptab="${id}">${label}</button>`).join('')}</div>`;
-    const tab = (p: Page, label: string) => `<button class="bbtn ${page === p ? 'on' : ''}" data-page="${p}">${label}</button>`;
+    const playTabs = `<div class="subtabs" role="tablist">${([['match', 'Match'], ...(s.aiOpponents !== false ? [['ai', 'AI']] : [])] as [PlayTab, string][]).map(([id, label]) => `<button class="subtab ${playTab === id ? 'on' : ''}" role="tab" aria-selected="${playTab === id}" data-ptab="${id}">${label}</button>`).join('')}</div>`;
+    const locked = !!forced;
+    const nav = (p: Page, label: string, extra = '') => `<button class="nav-btn ${page === p ? 'on' : ''}" data-page="${p}" ${locked && page !== p ? 'disabled' : ''} ${page === p ? 'aria-current="page"' : ''}>${label}${extra}</button>`;
+    // Lobbies, spectating and Ranked are one area: Online. The two pages are tabs inside it.
+    const inOnline = page === 'multiplayer' || page === 'ranked';
+    const navOnline = `<button class="nav-btn ${inOnline ? 'on' : ''}" data-page="${inOnline ? page : (act?.page ?? 'multiplayer')}" ${locked && !inOnline ? 'disabled' : ''} ${inOnline ? 'aria-current="page"' : ''}>Online${act ? '<i class="nav-live" title="You are in a match or room"></i>' : ''}</button>`;
+    const onlineTabs = inOnline && lobby && !(lobby.status === 'lobby' && lobby.lobby) && !(lobby.status === 'lobby' && lobby.client.room)
+      ? `<div class="subtabs" role="tablist">${([['multiplayer', 'Lobbies'], ['ranked', 'Ranked']] as [Page, string][]).map(([id, label]) => `<button class="subtab ${page === id ? 'on' : ''}" role="tab" aria-selected="${page === id}" data-page="${id}">${label}</button>`).join('')}</div>`
+      : '';
+    const modeNav = nav('home', 'Home') + nav('solo', 'Solo') + (lobby ? navOnline : '') + nav('garage', 'Garage');
+    const backLabel = `Back to ${page === 'garage' || page === 'controls' || page === 'rules' ? PAGE_LABEL[backTo === 'multiplayer' && act?.page !== 'multiplayer' ? 'home' : backTo] : 'home'}`;
+    const footer = mp
+      ? mp.footer
+      : page === 'home'
+        ? ''
+        : page === 'solo'
+          ? `<button class="bbtn" data-page="home"><kbd>Esc</kbd>Back</button><span class="spacer"></span><button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start solo match</button>`
+          : page === 'garage'
+            ? `<span class="spacer"></span><button class="bbtn primary" data-page="${backTo}"><kbd>Esc</kbd>Done · ${esc(backLabel)}</button>`
+            : `<button class="bbtn" data-page="${backTo}"><kbd>Esc</kbd>${esc(backLabel)}</button><span class="spacer"></span>`;
     el.innerHTML = `
       <header class="topbar">
-        <span class="brand">FRC Sim</span><span class="brand-sep"></span>
+        <button class="brand" data-page="home" ${locked ? 'disabled' : ''} aria-label="FRC Sim home">FRC Sim</button><span class="brand-sep"></span>
         <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch || lobby.lobby.ranked) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${esc(seasonLabel(x))}</option>`).join('')}</select></label>
-        <div class="team-chip"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i>Team ${s.robot.teamNumber}</div>
+        <nav class="nav" aria-label="Main">${modeNav}<span class="nav-sep"></span>${nav('controls', 'Controls')}${nav('rules', 'Rules')}</nav>
+        ${act && act.page !== page ? `<button class="live-chip" data-page="${act.page}"><span class="mp-dot on"></span>${esc(act.label)}</button>` : ''}
+        <button class="team-chip" data-page="garage" ${locked ? 'disabled' : ''} title="Change your robot in the Garage"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i><span>Team ${s.robot.teamNumber}<small>${esc(robotName())}</small></span></button>
       </header>
-      <main class="main">
-        <div class="titlebar"><h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>${page === 'play' ? playTabs : ''}</div>
-        ${mp ? mp.body : page === 'play' ? playPage() : page === 'controls' ? controlsPage() : rulesPage()}
+      <main class="main ${page === 'home' ? 'is-home' : ''}">
+        ${page === 'home' ? '' : `<div class="titlebar"><h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>${page === 'solo' ? (s.aiOpponents !== false ? playTabs : '') : onlineTabs}</div>`}
+        ${mp ? mp.body : page === 'home' ? homePage() : page === 'solo' ? soloPage() : page === 'garage' ? garagePage() : page === 'controls' ? controlsPage() : rulesPage()}
       </main>
-      <footer class="bar-bottom">
-        ${
-          mp
-            ? mp.footer
-            : `${page === 'play' ? tab('controls', 'Controls') + tab('rules', 'Rules') + (lobby ? tab('multiplayer', 'Multiplayer') + tab('ranked', 'Ranked') : '') : `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button>`}
-        <span class="spacer"></span>
-        ${page === 'play' ? `<button class="bbtn primary" data-k="start"><kbd>Enter</kbd>Start match</button>` : ''}`
-        }
-      </footer>`;
+      ${footer ? `<footer class="bar-bottom">${footer}</footer>` : ''}
+      ${leavePrompt && act ? `<div class="modal-back" data-modal="cancel"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-h"><h3 id="modal-h">Leave ${esc(act.detail)}?</h3><p>Starting a solo match takes you out of ${esc(act.detail)}. To keep playing online, go back to it instead.</p><div class="modal-actions"><button class="bbtn" data-modal="cancel">Stay</button><button class="bbtn primary" data-modal="confirm">Leave &amp; start solo</button></div></div></div>` : ''}`;
     el.dataset.page = pageKey;
     if (prevPage === pageKey) {
       const main = el.querySelector<HTMLElement>('.main');
@@ -563,10 +708,15 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       return render();
     }
     const tag = (e.target as HTMLElement | null)?.tagName;
-    if (e.key === 'Escape' && page !== 'play') {
-      page = 'play';
-      render();
-    } else if (e.key === 'Enter' && page === 'play' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'BUTTON') start();
+    if (leavePrompt) {
+      if (e.key === 'Escape') ((leavePrompt = false), render());
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (tag === 'INPUT' || tag === 'SELECT') return void (e.target as HTMLElement).blur();
+      if (forcedPage() || page === 'home') return;
+      go(SIDE_PAGES.includes(page) ? backTo : 'home');
+    } else if (e.key === 'Enter' && page === 'solo' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'BUTTON') start();
   };
   document.addEventListener('keydown', onKey);
 
@@ -579,21 +729,21 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     }));
     all('[data-k="resetKeys"]').forEach((b) => (b.onclick = () => (keybinds.resetAll(), (bindNote = 'Restored default keys'), (capturing = null), render())));
     all('[data-ptab]').forEach((b) => (b.onclick = () => ((playTab = b.dataset.ptab as PlayTab), render())));
-    all('[data-page]').forEach((b) => (b.onclick = () => ((page = b.dataset.page as Page), (capturing = null), render())));
+    all('[data-page]').forEach((b) => (b.onclick = () => go(b.dataset.page as Page)));
+    all('[data-k="quick"]').forEach((b) => (b.onclick = start));
+    all('[data-modal="cancel"]').forEach((b) => (b.onclick = (e) => { if (e.target === b) ((leavePrompt = false), render()); }));
+    all('[data-modal="confirm"]').forEach((b) => (b.onclick = launch));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
       season = getSeason(seasonSel.value);
       const teamNumber = s.robot.teamNumber;
       s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
-      s.autoPlan = loadAutoPlan(season);
-      if (s.autoPlan) { s.autoRoutine = 'custom'; s.manualAuto = false; }
       s.robot.teamNumber = teamNumber;
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
     };
     all('[data-alliance]').forEach((b) => (b.onclick = () => ((s.alliance = b.dataset.alliance as 'red' | 'blue'), render())));
     all('[data-camera]').forEach((b) => (b.onclick = () => ((s.camera = b.dataset.camera as CameraMode), render())));
-    if (page === 'play') bindAutoPlanner(el, season, s, () => { save(s); render(); }, { setStartYaw: yaw => { const fp = footprint(s.robot); s.startSpot = rotateSpot(season, { alliance: s.alliance, spot: curSpot(), length: fp.length, width: fp.width, blockers: [] }, yaw); save(s); render(); } });
     const routineSel = el.querySelector<HTMLSelectElement>('[data-routine-sel]');
     if (routineSel) routineSel.onchange = () => ((s.autoRoutine = routineSel.value), (s.manualAuto = false), render());
     all('[data-preset]').forEach((b) => (b.onclick = () => {
@@ -661,7 +811,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       };
     });
     const wrap = el.querySelector<HTMLElement>('.map-wrap');
-    if (wrap && page === 'play' && playTab === 'match') {
+    if (wrap && page === 'solo' && playTab === 'match') {
       const fp = footprint(s.robot);
       const mine = (): MineState => ({ alliance: s.alliance, spot: curSpot(), length: fp.length, width: fp.width, blockers: [] });
       const redraw = () => {
@@ -678,13 +828,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     }
     const startBtn = el.querySelector<HTMLButtonElement>('[data-k="start"]');
     if (startBtn) startBtn.onclick = start;
-    if ((page === 'multiplayer' || page === 'ranked') && lobby) bindMultiplayer(el, lobby, { s, season, page: page as 'multiplayer' | 'ranked', rerender: render, goto: (p) => ((page = p), render()) });
+    if ((page === 'multiplayer' || page === 'ranked') && lobby) bindMultiplayer(el, lobby, { s, season, page: page as 'multiplayer' | 'ranked', robotName: robotName(), rerender: render, goto: (p) => go(p) });
   };
 
   if (lobby)
     lobby.onChange = () => {
       // Don't rebuild the page under a robot being dragged on the placement map.
-      if (el.isConnected && !placementDragging() && !autoPlannerDragging()) render();
+      if (el.isConnected && !placementDragging()) render();
     };
 
   render();

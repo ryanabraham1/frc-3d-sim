@@ -162,13 +162,10 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
           ${meCardHtml(lobby)}
           ${lastResultHtml(lobby)}
           ${search}
+          <div class="mp-hint">Want to watch instead? <button class="link" data-page="multiplayer">Live matches are in Lobbies</button>.</div>
         </div>
       </section>
       <div class="col">
-        <section class="panel mp-card">
-          <div class="panel-head"><span>Live matches</span></div>
-          <div class="rl-list" data-mp="live-ranked">${online ? liveRankedHtml(lobby.rooms, busy) : '<div class="rl-empty">Connect to watch live matches.</div>'}</div>
-        </section>
         <section class="panel mp-card">
           <div class="panel-head"><span>Your all-time stats</span></div>
           <div class="rl-list" data-mp="stats">${online ? statsPanelHtml(lobby) : '<div class="rl-empty">Connect to see your stats.</div>'}</div>
@@ -189,7 +186,7 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
         </section>
       </div>
     </div>`,
-    footer: `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button><span class="spacer"></span>`,
+    footer: `<button class="bbtn" data-page="home"><kbd>Esc</kbd>Back</button><span class="spacer"></span>`,
   };
 }
 

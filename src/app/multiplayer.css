@@ -1210,3 +1210,29 @@
 .rk-pool {
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
 }
+
+/* Room list filter chips */
+.rl-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px 0;
+}
+.chip-btn {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.chip-btn:hover {
+  color: var(--text);
+}
+.chip-btn.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}

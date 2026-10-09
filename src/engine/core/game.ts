@@ -1,6 +1,5 @@
 import { bodyState, restoreBody, captureFields, restoreFields, capturePilot, restorePilot } from '../net/recovery';
 import { spawnClearance } from '../robot/spawnClearance';
-import { cleanAutoPlan, PlannedAutoPilot } from '../ai/autoPlan';
 import { Mesh, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
@@ -93,7 +92,6 @@ export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetu
         station: s.station,
         config: s.robot,
         autoRoutine: s.autoRoutine,
-        autoPlan: s.autoPlan,
         manualAuto: s.manualAuto,
         start: resolveStartPose(
           { length: season.fieldLength, width: season.fieldWidth, symmetry: season.mapSymmetry },
@@ -364,8 +362,7 @@ export class Game {
       this.rules.stage();
       for (const r of this.robots) {
         const rs = this.robotSetups.get(r.id)!;
-        const plan = rs.autoRoutine === 'custom' ? cleanAutoPlan(rs.autoPlan, season) : undefined;
-        this.autoPilots.set(r.id, plan ? new PlannedAutoPilot(this.ctx, this.rules, r, season, plan) : season.createAutoPilot(this.ctx, this.rules, r, rs.autoRoutine));
+        this.autoPilots.set(r.id, season.createAutoPilot(this.ctx, this.rules, r, rs.autoRoutine));
         if (r.controller === 'bot' && season.createBotPilot) this.botPilots.set(r.id, season.createBotPilot(this.ctx, this.rules, r));
       }
     }

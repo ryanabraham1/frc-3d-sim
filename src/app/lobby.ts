@@ -1,6 +1,5 @@
 import { compressCheckpoint, decompressCheckpoint } from '@engine/net/recovery';
 import type { GameRecovery } from '@engine/core/game';
-import { cleanAutoPlan, type AutoPlan } from '@engine/ai/autoPlan';
 import { fillBotStations } from '@engine/ai/matchSetup';
 import { seasonLabel, type AiSkill, type GameSettings } from '@engine/core/season';
 import { NetClient } from '@engine/net/netClient';
@@ -70,7 +69,6 @@ interface PlayerChoice {
   slot?: SlotId | null;
   robot: RobotConfig | null;
   autoRoutine: string;
-  autoPlan?: AutoPlan;
   manualAuto: boolean;
 }
 
@@ -330,7 +328,7 @@ export class LobbyController {
       botDifficulty: 'normal',
       inMatch: false,
     };
-    if (s) this.applyChoice(this.client.peerId, { seasonId: s.seasonId, slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto });
+    if (s) this.applyChoice(this.client.peerId, { seasonId: s.seasonId, slot: slotId(s.alliance, s.station), robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto });
   }
 
   private async doJoin(code: string, name: string): Promise<void> {
@@ -675,14 +673,14 @@ export class LobbyController {
   syncMine(force = false, slot?: SlotId | null): void {
     const s = this.settings;
     if (!s || !this.client.connected || this.lobby?.ranked) return;
-    const choice: PlayerChoice = { seasonId: s.seasonId, robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto };
+    const choice: PlayerChoice = { seasonId: s.seasonId, robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto };
     const key = JSON.stringify(choice);
     if (!force && slot === undefined && key === this.lastSent) return;
     this.lastSent = key;
     if (slot !== undefined) choice.slot = slot;
     if (this.isHost) this.applyChoice(this.client.peerId, choice);
     else {
-      const msg: ClientMsg = { t: 'lobby-set', seasonId: s.seasonId, slot, robot: s.robot, autoRoutine: s.autoRoutine, autoPlan: s.autoPlan, manualAuto: s.manualAuto };
+      const msg: ClientMsg = { t: 'lobby-set', seasonId: s.seasonId, slot, robot: s.robot, autoRoutine: s.autoRoutine, manualAuto: s.manualAuto };
       this.client.send(msg);
     }
   }
@@ -737,12 +735,6 @@ export class LobbyController {
     this.broadcastLobby();
   }
 
-  setManualAuto(v: boolean): void {
-    if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.placing) return;
-    this.lobby.manualAuto = v;
-    this.broadcastLobby();
-  }
-
   setBots(fill: boolean, difficulty: AiSkill = this.lobby?.botDifficulty ?? 'normal'): void {
     if (!this.isHost || !this.lobby || this.lobby.inMatch || this.lobby.placing) return;
     if (!['normal', 'hard', 'einstein'].includes(difficulty)) return;
@@ -761,7 +753,6 @@ export class LobbyController {
     this.lobby.seasonId = id;
     // A start spot belongs to one season's field.
     for (const p of this.lobby.players) {
-      p.autoPlan = undefined;
       p.spot = null;
       p.ready = false;
       this.refreshDims(p.peerId);
@@ -894,8 +885,7 @@ export class LobbyController {
         config,
         start,
         autoRoutine: c.seasonId === lobby.seasonId ? c.autoRoutine : getSeason(lobby.seasonId).autoRoutines[0].id,
-        autoPlan: c.seasonId === lobby.seasonId && c.autoRoutine === 'custom' ? cleanAutoPlan(c.autoPlan, season) : undefined,
-        manualAuto: lobby.manualAuto ?? false,
+        manualAuto: true,
         peerId: p.peerId,
         name: p.name,
       });
@@ -919,11 +909,10 @@ export class LobbyController {
     this.clearAutoStart();
     for (const p of lobby.players) p.ready = false;
     this.broadcastLobby();
-    const wire: MatchSetup = { ...setup, robots: setup.robots.map(({ autoPlan: _plan, ...r }) => r) };
     this.liveSetup = setup;
     this.recoveryGame = null;
     this.publishRecovery();
-    this.client.send({ t: 'start', setup: wire } satisfies HostMsg);
+    this.client.send({ t: 'start', setup } satisfies HostMsg);
     this.onStart(setup, 'host');
   }
 
@@ -973,8 +962,7 @@ export class LobbyController {
 
   private sendResume(to?: string): void {
     if (!this.liveSetup) return;
-    const wire: MatchSetup = { ...this.liveSetup, robots: this.liveSetup.robots.map(({ autoPlan: _plan, ...r }) => r) };
-    this.client.send({ t: 'resume', setup: wire } satisfies HostMsg, to);
+    this.client.send({ t: 'resume', setup: this.liveSetup } satisfies HostMsg, to);
   }
 
   private async recoverHost(ev: { hostId: string; previousHostId: string; peers: { peerId: string; name: string }[]; checkpoint?: unknown }): Promise<void> {
@@ -1087,7 +1075,7 @@ export class LobbyController {
     }
     if (m?.t !== 'lobby-set') return;
     const slot = m.slot === undefined ? undefined : m.slot && SLOTS.includes(m.slot) ? m.slot : null;
-    this.applyChoice(from, { seasonId: m.seasonId, slot, robot: m.robot ?? null, autoPlan: m.autoPlan, autoRoutine: String(m.autoRoutine ?? 'none'), manualAuto: !!m.manualAuto });
+    this.applyChoice(from, { seasonId: m.seasonId, slot, robot: m.robot ?? null, autoRoutine: String(m.autoRoutine ?? 'none'), manualAuto: !!m.manualAuto });
   }
 
   private applyChoice(peerId: string, c: PlayerChoice): void {
@@ -1111,9 +1099,7 @@ export class LobbyController {
     p.slot = slot;
     if (c.robot) p.team = c.robot.teamNumber;
     const previous = this.choices.get(peerId);
-    c.autoPlan = c.seasonId === lobby.seasonId ? cleanAutoPlan(c.autoPlan, getSeason(lobby.seasonId)) : undefined;
     this.choices.set(peerId, { ...c, slot, robot: c.robot ? cloneConfig(c.robot) : null });
-    p.autoPlan = c.autoRoutine === 'custom' ? c.autoPlan : undefined;
     if (JSON.stringify(previous) !== JSON.stringify({ ...c, slot })) { p.ready = false; this.clearAutoStart(); }
     this.refreshDims(peerId);
     // Station or robot/AUTO changes require locking in again.
@@ -1133,7 +1119,7 @@ export class LobbyController {
     const live = this.liveSetup;
     if (live && this.lobby.inMatch && !live.peers.includes(peerId)) {
       live.peers = [...live.peers, peerId];
-      this.client.send({ t: 'start', setup: { ...live, robots: live.robots.map(({ autoPlan: _plan, ...r }) => r) } } satisfies HostMsg, peerId);
+      this.client.send({ t: 'start', setup: live } satisfies HostMsg, peerId);
     }
   }
 
@@ -1154,9 +1140,7 @@ export class LobbyController {
     if (this.lobby.ranked?.phase === 'draft') this.lobby.ranked.turnMs = Math.max(0, this.turnDeadline - Date.now());
     for (const viewer of this.lobby.players) {
       if (viewer.peerId === this.client.peerId) continue;
-      const alliance = viewer.slot ? slotAlliance(viewer.slot) : null;
-      const players = this.lobby.players.map(({ autoPlan, ...p }) => ({ ...p, ...(alliance && p.slot && slotAlliance(p.slot) === alliance ? { autoPlan } : {}) }));
-      this.client.send({ t: 'lobby', lobby: { ...this.lobby, players } } satisfies HostMsg, viewer.peerId);
+      this.client.send({ t: 'lobby', lobby: this.lobby } satisfies HostMsg, viewer.peerId);
     }
     this.pushMeta();
     this.publishRecovery();

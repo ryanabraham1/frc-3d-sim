@@ -32,7 +32,7 @@ await page.waitForTimeout(400);
 await page.screenshot({ path: `${out}/menu.png` });
 await page.click('[data-page="rules"]');
 await page.screenshot({ path: `${out}/rules.png`, fullPage: true });
-await page.click('[data-page="play"]');
+await page.click('[data-page="solo"]');
 // Use the first scripted AUTO routine instead of manual AUTO driving.
 const routine = await page.$('[data-routine-sel]');
 if (routine) await page.selectOption('[data-routine-sel]', { index: 0 });
