@@ -226,6 +226,7 @@ export class GamePiecePool {
   /** Put piece i on the field at a WORLD position with optional WORLD velocity. */
   placeWorld(i: number, pos: THREE.Vector3, vel?: THREE.Vector3): void {
     this.leaveBay(i);
+    if (this.ghost.delete(i)) this.setIgnoreRobots(i, false);
     const b = this.bodies[i];
     b.setEnabled(true);
     b.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
@@ -252,6 +253,16 @@ export class GamePiecePool {
     const b = this.bodies[i];
     const groups = ignore ? collisionGroups(Group.PIECE, Group.FIELD | Group.PIECE | Group.PIECE_ONLY) : GROUPS.piece;
     for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);
+  }
+
+  private readonly ghost = new Map<number, { t: number; clear: () => boolean }>();
+  /**
+   * A piece just thrown out of a robot's shooter starts inside that robot's collision box: let it pass through robots
+   * until `clear()` says it has left the chassis (or `seconds` run out), then collide normally.
+   */
+  releaseGhost(i: number, clear: () => boolean, seconds = 0.3): void {
+    this.setIgnoreRobots(i, true);
+    this.ghost.set(i, { t: seconds, clear });
   }
 
   /** Forget a piece's hopper: it is a normal collidable field piece again (position and velocity untouched). */
@@ -421,6 +432,13 @@ export class GamePiecePool {
 
   /** Switch damping between air/ground values. Call once per physics step. */
   updateDamping(): void {
+    if (this.ghost.size) {
+      const dt = this.physics.dt;
+      for (const [i, g] of this.ghost) {
+        g.t -= dt;
+        if (g.t <= 0 || g.clear()) { this.ghost.delete(i); this.setIgnoreRobots(i, false); }
+      }
+    }
     for (let i = 0; i < this.bodies.length; i++) {
       if (this.state[i] !== 'field') continue;
       const b = this.bodies[i];

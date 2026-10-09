@@ -1610,6 +1610,11 @@ export class Robot {
     return this.config.intake.groundYaw === undefined ? (groundSideSign(this.config) > 0 ? 0 : Math.PI) : -this.config.intake.groundYaw;
   }
 
+  /** Yaw offset (0 or π) from the heading that points the shooter at a target to the chassis heading to use (`launcher.reversed`). */
+  get shotYawOffset(): number {
+    return this.config.launcher.reversed && !this.config.launcher.turret ? Math.PI : 0;
+  }
+
   /**
    * Is a world-space point inside the robot's STATION intake (funnel / hopper mouth / shooter intake at the top of
    * the chosen side)? Only pieces in the air (above `minHeight`) are caught — a piece on the carpet needs a ground
@@ -1671,7 +1676,7 @@ export class Robot {
     const tof = dist / Math.max(4, c.launcher.maxSpeed * 0.6);
     const desired = Math.atan2(-(target.point.z - v.z * tof - t.z), target.point.x - v.x * tof - t.x);
     const yaw = this.pose.yaw;
-    this.alignError = wrapAngle(desired - yaw);
+    this.alignError = wrapAngle(desired + this.shotYawOffset - yaw);
     // P-control plus a static-friction feedforward (kS), like a real heading controller: without it, small
     // corrections are absorbed by carpet friction and the heading stalls a few degrees off.
     const e = this.alignError;
@@ -1762,15 +1767,17 @@ export class Robot {
 
   /**
    * Where pieces leave the launcher, relative to the robot origin (floor, frame center).
-   * Always ABOVE the robot's own collision box (config.height) so a launched piece can never spawn
-   * inside the robot that fired it. (Bug fixed 2026-09-29: a 30in robot with a 19in launcher spawned
-   * every ball inside its own frame collider and physics shoved it out sideways → misses.)
+   * At the launcher's real exit height, which can be inside the robot's collision box (a hopper robot throws FUEL
+   * out of the drum, not from above the hopper roof): the pool lets the new piece pass through robots for a moment
+   * (`GamePiecePool.releaseGhost`) so it never gets shoved sideways by the chassis it left. (2026-09-29: spawning inside
+   * the frame collider with physics on shoved every ball out sideways → misses; spawning above the roof fixed that but
+   * showed FUEL appearing over the hopper.)
    */
   launcherExit(side = 0): { forward: number; up: number; side: number } {
     const c = this.config;
     // A dumper (several exits) shoots from the front edge of the frame; a single launcher sits near the center.
     // Flat pieces (rings) only need their half-thickness of vertical clearance.
-    const up = Math.max(c.launcher.height, c.height) + (this._projectile.halfHeight ?? this._projectile.radius) + 0.03;
+    const up = (c.launcher.exitInside ? c.launcher.height : Math.max(c.launcher.height, c.height)) + (this._projectile.halfHeight ?? this._projectile.radius) + (c.launcher.exitInside ? 0.01 : 0.03);
     if (c.launcher.turret && c.launcher.mounts?.length) {
       const mounts = c.launcher.mounts;
       const mount = mounts.reduce((best, m) => Math.abs(m.side - side) < Math.abs(best.side - side) ? m : best);
@@ -1972,7 +1979,7 @@ export class Robot {
 
     let speed = c.manualSpeed;
     let theta = c.angle;
-    let aimYaw = c.turret ? this.turretYaw : heading;
+    let aimYaw = c.turret ? this.turretYaw : heading + this.shotYawOffset;
     this.lastShotClear = true;
     if (target && this.config.aimAssist !== 'off') {
       const sol = this.solveMovingShot(pos, target);

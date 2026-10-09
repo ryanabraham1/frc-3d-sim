@@ -129,7 +129,7 @@ export class PlannedAutoPilot implements AutoPilot {
     if (s.fire && s.action === 'drive') {
       const target = this.rules.aimTarget(r);
       if (target) {
-        const p = this.ctx.frame.toField(target.point), face = Math.atan2(p.y - r.pose.y, p.x - r.pose.x);
+        const p = this.ctx.frame.toField(target.point), face = Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.shotYawOffset;
         if (s.yaw === undefined) yaw = face;
         cmd.shoot = r.config.launcher.turret || Math.abs(Math.atan2(Math.sin(face - r.pose.yaw), Math.cos(face - r.pose.yaw))) < .15;
       }

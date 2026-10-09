@@ -11,6 +11,7 @@ import { flatNet } from './rebuiltCadKit';
  *  - Archetype: FIXED full-width drum shooter, no turret, no hood actuator. A three-roller vertical feeder lifts FUEL in
  *    front of the drum ("Feeder V3"); the drum (with brass inertia flywheels on its ends) throws it up past three printed
  *    "shooter path" guides at the front. Sloped roller floor ("Hopper Floor V4"). Source: CAD part names and layout.
+ *  - Shoots toward the intake end (user report 2026-10-08): the robot lines up with its INTAKE facing the HUB (launcher.reversed).
  *  - Intake end: BACK (source -Y). "Intake V2" pivots on a sector "Pivot Gear" driven by an 11t pinion in the floor; the
  *    hopper's slotted side panels and end panel ("Comp Hopper V5") telescope out with it. Scoring end: FRONT (drum).
  *  - Colours: black anodised/powder-coat plates and prints, orange accents, black net roof, red/black bumpers

@@ -148,6 +148,17 @@ export interface RobotConfig {
     mounts?: { forward: number; side: number }[];
     /** Throat offset ahead of each turret center; rotates with turret yaw. */
     muzzleForward?: number;
+    /**
+     * The shooter throws FUEL out the BACK of the frame (the intake end), from the same exit spot: the robot lines up
+     * with its intake facing the target. Chassis-aimed robots only.
+     */
+    reversed?: boolean;
+    /**
+     * Pieces leave from the real launcher height even when that is inside the robot's collision box (a hopper robot
+     * throwing loose balls out of its drum), passing through robots until clear of the chassis. Default: pieces spawn
+     * above the box.
+     */
+    exitInside?: boolean;
     /** Chassis-aimed (auto-align) robots hold fire until pointed within this many radians of the target (default 0.05 ≈ 3°). */
     alignTolerance?: number;
     /** Distance between the outermost exits as a fraction of the frame width (default 0.8). */

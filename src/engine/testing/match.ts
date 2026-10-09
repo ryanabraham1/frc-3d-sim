@@ -1,4 +1,5 @@
 import type { Alliance } from '../coords';
+import { spawnClearance } from '../robot/spawnClearance';
 import { localSetup } from '../core/game';
 import type { AutoPilot, GameSettings, SeasonDefinition } from '../core/season';
 import type { RapierModule } from '../physics/world';
@@ -78,6 +79,7 @@ export function runMatch(season: SeasonDefinition, R: RapierModule, settings: Ga
           if (shot) {
             const idx = r.held.pop()!;
             pool.placeWorld(idx, shot.pos, shot.vel);
+            if (r.config.launcher.exitInside) pool.releaseGhost(idx, () => spawnClearance(r, pool.position(idx), pool.colliderRadius, pool.colliderHalfHeight) > 0.02);
             r.noteLaunch(idx);
             rules.onLaunch(r, idx);
           }

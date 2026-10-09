@@ -1,4 +1,5 @@
 import { bodyState, restoreBody, captureFields, restoreFields, capturePilot, restorePilot } from '../net/recovery';
+import { spawnClearance } from '../robot/spawnClearance';
 import { cleanAutoPlan, PlannedAutoPilot } from '../ai/autoPlan';
 import { Mesh, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
@@ -864,6 +865,7 @@ export class Game {
         if (shot) {
           const idx = r.held.pop()!;
           this.pool.placeWorld(idx, shot.pos, shot.vel);
+          if (r.config.launcher.exitInside) this.pool.releaseGhost(idx, () => spawnClearance(r, this.pool.position(idx), this.pool.colliderRadius, this.pool.colliderHalfHeight) > 0.02);
           r.noteLaunch(idx);
           this.rules.onLaunch(r, idx);
           this.matchLog?.launch(r, idx, shot.vel);

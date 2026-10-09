@@ -212,7 +212,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const hubFuelNear = (): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < 2.6);
   const stanceCommand = (live: boolean): RobotCommand => {
     const spot = stanceSpot();
-    const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x);
+    const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x) + r.shotYawOffset;
     const there = dist(myPose(), spot) < 0.3;
     const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
     cmd.intake = r.capacityLeft > 0 && !hubFuelNear();

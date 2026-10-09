@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { spawnClearance } from '../robot/spawnClearance';
 import type { Alliance, FieldPose } from '../coords';
 import { FieldFrame } from '../coords';
 import type { GameSettings, SeasonContext, SeasonDefinition, SeasonRules } from '../core/season';
@@ -140,12 +141,14 @@ export class HeadlessSim {
       if (shot) {
         const idx = robot.held.pop()!;
         pool.placeWorld(idx, shot.pos, shot.vel);
+        if (robot.config.launcher.exitInside) pool.releaseGhost(idx, () => spawnClearance(robot, pool.position(idx), pool.colliderRadius, pool.colliderHalfHeight) > 0.02);
         robot.noteLaunch(idx);
         rules.onLaunch(robot, idx);
         this.log?.launch(robot, idx, shot.vel);
         this.fired++;
         this.allClear &&= robot.lastShotClear;
-        this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius, pool.colliderHalfHeight));
+        // Pieces leave from the real launcher height, inside the chassis box, and pass through robots briefly (releaseGhost):
+        // the gap now measures only a launcher placed outside the frame, so it is no longer a spawn-overlap check.
       }
     }
     robot.tickIntake(dt);
@@ -180,20 +183,4 @@ export class HeadlessSim {
   }
 }
 
-/**
- * Distance from a piece spawned at `p` (world) to the robot's collision box, minus the piece radius.
- * `halfHeight` < r marks a flat piece (a ring/disc): its vertical and horizontal extents differ.
- */
-export function spawnClearance(robot: Robot, p: THREE.Vector3, r: number, halfHeight = r): number {
-  // Into the chassis frame (the robot may be tilted).
-  const t = robot.body.translation();
-  const q = robot.body.rotation();
-  const v = new THREE.Vector3(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w).invert());
-  const fp = robot.footprint;
-  const ox = Math.max(0, Math.abs(v.x) - fp.length / 2);
-  const oz = Math.max(0, Math.abs(v.z) - fp.width / 2);
-  const y = v.y;
-  const oy = y > robot.config.height ? y - robot.config.height : y < 0 ? -y : 0;
-  if (halfHeight < r) return Math.max(oy - halfHeight, Math.hypot(ox, oz) - r);
-  return Math.hypot(ox, oy, oz) - r;
-}
+export { spawnClearance };

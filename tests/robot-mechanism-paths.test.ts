@@ -173,7 +173,8 @@ describe('CAD mechanism paths', () => {
         expect(a).not.toBeNull(); expect(b).not.toBeNull();
         expect(a.pos.z-r.body.translation().z).toBeLessThan(0);
         expect(b.pos.z-r.body.translation().z).toBeGreaterThan(0);
-        expect(a.pos.y).toBeGreaterThan(r.config.height+season.gamePiece.radius);
+        expect(a.pos.y).toBeGreaterThan(r.config.launcher.height);
+        expect(a.pos.y).toBeLessThan(r.config.height + season.gamePiece.radius);
         expect(launcherExitOffsets(k.config).length).toBe(2);
       } finally { sim.dispose(); }
     });
