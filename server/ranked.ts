@@ -137,7 +137,7 @@ export class RankedService {
       this.deps.send(peerId, { op: 'profile', persistent: this.deps.store.persistent, name: clean, season: RANKED_SEASON_ID, rating, standing: st ? { rank: st.rank, total: st.total } : null });
     } catch (e) {
       this.log(`profile failed: ${(e as Error).message}`);
-      this.deps.send(peerId, { op: 'error', message: `Ratings are unavailable right now [${(e as Error).message.slice(0, 160)}]` }); // TEMP diagnostic
+      this.deps.send(peerId, { op: 'error', message: 'Ratings are unavailable right now' });
     }
   }
 
