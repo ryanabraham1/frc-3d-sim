@@ -1,11 +1,16 @@
 /**
- * Profanity filter for player names, room titles and chat. Pure and dependency-free (the relay runs it too).
+ * Profanity filter for player names, room titles and chat. The `obscenity` library supplies the big word database; our own lists add terms it misses. Runs on the relay too.
  *
  * Text is normalised first (case, accents, leetspeak like "sh1t", separators like "f.u.c.k", stretched letters),
  * then checked two ways: long unambiguous words anywhere in the text, and short words only as whole words so
  * names like "Scunthorpe" or "Grape" survive. Nothing here is perfect; the server is the enforcement point and
  * the UI just tells people sooner.
  */
+
+import { RegExpMatcher, englishDataset, englishRecommendedTransformers } from 'obscenity';
+
+/** Large English profanity/slur dataset (with its own leetspeak and false-positive whitelist handling). */
+const library = new RegExpMatcher({ ...englishDataset.build(), ...englishRecommendedTransformers });
 
 /** Matched anywhere inside the letters of the text (so "f u c k" and "xxfuckxx" are caught). */
 const ANYWHERE = [
@@ -43,6 +48,8 @@ const anywhereSquashed = ANYWHERE.map(dedupe);
 export function isBadText(text: string): boolean {
   const norm = normalize(text);
   if (!norm) return false;
+  // The library catches the broad vocabulary; the lists below add hate terms it lacks and separator tricks.
+  if (library.hasMatch(text) || library.hasMatch(norm.replace(/ /g, ''))) return true;
   const letters = norm.replace(/ /g, '');
   // Also test with doubled letters squeezed ("fuuck", "shiit") against equally squeezed terms.
   const squashed = dedupe(letters);

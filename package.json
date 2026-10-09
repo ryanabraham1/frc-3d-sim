@@ -20,6 +20,7 @@
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
     "@dimforge/rapier3d-simd-compat": "^0.21.0",
+    "obscenity": "^0.4.6",
     "three": "^0.186.1",
     "three-mesh-bvh": "^0.9.15",
     "ws": "^8.22.0"
