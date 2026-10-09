@@ -16,6 +16,9 @@ export function stationSideSign(c: RobotConfig): 1 | -1 {
 export function loadedRobotHeight(c: RobotConfig, count: number): number {
   const e = c.hopperExpansion;
   if (!e) return c.height;
+  const sl = e.slack;
+  if (sl && count <= sl.count) return c.height + (sl.height - c.height) * Math.min(1, Math.max(0, (count - e.startCount) / Math.max(1, sl.count - e.startCount)));
+  if (sl) return sl.height + (e.fullHeight - sl.height) * Math.min(1, (count - sl.count) / Math.max(1, c.hopperCapacity - sl.count));
   const fill = Math.min(1, Math.max(0, (count - e.startCount) / Math.max(1, c.hopperCapacity - e.startCount)));
   return c.height + (e.fullHeight - c.height) * fill;
 }
@@ -112,7 +115,7 @@ export interface RobotConfig {
   /** Optional flexible hopper roof: starts bulging above this load, reaches fullHeight at capacity. */
   /** A net / fabric cover over the hopper keeps FUEL in through tips and hits (no spilling). */
   hopperCovered?: boolean;
-  hopperExpansion?: { startCount: number; fullHeight: number; mechanism?: 'telescoping'; area?: { cx: number; sx: number; sz: number } };
+  hopperExpansion?: { startCount: number; fullHeight: number; /** Net still slack up to `count` FUEL, only `height` tall there; stretches to fullHeight beyond. */ slack?: { count: number; height: number }; mechanism?: 'telescoping'; area?: { cx: number; sx: number; sz: number } };
   /**
    * Optional defensive SHOT BLOCKER: a panel hinged on the top edge of the intake side (so it extends over the same
    * side as the intake) that swings out and up over an adjacent robot's shooter. `reach` = horizontal extension past

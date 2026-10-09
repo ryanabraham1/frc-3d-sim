@@ -219,3 +219,10 @@ it('the stretching net rises only where actual balls push it, while its rim stay
   }
   expect(net.getObjectByName('stretching-hopper-cords')).toBeDefined();
 });
+
+it('254 Overload stays trench-safe up to 50 FUEL, then swells past the TRENCH', () => {
+  const c = season.normalizeRobotConfig!(cloneConfig(season.teamRobots!.find(t => t.team === 254)!.config));
+  expect(loadedRobotHeight(c, 50)).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
+  expect(loadedRobotHeight(c, 51)).toBeGreaterThan(C.TRENCH_SAFE_HEIGHT);
+  expect(loadedRobotHeight(c, c.hopperCapacity)).toBeCloseTo(c.hopperExpansion!.fullHeight, 5);
+});

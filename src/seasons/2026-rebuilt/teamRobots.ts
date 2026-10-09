@@ -726,12 +726,12 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, 62 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, fits under the TRENCH up to 50, 62 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
       config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 62, tall: false, rate: 25, climb: 0 }, (c) => {
         c.hopperCovered = true; // net hopper
         // Capacity from packing real-size FUEL into this hopper: 40 under the rigid rim, +22 under the stretched net. [EST]
-        c.hopperExpansion = { startCount: 40, fullHeight: inch(27) };
+        c.hopperExpansion = { startCount: 40, fullHeight: inch(27), slack: { count: 50, height: inch(21.7) } }; // slack net: drives under the TRENCH (21.75 in safe) up to 50 FUEL
         c.launcher.exits = 3; // [EST] wide multi-wheel shooter
       }),
     },
