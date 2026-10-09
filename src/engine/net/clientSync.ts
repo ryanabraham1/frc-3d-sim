@@ -24,6 +24,8 @@ const RESYNC_EVERY_MS = 1000;
 const MAX_OFFSET_STEP = 0.1;
 /** Packets this much later than the estimate, this many times in a row, mean the latency really changed:
  * re-anchor instead of creeping there. */
+/** Render time may run this much slower than real time (s/s) when the target jumps back. */
+const MAX_REWIND = 0.3;
 const LATE_RESET = 0.5;
 const LATE_RESET_RUN = 15;
 
@@ -62,6 +64,8 @@ export class ClientSync {
   /** Smoothed arrival jitter (s). */
   jitter = 0;
 
+  private lastRt = -Infinity;
+  private lastRtAt = 0;
   private offset: number | null = null;
   /** Consecutive snapshots that arrived more than LATE_RESET behind the clock estimate. */
   private lateRun = 0;
@@ -193,7 +197,10 @@ export class ClientSync {
     }
 
     const last = this.robotSnaps[this.robotSnaps.length - 1];
-    if (last && s.time < last.t) this.robotSnaps.length = 0; // host clock restarted
+    if (last && s.time < last.t) {
+      this.robotSnaps.length = 0; // host clock restarted
+      this.lastRt = -Infinity;
+    }
     const map = new Map<number, RobotNetState>();
     for (const r of s.robots) {
       map.set(r.id, r);
@@ -231,7 +238,11 @@ export class ClientSync {
   interpolate(localMs: number, skipRobot: number | null = null): void {
     this.requestResync(localMs);
     if (this.offset === null || !this.robotSnaps.length) return;
-    const rt = this.hostNow(localMs) - this.delay;
+    // Render time only slews backward slowly (clock re-estimates and delay changes must not rewind motion).
+    const target = this.hostNow(localMs) - this.delay;
+    const rt = Math.max(target, this.lastRt - MAX_REWIND * Math.max(0, (localMs - this.lastRtAt) / 1000));
+    this.lastRt = rt;
+    this.lastRtAt = localMs;
 
     const snaps = this.robotSnaps;
     let j = -1;

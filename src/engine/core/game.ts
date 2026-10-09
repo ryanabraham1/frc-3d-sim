@@ -1,6 +1,6 @@
 import { bodyState, restoreBody, captureFields, restoreFields, capturePilot, restorePilot } from '../net/recovery';
 import { spawnClearance } from '../robot/spawnClearance';
-import { Mesh, Vector3 } from 'three';
+import { Mesh, Quaternion, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
@@ -629,11 +629,14 @@ export class Game {
     }
     this.rules.updateVisuals(dt, this.time);
     // Host / solo: draw between the last two fixed physics steps (clients draw their own interpolated snapshots).
-    const alpha = this.role === 'client' ? 1 : clamp(this.acc / this.physics.dt, 0, 1);
+    // A client's predicted robot steps its own physics, so it needs the same sub-step blending (others are posed from snapshots).
+    const predicting = this.role === 'client' && !!this.predictor?.active;
+    const alpha = this.role !== 'client' || predicting ? clamp(this.acc / this.physics.dt, 0, 1) : 1;
     for (const r of this.robots) {
       r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= (this.season.endgameSeconds ?? 30);
-      r.syncVisual(undefined, alpha);
+      r.syncVisual(undefined, this.role === 'client' && r !== this.player ? 1 : alpha);
     }
+    if (predicting && this.player) this.applyPredictionOffset(this.player, dt);
     this.pool.syncVisuals(alpha);
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.visualPose ?? null, undefined, this.player?.visual.position.y ?? 0);
@@ -666,6 +669,18 @@ export class Game {
       this.fpsFrames = 0;
     }
   }
+
+  /** Draw the predicted robot eased from where it was before the last host correction. */
+  private applyPredictionOffset(robot: Robot, dt: number): void {
+    const pr = this.predictor!;
+    pr.decayOffset(dt);
+    if (!pr.offX && !pr.offZ && !pr.offYaw) return;
+    robot.visual.position.x += pr.offX;
+    robot.visual.position.z += pr.offZ;
+    if (pr.offYaw) robot.visual.quaternion.premultiply(this.offsetQuat.setFromAxisAngle(this.upAxis, pr.offYaw));
+  }
+  private readonly offsetQuat = new Quaternion();
+  private readonly upAxis = new Vector3(0, 1, 0);
 
   /** See-through whatever field element is between the camera and the player's robot, in every view. */
   private updateFader(dt: number): void {
@@ -981,6 +996,7 @@ export class Game {
       this.acc += clamp((now - this.lastPredict) / 1000, 0, 0.1);
       let steps = 0;
       while (this.acc >= fixed && steps < 5) {
+        p.capturePrevPose();
         p.drive(cmd, fixed);
         this.physics.step();
         this.acc -= fixed;

@@ -20,6 +20,10 @@ const SNAP_UP = 0.035;
 const MAX_RTT_SAMPLE = 1.0;
 /** Fraction of the measured error removed per snapshot (~30 Hz). */
 const BLEND = 0.3;
+const DEADZONE = 0.012;
+const DEADZONE_YAW = 0.012;
+/** Time constant of the drawn correction easing (s). */
+const OFFSET_TAU = 0.09;
 
 /**
  * Client-side prediction for the driver's own robot. The client drives its robot immediately with local
@@ -37,6 +41,11 @@ export class Predictor {
   rtt = 0;
   corrections = 0;
   snaps = 0;
+  /** Visual-only offsets (m / rad): each correction moves the body at once but is drawn eased out, so the
+   * robot glides to the host's pose instead of stepping 30 times a second. */
+  offX = 0;
+  offZ = 0;
+  offYaw = 0;
   private readonly hist: PoseSample[] = [];
   private readonly sendTimes = new Map<number, number>();
   private lastAck = 0;
@@ -53,6 +62,15 @@ export class Predictor {
     const pending = this.pending;
     this.pending = null;
     if (pending) this.onSnapshot(pending.state, pending.localMs, pending.running);
+  }
+
+  /** Ease the visual correction offsets toward zero (call once per drawn frame). */
+  decayOffset(dt: number): void {
+    const k = Math.exp(-dt / OFFSET_TAU);
+    this.offX *= k;
+    this.offZ *= k;
+    this.offYaw *= k;
+    if (Math.abs(this.offX) + Math.abs(this.offZ) + Math.abs(this.offYaw) < 1e-4) this.offX = this.offZ = this.offYaw = 0;
   }
 
   onSent(seq: number, localMs: number): void {
@@ -108,9 +126,14 @@ export class Predictor {
       this.snap(ss);
       return;
     }
-    const dx = ex * BLEND;
-    const dz = ez * BLEND;
-    const dy = ey * BLEND;
+    // Tiny errors are noise (RTT estimate wobble): correcting them every snapshot is visible jitter.
+    const dist = Math.hypot(ex, ez);
+    if (dist < DEADZONE && Math.abs(ey) < DEADZONE_YAW) return;
+    // Small errors are removed gently, large ones faster.
+    const blend = Math.min(0.6, BLEND * (0.5 + dist / 0.15));
+    const dx = ex * blend;
+    const dz = ez * blend;
+    const dy = ey * blend;
     const b = this.robot.body;
     const t = b.translation();
     // Turn the chassis by dy about world up, keeping its tilt.
@@ -124,6 +147,9 @@ export class Predictor {
       p.z += dz;
       p.yaw += dy;
     }
+    this.offX -= dx;
+    this.offZ -= dz;
+    this.offYaw -= dy;
     this.corrections++;
   }
 
@@ -136,6 +162,7 @@ export class Predictor {
     b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.robot.resetDriveState();
     this.hist.length = 0;
+    this.offX = this.offZ = this.offYaw = 0;
     this.snaps++;
   }
 
