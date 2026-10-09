@@ -19,6 +19,13 @@ const SNAP_DT = 1 / 30;
 const MAX_EXTRAPOLATE = 0.1;
 /** Minimum spacing between keyframe requests after missed snapshots (ms). */
 const RESYNC_EVERY_MS = 1000;
+/** Host-clock estimate: largest step one snapshot may move it (s), so a burst of late packets can't drag
+ * the render time backwards. */
+const MAX_OFFSET_STEP = 0.1;
+/** Packets this much later than the estimate, this many times in a row, mean the latency really changed:
+ * re-anchor instead of creeping there. */
+const LATE_RESET = 0.5;
+const LATE_RESET_RUN = 15;
 
 interface RobotSnap {
   t: number;
@@ -56,6 +63,8 @@ export class ClientSync {
   jitter = 0;
 
   private offset: number | null = null;
+  /** Consecutive snapshots that arrived more than LATE_RESET behind the clock estimate. */
+  private lateRun = 0;
   private lastSeq = -1;
   private lastResyncAt = -Infinity;
   private needsKeyframe = true;
@@ -110,23 +119,20 @@ export class ClientSync {
     this.bytesReceived += buf.byteLength;
     this.snapshots++;
     this.lastReceivedAt = localMs;
-    // Deltas are only safe when none were lost (the relay drops frames for peers that fall behind).
-    if (this.lastSeq >= 0 && s.seq !== this.lastSeq + 1 && !s.meta.key) {
+    // Snapshots go missing (the relay and the direct link drop frames for peers that fall behind). Every
+    // value in a snapshot is absolute (piece poses and states, rules keys), so later ones still apply; only
+    // what changed in the lost frame and not since is stale, and a keyframe fills that in. Freezing the
+    // pieces until the keyframe arrived (a round trip, after a cascade of dropped keyframes on a slow
+    // link) made every lost packet a visible hitch.
+    const gap = this.lastSeq >= 0 && s.seq !== this.lastSeq + 1 && !s.meta.key;
+    if (gap) {
       this.missed += Math.max(1, s.seq - this.lastSeq - 1);
       this.needsKeyframe = true;
     }
     if (s.meta.key) this.needsKeyframe = false;
     this.requestResync(localMs);
     this.lastSeq = s.seq;
-    const sample = s.time - localMs / 1000;
-    if (this.offset === null || Math.abs(sample - this.offset) > 0.5) {
-      this.offset = sample;
-      this.jitter = 0;
-    } else {
-      const err = sample - this.offset;
-      this.offset += err * 0.05;
-      this.jitter += (Math.abs(err) - this.jitter) * 0.05;
-    }
+    this.updateClock(s.time, localMs);
     // Enough delay for two snapshots plus the arrival jitter; eased so the view never jumps.
     const want = Math.min(MAX_INTERP_DELAY, Math.max(MIN_INTERP_DELAY, SNAP_DT * 1.5 + this.jitter * 2.5));
     this.delay += (want - this.delay) * 0.05;
@@ -137,7 +143,7 @@ export class ClientSync {
     this.countdown = m.cd;
     if (m.clock) clock.restore(m.clock);
     if (m.score) score.restore(m.score);
-    if (!this.needsKeyframe && rules.applyNetState) {
+    if (rules.applyNetState) {
       if (m.rules !== undefined) {
         this.rulesState = m.rules && typeof m.rules === 'object' && !Array.isArray(m.rules) ? { ...(m.rules as Record<string, unknown>) } : null;
         rules.applyNetState(m.rules);
@@ -146,7 +152,7 @@ export class ClientSync {
         rules.applyNetState(this.rulesState);
       }
     }
-    for (const [i, x, y, z, w] of this.needsKeyframe ? [] : m.rotations ?? []) {
+    for (const [i, x, y, z, w] of m.rotations ?? []) {
       if (i >= 0 && i < pool.count) {
         pool.setReplicaRotation(i, x, y, z, w);
         this.settled[i] = 0;
@@ -159,14 +165,15 @@ export class ClientSync {
       this.gotKeyframe = true;
       for (let i = 0; i < pool.count; i++) fresh.add(i);
     }
-    for (const [i, code, owner, tag] of this.needsKeyframe ? [] : m.pieces ?? []) {
+    for (const [i, code, owner, tag] of m.pieces ?? []) {
       if (i < 0 || i >= pool.count) continue;
       const st = STATES[code] ?? 'reserve';
-      if (st === 'field' && pool.state[i] !== 'field') fresh.add(i);
+      // After a gap the piece may have left the field and come back in between: place it, don't slide it.
+      if (st === 'field' && (gap || pool.state[i] !== 'field')) fresh.add(i);
       this.settled[i] = 0;
       pool.applyReplicaState(i, st, owner, tag);
     }
-    for (let k = 0; !this.needsKeyframe && k < s.pieceIdx.length; k++) {
+    for (let k = 0; k < s.pieceIdx.length; k++) {
       const i = s.pieceIdx[k];
       if (i >= pool.count) continue;
       const j = i * 3;
@@ -196,6 +203,26 @@ export class ClientSync {
     this.robotSnaps.push({ t: s.time, robots: map });
     if (this.robotSnaps.length > 16) this.robotSnaps.shift();
     return s;
+  }
+
+  /**
+   * Track the host clock (offset from local time) from snapshot arrivals. Late packets (a stall, then a
+   * burst) move the estimate by at most MAX_OFFSET_STEP each: re-anchoring on one of them rewound every
+   * robot by the length of the stall and then fast-forwarded it again.
+   */
+  private updateClock(hostTime: number, localMs: number): void {
+    const sample = hostTime - localMs / 1000;
+    const err = this.offset === null ? 0 : sample - this.offset;
+    this.lateRun = err < -LATE_RESET ? this.lateRun + 1 : 0;
+    // First snapshot, host clock restarted, packets now arrive much sooner, or latency stayed much higher.
+    if (this.offset === null || hostTime < this.latestTime - 1 || err > LATE_RESET || this.lateRun >= LATE_RESET_RUN) {
+      this.offset = sample;
+      this.jitter = 0;
+      this.lateRun = 0;
+      return;
+    }
+    this.offset += Math.max(-MAX_OFFSET_STEP, Math.min(MAX_OFFSET_STEP, err)) * 0.05;
+    this.jitter += (Math.min(Math.abs(err), MAX_INTERP_DELAY) - this.jitter) * 0.05;
   }
 
   /**

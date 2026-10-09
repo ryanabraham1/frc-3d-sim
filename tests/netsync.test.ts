@@ -239,7 +239,7 @@ describe('ClientSync', () => {
     p.dispose();
   });
 
-  it('retries a lost resync and keeps incomplete piece deltas out of the replica until a keyframe', () => {
+  it('retries a lost resync, and the keyframe fills in a state change that was lost', () => {
     const p = pair('2026-rebuilt');
     const { h, cs, c, hostSim, clientSim } = p;
     h.hs.sendSnapshot(0);
@@ -260,6 +260,67 @@ describe('ClientSync', () => {
     expect(clientSim.pool.tag[i]).toBe('missed');
     cs.interpolate(3000);
     expect(c.sent).toHaveLength(2);
+    p.dispose();
+  });
+
+  it('keeps moving pieces live through lost snapshots (regression: client lag spikes)', () => {
+    const p = pair('2026-rebuilt');
+    const { h, cs, hostSim, clientSim } = p;
+    settle(hostSim);
+    h.hs.sendSnapshot(0);
+    cs.onBinary(h.frames[0], 0);
+    const i = hostSim.pool.indices('field')[0];
+    hostSim.pool.bodies[i].applyImpulse({ x: 0, y: 0.5, z: 0 }, true);
+    hostSim.run(0.05);
+    h.hs.sendSnapshot(1 / 30); // lost
+    hostSim.run(0.05);
+    h.hs.sendSnapshot(2 / 30);
+    expect(decodeSnapshot(h.frames[2])!.pieceIdx).toContain(i);
+    cs.onBinary(h.frames[2], 67);
+    expect(cs.missed).toBe(1);
+    cs.interpolate(67 + 1000);
+    // The newest position is applied right away instead of waiting a round trip (or more) for a keyframe.
+    expect(clientSim.pool.bodies[i].translation().y).toBeCloseTo(hostSim.pool.bodies[i].translation().y, 1);
+    p.dispose();
+  });
+
+  it('applies rules patches that arrive after a lost snapshot', () => {
+    const p = pair('2025-reefscape');
+    p.h.hs.sendSnapshot(0);
+    p.cs.onBinary(p.h.frames[0], 0);
+    p.h.hs.sendSnapshot(1 / 30); // lost
+    const cage = (p.hostSim.rules as unknown as { refs: { cages: { blue: { push(fx: number, fy: number): void }[] } } }).refs.cages.blue[0];
+    cage.push(40, 0);
+    p.hostSim.run(0.1);
+    p.h.hs.sendSnapshot(0.1);
+    p.cs.onBinary(p.h.frames[2], 100);
+    expect(p.applied.length).toBe(2);
+    expect((p.applied[1] as Record<string, unknown>).cages).toEqual(JSON.parse(JSON.stringify((p.hostSim.rules.netState!() as Record<string, unknown>).cages)));
+    p.dispose();
+  });
+
+  it('does not rewind the host clock when a stalled burst of snapshots arrives', () => {
+    const p = pair('2026-rebuilt');
+    const { h, cs } = p;
+    for (let k = 0; k < 90; k++) h.hs.sendSnapshot(k / 30);
+    for (let k = 0; k < 60; k++) cs.onBinary(h.frames[k], (k * 1000) / 30);
+    const before = cs.hostNow(2000);
+    // 600 ms stall, then the backlog arrives at once.
+    for (let k = 60; k < 78; k++) cs.onBinary(h.frames[k], 2600);
+    // Render time may ease back a little, never jump back by the stall.
+    expect(cs.hostNow(2000)).toBeGreaterThan(before - 0.1);
+    for (let k = 78; k < 90; k++) cs.onBinary(h.frames[k], (k * 1000) / 30);
+    expect(Math.abs(cs.hostNow(3000) - 3)).toBeLessThan(0.1);
+    p.dispose();
+  });
+
+  it('re-anchors the host clock when latency stays much higher', () => {
+    const p = pair('2026-rebuilt');
+    const { h, cs } = p;
+    for (let k = 0; k < 90; k++) h.hs.sendSnapshot(k / 30);
+    for (let k = 0; k < 30; k++) cs.onBinary(h.frames[k], (k * 1000) / 30);
+    for (let k = 30; k < 90; k++) cs.onBinary(h.frames[k], (k * 1000) / 30 + 800);
+    expect(Math.abs(cs.hostNow(3800) - 89 / 30)).toBeLessThan(0.1);
     p.dispose();
   });
 

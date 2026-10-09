@@ -5,10 +5,20 @@ export interface DirectSignal {
   description?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
 }
+/** Reliable, ordered: commands and anything that must arrive. */
+const GAME_CHANNEL = 'frc-game';
+/**
+ * Unreliable, unordered: host snapshots. Each snapshot supersedes the last, so a lost packet must not hold
+ * back the ones behind it until it is retransmitted (head-of-line blocking showed up as stalls followed by
+ * bursts on lossy Wi-Fi). Clients recover lost deltas with a keyframe.
+ */
+const SNAPSHOT_CHANNEL = 'frc-snap';
+
 interface Link {
   session: string;
   pc: RTCPeerConnection;
   channel: RTCDataChannel | null;
+  snapshots: RTCDataChannel | null;
   timer: ReturnType<typeof setTimeout>;
   advertised: boolean;
   candidates: RTCIceCandidateInit[];
@@ -38,7 +48,7 @@ export class DirectTransport {
   private make(peer: string, session: string): Link {
     this.drop(peer);
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
-    const link: Link = { session, pc, channel: null, advertised: false, candidates: [], timer: setTimeout(() => {
+    const link: Link = { session, pc, channel: null, snapshots: null, advertised: false, candidates: [], timer: setTimeout(() => {
       if (import.meta.env.DEV) console.debug('Direct connection timed out; using relay', pc.connectionState, pc.iceConnectionState);
       this.drop(peer);
     }, 15000) };
@@ -53,8 +63,9 @@ export class DirectTransport {
       if (this.links.get(peer) === link && ['failed', 'closed', 'disconnected'].includes(pc.connectionState)) this.drop(peer);
     };
     pc.ondatachannel = e => {
-      if (e.channel.label !== 'frc-game' || link.channel) { e.channel.close(); return; }
-      this.attach(peer, link, e.channel);
+      if (e.channel.label === SNAPSHOT_CHANNEL && !link.snapshots) this.attachSnapshots(peer, link, e.channel);
+      else if (e.channel.label === GAME_CHANNEL && !link.channel) this.attach(peer, link, e.channel);
+      else e.channel.close();
     };
     return link;
   }
@@ -75,6 +86,17 @@ export class DirectTransport {
     };
   }
 
+  /** The snapshot channel is an optimisation: losing it falls back to the game channel, not to the relay. */
+  private attachSnapshots(peer: string, link: Link, channel: RTCDataChannel): void {
+    link.snapshots = channel;
+    channel.binaryType = 'arraybuffer';
+    channel.onclose = channel.onerror = () => { if (link.snapshots === channel) link.snapshots = null; };
+    channel.onmessage = e => {
+      if (this.links.get(peer) !== link || link.snapshots !== channel) return;
+      if (e.data instanceof ArrayBuffer && e.data.byteLength <= MAX_FRAME_BYTES) this.receive(peer, e.data);
+    };
+  }
+
   private advertise(peer: string, link: Link): void {
     if (this.links.get(peer) !== link || !link.pc.localDescription) return;
     this.signal(peer, { session: link.session, description: link.pc.localDescription.toJSON() });
@@ -86,7 +108,8 @@ export class DirectTransport {
     if (!this.available) return;
     try {
       const link = this.make(peer, crypto.randomUUID());
-      this.attach(peer, link, link.pc.createDataChannel('frc-game', { ordered: true }));
+      this.attach(peer, link, link.pc.createDataChannel(GAME_CHANNEL, { ordered: true }));
+      this.attachSnapshots(peer, link, link.pc.createDataChannel(SNAPSHOT_CHANNEL, { ordered: false, maxRetransmits: 0 }));
       await link.pc.setLocalDescription(await link.pc.createOffer());
       this.advertise(peer, link);
     } catch (error) {
@@ -124,15 +147,20 @@ export class DirectTransport {
   /** False means the caller should use the relay. Snapshots skip congested direct peers. */
   send(peer: string, data: string | ArrayBuffer): boolean {
     const link = this.links.get(peer);
-    const channel = link?.channel;
-    if (!channel || channel.readyState !== 'open') return false;
+    if (!link?.channel || link.channel.readyState !== 'open') return false;
+    const snapshots = data instanceof ArrayBuffer && link.snapshots?.readyState === 'open' ? link.snapshots : null;
+    const channel = snapshots ?? link.channel;
     if (channel.bufferedAmount > MAX_BINARY_BACKLOG) return data instanceof ArrayBuffer;
     const size = typeof data === 'string' ? new TextEncoder().encode(data).byteLength : data.byteLength;
-    if (size > (link!.pc.sctp?.maxMessageSize || 65536)) return false;
+    if (size > (link.pc.sctp?.maxMessageSize || 65536)) return false;
     try {
       if (typeof data === 'string') channel.send(data); else channel.send(data);
       return true;
-    } catch { this.drop(peer); return false; }
+    } catch {
+      if (channel === snapshots) link.snapshots = null; // this frame goes by relay, later ones by the game channel
+      else this.drop(peer);
+      return false;
+    }
   }
 
   drop(peer: string): void {
@@ -141,8 +169,11 @@ export class DirectTransport {
     this.links.delete(peer);
     clearTimeout(link.timer);
     link.pc.onconnectionstatechange = null;
-    if (link.channel) link.channel.onclose = link.channel.onerror = null;
-    link.channel?.close();
+    for (const channel of [link.channel, link.snapshots]) {
+      if (!channel) continue;
+      channel.onclose = channel.onerror = null;
+      channel.close();
+    }
     link.pc.close();
     this.changed(peer);
   }
