@@ -74,12 +74,12 @@ describe.each(SEASONS.map((s) => [s.id, s] as const))('match logger %s', (_id, s
     expect(f.team).toBe(first.config.teamNumber);
     // A tweaked build is still described by its mechanisms, labelled custom.
     const tweaked = cloneConfig(first.config);
-    tweaked.mass += 3;
+    tweaked.mass -= 3; // down, so the season's max-weight clamp can't undo it
     const sim2 = new HeadlessSim(season, RAPIER, { robot: tweaked, alliance: 'blue', pose: season.startPose('blue', 1), log: true });
     sims.push(sim2);
     const h2 = parse(sim2.log!.toJSONL())[0].robots[0].archetype;
     expect(h2.label).toMatch(/^(custom|model:)/);
-    expect(h2.features.mass).toBeCloseTo(first.config.mass + 3, 5);
+    expect(h2.features.mass).toBeCloseTo(sim2.robot.config.mass, 5);
   });
 
   it('logs launches', () => {

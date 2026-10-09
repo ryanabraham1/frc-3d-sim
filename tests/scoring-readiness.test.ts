@@ -47,7 +47,7 @@ describe('2026 shooting while tracking',()=>{
   const config=cloneConfig(season.robotDefaults);config.model=undefined;config.launcher.turret=true;config.aimAssist='full';
   config.launcher.spread=0;config.launcher.speedError=0;
   const sim=new HeadlessSim(season,RAPIER,{robot:config,alliance:'blue',pose:{x:2,y:2,yaw:0}});sims.push(sim);
-  const r=sim.robot;r.held.push(-1);r.lastCommand={...IDLE_COMMAND,shoot:true};
+  const r=sim.robot;r.shootWhileTracking=true;r.held.push(-1);r.lastCommand={...IDLE_COMMAND,shoot:true};
   r.body.setLinvel({x:speed,y:0,z:speed*.5},true);
   r.turretYaw=0;
   (r as unknown as { shooterPitch:number }).shooterPitch=.2;

@@ -66,6 +66,7 @@ it.each([4414, 1323, 5940, 3476])('team %s keeps releasing fuel while driving an
   sims.push(sim);
   sim.load(c.hopperCapacity);
   const r = sim.robot;
+  r.shootWhileTracking = true; // as in the game (HeadlessSim defaults to settled-aim shots)
   r.enabled = true;
   r.lastCommand = { ...IDLE_COMMAND, shoot: true };
   // Prescribed chassis motion isolates actuator tracking from field collisions and driver auto-align.

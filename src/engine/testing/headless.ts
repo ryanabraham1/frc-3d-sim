@@ -50,7 +50,7 @@ export class HeadlessSim {
     const cfg = season.normalizeRobotConfig?.(opts.robot) ?? sanitizeConfig(opts.robot, season.maxRobotHeight, season.maxRobotPerimeter);
     this.robot = new Robot(this.physics, scene, this.frame, cfg, opts.alliance, 0, opts.station ?? 1, opts.pose);
     this.robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
-    this.robot.shootWhileTracking = season.id === '2026-rebuilt';
+    this.robot.shootWhileTracking = false; // settled-aim shots; game.ts enables shoot-while-tracking for REBUILT, tests opt in
     this.robot.controller = 'player';
     season.configureRobot?.(this.robot);
     this.robot.attachPool(this.pool);
@@ -88,7 +88,7 @@ export class HeadlessSim {
       const config = season.normalizeRobotConfig?.(extra.config) ?? sanitizeConfig(extra.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, scene, this.frame, config, extra.alliance, extra.id, extra.station, extra.pose);
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
-      robot.shootWhileTracking = season.id === '2026-rebuilt';
+      robot.shootWhileTracking = false;
       robot.controller = 'bot';
       season.configureRobot?.(robot);
       robot.attachPool(this.pool);

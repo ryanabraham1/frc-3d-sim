@@ -147,20 +147,21 @@ it('every stock 2026 robot (presets and real team robots) weighs 150 lb, and the
   expect(season.maxRobotWeight).toBeGreaterThanOrEqual(lb(150));
 });
 
-it('a chassis-aimed dumper keeps firing when shoved a few degrees off the HUB, but not when knocked well off', () => {
-  const fire = (offset: number) => {
+it('a chassis-aimed dumper keeps firing once a burst is under way, but holds a fresh burst until aligned', () => {
+  const fire = (offset: number, burst: boolean) => {
     const pos = { x: 2.4, y: C.HUB_CENTER.y };
     const bearing = Math.atan2(C.HUB_CENTER.y - pos.y, C.HUB_CENTER.x - pos.x);
-    const sim = new HeadlessSim(season, RAPIER, { robot: team(254), alliance: 'blue', pose: { ...pos, yaw: bearing + offset } }); sims.push(sim);
+    const sim = new HeadlessSim(season, RAPIER, { robot: team(254), alliance: 'blue', pose: { ...pos, yaw: bearing } }); sims.push(sim);
     const r = sim.robot;
     sim.load(5);
     const target = sim.rules.aimTarget(r);
-    r.autoAlign({ ...IDLE_COMMAND, shoot: true }, target);
-    r.launch(target, sim.rng); // too early (hood still stowed), but it records the solved hood angle
-    sim.run(0.6, { ...IDLE_COMMAND, aim: true }); // let the hood reach it
-    r.autoAlign({ ...IDLE_COMMAND, shoot: true }, target);
+    r.shootWhileTracking = true; // isolate the chassis-alignment gate from the hood settling
+    r.alignError = offset; // chassis shoved off the HUB (autoAlign would recompute it, so set it after)
+    (r as unknown as { burstTime: number }).burstTime = burst ? 0.3 : 0;
     return r.launch(target, sim.rng) !== null;
   };
-  expect(fire(0.12)).toBe(true); // ~7° off: used to hold fire until within 3°
-  expect(fire(0.3)).toBe(false);
+  // REBUILT dumpers start a burst within 0.15 rad (~8.6°) of the HUB; once it is under way they keep firing.
+  expect(fire(0.12, false)).toBe(true);
+  expect(fire(0.3, false)).toBe(false); // a fresh burst waits until aligned
+  expect(fire(0.3, true)).toBe(true); // mid-burst the servo keeps the stream going
 });
