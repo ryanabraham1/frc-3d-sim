@@ -7,7 +7,8 @@ let initPromise: Promise<RapierModule> | null = null;
 
 /** Load the Rapier WASM module once. */
 export function loadRapier(): Promise<RapierModule> {
-  if (!initPromise) initPromise = RAPIER.init().then(() => RAPIER);
+  // A failed init must not stay cached, or every retry would reject instantly and the loading screen could never recover.
+  if (!initPromise) initPromise = RAPIER.init().then(() => RAPIER, (e) => { initPromise = null; throw e; });
   return initPromise;
 }
 

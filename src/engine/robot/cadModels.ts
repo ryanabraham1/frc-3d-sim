@@ -45,12 +45,18 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 }
 
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
-export async function prepareCadModels(ids: readonly (string | undefined)[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS]): Promise<void> {
+export async function prepareCadModels(
+  ids: readonly (string | undefined)[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS],
+  opts: { timeoutMs?: number; onProgress?: (done: number, total: number) => void } = {},
+): Promise<void> {
   if (typeof document === 'undefined') return;
   const requested = ids.flatMap(id => id ? [CAD_ALIASES[id] ?? id,...(CAD_DONOR_DEPENDENCIES[id] ?? [])] : []);
   const assetIds: readonly string[] = [...HERO_CAD_MODEL_IDS.filter(id => !(id in CAD_ALIASES)),...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor'];
-  await Promise.all([...new Set(requested)].filter(id => assetIds.includes(id)).map(id => {
-    if (assets.has(id)) return Promise.resolve();
+  const wanted = [...new Set(requested)].filter(id => assetIds.includes(id));
+  let done = 0;
+  opts.onProgress?.(0, wanted.length);
+  const all = Promise.all(wanted.map(id => {
+    if (assets.has(id)) { opts.onProgress?.(++done, wanted.length); return Promise.resolve(); }
     let request = pending.get(id);
     if (!request) {
       request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(HERO_CAD_MODEL_IDS as readonly string[]).includes(id) ? 'wcp-hero-heist' : (CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${id}.glb`)
@@ -59,8 +65,15 @@ export async function prepareCadModels(ids: readonly (string | undefined)[] = [.
         .finally(() => { pending.delete(id); });
       pending.set(id, request);
     }
-    return request;
+    return request.then(() => { opts.onProgress?.(++done, wanted.length); });
   }));
+  // A stalled download must not hold the match hostage: after the limit, robots whose CAD hasn't arrived use their
+  // procedural model. The requests keep running, so the CAD is cached for the next match.
+  if (!opts.timeoutMs) { await all; return; }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>(resolve => { timer = setTimeout(() => { console.warn(`CAD models still loading after ${opts.timeoutMs} ms; starting with procedural models for the rest.`); resolve(); }, opts.timeoutMs); });
+  await Promise.race([all, timeout]);
+  clearTimeout(timer);
 }
 
 /** Independent geometry/material ownership for photo-fitted donor mechanisms. */

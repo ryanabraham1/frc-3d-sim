@@ -1049,3 +1049,9 @@ body.touch-ui,
 body.touch-ui .stage {
   touch-action: none;
 }
+.loading.failed::before {
+  display: none;
+}
+.loading.failed {
+  text-align: center;
+}
