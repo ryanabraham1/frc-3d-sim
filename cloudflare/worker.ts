@@ -67,6 +67,7 @@ export class RelayCoordinator extends DurableObject<Env> {
       this.hub = new WorkerSockets();
       this.relay = createRelayCore(this.hub as unknown as WebSocketServer, {
         serverPings: false,
+        log: (msg: string) => console.log(msg),
         rankedStore: createRankedStore({ SUPABASE_URL: this.env.SUPABASE_URL, SUPABASE_SERVICE_KEY: this.env.SUPABASE_SERVICE_KEY }),
       });
     }
