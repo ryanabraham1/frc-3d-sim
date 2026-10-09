@@ -19,7 +19,7 @@ it('requires every scoring joint to reach its goal and invalidates readiness on 
  // A nested model cannot overwrite a pending outer actuator.
  expect(collectScoringReadiness(()=>{scoringActuator(0,1,1,.01);collectScoringReadiness(()=>{});})).toBe(false);
 });
-for(const season of SEASONS.filter(s=>s.year!==2025)) {
+for(const season of SEASONS.filter(s=>s.year!==2025 && s.year!==2026)) {
  describe(`${season.year} scoring readiness`,()=>{
   it.each([0, 2])('waits for turret yaw and pitch at %s m/s, then fires; changing target holds fire again',(speed)=>{
    const config=cloneConfig(season.robotDefaults);config.model=undefined;config.launcher.turret=true;config.aimAssist='full';
@@ -40,3 +40,23 @@ for(const season of SEASONS.filter(s=>s.year!==2025)) {
   });
  });
 }
+
+describe('2026 shooting while tracking',()=>{
+ it.each([0, 6])('fires from the current turret and hood pose at %s m/s',(speed)=>{
+  const season=SEASONS.find(s=>s.year===2026)!;
+  const config=cloneConfig(season.robotDefaults);config.model=undefined;config.launcher.turret=true;config.aimAssist='full';
+  config.launcher.spread=0;config.launcher.speedError=0;
+  const sim=new HeadlessSim(season,RAPIER,{robot:config,alliance:'blue',pose:{x:2,y:2,yaw:0}});sims.push(sim);
+  const r=sim.robot;r.held.push(-1);r.lastCommand={...IDLE_COMMAND,shoot:true};
+  r.body.setLinvel({x:speed,y:0,z:speed*.5},true);
+  r.turretYaw=0;
+  (r as unknown as { shooterPitch:number }).shooterPitch=.2;
+  // Even an unsettled model must not prevent a FUEL shot.
+  Object.defineProperty(r,'scoringMechanismReady',{get:()=>false});
+  const shot=r.launch({point:sim.frame.toWorld(2,5,2)},new Rng(7));
+  expect(shot).not.toBeNull();expect(r.fireCooldown).toBeGreaterThan(0);
+  const vx=shot!.vel.x-speed, vz=shot!.vel.z-speed*.5;
+  expect(Math.atan2(-vz,vx)).toBeCloseTo(0,6);
+  expect(Math.atan2(shot!.vel.y,Math.hypot(vx,vz))).toBeCloseTo(.2,6);
+ });
+});

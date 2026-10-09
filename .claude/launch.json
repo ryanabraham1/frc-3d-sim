@@ -60,6 +60,19 @@
         "--strictPort"
       ],
       "port": 5181
+    },
+    {
+      "name": "capacity-check",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5182",
+        "--strictPort"
+      ],
+      "port": 5182
     }
   ]
 }

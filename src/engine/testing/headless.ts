@@ -12,6 +12,8 @@ import { Rng } from '../random';
 import { RobotConfig, sanitizeConfig } from '../robot/config';
 import { IDLE_COMMAND, Robot, RobotCommand } from '../robot/robot';
 import { drainSpilled } from '../robot/spill';
+import { describeArchetype } from '../telemetry/archetype';
+import { MatchLogger, SRC } from '../telemetry/matchLogger';
 
 /**
  * HEADLESS SIMULATION — a season's real field + Rapier physics + one robot, in Node (no DOM, no renderer).
@@ -31,11 +33,13 @@ export class HeadlessSim {
   fired = 0;
   allClear = true;
   spawnGap = Infinity;
+  /** Match log (opt in with `log: true`; this also starts the match clock and advances it each step). */
+  readonly log?: MatchLogger;
 
   constructor(
     readonly season: SeasonDefinition,
     R: RapierModule,
-    opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number; station?: number;
+    opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number; station?: number; log?: boolean;
       extraRobots?: { config: RobotConfig; alliance: Alliance; station: number; pose: FieldPose; id: number }[] },
   ) {
     this.physics = new PhysicsWorld(R, 1 / 90);
@@ -46,6 +50,7 @@ export class HeadlessSim {
     const cfg = season.normalizeRobotConfig?.(opts.robot) ?? sanitizeConfig(opts.robot, season.maxRobotHeight, season.maxRobotPerimeter);
     this.robot = new Robot(this.physics, scene, this.frame, cfg, opts.alliance, 0, opts.station ?? 1, opts.pose);
     this.robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+    this.robot.shootWhileTracking = season.id === '2026-rebuilt';
     this.robot.controller = 'player';
     season.configureRobot?.(this.robot);
     this.robot.attachPool(this.pool);
@@ -83,6 +88,7 @@ export class HeadlessSim {
       const config = season.normalizeRobotConfig?.(extra.config) ?? sanitizeConfig(extra.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, scene, this.frame, config, extra.alliance, extra.id, extra.station, extra.pose);
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.shootWhileTracking = season.id === '2026-rebuilt';
       robot.controller = 'bot';
       season.configureRobot?.(robot);
       robot.attachPool(this.pool);
@@ -90,6 +96,11 @@ export class HeadlessSim {
     }
     season.buildField(this.ctx);
     this.rules = season.createRules(this.ctx);
+    if (opts.log) {
+      this.log = new MatchLogger(this.ctx, (r) => (r.controller === 'bot' ? SRC.bot : SRC.human),
+        { describe: (r) => describeArchetype(season, r.config), seasonId: season.id, seed: opts.seed ?? 1, fieldLength: season.fieldLength, fieldWidth: season.fieldWidth, mode: 'headless' });
+      this.rules.onPeriodChange(this.ctx.clock.start());
+    }
   }
 
   /** Give the robot n pieces straight from the reserve (nothing staged on the field). */
@@ -109,6 +120,7 @@ export class HeadlessSim {
   step(cmd: RobotCommand = IDLE_COMMAND): void {
     const { robot, pool, rules, physics } = this;
     const dt = physics.dt;
+    if (this.log) for (const ch of this.ctx.clock.advance(dt)) rules.onPeriodChange(ch);
     robot.enabled = true;
     if (rules.adjustCommand) cmd = rules.adjustCommand(robot, cmd, dt);
     const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(robot) : rules.aimTarget(robot);
@@ -130,6 +142,7 @@ export class HeadlessSim {
         pool.placeWorld(idx, shot.pos, shot.vel);
         robot.noteLaunch(idx);
         rules.onLaunch(robot, idx);
+        this.log?.launch(robot, idx, shot.vel);
         this.fired++;
         this.allClear &&= robot.lastShotClear;
         this.spawnGap = Math.min(this.spawnGap, spawnClearance(robot, shot.pos, pool.colliderRadius, pool.colliderHalfHeight));
@@ -152,6 +165,7 @@ export class HeadlessSim {
     pool.updateDamping();
     physics.step();
     rules.afterStep(dt);
+    this.log?.step();
   }
 
   run(seconds: number, cmd: RobotCommand = IDLE_COMMAND, until?: () => boolean): void {

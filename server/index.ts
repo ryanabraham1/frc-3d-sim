@@ -9,6 +9,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { attachRelay } from './relay.ts';
+import { createMatchLogStore, matchLogHandler } from './matchLogs.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -32,12 +33,19 @@ if (!existsSync(join(DIST, 'index.html'))) {
   console.warn(`[serve] ${DIST}/index.html not found — run "npm run build" first. Relay will still run.`);
 }
 
+const trustProxy = (process.env.TRUST_PROXY ?? (process.env.RENDER ? '1' : '0')) === '1';
+const matchLogs = matchLogHandler(createMatchLogStore(), { trustProxy, log: (m) => console.log(`[match-logs] ${m}`) });
+
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   if (url.pathname === '/healthz') {
     // CORS so a site hosted elsewhere (e.g. Vercel) can wake/check this relay.
     res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
     res.end(`ok rooms=${relay.roomCount()} public=${relay.publicRoomCount()}`);
+    return;
+  }
+  if (url.pathname === '/api/match-logs') {
+    matchLogs(req, res);
     return;
   }
   let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
@@ -63,7 +71,7 @@ const server = createServer((req, res) => {
   createReadStream(file).pipe(res);
 });
 
-const relay = attachRelay(server, { rejectOtherPaths: true, trustProxy: (process.env.TRUST_PROXY ?? (process.env.RENDER ? '1' : '0')) === '1', log: (m) => console.log(`[relay] ${m}`) });
+const relay = attachRelay(server, { rejectOtherPaths: true, trustProxy, log: (m) => console.log(`[relay] ${m}`) });
 
 server.listen(PORT, HOST, () => {
   console.log(`[serve] http://localhost:${PORT}  (relay at ws://localhost:${PORT}/ws)`);

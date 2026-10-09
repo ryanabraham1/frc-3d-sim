@@ -1900,6 +1900,9 @@ export class Robot {
     return lowestClear ?? fallback;
   }
 
+  /** Season policy: allow shots while the turret, hood, or model is still tracking. */
+  shootWhileTracking = false;
+
   /** Shared moving-shot target for actuator tracking and release readiness. */
   private solveMovingShot(pos: THREE.Vector3, target: AimTarget): { speed: number; angle: number; yaw: number; clear: boolean } {
     const c = this.config.launcher, rv = this.body.linvel();
@@ -1978,12 +1981,14 @@ export class Robot {
       this.lastShotClear = sol.clear;
       if (this.config.aimAssist === 'full' && c.turret) {
         aimYaw = sol.yaw;
-        if (Math.abs(wrapAngle(aimYaw-this.turretYaw)) > (c.alignTolerance ?? .05)) return null;
+        if (!this.shootWhileTracking && Math.abs(wrapAngle(aimYaw-this.turretYaw)) > (c.alignTolerance ?? .05)) return null;
         aimYaw = this.turretYaw;
       }
     }
+    if (!this.shootWhileTracking && (Math.abs(theta-this.shooterPitch) > .035 || !this.scoringMechanismReady)) return null;
+    // Fire from the current actuator pose; tracking lag remains a physical aiming error.
+    if (this.shootWhileTracking) theta = this.shooterPitch;
     this.lastShotAngle = theta;
-    if (Math.abs(theta-this.shooterPitch) > .035 || !this.scoringMechanismReady) return null;
     this.exitIndex++;
     this.burstTime = BURST_HOLD_S;
     this.fireCooldown = 1 / c.rate;

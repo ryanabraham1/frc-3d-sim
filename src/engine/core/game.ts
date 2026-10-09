@@ -19,6 +19,9 @@ import type { NetClient } from '../net/netClient';
 import type { ClientMsg, HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
 import { slotId } from '../net/protocol';
 import { Ticker } from '../net/ticker';
+import { describeArchetype } from '../telemetry/archetype';
+import { MatchLogger, SRC } from '../telemetry/matchLogger';
+import { downloadText, installConsoleHelpers, logFileName, saveLog } from '../telemetry/store';
 import { PhysicsWorld, RapierModule } from '../physics/world';
 import { Rng } from '../random';
 import { OcclusionFader } from '../render/occlusionFader';
@@ -167,6 +170,9 @@ export class Game {
    */
   simSpeed = 1;
   private time = 0;
+  /** Records the humans' commands and the world for imitation learning (host / solo only). `?log=0` turns it off. */
+  private matchLog: MatchLogger | null = null;
+  private savedLog: { name: string; text: string } | null = null;
   /** Host sim time (s) — advances only while stepping. */
   private simTime = 0;
   private stepsSinceSnap = 0;
@@ -242,6 +248,7 @@ export class Game {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.shootWhileTracking = season.id === '2026-rebuilt';
       robot.controller = rs.bot ? 'bot' : 'player';
       season.configureRobot?.(robot);
       // Held FUEL becomes real physics bodies only where it is worth the step time (see QualityProfile); everyone else
@@ -264,6 +271,14 @@ export class Game {
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     this.player = mine ? this.robots.find((r) => r.id === mine.id)! : null;
     this.player?.showIntakeGuide(true);
+    if (this.role !== 'client' && new URLSearchParams(location.search).get('log') !== '0') {
+      this.matchLog = new MatchLogger(
+        this,
+        (r) => r.controller === 'bot' ? SRC.bot : this.manual(r) ? SRC.human : SRC.autopilot,
+        { describe: (r) => describeArchetype(season, r.config), seasonId: season.id, seed: this.setup.seed, fieldLength: season.fieldLength, fieldWidth: season.fieldWidth, mode: this.role },
+      );
+      installConsoleHelpers();
+    }
     this.scoringLevel = Math.min(this.scoringLevel, this.player?.config.placement?.maxLevel ?? this.scoringLevel);
     this.climbLevel = Math.min(season.maxClimbLevel, this.player?.config.climber.maxLevel ?? season.maxClimbLevel);
 
@@ -851,6 +866,7 @@ export class Game {
           this.pool.placeWorld(idx, shot.pos, shot.vel);
           r.noteLaunch(idx);
           this.rules.onLaunch(r, idx);
+          this.matchLog?.launch(r, idx, shot.vel);
         }
       }
     }
@@ -887,6 +903,7 @@ export class Game {
     this.pool.updateDamping();
     this.physics.step();
     this.rules.afterStep(dt);
+    this.matchLog?.step();
   }
 
   private onPeriodChange(ch: PeriodChange): void {
@@ -1103,6 +1120,7 @@ export class Game {
     const res = this.rules.results();
     Object.assign(res, buildPlayerResults(res, this.score, this.setup.robots.map((rs) => ({ id: rs.id, alliance: rs.alliance, name: rs.name, team: rs.config.teamNumber })), this.season.foulValues, 'Game pieces'));
     this.results = res;
+    this.persistLog({ red: this.score.total('red'), blue: this.score.total('blue') });
     const html = Hud.resultsHtml(res, { red: this.score.total('red'), blue: this.score.total('blue') });
     if (this.role === 'host') {
       this.hostSync?.requestKeyframe();
@@ -1112,13 +1130,30 @@ export class Game {
         { label: 'Play again', primary: true, onClick: () => this.callbacks.onPlayAgain?.() },
         { label: 'Back to lobby', onClick: () => this.callbacks.onBackToLobby?.() },
         { label: 'Leave room', onClick: () => this.callbacks.onExit() },
-      ] : [{ label: 'Leave', primary: true, onClick: () => this.callbacks.onExit() }]);
+        ...this.logButton(),
+      ] : [{ label: 'Leave', primary: true, onClick: () => this.callbacks.onExit() }, ...this.logButton()]);
       return;
     }
     this.hud.showModal('Match Results', html, [
       { label: 'Play again', primary: true, onClick: () => this.callbacks.onRestart({ ...this.settings, seed: this.settings.seed + 1 }) },
       { label: 'Main menu', onClick: () => this.callbacks.onExit() },
+      ...this.logButton(),
     ]);
+  }
+
+  /** Finish the match log and store it (once); also runs when a match is abandoned. */
+  private persistLog(totals?: Record<string, number>): void {
+    const log = this.matchLog;
+    if (!log || this.savedLog) return;
+    log.finish(totals);
+    const text = log.toJSONL();
+    const createdAt = new Date().toISOString();
+    this.savedLog = { name: logFileName(this.season.id, createdAt), text };
+    void saveLog({ createdAt, seasonId: this.season.id, frames: log.frameCount, text });
+  }
+
+  private logButton(): { label: string; onClick: () => void }[] {
+    return this.matchLog ? [{ label: 'Download match log', onClick: () => this.savedLog && downloadText(this.savedLog.name, this.savedLog.text) }] : [];
   }
 
   /** Multiplayer stats for debugging (window.game.netStats()). */
@@ -1147,6 +1182,8 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
+    // Quitting mid-match still keeps the demonstration (skip trivially short ones).
+    if (this.matchLog && (this.matchLog.frameCount > 300)) this.persistLog();
     this.perfPanel?.remove();
     cancelAnimationFrame(this.raf);
     this.ticker?.stop();
