@@ -143,11 +143,13 @@ export class Game {
   private fader!: OcclusionFader;
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
+  private boostOn = false;
   private boostBase: { cap: number; rate: number } | null = null;
   private applyBoost(): void {
     const c = this.player?.config;
     if (!c || this.season.id !== '2026-rebuilt') return;
-    const on = this.input.isDown('Period');
+    if (this.input.justPressed('Period')) this.boostOn = !this.boostOn;
+    const on = this.boostOn;
     if (on && !this.boostBase) {
       this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate };
       c.hopperCapacity = this.boostBase.cap * 3;
@@ -562,8 +564,8 @@ export class Game {
       this.simBusyMs = 0;
       this.simWindowStart = now;
     }
-    const inp = this.input.read();
     this.applyBoost();
+    const inp = this.input.read();
     this.handleUiInput(inp);
 
     if (this.role === 'client') {
