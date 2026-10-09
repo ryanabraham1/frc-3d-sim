@@ -295,6 +295,8 @@ const specs = {
   'relay-3005': { file: '2025-3005.glb', year: 2025, axes: 'negative-y', finePass: .001,
     recolor: c => c[0] < .05 && c[1] < .05 && c[2] > .95 ? [.11, .115, .125, c[3]] : null,
     // Block-CAD wiring harnesses (pink multi-body routing), the bumpers and the reference CORAL are not robot structure.
+    // NOTE: the shipped GLB also had a loose white CORAL tube (3 unnamed components in the frame's white mesh, around
+    // x -.19..+.09, y .28..+.5, z -.15..+.07) stripped by hand after this pass; strip it again if the asset is regenerated.
     omit: /1-02: Bumpers|BLOCK CAD - ELECTRONICS|(?:^|\/)Wiring(?:\/|$)|Coral \(Deployed\)/,
     groups: [
       ['algae', /7: Algae Gripper/], ['climber', /8-03: Climber Arm/], ['effector', /3-01\.2: Carriage|4: Coral Ejector/],
