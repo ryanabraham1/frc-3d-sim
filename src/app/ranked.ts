@@ -1,6 +1,7 @@
 import { currentStep, draftDone, draftOptions, MODE_LABEL, MODE_SIZE, PLACEMENT_GAMES, RANKED_MODES, rankFor, teamOf, visibleRank, type RankedMode } from '@engine/net/ranked';
 import { nameProblem } from '@engine/net/nameFilter';
 import { slotLabel, type SlotId } from '@engine/net/protocol';
+import type { RoomListing } from '@engine/net/relayProtocol';
 import type { LobbyController } from './lobby';
 import type { MpPageCtx } from './multiplayer';
 import { emblemSvg, rankChip } from './rankEmblem';
@@ -165,6 +166,10 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
       </section>
       <div class="col">
         <section class="panel mp-card">
+          <div class="panel-head"><span>Live matches</span></div>
+          <div class="rl-list" data-mp="live-ranked">${online ? liveRankedHtml(lobby.rooms, busy) : '<div class="rl-empty">Connect to watch live matches.</div>'}</div>
+        </section>
+        <section class="panel mp-card">
           <div class="panel-head"><span>Your all-time stats</span></div>
           <div class="rl-list" data-mp="stats">${online ? statsPanelHtml(lobby) : '<div class="rl-empty">Connect to see your stats.</div>'}</div>
         </section>
@@ -186,6 +191,22 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
     </div>`,
     footer: `<button class="bbtn" data-page="play"><kbd>Esc</kbd>Back</button><span class="spacer"></span>`,
   };
+}
+
+/** Ranked matches that are under way, each with a button to spectate. */
+export function liveRankedHtml(rooms: RoomListing[] | null, busy: boolean): string {
+  const live = (rooms ?? []).filter((r) => r.ranked && r.state === 'match');
+  if (!live.length) return '<div class="rl-empty">No ranked matches are being played right now.</div>';
+  return live
+    .map(
+      (r) => `<div class="rl-row">
+        <div class="rl-main"><b>${esc(r.title)}</b><span>${esc(r.season)}</span></div>
+        <div class="rl-count" title="Drivers / people in the room"><b>${r.drivers}</b> drivers<span>${Math.max(0, r.players - r.drivers)} watching</span></div>
+        <span class="rl-badge live">Live</span>
+        <button class="bbtn" data-watch-room="${esc(r.code)}" ${busy || r.players >= r.max ? 'disabled' : ''}>${r.players >= r.max ? 'Full' : 'Spectate'}</button>
+      </div>`,
+    )
+    .join('');
 }
 
 export function rankedWaitingPage(): { body: string; footer: string } {
@@ -274,6 +295,19 @@ export function bindRanked(el: HTMLElement, lobby: LobbyController): void {
       }
       void lobby.findMatch(name);
     };
+  const bindWatch = (box: ParentNode) =>
+    box.querySelectorAll<HTMLElement>('[data-watch-room]').forEach((b) => (b.onclick = () => void lobby.join(b.dataset.watchRoom!, (nameInput?.value ?? '').trim() || 'Player')));
+  const liveBox = el.querySelector<HTMLElement>('[data-mp="live-ranked"]');
+  if (liveBox) {
+    bindWatch(liveBox);
+    // A fresh list replaces just the rows.
+    lobby.onRooms = (rooms) => {
+      const box = el.querySelector<HTMLElement>('[data-mp="live-ranked"]');
+      if (!box || !el.isConnected) return;
+      box.innerHTML = liveRankedHtml(rooms, lobby.status === 'connecting');
+      bindWatch(box);
+    };
+  }
   const cancel = el.querySelector<HTMLElement>('[data-mp="cancel-search"]');
   if (cancel) cancel.onclick = () => lobby.cancelSearch();
 

@@ -107,6 +107,35 @@ describe('ranked relay', () => {
     expect(relay.publicRoomCount()).toBe(0);
   });
 
+  it('lets outsiders spectate a ranked match only once it is running, without touching the result', async () => {
+    const { a, b, ma, host, guest } = await match1v1();
+    const fan = await peer('f');
+    // Still drafting: not listed, and the room code alone doesn't get a stranger in.
+    fan.send({ op: 'list' });
+    expect((await fan.next('rooms')).rooms).toHaveLength(0);
+    fan.send({ op: 'join', room: ma.room, name: 'Fan' });
+    expect((await fan.next('error')).message).toMatch(/not started/);
+
+    host.send({ op: 'meta', meta: { state: 'match', title: 'Ranked 1v1' } });
+    await new Promise((r) => setTimeout(r, 50));
+    fan.send({ op: 'list' });
+    const listed = (await fan.next('rooms')).rooms;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ code: ma.room, ranked: true, state: 'match' });
+    fan.send({ op: 'join', room: ma.room, name: 'Fan' });
+    await fan.next('joined');
+    expect((await host.next('peer-joined')).name).toBe('Fan');
+
+    // A spectator's report and departure change nothing; the players' agreement still decides.
+    fan.send({ op: 'result', winner: 'blue', red: 0, blue: 99 });
+    fan.ws.terminate();
+    await new Promise((r) => setTimeout(r, 600)); // past the reconnect grace: the spectator is really gone
+    host.send({ op: 'result', winner: 'red', red: 80, blue: 60 });
+    guest.send({ op: 'result', winner: 'red', red: 80, blue: 60 });
+    expect((await a.next('rating')).status).toBe('final');
+    expect((await b.next('rating')).status).toBe('final');
+  });
+
   it('forms 2v2 only when four players are queued, balancing the teams', async () => {
     const ps = await Promise.all(['a', 'b', 'c', 'd'].map((l) => peer(l)));
     for (const [i, p] of ps.entries()) await queue(p, `P${i}`, '2v2');

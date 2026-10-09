@@ -443,7 +443,7 @@ export class LobbyController {
       room: ev.room,
       hostId: ev.peerId,
       visibility: 'private',
-      title: 'Ranked match',
+      title: `Ranked ${ev.mode}`,
       chat: [],
       seasonId: season.id,
       players,
@@ -551,8 +551,10 @@ export class LobbyController {
       this.browseMisses = 0;
       try {
         await this.client.ensureConnected(this.relayUrl);
-        if (onRanked) this.pollRanked();
-        else this.client.list();
+        if (onRanked) {
+          this.pollRanked();
+          this.client.list(); // live ranked matches to watch
+        } else this.client.list();
       } catch {
         if (this.rooms === null) this.onRooms([]);
       }
@@ -1127,9 +1129,9 @@ export class LobbyController {
       this.systemChat(`${name} joined`);
     }
     this.broadcastLobby();
-    // Joining while a match is running: drop them straight in as a spectator (ranked matches are closed).
+    // Joining while a match is running: drop them straight in as a spectator (ranked matches too).
     const live = this.liveSetup;
-    if (live && this.lobby.inMatch && !this.lobby.ranked && !live.peers.includes(peerId)) {
+    if (live && this.lobby.inMatch && !live.peers.includes(peerId)) {
       live.peers = [...live.peers, peerId];
       this.client.send({ t: 'start', setup: { ...live, robots: live.robots.map(({ autoPlan: _plan, ...r }) => r) } } satisfies HostMsg, peerId);
     }

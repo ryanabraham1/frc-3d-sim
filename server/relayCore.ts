@@ -205,7 +205,9 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
   const listing = (): RoomListing[] => {
     const out: RoomListing[] = [];
     for (const r of rooms.values()) {
-      if (r.visibility !== 'public') continue;
+      // Ranked rooms are private, but a match that is under way can be watched.
+      const watchable = !!r.ranked && r.state === 'match';
+      if (r.visibility !== 'public' && !watchable) continue;
       out.push({
         code: r.code,
         title: r.title || `${r.host.name}'s room`,
@@ -217,6 +219,7 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
         seats: r.seats,
         state: r.state,
         bots: r.bots,
+        ...(r.ranked ? { ranked: true } : {}),
       });
     }
     // Joinable rooms first, then the busiest.
@@ -366,6 +369,8 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
           const r = rooms.get(code);
           if (!r) return badJoin(`Room ${code || '?'} not found`);
           if (r.banned.has(ip)) return badJoin('You were removed from this room');
+          // Ranked rooms hold the matched players; everyone else may only watch once the match is running.
+          if (r.ranked && r.state !== 'match') return badJoin('That ranked match has not started yet');
           if (r.peers.size >= MAX_PEERS_PER_ROOM) return send(peer, { op: 'error', message: `Room ${code} is full` });
           leave(peer, 'host left');
           peer.name = cleanName(req.name);

@@ -49,7 +49,8 @@ function saveVisibility(v: RoomVisibility): void {
 }
 
 /** The public room browser rows (also re-rendered in place when a fresh list arrives). */
-export function roomListHtml(rooms: RoomListing[] | null, busy: boolean): string {
+export function roomListHtml(all: RoomListing[] | null, busy: boolean): string {
+  const rooms = all && all.filter((r) => !r.ranked); // live ranked matches are watched from the Ranked page
   if (rooms === null) return '<div class="rl-empty"><span class="mp-dot waking"></span>Looking for lobbies…</div>';
   if (!rooms.length) return '<div class="rl-empty">No public lobbies right now.<br/>Create one, or press <b>Quick play</b> to host and wait for others.</div>';
   return rooms
@@ -89,7 +90,7 @@ export function multiplayerPage(lobby: LobbyController, ctx: MpPageCtx): { body:
   // Ranked: matched players see the draft (then the shared placement screen); the landing page otherwise.
   if (lobby.status === 'lobby' && !lobby.lobby && lobby.client.room) return rankedWaitingPage();
   if (lobby.lobby?.ranked && lobby.status === 'lobby') {
-    if (!lobby.lobby.placing) return rankedDraftPage(lobby, ctx);
+    if (!lobby.lobby.placing && !lobby.lobby.inMatch) return rankedDraftPage(lobby, ctx);
   } else if (ctx.page === 'ranked' && lobby.status !== 'lobby') return rankedLandingPage(lobby, ctx);
 
   if (lobby.status !== 'lobby' || !lobby.lobby) {

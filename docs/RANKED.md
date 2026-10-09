@@ -29,6 +29,14 @@ and the 700 about 26 (the stronger player is blamed less, the weaker more); on a
 The factors average to 1, so a team's total change is unchanged, and 1v1s or evenly matched teams are plain Elo. Factors are
 clamped to 0.35-1.65.
 
+## Spectating
+
+Once a ranked match is running (`state: 'match'`), the relay lists its room in `list` replies with `ranked: true` even though it is
+private, and the Ranked page shows it under **Live matches** with a Spectate button. Before that, joining a ranked room is refused,
+so a guessed room code can't get into a draft. A spectator is an ordinary joiner: the host sends them the live match (`hostAddPlayer`),
+and their result reports and departure are ignored by `RankedService` (it only tracks the matched players). Spectators see the whole
+field, so a player could in theory get information from a friend watching; there is no stream delay.
+
 ## Rank ladder
 
 Five tiers, each with three divisions (I–III, 50 rating points apiece) except open-ended Apex. A new player (1000) starts at

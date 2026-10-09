@@ -53,6 +53,8 @@ export interface RoomListing {
   seats: number;
   state: RoomState;
   bots: boolean;
+  /** A ranked match in progress: listed (for spectators only) whatever its visibility. */
+  ranked?: boolean;
 }
 
 export type RelayRequest =
