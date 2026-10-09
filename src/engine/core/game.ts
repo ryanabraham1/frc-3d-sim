@@ -144,7 +144,7 @@ export class Game {
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
   private boostOn = false;
-  private boostBase: { cap: number; rate: number; spread: number; speedError: number; intake: number } | null = null;
+  private boostBase: { cap: number; rate: number; spread: number; speedError: number; intake: number | undefined } | null = null;
   private applyBoost(): void {
     const c = this.player?.config;
     if (!c || this.season.id !== '2026-rebuilt') return;
@@ -156,7 +156,7 @@ export class Game {
       c.launcher.rate = this.boostBase.rate * 3;
       c.launcher.spread = 0;
       c.launcher.speedError = 0;
-      c.intake.rate = this.boostBase.intake * 3;
+      if (this.boostBase.intake !== undefined) c.intake.rate = this.boostBase.intake * 3;
     } else if (!on && this.boostBase) {
       c.hopperCapacity = this.boostBase.cap;
       c.launcher.rate = this.boostBase.rate;
