@@ -275,13 +275,13 @@ import { cleanName, cleanTitle } from '../src/engine/net/relayProtocol';
 
 describe('name filter', () => {
   it('catches profanity through case, leetspeak, spacing and stretching', () => {
-    for (const bad of ['fuck', 'FUCK', 'f.u.c.k', 'f u c k', 'fuuuuck', 'sh1t', '$h!t', 'b!tch', 'n1gg3r', 'xX_fuck_Xx', 'ass', 'a$$ hat']) {
+    for (const bad of ['fuck', 'FUCK', 'f.u.c.k', 'f u c k', 'fuuuuck', 'sh1t', '$h!t', 'b!tch', 'n1gg3r', 'xX_fuck_Xx', 'ass', 'a$$ hat', 'listenupjews', 'Jews', 'j3ws', 'dirty jew']) {
       expect(isBadText(bad), bad).toBe(true);
     }
   });
 
   it('leaves ordinary names alone (including the classic false positives)', () => {
-    for (const ok of ['Scunthorpe', 'Grape', 'Class', 'Assistant', 'Cocktail', 'Dickens', 'Essex', 'Team 254', 'Hello World', 'Passion', 'Bassist', 'Analyst', 'Sussex']) {
+    for (const ok of ['Scunthorpe', 'Grape', 'Class', 'Assistant', 'Cocktail', 'Dickens', 'Essex', 'Team 254', 'Hello World', 'Passion', 'Bassist', 'Analyst', 'Sussex', 'Jewel', 'Jewelry', 'Jewett']) {
       expect(isBadText(ok), ok).toBe(false);
     }
   });

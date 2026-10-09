@@ -12,12 +12,13 @@ const ANYWHERE = [
   'fuck', 'shit', 'bitch', 'bastard', 'asshole', 'dickhead', 'cocksucker', 'motherfuck', 'whore', 'slut', 'pussy', 'retard',
   'nigger', 'nigga', 'faggot', 'fagot', 'tranny', 'wetback', 'beaner', 'kike', 'chink', 'gook', 'spic', 'raghead', 'towelhead',
   'hitler', 'nazi', 'rapist', 'molest', 'pedo', 'blowjob', 'handjob', 'dildo', 'jizz', 'cumshot', 'masturbat', 'whitepower', 'kys',
+  'jews', 'jewboy', 'jewbag', 'kyke', 'sandnigger', 'camel jockey', 'cameljockey', 'zionazi', 'heilhitler', 'sieg heil', 'siegheil', 'gasthe',
 ];
 
 /** Matched only as a whole word (plus common endings), because they sit inside harmless words. */
 const WHOLE_WORD = [
   'cunt', 'dick', 'cock', 'ass', 'arse', 'tits', 'twat', 'fag', 'rape', 'kkk', 'porn', 'sex', 'coon', 'paki', 'dyke', 'wank',
-  'piss', 'nig', 'negro', 'cum', 'anal', 'boob', 'boobs', 'penis', 'vagina', 'bollocks', 'prick', 'skank', 'hoe', 'jerkoff',
+  'piss', 'nig', 'jew', 'jewed', 'heil', 'zog', 'chinks', 'negro', 'cum', 'anal', 'boob', 'boobs', 'penis', 'vagina', 'bollocks', 'prick', 'skank', 'hoe', 'jerkoff',
 ];
 const ENDINGS = ['', 's', 'es', 'ed', 'er', 'ers', 'ing', 'y', 'ie', 'in'];
 
