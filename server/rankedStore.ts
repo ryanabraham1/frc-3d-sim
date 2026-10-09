@@ -134,7 +134,8 @@ export class SupabaseStore implements RankedStore {
   constructor(url: string, key: string, fetchImpl: typeof fetch = fetch, season: string = RANKED_SEASON_ID) {
     this.url = url;
     this.key = key;
-    this.fetchImpl = fetchImpl;
+    // Workers (and browsers) throw "Illegal invocation" if `fetch` is called as a method of another object.
+    this.fetchImpl = (input, init) => fetchImpl(input, init);
     this.season = season;
   }
 
