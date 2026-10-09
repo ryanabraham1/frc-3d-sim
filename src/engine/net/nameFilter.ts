@@ -54,6 +54,8 @@ export function isBadText(text: string): boolean {
   // Also test with doubled letters squeezed ("fuuck", "shiit") against equally squeezed terms.
   const squashed = dedupe(letters);
   if (ANYWHERE.some((w) => letters.includes(w)) || anywhereSquashed.some((w) => squashed.includes(w))) return true;
+  // "listenupjew": a name run together that ends in the slur (but not "Jewel"/"Jewett").
+  if (/jew$/.test(letters) || norm.split(' ').some((tok) => /jew$/.test(tok))) return true;
   return norm.split(' ').some((tok) => wholeWords.has(tok) || wholeWords.has(dedupe(tok)));
 }
 

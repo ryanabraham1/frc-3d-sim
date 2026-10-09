@@ -275,7 +275,7 @@ import { cleanName, cleanTitle } from '../src/engine/net/relayProtocol';
 
 describe('name filter', () => {
   it('catches profanity through case, leetspeak, spacing and stretching', () => {
-    for (const bad of ['fuck', 'FUCK', 'f.u.c.k', 'f u c k', 'fuuuuck', 'sh1t', '$h!t', 'b!tch', 'n1gg3r', 'xX_fuck_Xx', 'ass', 'a$$ hat', 'listenupjews', 'Jews', 'j3ws', 'dirty jew']) {
+    for (const bad of ['fuck', 'FUCK', 'f.u.c.k', 'f u c k', 'fuuuuck', 'sh1t', '$h!t', 'b!tch', 'n1gg3r', 'xX_fuck_Xx', 'ass', 'a$$ hat', 'listenupjews', 'listenupjew', 'ListenUpJew', 'l1stenup jew', 'Jews', 'j3ws', 'dirty jew']) {
       expect(isBadText(bad), bad).toBe(true);
     }
   });
