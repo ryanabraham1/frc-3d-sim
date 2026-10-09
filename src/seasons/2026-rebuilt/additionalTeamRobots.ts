@@ -210,9 +210,9 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
 export function additionalRebuiltTeamRobots(): TeamRobot[] {
   return [
     { id: 'reblitz-2910', team: 2910, name: 'Re•Blitz',
-      description: '2910 Jack in the Bot (Einstein finalists). Champs rebuild: hard-roof hopper, roller floor, wide drum shooter with an overspeed flywheel and pivoting intake that compresses the hopper. No climber. Simulator tuning: 33 FUEL/s (user estimate of 30–35 FUEL/s), 5.3 m/s drive; 40 FUEL capacity following user guidance.',
+      description: '2910 Jack in the Bot (Einstein finalists). Champs rebuild: hard-roof hopper, roller floor, wide drum shooter with an overspeed flywheel and pivoting intake that compresses the hopper. No climber. Simulator tuning: 33 FUEL/s (user estimate of 30–35 FUEL/s), 5.3 m/s drive; 50 FUEL capacity following user guidance.',
       source: 'https://www.chiefdelphi.com/t/2910-robot-reveal-2026-blitz/516325?page=5 — Champs rebuild team Q&A; frcteam2910.org 2026 recap',
-      config: config(2910,'reblitz-2910',false,40,33,5.3,90) },
+      config: config(2910,'reblitz-2910',false,50,33,5.3,90) },
     { id: 'limestone-1678', team: 1678, name: 'Limestone',
       description: '1678 Citrus Circuits. Wide chassis-aimed drum shooter, slapdown intake and vertically expanding net hopper. 27 × 27 in frame. 50 FUEL with the hopper down, 65 with it raised (user tuning). Simulator estimates: 24 FUEL/s, 4.7 m/s drive; F toggles hopper capacity between 50 and 65 FUEL.',
       source: 'https://www.chiefdelphi.com/t/1678-2026-robot-limestone/515709 — reveal and team hopper/CAD discussion',

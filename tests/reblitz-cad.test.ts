@@ -39,7 +39,7 @@ it('2910 replaces donor geometry with bounded, independently articulated source 
 });
 it('saved 2910 defaults adopt measured dimensions without changing capacity, rate or custom sizes',()=>{
   const old=config();old.frameLength=.6858;old.height=.5334;const c=season.normalizeRobotConfig!(old);
-  expect(c.frameLength).toBe(.6985);expect(c.height).toBe(.55);expect(c.hopperCapacity).toBe(40);expect(c.launcher.rate).toBe(33);
+  expect(c.frameLength).toBe(.6985);expect(c.height).toBe(.55);expect(c.hopperCapacity).toBe(50);expect(c.launcher.rate).toBe(33);
   c.frameLength=.70;c.height=.56;const custom=season.normalizeRobotConfig!(c);expect(custom.frameLength).toBe(.70);expect(custom.height).toBe(.56);
 });
 
