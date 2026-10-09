@@ -200,6 +200,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   const thumbUrls = new Map<string, string>();
   let live: import('./robotPreview').LivePreview | null = null;
   let liveKey = '';
+  let thumbObserver: IntersectionObserver | null = null;
   /** Fill the picker thumbnails and the live 3D preview of the selected robot (lazy: loads three/Rapier on first use). */
   const mountPreviews = () => {
     const host = el.querySelector<HTMLElement>('[data-live]');
@@ -213,12 +214,24 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         if (key !== liveKey) { live.set(s.robot, s.alliance); liveKey = key; }
         live.attach(host);
       }
-      for (const img of imgs) {
+      // Only fetch/render the cards that are on (or near) the screen, in the order they scroll into view: the CAD
+      // files are several MB each, so loading every robot up front made the whole picker crawl.
+      thumbObserver?.disconnect();
+      const load = (img: HTMLImageElement) => {
         const t = season.teamRobots?.find((x) => x.id === img.dataset.thumb);
-        if (!t || img.getAttribute('src')) continue;
+        if (!t || img.getAttribute('src')) return;
         const k = `${season.id}|${t.id}|${s.alliance}`;
         void m.robotThumb(season, t.config, s.alliance).then((url) => { thumbUrls.set(k, url); if (img.isConnected) img.src = url; });
-      }
+      };
+      if (typeof IntersectionObserver === 'undefined') return void imgs.forEach(load);
+      const obs = (thumbObserver = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          obs.unobserve(e.target);
+          load(e.target as HTMLImageElement);
+        }
+      }, { rootMargin: '150px' }));
+      for (const img of imgs) if (!img.getAttribute('src')) obs.observe(img);
     });
   };
   const lobby = opts.lobby;

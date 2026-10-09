@@ -96,7 +96,7 @@ function configHash(config: RobotConfig): string {
 }
 
 /** One still image (data URL) of a robot, rendered once and cached. Renders are serialized on one GL context. */
-export function robotThumb(season: SeasonDefinition, config: RobotConfig, alliance: 'red' | 'blue', w = 360, h = 240): Promise<string> {
+export function robotThumb(season: SeasonDefinition, config: RobotConfig, alliance: 'red' | 'blue', w = 300, h = 200): Promise<string> {
   // Archetype presets share a model and team number, so the config itself is part of the key.
   const key = `${season.id}|${config.model ?? 'generic'}|${config.teamNumber}|${configHash(config)}|${alliance}|${w}x${h}`;
   const hit = thumbs.get(key);
@@ -104,17 +104,20 @@ export function robotThumb(season: SeasonDefinition, config: RobotConfig, allian
   // Fetch/decode independently: a slow CAD download must not hold up every card after it.
   const ready = Promise.all([init(), prepareCadModels([config.model])]);
   const p: Promise<string> = ready.then(() => {
-    const render = queue.then(() => {
+    const render = queue.then(async () => {
+      // Yield so a run of renders never freezes scrolling/clicks.
+      await new Promise<void>((r) => setTimeout(r));
       const b = build(season, config, alliance);
       const r = thumbRenderer!;
-      r.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+      r.setPixelRatio(Math.min(1.5, devicePixelRatio || 1));
       r.setSize(w, h, false);
       const cam = new THREE.PerspectiveCamera(32, 1, 0.01, 40);
       frame(cam, b.scale, Math.atan2(2, 1.8), 0.42, 1, w / h);
       r.render(b.scene, cam);
-      const url = r.domElement.toDataURL('image/png');
+      // Encode off the main thread (toBlob is async; the buffer is snapshotted at call time).
+      const blob = await new Promise<Blob | null>((res) => r.domElement.toBlob(res, 'image/webp', 0.88));
       b.dispose();
-      return url;
+      return blob ? URL.createObjectURL(blob) : r.domElement.toDataURL('image/png');
     });
     // A failed thumbnail must not poison the shared rendering queue.
     queue = render.catch(() => undefined);
