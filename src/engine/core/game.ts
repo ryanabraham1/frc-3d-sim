@@ -144,23 +144,25 @@ export class Game {
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
   private boostOn = false;
-  private boostBase: { cap: number; rate: number; spread: number; speedError: number } | null = null;
+  private boostBase: { cap: number; rate: number; spread: number; speedError: number; intake: number } | null = null;
   private applyBoost(): void {
     const c = this.player?.config;
     if (!c || this.season.id !== '2026-rebuilt') return;
     if (this.input.justPressed('Period')) this.boostOn = !this.boostOn;
     const on = this.boostOn;
     if (on && !this.boostBase) {
-      this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate, spread: c.launcher.spread, speedError: c.launcher.speedError };
+      this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate, spread: c.launcher.spread, speedError: c.launcher.speedError, intake: c.intake.rate };
       c.hopperCapacity = this.boostBase.cap * 3;
       c.launcher.rate = this.boostBase.rate * 3;
       c.launcher.spread = 0;
       c.launcher.speedError = 0;
+      c.intake.rate = this.boostBase.intake * 3;
     } else if (!on && this.boostBase) {
       c.hopperCapacity = this.boostBase.cap;
       c.launcher.rate = this.boostBase.rate;
       c.launcher.spread = this.boostBase.spread;
       c.launcher.speedError = this.boostBase.speedError;
+      c.intake.rate = this.boostBase.intake;
       this.boostBase = null;
     }
   }
