@@ -147,7 +147,7 @@ export class Game {
   private applyBoost(): void {
     const c = this.player?.config;
     if (!c || this.season.id !== '2026-rebuilt') return;
-    const on = this.input.isDown('BracketLeft') && this.input.isDown('BracketRight');
+    const on = this.input.isDown('Comma') && this.input.isDown('Period');
     if (on && !this.boostBase) {
       this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate };
       c.hopperCapacity = this.boostBase.cap * 3;
