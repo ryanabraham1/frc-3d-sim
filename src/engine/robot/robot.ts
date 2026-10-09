@@ -494,6 +494,10 @@ export class Robot {
         const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
+      // Near full load the fabric is drawn taut across the whole pocket: a full, high dome rather than a loose drape.
+      const span = Math.max(1e-3, (c.hopperExpansion?.fullHeight ?? c.height) - c.height);
+      const load = Math.min(1, extra / span) * Math.min(1, tops.length / 30); // only with real FUEL under it, never an empty dome
+      y = Math.max(y, c.height + extra * bow ** 0.35 * load * load);
       const maximum = Math.min(c.hopperExpansion?.fullHeight ?? c.height, c.height + extra);
       // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
       y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
