@@ -51,14 +51,21 @@ export function buildSpectreCad(root:THREE.Group,k:ModelKit,animated:()=>boolean
       const climbing=s.climb>.01;
       const collecting=!!p.handoff || s.intaking&&p.height<=.46;
       const parked=!collecting&&p.height<=.46&&!p.algae;
-      let nextPitch=.0,nextExtension=0,nextTool=125*Math.PI/180,nextSlide=0;
+      // Tool pitch here = the code's absolute claw angle (shoulder + wrist, ArmPoseConstants) + 180°.
+      const deg=(a:number)=>a*Math.PI/180;
+      let nextPitch=.0,nextExtension=0,nextTool=deg(125),nextSlide=0;
       if(climbing){
         const pull=THREE.MathUtils.clamp((1-s.climb)/.75,0,1);
         nextPitch=THREE.MathUtils.lerp(110,-5,pull)*Math.PI/180;
         nextTool=THREE.MathUtils.lerp(35,10,pull)*Math.PI/180;
         nextSlide=.1905*(1-pull);nextExtension=.08255*pull;
+      }else if(parked&&s.fill>0){
+        // Holding CORAL: arm raised to 70.5° with the claw tipped toward the REEF (code: HOLDING_CORAL 70.5°, 80°).
+        nextPitch=deg(70.5);nextTool=deg(150.5-180);
       }else if(!parked){
-        nextTool=collecting?(p.algae?Math.PI-.92:Math.PI-.035):p.algae?(p.height>1.7?1.0:0):p.level===4?-.65:p.level===1?0:-.35;
+        nextTool=collecting?(p.algae?Math.PI-.92:Math.PI-.035):p.algae?(p.height>1.7?1.0:0):p.level===4?deg(110.5-180):p.level===1?0:p.level===3?deg(151-180):deg(156-180);
+        // Back-side scoring mirrors the claw: L4 CORAL points down and aft (code: back L4 100°, 146°).
+        if(p.side===2&&!collecting)nextTool=Math.PI-nextTool;
         const targetX=(p.side===2?-1:1)*(collecting?k.fp.length/2+k.config.intake.reach*.6:p.forward);
         const targetY=collecting?(p.algae?.23:.11):p.height;
         const offset=(p.algae?algae.position:gripOffset).clone().applyAxisAngle(rotationAxis,nextTool-sourceToolPitch);
