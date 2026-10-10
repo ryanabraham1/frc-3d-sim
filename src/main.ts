@@ -5,6 +5,10 @@ import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
 import { prepareCadModels } from '@engine/robot/cadModels';
+import { inject } from '@vercel/analytics';
+
+// Initialize Vercel Web Analytics
+inject();
 
 // Back/Forward can restore an old running bundle without making an HTTP request.
 // A fresh navigation checks the current HTML and loads the latest hashed game files.
