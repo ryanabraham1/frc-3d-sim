@@ -88,6 +88,30 @@ describe('2025 side scoring (swinging arm)', () => {
   });
 });
 
+describe('2025 off-center claws (placement.toolOffset)', () => {
+  const team = (id: string) => cloneConfig(season.teamRobots!.find((t) => t.id === id)!.config);
+  for (const [id, offset] of [['subzero-1778', [-0.241, 0]], ['zuma-581', [-0.168, 0]]] as const) {
+    it(`${id}: auto-align shifts the robot so its off-center claw places L4, and centering the robot instead misses`, () => {
+      expect(team(id).placement!.toolOffset).toEqual(offset);
+      const probe = make('blue', season.testing!.scoringSpots('blue')[0], team(id)); load(probe, 0);
+      const rules = rulesOf(probe), pose = rules.alignPose(probe.robot, 4)!, t = rules.placementTarget(probe.robot, 4)!;
+      // The claw (robot center + tool offset, rotated by the heading) sits over the BRANCH's approach line.
+      const cos = Math.cos(pose.yaw), sin = Math.sin(pose.yaw);
+      const claw = { x: pose.x + offset[0] * cos - offset[1] * sin, y: pose.y + offset[0] * sin + offset[1] * cos };
+      const tan = { x: -Math.sin(t.approach.faceYaw), y: Math.cos(t.approach.faceYaw) };
+      const across = (q: { x: number; y: number }) => (q.x - t.approach.pos.x) * tan.x + (q.y - t.approach.pos.y) * tan.y;
+      expect(Math.abs(across(claw))).toBeLessThan(0.03);
+      expect(Math.abs(across(pose))).toBeGreaterThan(0.1);
+      for (const [config, expected] of [[team(id), 1], [(() => { const c = team(id); delete c.placement!.toolOffset; return c; })(), 0]] as const) {
+        config.autoAlign = false;
+        const sim = make('blue', pose, config); teleop(sim); load(sim, 0);
+        run(sim, 4, () => ({ ...IDLE_COMMAND, shoot: holdingCoral(sim), scoringLevel: 4 }));
+        expect(sim.ctx.score.counter('blue', 'coralL4')).toBe(expected);
+      }
+    });
+  }
+});
+
 describe('2025 Orbit intake-side and opposite-side scoring', () => {
   const whisper = () => cloneConfig(season.teamRobots!.find((t) => t.id === 'whisper-1690')!.config);
 

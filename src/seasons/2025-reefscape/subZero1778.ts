@@ -76,7 +76,10 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   arm.add(armTube);
   box(arm, 0.05, 0.05, 0.05, black, 0, 0, 0); // pivot hub
   // End effector: black side plates and wheels on blue hubs that clamp the CORAL across the arm's end.
-  const head = pivot(arm, 0, -ARM);
+  // Supplied CAD: the claw sits 0.24 m aft of the arm on a cross plate, so it releases aft of center
+  // (placement.toolOffset).
+  const head = pivot(arm, -0.24, -ARM);
+  bar(arm, [0, -ARM + 0.03, 0], [-0.24, -ARM + 0.03, 0], 0.02, silver);
   sidePlates(head, [[-0.07, -0.03], [0.07, -0.03], [0.08, 0.07], [-0.08, 0.07]], 0.12, black, [[0, 0.03, 0.02]]);
   const wheels = [roller(head, 0.03, 0.22, black, -0.045, 0.045), roller(head, 0.03, 0.22, black, 0.045, 0.045)];
   for (const w of wheels) for (const z of [-0.06, 0.06]) roller(w, 0.018, 0.02, blue, 0, 0, z);
@@ -87,6 +90,7 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, hingeY: bt + 0.12, rollers: 2, frame: black, stow: Math.PI - 0.45 });
   let lift = 0.97;
   let swing = 0;
+  let lastSide = 1;
   let deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -102,12 +106,15 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
       // straight down, tucked inside the frame.
       let theta = 0;
       if (side !== 0 && !handoff) {
+        // Team code (Arm.kt): at the REEF the arm is always above horizontal (100–135° from straight down) and dunks
+        // ~30° to release; L1 reaches below the pivot.
         const t = Math.asin(Math.min(1, Math.max(0, p.forward / ARM)));
-        theta = side * (p.level === 4 ? Math.PI - t : t);
+        theta = side * (p.level === 1 ? t : Math.PI - t);
+        lastSide = side;
       }
       swing += wrapAngle(theta - swing) * Math.min(1, 12 * s.dt);
       scoringPosition(swing,theta);
-      arm.rotation.x = swing;
+      arm.rotation.x = swing - lastSide * 0.45 * s.firing;
       // SubZero raises its intake while the receiving arm hangs down.
       // Drive folding from transfer progress so even a short handoff reaches
       // the meeting pose before the piece leaves the roller bank.
@@ -134,6 +141,7 @@ export function subZero1778(): TeamRobot {
   config.model = 'subzero-1778';
   config.options = { ...config.options, coralBuffer: true, coralBufferLocation: 'intake', dualPieceStorage: true };
   config.placement!.scoreSide = 'sides';
+  config.placement!.toolOffset = [-0.241, 0]; // claw 9.5 in aft of center (team code CORAL_CENTER_OFFSET; supplied CAD)
   config.placement!.handoffSeconds = 0.35; // [EST] linebreak-triggered: the CORAL is centered by the time the intake is up
   config.placement!.cycleSeconds = 0.4; // [EST] "some of the fastest CORAL scoring in the world"
   config.placement!.liftSpeed = 1.8; // [EST]

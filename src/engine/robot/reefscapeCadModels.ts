@@ -1,4 +1,4 @@
-import { scoringEase } from './scoringReadiness';
+import { ARM_SWING_RATE, scoringSlew } from './scoringReadiness';
 import * as THREE from 'three';
 import { transferFold } from '../../seasons/2025-reefscape/transferVisual';
 import { buildSpectreCad } from './spectreCadModel';
@@ -16,6 +16,8 @@ import type { ModelKit, RobotModel } from './models';
 // Single exported poses do not specify actuator travel; travel and wrist aiming
 // are fitted to the existing simulator placement targets.
 const forward = new THREE.Vector3(1,0,0), axis = new THREE.Vector3(0,0,1);
+/** Carriage top speed between poses (m/s); the rules already rate-limit the scoring height itself. [EST] */
+const LIFT_RATE = 3;
 const ease = (a:number,b:number,dt:number) => dt > 0 ? a+(b-a)*(1-Math.exp(-9*dt)) : b;
 const replaces: RobotModel['replaces'] = ['chassis','mast','hopper','intakeRollers','climber','funnel'];
 function pivot(root:THREE.Group,name:string,at:[number,number,number]) {
@@ -27,6 +29,22 @@ function anchor(root:THREE.Group,parent:THREE.Object3D,at:[number,number,number]
 }
 function point(k:ModelKit,o:THREE.Object3D) {k.visual.updateMatrixWorld(true);return k.visual.worldToLocal(o.getWorldPosition(new THREE.Vector3()));}
 
+/**
+ * Closes the loop between the rules' scoring pose and where the CAD tool actually holds the piece. The rigs aim the
+ * arm's wrist joint, but the exported tool point sits off the shoulder→wrist line (1678's claw ~0.3 m above its
+ * wrist), so the held piece missed its release point. Each frame the remaining offset of the real seat (along the
+ * scoring direction and up) is fed back into the next solve, per level and per piece, and it converges in a few
+ * frames. Bounded so an unreachable target cannot wind it up.
+ */
+class SeatFix {
+  private readonly fix = new Map<string, THREE.Vector2>();
+  get(level:number,algae:boolean):THREE.Vector2 {const key=`${level}:${algae}`;let v=this.fix.get(key);if(!v)this.fix.set(key,v=new THREE.Vector2());return v;}
+  learn(level:number,algae:boolean,dx:number,dy:number):void {
+    const v=this.get(level,algae);
+    v.set(THREE.MathUtils.clamp(v.x+dx*.35,-.4,.4),THREE.MathUtils.clamp(v.y+dy*.35,-.4,.4));
+  }
+}
+
 type Fit = { shoulder:[number,number,number]; wrist:[number,number,number]; grip:[number,number,number];
   intake:[number,number,number]; tip:[number,number,number]; stageRaised:number; stageTop:number; climb:[number,number,number] };
 const fits:Record<string,Fit> = {
@@ -34,7 +52,7 @@ const fits:Record<string,Fit> = {
   'quixilver-604-2025': {shoulder:[.1016,1.208,0],wrist:[.62,1.08,0],grip:[.71,1.12,0],intake:[-.30,.70,0],tip:[-.3,.75,0],stageRaised:.4,stageTop:1.035,climb:[-.3429,.46355,0]},
   'subzero-1778': {shoulder:[-.0635,.2667,.006],wrist:[-.0635,.68,.006],grip:[-.24,.756,.006],intake:[-.27,.17,0],tip:[-.58,.07,0],stageRaised:0,stageTop:1.035,climb:[.28,.25,.22]},
   'firefly-118': {shoulder:[.0127,1.02235,0],wrist:[.283,1.164,0],grip:[.40,1.24,0],intake:[-.29,.22,0],tip:[-.58,.08,0],stageRaised:0,stageTop:1.04,climb:[.27,.205,0]},
-  'sublime-1678': {shoulder:[.1778,.52025,.1524],wrist:[.1778,.52025,-.127],grip:[.16,.82,-.06],intake:[-.055,.18,0],tip:[-.55,.09,0],stageRaised:0,stageTop:1.03,climb:[.03,.32,-.305]},
+  'sublime-1678': {shoulder:[.1778,.52025,-.06],wrist:[.16,.82,-.06],grip:[.16,.82,-.06],intake:[-.055,.18,0],tip:[-.55,.09,0],stageRaised:0,stageTop:1.03,climb:[.03,.32,-.305]},
   'zuma-581': {shoulder:[.1651,1.85,0],wrist:[-.1379,1.3651,-.3895],grip:[-.165,1.335,-.45],intake:[-.27,.18,0],tip:[-.58,.08,0],stageRaised:.7874,stageTop:1.05,climb:[0,.444,.343]},
 };
 
@@ -63,8 +81,14 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
   const sourceVector=new THREE.Vector3().fromArray(f.wrist).sub(new THREE.Vector3().fromArray(f.shoulder));
   const length=sourceVector.length(), neutral=new THREE.Quaternion().setFromUnitVectors(sourceVector.normalize(),forward);
   // Keep the mouth in the same orientation as the imported arm's neutral pose.
-  const q=new THREE.Quaternion();let yc=.38,phi=1.2,deploy=0,climbAngle=0;
-  return {replaces:root.getObjectByName('climber')?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:climbHeld,heldAnchor:held,coralAxis:['sublime-1678','whisper-1690'].includes(id)?[0,0,1]:[1,0,0],algaeAnchor:algaeHeld,algaeGripScale:id==='zuma-581'?[.76,.94,.76]:[.78,.96,.76],intakeAnchor:tip,handoffStyle:id==='quixilver-604-2025'?'direct':'conveyor',lightAt:[f.shoulder[0],f.stageTop,.15],
+  const q=new THREE.Quaternion(),seatFix=new SeatFix();let yc=.38,phi=1.2,deploy=0,climbAngle=0;
+  // SubLime: one pivot about the robot's lateral axis carries a rigid clear end effector, no wrist (1678 C2025-Public
+  // PivotConstants; the export's pivot axle runs along Z at x 0.178, y 0.52). Its CORAL follows the pivot, so the axis
+  // is set per frame to leave at the release angle; it hangs down into the indexer to load (pivot -90°). Firefly is
+  // the same (2025-Firefly code: elevator and arm motors only) and rests in its Handoff pose, arm down at the intake.
+  const rigid=id==='sublime-1678'||id==='firefly-118',bind=Math.atan2(sourceVector.y,sourceVector.x);
+  const coralAxis:[number,number,number]=id==='whisper-1690'?[0,0,1]:[1,0,0];
+  return {replaces:root.getObjectByName('climber')?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:climbHeld,heldAnchor:held,coralAxis,algaeAnchor:algaeHeld,algaeGripScale:id==='zuma-581'?[.76,.94,.76]:[.78,.96,.76],intakeAnchor:tip,handoffStyle:id==='quixilver-604-2025'?'direct':'conveyor',lightAt:[f.shoulder[0],f.stageTop,.15],
     flow:{handoff:()=>id==='whisper-1690'?[point(k,tip),new THREE.Vector3(0,.29,.30),new THREE.Vector3(0,.29,0),point(k,held)]:[point(k,tip),new THREE.Vector3(-.28,.25,0),point(k,held)]},
     update(s){if(!animated())return;
       const p=s.place??{height:.45,forward:.3,level:1}, parked=p.height<=.46&&!p.handoff;
@@ -73,10 +97,12 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       if(id==='whisper-1690'){
         const dy=f.grip[1]-f.shoulder[1];
         const targetZ=p.handoff?.25:parked?0:(p.side===1?-1:1)*p.forward;
-        const theta=Math.asin(THREE.MathUtils.clamp(targetZ/dy,-.98,.98));
-        const targetHeight=p.handoff?.29:parked?.48:p.height;
-        yc=scoringEase(yc,Math.max(.32,targetHeight-dy*Math.cos(theta)),s.dt);
-        phi=scoringEase(phi,theta,s.dt);
+        // Climbing: elevator to zero and the arm rotated to π (team post, CD 492064).
+        const climbing=s.climb>.01;
+        const theta=climbing?Math.PI:Math.asin(THREE.MathUtils.clamp(targetZ/dy,-.98,.98));
+        const targetHeight=climbing?0:p.handoff?.29:parked?.48:p.height;
+        yc=scoringSlew(yc,Math.max(.32,targetHeight-dy*Math.cos(theta)),LIFT_RATE,s.dt);
+        phi=scoringSlew(phi,theta,ARM_SWING_RATE,s.dt);
         carriage.position.y=yc-f.shoulder[1];
         if(stage)stage.position.y=Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
         arm.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),phi);
@@ -88,20 +114,32 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       let targetY:number,targetPhi:number;
       const floorAlgae=id==='quixilver-604-2025'&&s.intaking&&parked&&!p.handoff;
       if(floorAlgae){targetY=.70;targetPhi=-.60;}
-      else if(p.handoff){targetY=.31+length;targetPhi=-Math.PI/2;}
-      else if(parked){targetY=id==='quixilver-604-2025'?.808:.38;targetPhi=1.22;}
+      else if(p.handoff||(parked&&id==='firefly-118'&&!p.algae)){targetY=.31+length;targetPhi=-Math.PI/2;}
+      else if(parked){targetY=id==='quixilver-604-2025'?.808:rigid?f.shoulder[1]:.38;targetPhi=rigid?-Math.PI/2:1.22;}
       else {
-        const reach=THREE.MathUtils.clamp(p.forward-f.shoulder[0],.02,length);
-        targetY=THREE.MathUtils.clamp(p.height+(id==='whisper-1690'?.11:0)-Math.sqrt(Math.max(0,length*length-reach*reach)),.32,2.2);
-        targetPhi=Math.atan2(p.height+(id==='whisper-1690'?.11:0)-targetY,id==='whisper-1690'&&p.side===-1?-reach:reach);
+        // Solve with the measured seat correction: the exported tool point sits off the shoulder→wrist line.
+        const c=seatFix.get(p.level,!!p.algae),fwd=p.forward+c.x,height=p.height+c.y;
+        const reach=THREE.MathUtils.clamp(fwd-f.shoulder[0],.02,length);
+        targetY=THREE.MathUtils.clamp(height-Math.sqrt(Math.max(0,length*length-reach*reach)),.32,2.2);
+        targetPhi=Math.atan2(height-targetY,reach);
       }
-      yc=scoringEase(yc,targetY,s.dt);phi=scoringEase(phi,targetPhi,s.dt);
+      yc=scoringSlew(yc,targetY,LIFT_RATE,s.dt);phi=scoringSlew(phi,targetPhi,ARM_SWING_RATE,s.dt);
       carriage.position.y=yc-f.shoulder[1];
       if(stage)stage.position.y=id==='quixilver-604-2025'?carriage.position.y:Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
       arm.quaternion.copy(q.setFromAxisAngle(axis,phi)).multiply(neutral);
-      const toolAngle=floorAlgae?-.35:parked||p.handoff?0:p.level===4?-1.1:p.level===1?0:-.5;
-      wrist.quaternion.copy(arm.quaternion).invert().multiply(q.setFromAxisAngle(axis,toolAngle));
-      if(id!=='whisper-1690')wrist.quaternion.multiply(neutral);
+      // 604's claw angles come from its code (Constants: absolute claw L4 -40°, L2/L3 -10°, L1 +10°).
+      const toolAngle=floorAlgae?-.35:parked||p.handoff?0:id==='quixilver-604-2025'?(p.level===4?-.70:p.level===1?.17:-.17):p.level===4?-1.1:p.level===1?0:-.5;
+      if(rigid){
+        // Arm at phi is the export pose turned by phi-bind; the wrist stays fixed to it.
+        wrist.quaternion.identity();
+        const release=parked||p.handoff?0:p.level===4?-Math.PI/2:p.level===1?0:-.61, rel=release-(phi-bind);
+        if(p.level===1&&!parked&&!p.handoff){coralAxis[0]=0;coralAxis[1]=0;coralAxis[2]=1;}
+        else{coralAxis[0]=Math.cos(rel);coralAxis[1]=Math.sin(rel);coralAxis[2]=0;}
+      }else{
+        wrist.quaternion.copy(arm.quaternion).invert().multiply(q.setFromAxisAngle(axis,toolAngle));
+        wrist.quaternion.multiply(neutral);
+      }
+      if(!parked&&!p.handoff&&!floorAlgae&&Math.abs(yc-targetY)<.03&&Math.abs(phi-targetPhi)<.05){const seat=point(k,p.algae?algaeHeld:held);seatFix.learn(p.level,!!p.algae,p.forward-seat.x,p.height-seat.y);}
       deploy=p.handoff?1-transferFold(p.handoff):ease(deploy,s.intaking?1:0,s.dt);
       // Reference-calibrated intake hinges: rotating about the roller bank
       // made the inboard linkage cut through the carpet. Fold at its frame end.
@@ -122,15 +160,16 @@ function wildstang(root:THREE.Group,k:ModelKit,animated:()=>boolean):RobotModel 
   const climbHeld=anchor(root,climb,[.72,.53,.05]);
   const coralVector=held.position.clone();coral.getWorldPosition(coralVector).sub(new THREE.Vector3().fromArray(shaft));
   const algaeVector=new THREE.Vector3().fromArray([.085,.91,-.32]).sub(new THREE.Vector3().fromArray(shaft));
-  let yc=.76,angle=0,deploy=0;
+  const seatFix=new SeatFix();let yc=.76,angle=0,deploy=0;
   return {replaces,climbAnchor:climbHeld,heldAnchor:held,coralAxis:[1,0,0],handoffStyle:'fold',algaeAnchor:algaeHeld,algaeGripScale:[.70,1.04,1.07],intakeAnchor:tip,flow:{handoff:()=>[point(k,tip),new THREE.Vector3(0,.27,.26),point(k,held)]},lightAt:[-.20,1.07,0],
     update(s){if(!animated())return;deploy=s.place?.handoff?1-transferFold(s.place.handoff):ease(deploy,s.intaking?1:0,s.dt);intake.rotation.x=-(1-deploy)*1.3;
-      const p=s.place??{height:.45,forward:.3,level:1},v=p.algae?algaeVector:coralVector;
-      const length=Math.hypot(v.y,v.z),reach=Math.min(length,p.forward),side=p.side===-1?1:-1;
-      const targetAngle=p.height<=.46 ? -.15 : Math.atan2(Math.sqrt(Math.max(0,length*length-reach*reach)),side*reach)-Math.atan2(v.y,v.z);
-      const targetY=p.height<=.46 ? .76 : p.height-Math.sqrt(Math.max(0,length*length-reach*reach));
-      yc=scoringEase(yc,Math.max(.42,targetY),s.dt);angle=scoringEase(angle,targetAngle,s.dt);
+      const p=s.place??{height:.45,forward:.3,level:1},v=p.algae?algaeVector:coralVector,parked=p.height<=.46;
+      const c=seatFix.get(p.level,!!p.algae),length=Math.hypot(v.y,v.z),reach=Math.min(length,Math.max(.02,p.forward+c.x)),side=p.side===-1?1:-1;
+      const targetAngle=parked ? -.15 : Math.atan2(Math.sqrt(Math.max(0,length*length-reach*reach)),side*reach)-Math.atan2(v.y,v.z);
+      const targetY=Math.max(.42,parked ? .76 : p.height+c.y-Math.sqrt(Math.max(0,length*length-reach*reach)));
+      yc=scoringSlew(yc,targetY,LIFT_RATE,s.dt);angle=scoringSlew(angle,targetAngle,ARM_SWING_RATE,s.dt);
       carriage.position.y=yc-shaft[1];arm.rotation.x=-angle;
+      if(!parked&&!p.handoff&&Math.abs(yc-targetY)<.03&&Math.abs(angle-targetAngle)<.05){const seat=point(k,p.algae?algaeHeld:held),out=p.side===-1?seat.z:-seat.z;seatFix.learn(p.level,!!p.algae,p.forward-out,p.height-seat.y);}
       if(stage)stage.position.y=Math.max(0,yc-.92);
       climb.rotation.z=ease(climb.rotation.z,1.5*(1-s.climb),s.dt);
     }};
@@ -154,7 +193,7 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
   // Zuma's tube crosses its rigid arm in the source Y/Z plane, not along
   // the wheel shafts or the uncorrected source Z axis.
   const coralAxis:[number,number,number]=zuma?[0,-radial.z/r,radial.y/r]:[0,0,1];
-  let yc=.42,phi=Math.PI/2,deploy=0;
+  const seatFix=new SeatFix();let yc=.42,phi=Math.PI/2,deploy=0,lastOut=1;
   return {replaces:hasClimber?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:hasClimber?climbHeld:undefined,heldAnchor:held,coralAxis,algaeAnchor:algae,algaeGripScale:zuma?[1,1,.96]:[.78,.94,.72],algaeGripThroat:zuma,intakeAnchor:tip,handoffStyle:zuma?'conveyor':'fold',lightAt:[.17,1.07,.15],
     flow:{handoff:()=>[point(k,tip),new THREE.Vector3(-.27,.25,0),point(k,held)]},
     update(s){if(!animated())return;const p=s.place??{height:.45,forward:.3,level:1},parked=p.height<=.46&&!p.handoff;
@@ -163,10 +202,12 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
       const transfer=point(k,tip);
       let y=.42,angle=Math.PI/2;
       if(p.handoff){y=(zuma?.32:transfer.y)+r;angle=-Math.PI/2;}
-      else if(!parked){const reach=Math.min(r,Math.max(.02,p.forward)),rise=Math.sqrt(Math.max(0,r*r-reach*reach));y=Math.max(.32,p.height-rise);angle=Math.atan2(rise,(p.side===-1?1:-1)*reach);}
-      yc=scoringEase(yc,y,s.dt);phi=scoringEase(phi,angle,s.dt);carriage.position.y=yc-shaft[1];
+      else if(!parked){lastOut=p.side===-1?-1:1;const c=seatFix.get(p.level,!!p.algae),reach=Math.min(r,Math.max(.02,p.forward+c.x)),rise=Math.sqrt(Math.max(0,r*r-reach*reach));y=Math.max(.32,p.height+c.y-rise);angle=Math.atan2(rise,(p.side===-1?1:-1)*reach);}
+      yc=scoringSlew(yc,y,LIFT_RATE,s.dt);phi=scoringSlew(phi,angle,ARM_SWING_RATE,s.dt);carriage.position.y=yc-shaft[1];
       if(stage)stage.position.y=zuma?Math.max(0,yc-.92)-.7874:Math.max(0,yc-shaft[1])*.5;
-      arm.rotation.x=bindAngle-phi;
+      // Dunk follow-through as the CORAL leaves: both arms swing ~25° down to release (581 ArmState, 1778 Arm.kt).
+      arm.rotation.x=bindAngle-(phi+lastOut*.45*s.firing);
+      if(!parked&&!p.handoff&&Math.abs(yc-y)<.03&&Math.abs(phi-angle)<.05){const seat=point(k,p.algae?algae:held),out=p.side===-1?seat.z:-seat.z;seatFix.learn(p.level,!!p.algae,p.forward-out,p.height-seat.y);}
       // The head is rigidly mounted: preserve its CAD transform relative
       // to the arm. CORAL follows that same rotation through its local axis.
 
