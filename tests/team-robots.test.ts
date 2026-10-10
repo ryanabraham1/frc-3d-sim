@@ -115,6 +115,9 @@ describe('real team robots', () => {
         robot.visual.updateMatrixWorld(true);
         const center = robot.visual.worldToLocal(robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3()));
         const want = side === 1 ? new THREE.Vector3(0, 1.75, -0.7) : new THREE.Vector3(side === 2 ? -0.7 : 0.7, 1.75, 0);
+        // Off-center claws (placement.toolOffset, robot frame x forward / y left) hold the piece at their offset.
+        const o = team.config.placement!.toolOffset ?? [0, 0];
+        want.add(new THREE.Vector3(o[0], 0, -o[1]));
         expect(center.distanceTo(want), `${team.id} side ${side}`).toBeLessThan(0.2);
       }
     }

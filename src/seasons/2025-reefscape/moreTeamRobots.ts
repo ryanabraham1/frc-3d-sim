@@ -193,7 +193,9 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   // Keep the white later-season claw seen in the pit photo; the CAD uses blue grip hubs.
   const db = drivebase(k, { tube: silverTube, motorRing: 0xe8c21a });
   // Continuous elevator: tall silver uprights with a black top plate, the carriage riding on the moving stages.
-  const ex = -side * 0.08, ez = 0.13, top = H - 0.02;
+  // The elevator sits just aft of center so the shoulder is on the center line and the arm reaches both ends
+  // equally (it scores off either end) [EST from TBA photos].
+  const ex = side * 0.1, ez = 0.13, top = H - 0.02;
   for (const sz of [-1, 1]) {
     bar(k.visual, [ex, bt - 0.02, sz * ez], [ex, top, sz * ez], 0.04, silverTube);
     bar(k.visual, [side * (L / 2 - 0.06), bt - 0.01, sz * ez], [ex, bt + 0.4, sz * ez], 0.022, silverTube);
@@ -211,7 +213,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   box(carriage, 0.012, 0.15, 2 * ez - 0.1, silver, ex - side * 0.09, 0, 0);
   for (const sign of [-1,1]) box(carriage,.045,.035,.06,yellow,ex-side*.065,sign*.06,sign*(ez-.03));
   // Lantern-gear shoulder (a big round gear plate) and a truss arm with a 180° wrist.
-  const la = 0.5, ax = ex - side * 0.1;
+  const la = 0.6, ax = ex - side * 0.1;
   const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 28), silver);
   gear.rotation.x = Math.PI / 2; gear.position.set(ax, 0.04, 0.09); carriage.add(gear);
   const arm = pivot(carriage, ax, 0.04);
