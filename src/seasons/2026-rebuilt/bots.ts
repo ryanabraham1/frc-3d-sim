@@ -60,6 +60,9 @@ function adaptRebuilt(team: TeamBrain): { id: string; reason: string } | null {
   return { id: 'press', reason: `full robots hound ${target} while our HUB is off` };
 }
 
+/** Fresh HUB FUEL closer than this (m) turns a Hard bot's intake off (G408). 2.6 m (the stance check) cost ~65 FUEL a match. */
+const CATCH_RADIUS = 1.2;
+
 interface RebuiltPlan {
   /** Last hub state announced on the radio. */
   announced: string;
@@ -209,7 +212,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     return spotAt(a);
   };
   // G408: don't run the intake while FUEL the HUB just released is rolling at us (a catch is a foul).
-  const hubFuelNear = (): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < 2.6);
+  const hubFuelNear = (radius = 2.6): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < radius);
   const stanceCommand = (live: boolean): RobotCommand => {
     const spot = stanceSpot();
     const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x) + r.shotYawOffset;
@@ -284,6 +287,13 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
 
   let raidReturning=false;
   const think = (dt: number): RobotCommand => {
+    const cmd = decide(dt);
+    // Hard and up, G408: no intake while FUEL the HUB just released is falling within reach. Normal bots still catch it
+    // and give the foul away; benchmarked, Hard bots gave up ~9 fouls a match to it (docs/AI-STRATEGY.md).
+    if (bot.hard && cmd.intake && hubFuelNear(CATCH_RADIUS)) cmd.intake = false;
+    return cmd;
+  };
+  const decide = (dt: number): RobotCommand => {
     poseCache = null;
     if (r.isClimbing) return { ...IDLE_COMMAND };
     if (bot.smart) announce();
@@ -349,7 +359,11 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
 
     if (active || untilActive < toSpot + 0.4) {
       const live = active || untilActive < 0.6; // shots land after activation
-      if (r.held.length > 0 && (inZone() || r.capacityLeft === 0 || r.held.length >= Math.min(r.config.hopperCapacity, 48) || activeLeft < toSpot + r.held.length / r.config.launcher.rate + 1 || !active)) {
+      // Hard: a live HUB is worth more than a full hopper. Go dump once half full, and leave a wider margin so the
+      // hopper is empty before the shift ends instead of carrying FUEL through 25 s of an inactive HUB.
+      const enough = bot.hard ? Math.min(r.config.hopperCapacity * 0.5, 24) : Math.min(r.config.hopperCapacity, 48);
+      const margin = bot.hard ? 3.5 : 1;
+      if (r.held.length > 0 && (inZone() || r.capacityLeft === 0 || r.held.length >= enough || activeLeft < toSpot + r.held.length / r.config.launcher.rate + margin || !active)) {
         return shootingCommand(live);
       }
       // Empty (or nearly): refill nearby; head back before the shift runs out.

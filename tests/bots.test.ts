@@ -285,3 +285,51 @@ it('teammates follow the player’s orders and every season offers strategies an
     } finally { sim.dispose(); }
   }
 });
+
+describe('REBUILT Hard plays tighter than Normal', () => {
+  /** A blue bot in TELEOP at `pose` with FUEL ahead of it in the NEUTRAL ZONE; blue's HUB stays live through SHIFT 1. */
+  function rebuiltBot(skill: 'normal' | 'hard', held: number) {
+    const season = SEASONS.find((s) => s.id === '2026-rebuilt')!;
+    const sim = new HeadlessSim(season, R, { robot: season.botRobotConfig!('hard'), alliance: 'blue', station: 2, pose: { x: 6.3, y: 2, yaw: 0 } });
+    sim.ctx.settings.alliance = 'red';
+    sim.ctx.settings.aiDifficulty = skill;
+    sim.rules.stage();
+    for (const piece of sim.robot.held.splice(0)) sim.pool.reserve(piece);
+    for (const piece of sim.pool.indices('field')) sim.pool.reserve(piece);
+    sim.scatter(Array.from({ length: 6 }, (_, i) => ({ x: 7.6 + (i % 3) * 0.15, y: 2 + Math.floor(i / 3) * 0.15 })));
+    sim.load(held);
+    sim.rules.onPeriodChange(sim.ctx.clock.start());
+    while (sim.ctx.clock.mode !== 'teleop') for (const change of sim.ctx.clock.advance(0.1)) sim.rules.onPeriodChange(change);
+    (sim.rules as RebuiltRules).firstInactive = 'red';
+    return { sim, bot: SEASONS[0].createBotPilot!(sim.ctx, sim.rules, sim.robot) };
+  }
+
+  it('Hard keeps its intake off near FUEL the HUB just released (G408); Normal still catches it', () => {
+    const intake: Record<string, boolean> = {};
+    for (const skill of ['normal', 'hard'] as const) {
+      const { sim, bot } = rebuiltBot(skill, 0);
+      try {
+        // A FUEL the HUB just let go of, falling 0.6 m beside the robot.
+        const ball = sim.pool.indices('reserve')[0];
+        sim.pool.placeWorld(ball, sim.frame.toWorld(6.3, 2.6, 0.5), sim.frame.toWorld(0, 0, -1));
+        (sim.rules as unknown as { hubDrops: Map<number, { t: number; grounded: boolean }> }).hubDrops.set(ball, { t: sim.ctx.clock.elapsed, grounded: false });
+        expect((sim.rules as RebuiltRules).freshHubFuel()).toContain(ball);
+        intake[skill] = bot.update(sim.physics.dt).intake;
+      } finally { sim.dispose(); }
+    }
+    expect(intake).toEqual({ normal: true, hard: false });
+  });
+
+  it('Hard heads home to dump half a hopper while its HUB is live; Normal tops up first', () => {
+    const vx: Record<string, number> = {};
+    for (const skill of ['normal', 'hard'] as const) {
+      const { sim, bot } = rebuiltBot(skill, 30);
+      try {
+        expect((sim.rules as RebuiltRules).hubActive('blue')).toBe(true);
+        vx[skill] = bot.update(sim.physics.dt).vx;
+      } finally { sim.dispose(); }
+    }
+    expect(vx.normal).toBeGreaterThan(0.3); // toward the FUEL in the NEUTRAL ZONE
+    expect(vx.hard).toBeLessThan(-0.3); // toward its ALLIANCE ZONE
+  });
+});

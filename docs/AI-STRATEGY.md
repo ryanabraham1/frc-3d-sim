@@ -45,6 +45,31 @@ in the last 30 s so every robot dumps and climbs.
 (These strategy runs predate the archetype rebalance below, when every Hard bot had an 80-ball hopper firing
 16/s; absolute scores are now lower, the ranking of plans is what matters.)
 
+### Hard vs Normal habits (2026-10)
+
+Where Hard bots lost points, from 8 seeds of Hard vs Hard with a per-robot time breakdown of TELEOP:
+
+- **G408 catches.** Each alliance was called for about 9 G408 fouls a match (FUEL the HUB had just released going
+  straight into an intake, often several in a row: MAJOR), worth ~60–80 points to the other side, i.e. to a human
+  driver for free. The generic "intake off while fresh HUB FUEL is within 2.6 m" check that the stance code uses cost
+  ~65 FUEL a match when applied everywhere; at **1.2 m** Hard bots commit ~1 G408 a match and keep their FUEL.
+- **Carrying FUEL through a live HUB.** Robots spent 30–60 s of TELEOP holding FUEL outside the ALLIANCE ZONE while
+  their own HUB was live (topping up toward a 48-FUEL load), and often still held 10–30 FUEL when the HUB went off.
+  Hard now heads home once half full (24 FUEL) and leaves 3.5 s instead of 1 s of slack to empty before the shift ends.
+
+Red with both changes, blue unchanged, 8 seeds (red − blue; the mirror is not 0 because the field isn't symmetric):
+
+| Red | Red FUEL | Red fouls | Margin |
+|---|---:|---:|---:|
+| Baseline (mirror) | 565 | 9.4 | +88 |
+| G408 check at 2.6 m | 500 | 0.4 | +58 |
+| Dump at half + wider margin | 586 | 6.5 | +93 |
+| **Both, G408 check at 1.2 m** (shipped) | 580 | 1.0 | **+128** |
+
+Both are Hard/Einstein only; Normal keeps its old habits. 2024 and 2025 bots draw almost no fouls, so this is
+2026-specific. `tools/analyze_match_logs.py` checks the same things against real player matches once logs reach
+Supabase (docs/MATCH-LOGS.md).
+
 ## 2024 CRESCENDO
 
 Strategy, blue vs red on Amplify cycles (6 seeds):

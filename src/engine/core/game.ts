@@ -33,7 +33,7 @@ import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone 
 import { resolveStartPose } from '../startPose';
 import { clamp, formatClock } from '../units';
 import { turnToward } from '../ai/steering';
-import { radioFor } from '../ai/team';
+import { aiOrders, radioFor } from '../ai/team';
 import { fillBotStations } from '../ai/matchSetup';
 import { drainSpilled } from '../robot/spill';
 import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
@@ -229,6 +229,12 @@ export class Game {
   private readonly timings = { tickMs: 0, drawMs: 0, faderMs: 0, renderMs: 0 };
   private lastPerfUpdate = 0;
 
+  /** Settings the AI reads: a multiplayer lobby's bot difficulty applies to both alliances. */
+  private botSettings(settings: GameSettings): GameSettings {
+    const skill = this.setup.botDifficulty;
+    return skill ? { ...settings, aiDifficulty: skill, aiAlly: { skill }, aiOpponent: { skill } } : settings;
+  }
+
   constructor(
     container: HTMLElement,
     R: RapierModule,
@@ -299,7 +305,9 @@ export class Game {
       this.matchLog = new MatchLogger(
         this,
         (r) => r.controller === 'bot' ? SRC.bot : this.manual(r) ? SRC.human : SRC.autopilot,
-        { describe: (r) => describeArchetype(season, r.config), seasonId: season.id, seed: this.setup.seed, fieldLength: season.fieldLength, fieldWidth: season.fieldWidth, mode: this.role },
+        { describe: (r) => describeArchetype(season, r.config), seasonId: season.id, seed: this.setup.seed, fieldLength: season.fieldLength, fieldWidth: season.fieldWidth, mode: this.role,
+          // Bot difficulty per alliance, so logs show how players do against each level (tools/analyze_match_logs.py).
+          extra: { aiSkill: { blue: aiOrders(this.botSettings(settings), 'blue').skill, red: aiOrders(this.botSettings(settings), 'red').skill } } },
       );
       installConsoleHelpers();
     }
@@ -318,7 +326,7 @@ export class Game {
       score: this.score,
       rng: this.rng,
       hud: this.hud,
-      settings: this.setup.botDifficulty ? { ...settings, aiDifficulty: this.setup.botDifficulty, aiAlly: { skill: this.setup.botDifficulty }, aiOpponent: { skill: this.setup.botDifficulty } } : settings,
+      settings: this.botSettings(settings),
       playerRobot: this.player,
       toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance, robot?: Robot) {
         self.toast(msg, kind, alliance, robot);

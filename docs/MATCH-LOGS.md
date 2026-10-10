@@ -9,9 +9,10 @@ Every match the machine simulates is logged: solo, and online (the **host** runs
 match, including remote drivers, who count as humans). Clients and spectators never log. `?log=0` turns it off.
 1. The finished log (also a partial one if you quit after ~10 s) is saved in the browser's IndexedDB, then gzipped and
    POSTed to the relay at `/api/match-logs` (`VITE_RELAY_URL` when the site is hosted apart from the relay).
-2. **Supabase** (production): the relay stores the file in the private `match-logs` Storage bucket and a metadata row
+2. **Supabase** (production): the relay (the Cloudflare Worker, `cloudflare/worker.ts`, or the Node server) stores the file in the private `match-logs` Storage bucket and a metadata row
    (season, mode, frames, archetype labels, final score, size) in `match_logs`. It uses the same `SUPABASE_URL` +
-   `SUPABASE_SERVICE_KEY` env vars as ranked play, on the Render web service only. **One-time setup:** run
+   `SUPABASE_SERVICE_KEY` env vars / Worker secrets as ranked play (a Worker without them answers 503 so browsers keep
+   the log queued). **One-time setup:** run
    `supabase/match_logs.sql` in that project's SQL editor (creates the bucket and table; RLS on, no policies, so the
    anon key can't touch them).
 3. **No Supabase env vars** (dev, tests): the relay writes plain JSONL to `data/demos/` (gitignored).
@@ -21,6 +22,12 @@ match, including remote drivers, who count as humans). Clients and spectators ne
   `matchLogs.downloadAll()`.
 - Training data: download from the bucket (Supabase dashboard, or `storage/v1/object/match-logs/<path>` with the
   service key), `gunzip`, and point `tools/demos_to_dataset.py` at the `.jsonl` files.
+
+## How players do against the bots
+`python3 tools/analyze_match_logs.py --supabase` (with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` set) or
+`python3 tools/analyze_match_logs.py data/demos/*.jsonl` summarises player-vs-bot matches by season and bot difficulty:
+win rate and margin, foul points the bots gave away (by rule), how much players defended bots and how long bots sat
+blocked by a player. The header's `extra.aiSkill` (`{ blue, red }`) records the bot difficulty of each alliance.
 
 ## Archetype
 Each robot's header entry has `archetype`: `label` (the season's preset / team-robot id when its config matches
