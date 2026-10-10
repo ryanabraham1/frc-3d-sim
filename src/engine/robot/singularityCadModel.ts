@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scoringEase } from './scoringReadiness';
 import type { ModelKit, RobotModel } from './models';
-import { anchor, ease, mount, parked, pitchIK, placeOf, type V3 } from './reefscapeCadRig';
+import { anchor, ease, mount, parked, placeOf, type V3 } from './reefscapeCadRig';
 
 // 1706 Ratchet Rockers Singularity (2025). Source: public Onshape "RS-000 Singularity - Public Release", CAD/code
 // release https://www.chiefdelphi.com/t/510177 (code: github.com/rr1706/konshu, whose README lists the subsystems),
@@ -47,8 +47,16 @@ export function buildSingularityCad(root: THREE.Group, _k: ModelKit, animated: (
     update(s) {
       if (!animated()) return;
       const p = placeOf(s), floorAlgae = s.intaking && parked(p);
+      // rr1706/konshu ArmConstants setpoints, relative to the export (station) pose, + = nose up: L1 0°, L2/L3 -14°,
+      // L4 -38° (CORAL nearly vertical), REEF ALGAE -20°, PROCESSOR -52°, NET +61°. The elevator puts the seat at the
+      // placement height; the channel shoots the CORAL the rest of the way out.
       let r = 0, a = 0;
-      if (!parked(p)) ({ rise: r, angle: a } = pitchIK(PIVOT, p.algae ? ALGAE : CORAL, p.forward, p.height, RISE));
+      if (!parked(p)) {
+        const deg = p.algae ? (p.height > 1.7 ? 61 : p.height < .7 ? -52 : -20) : p.level === 4 ? -38 : p.level === 1 ? 0 : -14;
+        a = deg * Math.PI / 180;
+        const g = p.algae ? ALGAE : CORAL, seatY = PIVOT[1] + (g[0] - PIVOT[0]) * Math.sin(a) + (g[1] - PIVOT[1]) * Math.cos(a);
+        r = THREE.MathUtils.clamp(p.height - seatY, RISE[0], RISE[1]);
+      }
       rise = scoringEase(rise, r, s.dt); pitch = scoringEase(pitch, a, s.dt);
       // Three-stage elevator: each stage carries an equal share of the carriage travel [EST: cascade rigging].
       stage2.position.y = rise / 3; stage3.position.y = rise * 2 / 3; carriage.position.y = rise;

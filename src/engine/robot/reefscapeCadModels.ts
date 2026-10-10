@@ -127,7 +127,8 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       carriage.position.y=yc-f.shoulder[1];
       if(stage)stage.position.y=id==='quixilver-604-2025'?carriage.position.y:Math.max(0,yc-(f.stageTop-.13))-f.stageRaised;
       arm.quaternion.copy(q.setFromAxisAngle(axis,phi)).multiply(neutral);
-      const toolAngle=floorAlgae?-.35:parked||p.handoff?0:p.level===4?-1.1:p.level===1?0:-.5;
+      // 604's claw angles come from its code (Constants: absolute claw L4 -40°, L2/L3 -10°, L1 +10°).
+      const toolAngle=floorAlgae?-.35:parked||p.handoff?0:id==='quixilver-604-2025'?(p.level===4?-.70:p.level===1?.17:-.17):p.level===4?-1.1:p.level===1?0:-.5;
       if(rigid){
         // Arm at phi is the export pose turned by phi-bind; the wrist stays fixed to it.
         wrist.quaternion.identity();

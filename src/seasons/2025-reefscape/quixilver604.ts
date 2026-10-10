@@ -1,7 +1,7 @@
 import type { TeamRobot } from '@engine/core/season';
 import { bar, drivebase, mat, pivot, registerRobotModel, sidePlates, spin, wheelShaft } from '@engine/robot/models';
 import { build, normalizeReefscapeConfig } from './config';
-import { place, reachWith, stowed } from './additionalTeamRobots';
+import { place, stowed } from './additionalTeamRobots';
 
 // Supplied 2025 FRC604 Robot.glb: large station funnel, elevator, arm and claw;
 // No CORAL floor intake; floor ALGAE uses the lowered elevator/arm/gripper.
@@ -16,8 +16,14 @@ registerRobotModel('quixilver-604-2025',k=>{
   const held=pivot(head,.08,0),algae=pivot(head,.22,.03);
   return {replaces:['chassis','mast','hopper','intakeRollers','funnel'],heldAnchor:held,coralAxis:[1,0,0],handoffStyle:'direct',algaeAnchor:algae,algaeGripScale:[.84,1,.84],intakeAnchor:held,update(s){
     const p=place(s),floorAlgae=s.intaking&&!p.handoff&&p.height<=.46;
-    const goal=floorAlgae?{yc:.40,phi:-.20}:stowed(p)?{yc:.4,phi:1.2}:reachWith(p,1,.1,.6,.3,1.8);
-    carriage.position.y=goal.yc;arm.rotation.z=goal.phi;head.rotation.z=-goal.phi;spin(rollers,s.enabled&&s.intaking?20:0,s.dt);db.update(s);
+    // frc604/2025-public: arm pivot 31.75 in above the 27 in single-stage elevator's zero; stow hangs the arm at
+    // -82.5°; the claw's absolute angle is L4 -40°, L2/L3 -10°, L1 +10° (Constants, ScoringKinematics).
+    // L2/L3 reach down to the BRANCH (arm -40°) and L4 up (+40°): pick that elbow, then keep the carriage in travel.
+    const dx=Math.min(.6,Math.max(.02,p.forward-.1)),up=Math.sqrt(.36-dx*dx),down=p.level!==4&&!p.algae&&p.height+up<=1.55;
+    const reach={yc:Math.min(1.55,Math.max(.86,down?p.height+up:p.height-up)),phi:0};reach.phi=Math.atan2(p.height-reach.yc,dx);
+    const goal=floorAlgae?{yc:.86,phi:-1.1}:stowed(p)?{yc:.86,phi:-1.44}:reach;
+    const claw=floorAlgae?-.35:stowed(p)?-.17:p.level===4?-.70:p.level===1?.17:-.17;
+    carriage.position.y=goal.yc;arm.rotation.z=goal.phi;head.rotation.z=-goal.phi+claw;spin(rollers,s.enabled&&s.intaking?20:0,s.dt);db.update(s);
   }};
 });
 export function quixilver604():TeamRobot {
