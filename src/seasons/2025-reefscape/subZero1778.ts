@@ -90,6 +90,7 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, hingeY: bt + 0.12, rollers: 2, frame: black, stow: Math.PI - 0.45 });
   let lift = 0.97;
   let swing = 0;
+  let lastSide = 1;
   let deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -105,12 +106,15 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
       // straight down, tucked inside the frame.
       let theta = 0;
       if (side !== 0 && !handoff) {
+        // Team code (Arm.kt): at the REEF the arm is always above horizontal (100–135° from straight down) and dunks
+        // ~30° to release; L1 reaches below the pivot.
         const t = Math.asin(Math.min(1, Math.max(0, p.forward / ARM)));
-        theta = side * (p.level === 4 ? Math.PI - t : t);
+        theta = side * (p.level === 1 ? t : Math.PI - t);
+        lastSide = side;
       }
       swing += wrapAngle(theta - swing) * Math.min(1, 12 * s.dt);
       scoringPosition(swing,theta);
-      arm.rotation.x = swing;
+      arm.rotation.x = swing - lastSide * 0.45 * s.firing;
       // SubZero raises its intake while the receiving arm hangs down.
       // Drive folding from transfer progress so even a short handoff reaches
       // the meeting pose before the piece leaves the roller bank.

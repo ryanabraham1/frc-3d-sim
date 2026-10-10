@@ -192,7 +192,7 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
   // Zuma's tube crosses its rigid arm in the source Y/Z plane, not along
   // the wheel shafts or the uncorrected source Z axis.
   const coralAxis:[number,number,number]=zuma?[0,-radial.z/r,radial.y/r]:[0,0,1];
-  const seatFix=new SeatFix();let yc=.42,phi=Math.PI/2,deploy=0;
+  const seatFix=new SeatFix();let yc=.42,phi=Math.PI/2,deploy=0,lastOut=1;
   return {replaces:hasClimber?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:hasClimber?climbHeld:undefined,heldAnchor:held,coralAxis,algaeAnchor:algae,algaeGripScale:zuma?[1,1,.96]:[.78,.94,.72],algaeGripThroat:zuma,intakeAnchor:tip,handoffStyle:zuma?'conveyor':'fold',lightAt:[.17,1.07,.15],
     flow:{handoff:()=>[point(k,tip),new THREE.Vector3(-.27,.25,0),point(k,held)]},
     update(s){if(!animated())return;const p=s.place??{height:.45,forward:.3,level:1},parked=p.height<=.46&&!p.handoff;
@@ -201,10 +201,11 @@ function sideScorer(id:string,root:THREE.Group,k:ModelKit,animated:()=>boolean):
       const transfer=point(k,tip);
       let y=.42,angle=Math.PI/2;
       if(p.handoff){y=(zuma?.32:transfer.y)+r;angle=-Math.PI/2;}
-      else if(!parked){const c=seatFix.get(p.level,!!p.algae),reach=Math.min(r,Math.max(.02,p.forward+c.x)),rise=Math.sqrt(Math.max(0,r*r-reach*reach));y=Math.max(.32,p.height+c.y-rise);angle=Math.atan2(rise,(p.side===-1?1:-1)*reach);}
+      else if(!parked){lastOut=p.side===-1?-1:1;const c=seatFix.get(p.level,!!p.algae),reach=Math.min(r,Math.max(.02,p.forward+c.x)),rise=Math.sqrt(Math.max(0,r*r-reach*reach));y=Math.max(.32,p.height+c.y-rise);angle=Math.atan2(rise,(p.side===-1?1:-1)*reach);}
       yc=scoringSlew(yc,y,LIFT_RATE,s.dt);phi=scoringSlew(phi,angle,ARM_SWING_RATE,s.dt);carriage.position.y=yc-shaft[1];
       if(stage)stage.position.y=zuma?Math.max(0,yc-.92)-.7874:Math.max(0,yc-shaft[1])*.5;
-      arm.rotation.x=bindAngle-phi;
+      // Dunk follow-through as the CORAL leaves: both arms swing ~25° down to release (581 ArmState, 1778 Arm.kt).
+      arm.rotation.x=bindAngle-(phi+lastOut*.45*s.firing);
       if(!parked&&!p.handoff&&Math.abs(yc-y)<.03&&Math.abs(phi-angle)<.05){const seat=point(k,p.algae?algae:held),out=p.side===-1?seat.z:-seat.z;seatFix.learn(p.level,!!p.algae,p.forward-out,p.height-seat.y);}
       // The head is rigidly mounted: preserve its CAD transform relative
       // to the arm. CORAL follows that same rotation through its local axis.

@@ -5,7 +5,7 @@ import { approach, bar, battery, box, controller, decal, deployableIntake, drive
 import { belt, motor } from '@engine/robot/mechanicalDetail';
 import { inch, lb } from '@engine/units';
 import { build, normalizeReefscapeConfig } from './config';
-import { place, reachWith, stowed, starWheels } from './additionalTeamRobots';
+import { followRelease, place, reachWith, stowed, starWheels } from './additionalTeamRobots';
 
 /**
  * Three more real 2025 REEFSCAPE robots, in the clean flat style of the reference, checked against The Blue Alliance
@@ -102,7 +102,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
   const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop;
   const silver = mat(0xc9ced5, { metal: 0.7, rough: 0.3 }), silverTube = tubeMat(0xc9ced5), orange = mat(0xff6a2a, { rough: 0.5 }), black = mat(0x16171a, { metal: 0.3, rough: 0.55 }), gray = mat(0x8f959d, { metal: 0.6, rough: 0.4 });
   const db = drivebase(k, { tube: silverTube, motorRing: 0xc8242b });
-  const dir = 1; // scores (and picks up) off the front
+  const dir = 1; // picks up off the front; scores off either end
   const ex = -0.14, top = H - 0.02;
   // Elevator: a thick perforated column on the centreline with the cable chain beside it, gussets to the frame.
   // Spectrum row 119, 2025 971 Main Robot + pit photos: open blue/silver braced elevator.
@@ -166,12 +166,15 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       if (collecting) goal = { yc: .11 - .03 + Math.sin(.75) * (la - .1) + Math.sin(.1) * .13, phi: -.75 };
       else if (stowed(p)) goal = { yc: yMin, phi: 1.25 };
       else goal = reachWith({ ...p, forward: p.forward - .13 * Math.cos(pitch), height: p.height - .03 - .13 * Math.sin(pitch) }, dir, ax, la - .1, yMin, yMax);
+      // Scoring off the back mirrors the front setpoints (971 superstructure_goal); the pivot sits on the centreline.
+      const back = !collecting && !stowed(p) && (p.side ?? 0) === 2;
+      if (back) goal.phi = Math.PI - goal.phi;
       yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.14));
       middleStage.position.y = ext * .5;
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      eff.rotation.z = -phi + pitch;
+      eff.rotation.z = -phi + (back ? Math.PI - pitch : pitch);
       for (const w of wheels) w.rotation.z += (s.intaking ? 22 : s.firing > 0 ? -30 : 0) * s.dt;
       hook.rotation.x = approach(hook.rotation.x, (-1.2) * s.climb, 5, s.dt);
       db.update(s);
@@ -233,25 +236,30 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   plate(k.visual, [[-side * (L / 2 - 0.2), bt - 0.02], [-side * (L / 2 - 0.08), bt - 0.02], [-side * (L / 2 - 0.1), bt + 0.2], [-side * (L / 2 - 0.18), bt + 0.2]], 0.008, red, cz);
   bar(climb, [0, 0, 0.012], [0, 0.32, 0.012], 0.028, redTube);
   tube(climb, [-0.14, 0.32, 0.012], [0.14, 0.32, 0.012], 0.014, redTube);
-  let yc = bt + 0.2, phi = 1.2, deploy = 0;
-  const yMin = bt + 0.12, yMax = top + 0.7, dir = -side;
+  let yc = bt + 0.2, phi = Math.PI / 2, deploy = 0, lastDir = 1;
+  const yMin = bt + 0.12, yMax = top + 0.7, front = -side;
+  // Team 341 FRC2025-Public: the claw is rigid in pitch (the wrist only rolls the tube between intake and scoring), so
+  // the shoulder sets the CORAL angle. Stow is the arm straight up; it scores off whichever end faces the REEF
+  // (Superstructure.poseAdjust mirrors the shoulder) and dunks: the arm swings a further 25–33° down to release.
+  const coralAxis: [number, number, number] = [1, 0, 0];
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'toss', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    heldAnchor: held, coralAxis, handoffStyle:'toss', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), flowAt(k, held)] },
     update(s) {
       const p = place(s);
+      const dir = (p.side ?? 0) === 2 ? -front : front;
       let goal: { yc: number; phi: number };
-      // Straight down for the handoff, written the same way round as the stowed pose (down and back at bumper height,
-      // as in the TBA photos) so the arm swings a short way between them, not a full turn out over the front.
-      if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: dir > 0 ? 1.5 * Math.PI : -Math.PI / 2 };
-      else if (stowed(p)) goal = { yc: bt + 0.42, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
-      else goal = reachWith(p, dir, ax, la, yMin, yMax);
+      // Ground handoff: shoulder +126.5° (back, over the intake) catching the tossed CORAL.
+      if (p.handoff) goal = { yc: bt + .42, phi: front > 0 ? Math.PI * 1.2 : -Math.PI * .2 };
+      else if (stowed(p)) goal = { yc: yMin, phi: Math.PI / 2 };
+      else { goal = reachWith(p, dir, ax, la + 0.02, yMin, yMax); lastDir = dir; }
       yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.14));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
-      arm.rotation.z = phi;
-      eff.rotation.z = -phi + (p.handoff ? 0 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
+      // Dunk follow-through as the CORAL leaves (ScoreBack: shoulder down a further ~30°).
+      arm.rotation.z = phi - lastDir * 0.5 * s.firing;
+      followRelease(coralAxis, p, phi, dir);
       for (const w of effWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
       deploy = approach(deploy, p.handoff ? 1 : intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
@@ -300,17 +308,24 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   const climber = pivot(k.visual, side * L * 0.22, bt + 0.05, -W * 0.32);
   for (const sz of [-1, 1]) bar(climber, [0, 0, sz * 0.07], [0, 0.32, sz * 0.07], 0.025, black);
   bar(climber, [0, 0.32, -0.07], [0, 0.32, 0.07], 0.025, alu);
-  let yc = bt + 0.15, phi = Math.PI / 2, deploy = 0;
+  let yc = bt + 0.15, phi = Math.PI / 2, deploy = 0, lastDir = 1;
+  const coralAxis: [number, number, number] = [0, 0, 1];
   return {
-    replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, coralAxis:[0,0,1], handoffStyle:'conveyor', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
+    replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, coralAxis, handoffStyle:'conveyor', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), flowAt(k, held)] },
     update(s) {
       const p = place(s), yMin = bt + 0.12;
-      const goal = p.handoff ? { yc: bt + .1 + la, phi: -Math.PI / 2 } : stowed(p) ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, 1, ex + 0.04, la, yMin, top + 0.9);
-      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 10, s.dt);
+      // Out of the left (+1) or right (-1) side; the Champs claw is rigid on the arm (team581/2025-beta: no wrist), so
+      // the CORAL turns with the arm, and the arm dunks ~25° down as it releases (ArmState lineup → release).
+      const dir = p.side === -1 ? -1 : 1;
+      const scoring = !p.handoff && !stowed(p);
+      const goal = p.handoff ? { yc: bt + .17 + la, phi: -Math.PI / 2 } : !scoring ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, dir, ex + 0.04, la, yMin, top + 0.9);
+      if (scoring) lastDir = dir;
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 10);
       const ext = Math.max(0, yc - top + 0.1);
       carriage.position.y = yc; stage.position.y = ext / 2; stage2.position.y = ext;
-      arm.rotation.z = phi; wrist.rotation.z = -phi + (p.handoff || stowed(p) ? 0 : p.level === 4 ? -Math.PI / 2 : p.level === 1 ? 0 : -.6);
+      arm.rotation.z = phi - lastDir * 0.45 * s.firing;
+      followRelease(coralAxis, p, phi, dir);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt); intake.update(s, deploy);
       spin(stars, s.enabled && s.intaking ? -side * 25 : 0, s.dt);
       for (const w of wheels) spin(w, s.enabled && (s.intaking || p.handoff) ? 20 : 0, s.dt);
@@ -331,6 +346,8 @@ const cfg = (team: number, model: string, o: { lift: number; release: number; ha
   // Zuma's arm plane is 6.6 in aft of center (team code CompConfig inchesFromCenter 6.615; supplied CAD 0.18 m).
   if(model==='zuma-581')c.placement!.toolOffset=[-0.168,0];
   if (model === 'fiddler-971') c.placement!.handoffSeconds = 0; // claw picks directly from the floor
+  // Both score off either end, mirroring their setpoints (341 Superstructure.poseAdjust, 971 superstructure_goal).
+  if (model === 'miss-daisy-341' || model === 'fiddler-971') c.placement!.scoreSide = 'ends';
   c.placement!.liftSpeed = o.lift; c.placement!.cycleSeconds = o.release; c.placement!.harvestSeconds = o.harvest;
   c.climber.secondsToClimb = o.climb;
   return normalizeReefscapeConfig(c);

@@ -87,19 +87,20 @@ describe('2025 CORAL pickup', () => {
     }
   }, 120000);
 
-  it("341 Miss Daisy's arm swings the short way from the handoff to its stowed pose, not up over the front", () => {
+  it("341 Miss Daisy swings back from the handoff to its stowed arm-up pose without passing out over the front", () => {
     setCadModelsEnabled(false);
     const team = season.teamRobots!.find((t) => t.id === 'miss-daisy-341')!;
     const sim = make(team, { x: 2.6, y: 4, yaw: 0 });
     sim.pool.hold(0, sim.robot.id); sim.robot.held.push(0);
     const m = (sim.rules as ReefscapeRules).mechanisms.get(sim.robot.id)!;
     m.handoff = 1e-6;
-    let top = 0;
-    for (let n = 0; n < 180; n++) {
+    let front = -1, last = new THREE.Vector3();
+    for (let n = 0; n < 240; n++) {
       frame(sim);
-      if (m.handoff === 0) top = Math.max(top, sim.robot.visual.worldToLocal(sim.robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3())).y);
+      if (m.handoff === 0) { last = sim.robot.visual.worldToLocal(sim.robot.modelHeldAnchor!.getWorldPosition(new THREE.Vector3())); front = Math.max(front, last.x); }
     }
-    expect(top).toBeLessThan(0.45);
+    expect(front).toBeLessThan(0.2);
+    expect(last.y).toBeGreaterThan(0.75); // team code stow: shoulder 0°, arm straight up
   });
 });
 
