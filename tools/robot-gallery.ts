@@ -4,9 +4,10 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { SEASONS } from '../src/seasons';
 import { PhysicsWorld, loadRapier } from '../src/engine/physics/world';
 import { Robot, IDLE_COMMAND } from '../src/engine/robot/robot';
-import { cloneConfig } from '../src/engine/robot/config';
+import { cloneConfig, toolLateral } from '../src/engine/robot/config';
 import { FieldFrame } from '../src/engine/coords';
-import { coralTransferPose } from '../src/seasons/2025-reefscape/transferVisual';
+import { blendCoralPose, coralReleasePose, coralTransferPose, ejectTravel } from '../src/seasons/2025-reefscape/transferVisual';
+import { EJECT_SECONDS } from '../src/seasons/2025-reefscape/rules';
 import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
@@ -133,10 +134,12 @@ function frame(now: number) {
       // CORAL: collect → conveyor handoff → extend to L4 → retract, using the match's model path.
       i.t = (i.t + dt) % 6;
       const collecting = i.t < .8, transfer = (r.config.placement?.handoffSeconds ?? 0) > 0 && i.t >= .8 && i.t < 2.5, scoring = i.t >= 2.5 && i.t < 5;
-      r.held.length = i.t >= .8 && i.t < 5 ? 1 : 0;
+      // The rollers eject the CORAL at the end of the scoring hold, as in a match (rules EJECT_SECONDS).
+      const eject = scoring && i.t >= 4.4 ? Math.min(1, (i.t-4.4)/EJECT_SECONDS) : 0;
+      r.held.length = i.t >= .8 && i.t < 4.4+EJECT_SECONDS ? 1 : 0;
       r.lastCommand = { ...IDLE_COMMAND, intake:collecting, shoot:scoring };
       r.placeAnim = { height:scoring ? 1.75 : .45, forward:scoring ? .7 : .3, level:4,
-        side:scoring && r.config.placement?.scoreSide==='sides' ? 1 : 0, handoff:transfer ? (i.t-.8)/1.7 : 0 };
+        side:scoring && r.config.placement?.scoreSide==='sides' ? 1 : 0, handoff:transfer ? (i.t-.8)/1.7 : 0, eject };
     } else if (pose.value === 'flow' || pose.value === 'fuel-fill') {
       // Loop: intake from the carpet for 2.4 s (or until full), then fire everything at the launcher's rate.
       const c = r.config, cap = Math.max(1, c.hopperCapacity), cycle = 2.4 + Math.min(2.5, cap / Math.max(1, c.launcher.rate)) + 0.6;
@@ -188,6 +191,13 @@ function frame(now: number) {
       }
     }
     if(i.coral && r.modelHeldAnchor && !r.placeAnim?.handoff && !(pose.value==='both'&&r.config.options?.coralBuffer))fitCoralInTool(i.coral,r.modelHeldAnchor);
+    if (pose.value === 'score' && r.placeAnim) r.placeAnim.eject = Number(document.querySelector<HTMLInputElement>('#transfer')!.value);
+    if (i.coral?.visible && (r.placeAnim?.eject ?? 0) > 0) {
+      // Scoring: slide from the tool's seat to where the match releases the CORAL (same helpers as the rules).
+      const p = r.placeAnim!, to = new THREE.Vector3(), toQ = new THREE.Quaternion();
+      coralReleasePose(p.height, p.forward, p.side ?? 0, p.level, to, toQ, toolLateral(r.config, p.side ?? 0));
+      blendCoralPose(i.coral.position, i.coral.quaternion, to, toQ, ejectTravel(p.eject ?? 0));
+    }
     if(pose.value==='both' && i.coral && r.config.options?.coralBufferLocation==='intake' && r.modelIntakeAnchor){
       r.visual.updateMatrixWorld(true);i.coral.position.copy(r.visual.worldToLocal(r.modelIntakeAnchor.getWorldPosition(new THREE.Vector3())));
       i.coral.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));

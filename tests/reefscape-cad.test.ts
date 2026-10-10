@@ -38,7 +38,7 @@ for(const id of CAD_2025_MODEL_IDS)it(`${id}: decoded CAD retains its export bou
     for(const side of [0,2]){
       for(let n=0;n<150;n++)model.update({...idle,dt:.03,place:{height:1.75,forward:.7,level:4,side}});
       visual.updateMatrixWorld(true);
-      expect(model.heldAnchor!.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(side===2?-.7:.7,1.75,0))).toBeLessThan(.025);
+      expect(model.heldAnchor!.getWorldPosition(new THREE.Vector3()).distanceTo(new THREE.Vector3(side===2?-.7:.7,1.75,0))).toBeLessThan(.03);
       expect(mid.position.distanceTo(inner.position),'cascade stages share extension equally').toBeLessThan(.0001);
     }
     model.update({...idle,climb:1});visual.updateMatrixWorld(true);

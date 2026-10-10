@@ -31,3 +31,21 @@ export function dyeRotorRate(cur: number, s: { enabled: boolean; firing: number;
   const target = !s.enabled ? 0 : s.firing > 0 ? fire : -1.2;
   return (target + (cur - target) * Math.exp(-6 * s.dt)) * dir;
 }
+
+/**
+ * `scoringEase` with a top speed (units/s): a joint whose target jumps (an arm leaving the handoff for its stowed
+ * pose, a wrist flipping for the next level) starts at a real actuator's speed instead of covering a tenth of the
+ * way in one frame, then settles exponentially as before.
+ */
+export function scoringSlew(from: number, to: number, maxRate: number, dt: number, rate = 10): number {
+  if (dt <= 0) return scoringPosition(to, to);
+  const eased = to + (from - to) * Math.exp(-Math.max(10, rate) * dt), limit = maxRate * dt;
+  return scoringPosition(from + Math.max(-limit, Math.min(limit, eased - from)), to);
+}
+
+/** The angle equal to `target` (mod 2π) nearest `current`, so a joint turns the short way round. */
+export function nearestTurn(target: number, current: number): number {
+  return target + 2 * Math.PI * Math.round((current - target) / (2 * Math.PI));
+}
+/** Top swing speed of a 2025 scoring arm or wrist, rad/s (about 340°/s; a half-turn flip in ~0.5 s). [EST] */
+export const ARM_SWING_RATE = 6;

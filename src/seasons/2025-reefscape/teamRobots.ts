@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { ARM_SWING_RATE, scoringApproach, scoringSlew } from '@engine/robot/scoringReadiness';
 import { wildStang111 } from './wildStang111';
 import { additionalReefscapeTeamRobots } from './additionalTeamRobots';
 import { moreReefscapeTeamRobots } from './moreTeamRobots';
@@ -77,13 +77,17 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
     bar(k.visual, [ex, bt, sz * ez], [ex, H - 0.04, sz * ez], 0.008, black);
   }
   box(k.visual, 0.08, 0.08, 0.3, black, ex - 0.025, bt + 0.04, 0);
-  // End effector on the inner stage.
+  // 254's "wrist" is one rigid 18 in arm on the carriage (FRC-2025-Public Constants.kWristLength, pivot x = 0.18 m):
+  // the hood at its tip holds the CORAL and the arm alone sets the tool angle.
   const carriage = new THREE.Group();
   k.visual.add(carriage);
   box(carriage, 0.05, 0.16, 0.24, black, 0, 0, 0);
-  const eff = endEffector(carriage, mat(0x8a9099, { metal: 0.2 }), black);
-  const reach = box(carriage, 1, 0.03, 0.16, blue);
-  const held = pivot(eff.wrist, 0.1, 0), algaeHeld = pivot(eff.wrist, .29, 0);
+  const arm = pivot(carriage, 0, 0);
+  for (const sz of [-1, 1]) bar(arm, [0, 0, sz * 0.1], [0.27, 0, sz * 0.1], 0.022, blueTube);
+  const eff = endEffector(arm, mat(0x8a9099, { metal: 0.2 }), black);
+  eff.wrist.position.x = 0.26;
+  const held = pivot(eff.wrist, 0.13, 0), algaeHeld = pivot(eff.wrist, .3, 0);
+  const SEAT = 0.39, PIVOT_X = 0.18, PIVOT_Y = 0.69; // arm pivot above the floor with the elevator down [code: RobotViz]
   // Smoked CORAL funnel on the back: an open chute leaning back toward the station, NASA logo on both sides.
   const fun = new THREE.Group();
   fun.position.set(-L / 2 + 0.2, H - 0.62, 0);
@@ -108,35 +112,48 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
   }
   // Black ground-intake linkage out the back with the (orange) intake rollers.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, stow: Math.PI - 0.5 });
-  // Roller claw that swings out of the side to latch the CAGE.
-  const claw = pivot(k.visual, -L * 0.1, H - 0.3, W / 2 - 0.04);
+  // Roller claw that swings out of the robot's left side to latch the CAGE (code: climber at y = +0.355 m).
+  const claw = pivot(k.visual, -L * 0.1, H - 0.3, -(W / 2 - 0.04));
   box(claw, 0.03, 0.22, 0.03, blue, 0, 0.11, 0);
   const clawRoller = roller(claw, 0.03, 0.12, black, 0, 0.22);
   let ext = 0;
-  let wrist = 0;
+  let lift = 0;
+  let angle = -1.8;
   let deploy = 0;
+  // The tube rides in the hood across the arm; the axis follows the arm so it leaves at the release angle.
+  const coralAxis: [number, number, number] = [1, 0, 0];
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'funnel', 'climber'],
-    heldAnchor: held, coralAxis:[1,0,0], algaeAnchor:algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'conveyor',
+    heldAnchor: held, coralAxis, algaeAnchor:algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'conveyor',
     intakeAnchor: intake.tip,
     lightAt: [ex - 0.015, H - 0.01, 0],
     update(s) {
       const p = place(s);
-      ext = scoringApproach(ext, Math.max(0, p.height - (H - 0.15)), 14, s.dt);
+      // Code setpoints (Constants.java), angles from +x: stow / CORAL intake -103° hanging over the indexer, ALGAE stow
+      // +55°, L2–L4 near level. Scoring, the fixed-length arm reaches the rules' release point and the elevator makes
+      // up the height (real L2–L4 setpoints put the arm within 5° of level for the same reason).
+      const parked = p.height <= 0.46 || !!p.handoff;
+      let goal: number, pivotY: number;
+      if (parked) { goal = p.algae && !p.handoff ? 0.96 : -1.8; pivotY = PIVOT_Y; }
+      else {
+        const drop = Math.acos(Math.max(0.02, Math.min(SEAT, p.forward - PIVOT_X)) / SEAT);
+        goal = p.algae && p.height > 1.9 ? drop : -drop; // NET: arm up over the elevator
+        pivotY = Math.max(PIVOT_Y, p.height - SEAT * Math.sin(goal));
+      }
+      angle = scoringSlew(angle, goal, ARM_SWING_RATE, s.dt, 8);
+      lift = scoringApproach(lift, pivotY, 14, s.dt);
+      ext = Math.max(0, lift - (H - 0.15));
       stages[0].position.y = ext * 0.5;
       stages[1].position.y = ext;
-      const carriageY = p.height <= H - 0.15 ? p.height : H - 0.15 + ext;
-      carriage.position.set(ex + 0.07, carriageY, 0);
-      const forward = Math.max(0.06, p.forward - ex - 0.17);
-      reach.scale.x = forward; reach.position.x = forward / 2;
-      eff.wrist.position.x = forward;
-      // Handoff: the wrist flips back to meet the ground intake folding up over the back bumper.
-      wrist = scoringApproach(wrist, p.handoff ? Math.PI - 0.5 : wristFor(p.level), 8, s.dt);
-      eff.wrist.rotation.z = wrist;
+      carriage.position.set(PIVOT_X, lift, 0);
+      arm.rotation.z = angle;
+      const release = p.level === 4 ? -Math.PI / 2 : p.level === 1 ? 0 : -0.61;
+      const rel = (parked ? 0 : release) - angle;
+      coralAxis[0] = Math.cos(rel); coralAxis[1] = Math.sin(rel); coralAxis[2] = 0;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
-      claw.rotation.x = approach(claw.rotation.x, s.climb > 0.1 ? 1.3 : 0, 5, s.dt); // swings out to the robot's right (+z)
+      claw.rotation.x = approach(claw.rotation.x, s.climb > 0.1 ? -1.3 : 0, 5, s.dt); // swings out to the robot's left (-z)
       spin(clawRoller, s.climb > 0.5 ? 12 : 0, s.dt);
       db.update(s);
     },
@@ -226,7 +243,7 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
       mid.position.x = travel * 0.5;
       inner.position.x = travel;
       tip.position.x = seg + travel;
-      wrist = scoringApproach(wrist, pitch - ang, 8, s.dt);
+      wrist = scoringSlew(wrist, pitch - ang, ARM_SWING_RATE, s.dt, 8);
       tip.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       climber.position.x = approach(climber.position.x, s.climb > 0.1 ? seg * 0.3 : seg * 0.8, 5, s.dt);
@@ -296,8 +313,9 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
   const held = pivot(eff.wrist, 0.13, 0), algaeHeld = pivot(eff.wrist, .31, 0);
   const coralIntake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, stow: Math.PI - 0.45 });
   const algaeIntake = deployableIntake(k, { reach: c.intake.reach * 0.6, hingeY: bt + 0.12, rollers: 1, width: c.intake.width * 0.8, frame: blue, stow: Math.PI - 0.25 });
-  // Rest pose from the photo: leaned forward, end effector up high.
-  const REST_LEAN = 0.72;
+  // Rest pose from the photo: leaned forward, end effector up high, with the held CORAL over the front bumper rather
+  // than out past it (TBA 2025 pit photo).
+  const REST_LEAN = 0.6;
   const REST_ALONG = 0.72;
   let lean = REST_LEAN;
   let along = REST_ALONG;
@@ -317,15 +335,22 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
       // Handoff: elevator upright and short, wrist pointing back down at the CORAL intake folding in.
       const handoff = (p.handoff ?? 0) > 0;
       const resting = !handoff && p.height < 0.55 && p.level !== 1;
-      const dx = p.forward - px;
-      const dy = p.height - py;
-      lean = scoringApproach(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), 8, s.dt);
+      // Aim the wrist joint so the CORAL seat (0.13 m out along the tool, carriage 0.04 m off the mast) lands on the
+      // release point, not the joint itself.
+      // Scores off the front and the back (team posts, CD 500435): the elevator leans back past vertical and the
+      // wrist mirrors for the back.
+      const back = (p.side ?? 0) === 2;
+      const w = back ? Math.PI - wristFor(p.level) : wristFor(p.level);
+      const fx = back ? -p.forward : p.forward;
+      const dx = fx - 0.13 * Math.cos(w) - 0.04 * Math.cos(lean) - px;
+      const dy = p.height - 0.13 * Math.sin(w) + 0.04 * Math.sin(lean) - py;
+      lean = scoringSlew(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(back ? -0.75 : 0.05, Math.min(1.2, Math.atan2(dx, dy))), ARM_SWING_RATE, s.dt, 8);
       along = scoringApproach(along, handoff ? 0.3 : resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
       tilt.rotation.z = -lean;
       const ext = Math.max(0, along - stageLen + 0.05);
       for (let i = 1; i < stages.length; i++) stages[i].position.y = (ext * i) / (stages.length - 1);
       carriage.position.set(0.04, along, 0);
-      wrist = scoringApproach(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, 8, s.dt);
+      wrist = scoringSlew(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : w) + lean, ARM_SWING_RATE, s.dt, 8);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
@@ -370,7 +395,9 @@ export function reefscapeTeamRobots(): TeamRobot[] {
       id: 'madtown-1323', team: 1323, name: 'MadTown 2025',
       description: '1323 MadTown Robotics (2025 World Champions, captain). Pivoting four-stage elevator with a differential wrist, CORAL floor intake working with a floor ALGAE intake (L1 too), NET + PROCESSOR, deep climb latched by the ALGAE intake.',
       source: 'Chief Delphi "1323 MadTown Robot Reveal?"; 2025 MadTown reveal video',
-      config: teamConfig(1323, 'madtown-1323', { coral: 'l4', intake: 'ground', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, () => {}),
+      config: teamConfig(1323, 'madtown-1323', { coral: 'l4', intake: 'ground', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, (c) => {
+        c.placement!.scoreSide = 'ends'; // the pivoting elevator scores front and back (team, CD 500435 #7)
+      }),
     },
     {
       id: 'undertow-254', team: 254, name: 'Undertow',

@@ -10,8 +10,10 @@ import { anchor, ease, mount, parked, placeOf, point, type V3 } from './reefscap
 // from the CAD and photos.
 // Checklist:
 // - Archetype: continuous-belt elevator (fixed 1st stage, 2nd and 3rd stages, carriage; nested side tubes at
-//   ±.197/.165/.133/.10 m) carrying a fixed-angle "Manipulator" with no wrist: two rows of 3 in compliant wheels and
-//   sushi rollers eject CORAL lying across the robot, ALGAE Directors and an ALGAE crossbar above it [EST: ALGAE seat].
+//   ±.197/.165/.133/.10 m) carrying the "Manipulator": two rows of 3 in compliant wheels and sushi rollers eject CORAL
+//   lying across the robot, ALGAE Directors and an ALGAE crossbar above it [EST: ALGAE seat]. The team's code
+//   (team422/FRC-25) shows a wrist after all: a Kraken on a 7.75 in arm, pivot about x .285, y .203 m on the carriage,
+//   stow 100°, L4 40°, L2/L3 55°, L1 112°, ALGAE 30–35°, PROCESSOR 0° [EST: export pose taken as stow].
 // - Intake end: back (source -Y -> robot -X). A station funnel (Funnel Mk2) feeds the manipulator; the "Ground Coral"
 //   star-wheel arm stows upright over the funnel and swings out over the back bumper about its 36T sprocket shaft,
 //   then flips CORAL back up into the funnel (fold handoff); 2.0 rad puts the star wheels on the carpet.
@@ -27,15 +29,16 @@ const INTAKE: V3 = [-.1956, .3023, 0];
 const MOUTH: V3 = [-.2074, .6692, 0]; // star-wheel roller in the stowed export pose
 const CLIMB: V3 = [-.051, .4056, .337];
 const CAGE: V3 = [-.05, .545, .13];
-const DEPLOY = 2.0, CLIMB_OUT = 1.5, RISE: [number, number] = [0, 1.6];
+const WRIST: V3 = [.285, .203, 0];
+const DEPLOY = 2.0, CLIMB_OUT = 1.5, RISE: [number, number] = [0, 1.87]; // 73.5 in of carriage travel (Constants)
 
 export function buildWispCad(root: THREE.Group, k: ModelKit, animated: () => boolean): RobotModel {
   const stage2 = mount(root, 'elevator-stage', [0, 0, 0]), stage3 = mount(root, 'elevator-stage-2', [0, 0, 0]);
-  const carriage = mount(root, 'carriage', [0, 0, 0]), head = mount(root, 'effector', [0, 0, 0], carriage);
+  const carriage = mount(root, 'carriage', [0, 0, 0]), head = mount(root, 'effector', WRIST, carriage);
   const held = anchor(root, head, CORAL), algae = anchor(root, head, ALGAE);
   const intake = mount(root, 'intake', INTAKE), tip = anchor(root, intake, MOUTH);
   const climber = mount(root, 'climber', CLIMB), cage = anchor(root, climber, CAGE);
-  let rise = 0, deploy = 0, out = 0;
+  let rise = 0, deploy = 0, out = 0, wrist = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held, coralAxis: [0, 0, 1], algaeAnchor: algae, algaeGripScale: [.82, .94, .82],
@@ -44,8 +47,12 @@ export function buildWispCad(root: THREE.Group, k: ModelKit, animated: () => boo
     update(s) {
       if (!animated()) return;
       const p = placeOf(s);
-      // No wrist: the elevator alone raises the fixed manipulator to the CORAL / ALGAE height.
-      const target = parked(p) || p.handoff ? 0 : p.height - (p.algae ? ALGAE[1] : CORAL[1]);
+      // Wrist from stow (100°): L4 60° and L2/L3 45° nose-down, L1 12° up, ALGAE 65° down (NET / hold), PROCESSOR 100°.
+      const deg = parked(p) || p.handoff ? 0 : p.algae ? (p.height < .7 ? -100 : -65) : p.level === 4 ? -60 : p.level === 1 ? 12 : -45;
+      wrist = scoringEase(wrist, deg * Math.PI / 180, s.dt); head.rotation.z = wrist;
+      const g = p.algae ? ALGAE : CORAL, a = deg * Math.PI / 180;
+      const seatY = WRIST[1] + (g[0] - WRIST[0]) * Math.sin(a) + (g[1] - WRIST[1]) * Math.cos(a);
+      const target = parked(p) || p.handoff ? 0 : p.height - seatY;
       rise = scoringEase(rise, THREE.MathUtils.clamp(target, RISE[0], RISE[1]), s.dt);
       stage2.position.y = rise / 3; stage3.position.y = rise * 2 / 3; carriage.position.y = rise;
       deploy = p.handoff ? 1 - transferFold(p.handoff) : ease(deploy, s.intaking ? 1 : 0, s.dt, 7);

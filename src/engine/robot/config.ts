@@ -203,6 +203,12 @@ export interface RobotConfig {
      * flips over the top to score off the front or the back, e.g. 2025 1690 WHISPER). Default 'front'.
      */
     scoreSide?: 'front' | 'sides' | 'ends';
+    /**
+     * Where the end effector holds the piece relative to the robot center, robot frame (m; x forward, y left). Only
+     * the part across the scoring direction matters: an arm mounted behind the elevator (2025 1778, 581) or a claw off
+     * to one side (2025 1678) releases off-center, so auto-align shifts the robot to put the tool on the BRANCH.
+     */
+    toolOffset?: [number, number];
     /** Seconds to hand a floor-intaken piece from the ground intake to the end effector (0 = it intakes directly). */
     handoffSeconds?: number;
   };
@@ -219,6 +225,17 @@ export interface RobotConfig {
     /** Deployed cage contact in robot-local visual X/Z meters; omitted uses the generic front climber. */
     gripOffset?: [number,number];
   };
+}
+
+/**
+ * The end effector's offset across the scoring direction (m, + = 90° counter-clockwise of it) when it scores `side`
+ * quarter turns from the front (`placement.toolOffset`): an arm behind the elevator sits aft of center on either side.
+ */
+export function toolLateral(c: RobotConfig, side: number): number {
+  const o = c.placement?.toolOffset;
+  if (!o) return 0;
+  const a = side * Math.PI / 2;
+  return -o[0] * Math.sin(a) + o[1] * Math.cos(a);
 }
 
 /** Lateral offsets (m, robot frame; + = robot left) of the launcher's exits: one at the center, or `exits` spread evenly. */

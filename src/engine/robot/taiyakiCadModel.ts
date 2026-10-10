@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scoringEase } from './scoringReadiness';
 import type { ModelKit, RobotModel } from './models';
-import { anchor, ease, mount, parked, pitchIK, placeOf, point, type V3 } from './reefscapeCadRig';
+import { anchor, ease, mount, parked, placeOf, point, type V3 } from './reefscapeCadRig';
 
 // 5940 BREAD Taiyaki (2025). Source: public Onshape "5940 BREAD 2025 - Taiyaki" (A-0000-Taiyaki), team CAD release
 // https://www.chiefdelphi.com/t/501347 and its technical binder; TBA 2025 photos (refs/5940-2025/sheet.jpg).
@@ -42,8 +42,16 @@ export function buildTaiyakiCad(root: THREE.Group, k: ModelKit, animated: () => 
     update(s) {
       if (!animated()) return;
       const p = placeOf(s);
-      let r = 0, a = 0;
-      if (!parked(p) && !p.handoff) ({ rise: r, angle: a } = pitchIK(PIVOT, p.algae ? ALGAE : CORAL, p.forward, p.height, RISE));
+      // BREAD5940/2025-Public SuperstructureConstants, relative to the export pose (+ = nose up): idle empty and the
+      // CORAL handoff -183° (the effector swung down and back over the indexer), L4 -45°, L2/L3 -31° dipping to -47° as
+      // it scores, L1 -12°, REEF ALGAE -43°, PROCESSOR -16°, NET +50° flicking to +40°. The elevator sets the height.
+      const empty = parked(p) && s.fill <= 0, eject = p.eject ?? 0;
+      const deg = p.handoff || empty ? -183 : parked(p) ? 0 : p.algae ? (p.height > 1.7 ? 50 - 10 * s.firing : p.height < .7 ? -16 : -43)
+        : p.level === 4 ? -45 : p.level === 1 ? -12 : -31 - 16 * eject;
+      const a = deg * Math.PI / 180, g = p.algae ? ALGAE : CORAL;
+      const seatY = PIVOT[1] + (g[0] - PIVOT[0]) * Math.sin(a) + (g[1] - PIVOT[1]) * Math.cos(a);
+      // Swung back, the carriage rides up (code: 0.38 m) so the effector clears the indexer and carpet.
+      const r = p.handoff || empty ? .3 : parked(p) ? 0 : THREE.MathUtils.clamp(p.height - seatY, RISE[0], RISE[1]);
       rise = scoringEase(rise, r, s.dt); pitch = scoringEase(pitch, a, s.dt);
       carriage.position.y = rise;
       if (stage) stage.position.y = rise / 2; // cascade: stage 1 moves half the carriage travel
