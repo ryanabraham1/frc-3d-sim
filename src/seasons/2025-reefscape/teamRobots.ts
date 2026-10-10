@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { ARM_SWING_RATE, scoringApproach, scoringSlew } from '@engine/robot/scoringReadiness';
 import { wildStang111 } from './wildStang111';
 import { additionalReefscapeTeamRobots } from './additionalTeamRobots';
 import { moreReefscapeTeamRobots } from './moreTeamRobots';
@@ -131,7 +131,7 @@ registerRobotModel('undertow-254', (k: ModelKit) => {
       reach.scale.x = forward; reach.position.x = forward / 2;
       eff.wrist.position.x = forward;
       // Handoff: the wrist flips back to meet the ground intake folding up over the back bumper.
-      wrist = scoringApproach(wrist, p.handoff ? Math.PI - 0.5 : wristFor(p.level), 8, s.dt);
+      wrist = scoringSlew(wrist, p.handoff ? Math.PI - 0.5 : wristFor(p.level), ARM_SWING_RATE, s.dt, 8);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
@@ -226,7 +226,7 @@ registerRobotModel('spectre-2910', (k: ModelKit) => {
       mid.position.x = travel * 0.5;
       inner.position.x = travel;
       tip.position.x = seg + travel;
-      wrist = scoringApproach(wrist, pitch - ang, 8, s.dt);
+      wrist = scoringSlew(wrist, pitch - ang, ARM_SWING_RATE, s.dt, 8);
       tip.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       climber.position.x = approach(climber.position.x, s.climb > 0.1 ? seg * 0.3 : seg * 0.8, 5, s.dt);
@@ -296,8 +296,9 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
   const held = pivot(eff.wrist, 0.13, 0), algaeHeld = pivot(eff.wrist, .31, 0);
   const coralIntake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, stow: Math.PI - 0.45 });
   const algaeIntake = deployableIntake(k, { reach: c.intake.reach * 0.6, hingeY: bt + 0.12, rollers: 1, width: c.intake.width * 0.8, frame: blue, stow: Math.PI - 0.25 });
-  // Rest pose from the photo: leaned forward, end effector up high.
-  const REST_LEAN = 0.72;
+  // Rest pose from the photo: leaned forward, end effector up high, with the held CORAL over the front bumper rather
+  // than out past it (TBA 2025 pit photo).
+  const REST_LEAN = 0.6;
   const REST_ALONG = 0.72;
   let lean = REST_LEAN;
   let along = REST_ALONG;
@@ -319,13 +320,13 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
       const resting = !handoff && p.height < 0.55 && p.level !== 1;
       const dx = p.forward - px;
       const dy = p.height - py;
-      lean = scoringApproach(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), 8, s.dt);
+      lean = scoringSlew(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), ARM_SWING_RATE, s.dt, 8);
       along = scoringApproach(along, handoff ? 0.3 : resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
       tilt.rotation.z = -lean;
       const ext = Math.max(0, along - stageLen + 0.05);
       for (let i = 1; i < stages.length; i++) stages[i].position.y = (ext * i) / (stages.length - 1);
       carriage.position.set(0.04, along, 0);
-      wrist = scoringApproach(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, 8, s.dt);
+      wrist = scoringSlew(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, ARM_SWING_RATE, s.dt, 8);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);

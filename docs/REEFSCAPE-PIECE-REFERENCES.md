@@ -27,3 +27,29 @@ Piece centers and compression remain visual estimates, not metrology. CAD define
 The workshop's **CORAL transfer (scrub)** pose and **Transfer** slider inspect the same calculation as matches. **Piece flow** loops intake, transfer (only if configured), and scoring. Compare imported CAD and previous models, and use **Other side** to check the receiving head behind the elevator.
 
 Regression checks cover every robot's explicit piece anchors, moving/yawed intake orientation, direct pickup, the simplified 1778 folding sequence, and the CAD 1778 intake rise, receiver alignment, and carpet clearance throughout folding. Existing team pose and mechanism tests cover the other scoring poses and inventory behavior.
+
+## Continuous piece motion (October 10, 2026)
+
+A headless audit drove every team robot through a real pickup, handoff and scoring loop and measured where the drawn
+CORAL was against the physics piece. With the imported CAD models, CORAL teleported 10–44 cm (and turned up to 90°)
+at the moment of release, and 30–48 cm from the carpet into the intake on pickup. Fixes:
+
+- **Eject.** Scoring now starts a short eject (`EJECT_SECONDS` in `rules.ts`, 0.15 s [EST]) instead of releasing at
+  once. The mechanism holds still, the rollers spin out (`place.eject` raises `firing`), and the drawn CORAL slides
+  from its tool seat to the exact pose `ejectCoral` then releases from (`coralReleasePose` / `ejectTravel` in
+  `transferVisual.ts`). Fixed ejectors (3005, 190, 1706, 422) visibly shoot the tube forward. Remaining release jump:
+  under 3 cm on every robot (one physics step of flight).
+- **Pickup.** A newly held CORAL is drawn from where it lay into the intake over `PICKUP_SECONDS` (visual only).
+- **Handoff end.** The tube is seated in the tool before the handoff is drawn, so the transfer ends on the seat.
+- **Arm speed.** 2025 arms and wrists use `scoringSlew` (top speed `ARM_SWING_RATE`, 6 rad/s [EST]) and CAD carriages
+  3 m/s, so a target jump (leaving the handoff, flipping for a level) no longer covers ~15 cm per frame.
+- **CAD tool point.** The generic, WildStang and side-scorer CAD rigs aimed the wrist joint, not the exported tool
+  point; `SeatFix` feeds the measured seat offset back into the solve (1678 L2/L3: 34 → 14 cm before the eject).
+- **341 Miss Daisy.** The handoff angle was written a full turn from the stowed angle, so the arm swung up over the
+  front after every transfer; it now takes the short way. The claw stows at bumper height (TBA photos), not 9 cm.
+- **1323 MadTown.** The leaned rest pose held the CORAL ~10 cm past the front bumper; it now sits over the bumper.
+
+Known limits, left for a rules change: 1778 and 581's CAD heads sit 17–24 cm behind the robot center and 1678's
+13 cm to one side, but the release point is on the robot's center line, so those tubes also slide sideways during
+the eject. 111 and 118 (L4) can't reach the configured scoring reach and their rollers carry the tube the rest of
+the way. `tests/reefscape-piece-motion.test.ts` covers the eject, pickup and 341 swing.

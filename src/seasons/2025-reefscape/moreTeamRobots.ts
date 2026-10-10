@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { ARM_SWING_RATE, scoringApproach, scoringSlew } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, sidePlates, spin, tube, tubeMat, wheelShaft, type ModelKit } from '@engine/robot/models';
@@ -78,7 +78,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
       if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: -Math.PI / 2 };
       else if (stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
       else goal = reachWith(p, dir, ex, la, yMin, yMax);
-      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.16));
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
@@ -166,7 +166,7 @@ registerRobotModel('fiddler-971', (k: ModelKit) => {
       if (collecting) goal = { yc: .11 - .03 + Math.sin(.75) * (la - .1) + Math.sin(.1) * .13, phi: -.75 };
       else if (stowed(p)) goal = { yc: yMin, phi: 1.25 };
       else goal = reachWith({ ...p, forward: p.forward - .13 * Math.cos(pitch), height: p.height - .03 - .13 * Math.sin(pitch) }, dir, ax, la - .1, yMin, yMax);
-      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.14));
       middleStage.position.y = ext * .5;
       stage.position.y = ext; carriage.position.y = yc - ext;
@@ -242,10 +242,12 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
-      if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: -Math.PI / 2 };
-      else if (stowed(p)) goal = { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
+      // Straight down for the handoff, written the same way round as the stowed pose (down and back at bumper height,
+      // as in the TBA photos) so the arm swings a short way between them, not a full turn out over the front.
+      if (p.handoff) goal = { yc: bt + .1 + la - .04, phi: dir > 0 ? 1.5 * Math.PI : -Math.PI / 2 };
+      else if (stowed(p)) goal = { yc: bt + 0.42, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
-      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringApproach(phi, goal.phi, 9, s.dt);
+      yc = scoringApproach(yc, goal.yc, 12, s.dt); phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.14));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;

@@ -1132,7 +1132,8 @@ export class Robot {
     }
     a.blocker = this.manualHopper ? Number(this.hopperRaised) : this.blockerDeploy;
     // A piece leaving the robot (shot, placed or fed) flashes the shooter / end effector.
-    if (this.held.length < this.lastHeld) a.firing = 1;
+    // An end effector ejecting a placement (REEFSCAPE `place.eject`) is already spinning its rollers out.
+    if (this.held.length < this.lastHeld || (this.placeAnim?.eject ?? 0) > 0) a.firing = 1;
     this.lastHeld = this.held.length;
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.shooterPitch;

@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { ARM_SWING_RATE, scoringApproach, scoringSlew } from '@engine/robot/scoringReadiness';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
 import { approach, bar, battery, box, controller, decal, deployableIntake, drivebase, flowAt, intakeDeployTarget, lattice, mat, pivot, plate, registerRobotModel, roller, sidePlates, spin, tube, tubeMat, wheelShaft, wire, type ModelKit, type PlaceAnim, type RobotAnimState } from '@engine/robot/models';
@@ -141,7 +141,7 @@ registerRobotModel('whisper-1690', (k: ModelKit) => {
       else if (stowed(p)) goal = { yc: yMin, phi: Math.PI / 2 };
       else goal = reachWith(p, p.side === -1 ? -1 : 1, 0, la, yMin, yMax);
       yc = scoringApproach(yc, goal.yc, 12, s.dt);
-      phi = scoringApproach(phi, goal.phi, 9, s.dt);
+      phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext;
       carriage.position.y = yc - ext;
@@ -243,7 +243,7 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
       } else if (stowed(p)) goal = { yc: bt + (p.algae ? .2 : .05) + la * .9, phi: dir > 0 ? -1.35 : Math.PI + 1.35 };
       else goal = reachWith(p, dir, ex, la, yMin, yMax);
       yc = scoringApproach(yc, goal.yc, 12, s.dt);
-      phi = scoringApproach(phi, goal.phi, 9, s.dt);
+      phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
@@ -337,7 +337,7 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
       else if (stowed(p)) goal = { yc: yMin, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
       yc = scoringApproach(yc, goal.yc, 12, s.dt);
-      phi = scoringApproach(phi, goal.phi, 9, s.dt);
+      phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.min(top - bt - 0.25, Math.max(0, yc - (top - 0.14)));
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;

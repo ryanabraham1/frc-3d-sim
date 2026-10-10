@@ -22,9 +22,10 @@ export type ModelPart = 'bumpers' | 'chassis' | 'hopper' | 'launcher' | 'climber
 /**
  * Placement mechanism pose from the season rules. `forward` is the reach from the robot center along the scoring
  * direction: the front (+x), or the robot's left / right when `side` is +1 / -1 (side-scoring arms). `handoff` runs
- * 0→1 while a floor-intaken piece is passed from the ground intake to the end effector (0 = no handoff).
+ * 0→1 while a floor-intaken piece is passed from the ground intake to the end effector (0 = no handoff); `eject` runs
+ * 0→1 while the end effector drives a piece out to score (0 = not ejecting).
  */
-export interface PlaceAnim { height: number; forward: number; level: number; side?: number; handoff?: number; algae?: boolean }
+export interface PlaceAnim { height: number; forward: number; level: number; side?: number; handoff?: number; algae?: boolean; eject?: number }
 
 /** What a model sees each frame. */
 export interface RobotAnimState {
