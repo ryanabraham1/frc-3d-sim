@@ -80,6 +80,7 @@ Sources: Team254/FRC-2025-Public, 2910 public code, ArchdukeTim/2025-Firefly (11
 FRC3005/Reefscape-2025, Team-190/2k25-Robot-Code, Team341/FRC2025-Public, frc1678/C2025-Public, team581/2025-beta,
 FIRST1778, frc604/2025-public, frc971 y2025 (all on GitHub).
 
-Still approximate: 111's arm scores sideways (as configured) although its code swings fore-aft; 254's NET shot off
+111's arm scores sideways by the owner's decision, although its code swings fore-aft; keep it that way.
+Still approximate: 254's NET shot off
 the back, L1 from the intake (1323, 1778, 111, 5940) and NET flicks (118, 341, 604, 1678) are not drawn; fixed
 ejectors (422, 1706, 190) release 17–39 cm ahead of their rollers because they shoot the tube.
