@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { matchLogHandler, parseLog, SupabaseLogStore, type LogMeta, type MatchLogStore } from '../server/matchLogs';
+import { gunzipText, handleMatchLogRequest, UploadLimiter } from '../server/matchLogCore';
 
 const log = (over: Record<string, unknown> = {}) => [
   JSON.stringify({ type: 'header', version: 1, seasonId: '2026-rebuilt', mode: 'host', seed: 5, robots: [{ id: 0, archetype: { label: 'turret-hopper' } }, { id: 1, archetype: { label: 'custom' } }], ...over }),
@@ -85,5 +86,43 @@ describe('SupabaseLogStore', () => {
   it('surfaces storage failures so the client keeps the log queued', async () => {
     const fake = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
     await expect(new SupabaseLogStore('https://p.supabase.co', 'k', fake).save('a.jsonl.gz', Buffer.from('x'), { season: 's', mode: '', seed: 0, frames: 0, humanRobots: 0, archetypes: [], totals: null })).rejects.toThrow(/500/);
+  });
+});
+
+describe('handleMatchLogRequest (Cloudflare Worker relay)', () => {
+  const saved: { key: string; meta: LogMeta }[] = [];
+  const store: MatchLogStore = { persistent: true, async save(key, _gz, meta) { saved.push({ key, meta }); } };
+  const req = (name: string, body: Uint8Array | string, method = 'POST') =>
+    new Request(`https://relay.example/api/match-logs?name=${name}`, method === 'POST' ? { method, body: typeof body === 'string' ? body : new Uint8Array(body) } : { method });
+
+  it('stores a valid log and rejects junk, like the Node server', async () => {
+    saved.length = 0;
+    const limiter = new UploadLimiter();
+    expect((await handleMatchLogRequest(req('w.jsonl.gz', gzipSync(log())), store, limiter, '1.2.3.4')).status).toBe(204);
+    expect(saved[0]).toMatchObject({ key: 'w.jsonl.gz', meta: { season: '2026-rebuilt', humanRobots: 2 } });
+    expect((await handleMatchLogRequest(req('..%2Fx.jsonl.gz', gzipSync(log())), store, limiter, '1.2.3.4')).status).toBe(400);
+    expect((await handleMatchLogRequest(req('a.jsonl.gz', 'not gzip'), store, limiter, '1.2.3.4')).status).toBe(400);
+    expect((await handleMatchLogRequest(req('a.jsonl.gz', gzipSync('{"x":1}')), store, limiter, '1.2.3.4')).status).toBe(400);
+    expect(saved).toHaveLength(1);
+  });
+
+  it('answers preflight with CORS and rate-limits one IP', async () => {
+    const limiter = new UploadLimiter();
+    const pre = await handleMatchLogRequest(req('a.jsonl.gz', '', 'OPTIONS'), store, limiter, 'ip');
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe('*');
+    const codes: number[] = [];
+    for (let i = 0; i < 31; i++) codes.push((await handleMatchLogRequest(req(`r${i}.jsonl.gz`, gzipSync(log())), store, limiter, 'ip')).status);
+    expect(codes.at(-1)).toBe(429);
+  });
+
+  it('caps the decompressed size (zip bomb)', async () => {
+    expect(await gunzipText(new Uint8Array(gzipSync('a'.repeat(5000))), 1000)).toBeNull();
+    expect(await gunzipText(new Uint8Array(gzipSync('hello')))).toBe('hello');
+  });
+
+  it('reports storage failures as 502 so the browser retries', async () => {
+    const failing: MatchLogStore = { persistent: true, async save() { throw new Error('down'); } };
+    expect((await handleMatchLogRequest(req('f.jsonl.gz', gzipSync(log())), failing, new UploadLimiter(), 'ip')).status).toBe(502);
   });
 });

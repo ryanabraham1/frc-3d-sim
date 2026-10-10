@@ -7,6 +7,7 @@ import { Buffer } from 'node:buffer';
 import type { WebSocketServer } from 'ws';
 import { createRelayCore, type Relay } from '../server/relayCore';
 import { createRankedStore } from '../server/rankedStore';
+import { handleMatchLogRequest, SupabaseLogStore, UploadLimiter } from '../server/matchLogCore';
 import { MAX_FRAME_BYTES, RECONNECT_GRACE_MS } from '../src/engine/net/relayProtocol';
 
 interface Env {
@@ -52,10 +53,12 @@ export class RelayCoordinator extends DurableObject<Env> {
   private hub: WorkerSockets | null = null;
   private relay: Relay | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly uploads = new UploadLimiter();
 
   async fetch(request: Request): Promise<WorkerResponse> {
     const path = new URL(request.url).pathname;
     if (path === '/healthz') return Response.json({ ok: true, rooms: this.relay?.roomCount() ?? 0, peers: this.hub?.clients.size ?? 0 });
+    if (path === '/api/match-logs') return this.matchLog(request);
     if (path !== '/ws') return new Response('Not found', { status: 404 });
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket required', { status: 426 });
     const origin = request.headers.get('Origin');
@@ -91,6 +94,17 @@ export class RelayCoordinator extends DurableObject<Env> {
     });
     hub.emit('connection', socket, undefined, ip);
     return new Response(null, { status: 101, webSocket: pair[0] });
+  }
+
+  /** Browsers upload finished match logs here (docs/MATCH-LOGS.md); stored in Supabase like on the Node server. */
+  private async matchLog(request: Request): Promise<WorkerResponse> {
+    const { SUPABASE_URL: url, SUPABASE_SERVICE_KEY: key } = this.env;
+    // No disk on Workers: without Supabase, refuse so the browser keeps the log queued and retries later.
+    if (!url || !key) return new Response('match log storage not configured', { status: 503, headers: { 'access-control-allow-origin': '*' } });
+    const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+    const res = await handleMatchLogRequest(request as unknown as globalThis.Request, new SupabaseLogStore(url, key), this.uploads, ip,
+      { log: (msg) => console.log(`[match-logs] ${msg}`) });
+    return res as unknown as WorkerResponse;
   }
 }
 
