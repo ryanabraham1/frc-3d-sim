@@ -90,7 +90,7 @@ describe('2025 side scoring (swinging arm)', () => {
 
 describe('2025 off-center claws (placement.toolOffset)', () => {
   const team = (id: string) => cloneConfig(season.teamRobots!.find((t) => t.id === id)!.config);
-  for (const [id, offset] of [['subzero-1778', [-0.24, 0]], ['zuma-581', [-0.18, 0]], ['sublime-1678', [0, -0.13]]] as const) {
+  for (const [id, offset] of [['subzero-1778', [-0.241, 0]], ['zuma-581', [-0.168, 0]]] as const) {
     it(`${id}: auto-align shifts the robot so its off-center claw places L4, and centering the robot instead misses`, () => {
       expect(team(id).placement!.toolOffset).toEqual(offset);
       const probe = make('blue', season.testing!.scoringSpots('blue')[0], team(id)); load(probe, 0);

@@ -137,7 +137,7 @@ export function subZero1778(): TeamRobot {
   config.model = 'subzero-1778';
   config.options = { ...config.options, coralBuffer: true, coralBufferLocation: 'intake', dualPieceStorage: true };
   config.placement!.scoreSide = 'sides';
-  config.placement!.toolOffset = [-0.24, 0]; // supplied CAD: the arm hangs behind the elevator, its claw 24 cm aft of center
+  config.placement!.toolOffset = [-0.241, 0]; // claw 9.5 in aft of center (team code CORAL_CENTER_OFFSET; supplied CAD)
   config.placement!.handoffSeconds = 0.35; // [EST] linebreak-triggered: the CORAL is centered by the time the intake is up
   config.placement!.cycleSeconds = 0.4; // [EST] "some of the fastest CORAL scoring in the world"
   config.placement!.liftSpeed = 1.8; // [EST]

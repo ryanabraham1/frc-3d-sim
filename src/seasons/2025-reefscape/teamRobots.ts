@@ -337,16 +337,20 @@ registerRobotModel('madtown-1323', (k: ModelKit) => {
       const resting = !handoff && p.height < 0.55 && p.level !== 1;
       // Aim the wrist joint so the CORAL seat (0.13 m out along the tool, carriage 0.04 m off the mast) lands on the
       // release point, not the joint itself.
-      const w = wristFor(p.level);
-      const dx = p.forward - 0.13 * Math.cos(w) - 0.04 * Math.cos(lean) - px;
+      // Scores off the front and the back (team posts, CD 500435): the elevator leans back past vertical and the
+      // wrist mirrors for the back.
+      const back = (p.side ?? 0) === 2;
+      const w = back ? Math.PI - wristFor(p.level) : wristFor(p.level);
+      const fx = back ? -p.forward : p.forward;
+      const dx = fx - 0.13 * Math.cos(w) - 0.04 * Math.cos(lean) - px;
       const dy = p.height - 0.13 * Math.sin(w) + 0.04 * Math.sin(lean) - py;
-      lean = scoringSlew(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(0.05, Math.min(1.2, Math.atan2(dx, dy))), ARM_SWING_RATE, s.dt, 8);
+      lean = scoringSlew(lean, handoff ? -0.12 : resting ? REST_LEAN : Math.max(back ? -0.75 : 0.05, Math.min(1.2, Math.atan2(dx, dy))), ARM_SWING_RATE, s.dt, 8);
       along = scoringApproach(along, handoff ? 0.3 : resting ? REST_ALONG : Math.max(0.2, Math.hypot(dx, dy)), 10, s.dt);
       tilt.rotation.z = -lean;
       const ext = Math.max(0, along - stageLen + 0.05);
       for (let i = 1; i < stages.length; i++) stages[i].position.y = (ext * i) / (stages.length - 1);
       carriage.position.set(0.04, along, 0);
-      wrist = scoringSlew(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : wristFor(p.level)) + lean, ARM_SWING_RATE, s.dt, 8);
+      wrist = scoringSlew(wrist, (handoff ? Math.PI - 0.6 : resting ? -0.2 : w) + lean, ARM_SWING_RATE, s.dt, 8);
       eff.wrist.rotation.z = wrist;
       spinRollers(eff.rollers, s);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
@@ -391,7 +395,9 @@ export function reefscapeTeamRobots(): TeamRobot[] {
       id: 'madtown-1323', team: 1323, name: 'MadTown 2025',
       description: '1323 MadTown Robotics (2025 World Champions, captain). Pivoting four-stage elevator with a differential wrist, CORAL floor intake working with a floor ALGAE intake (L1 too), NET + PROCESSOR, deep climb latched by the ALGAE intake.',
       source: 'Chief Delphi "1323 MadTown Robot Reveal?"; 2025 MadTown reveal video',
-      config: teamConfig(1323, 'madtown-1323', { coral: 'l4', intake: 'ground', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, () => {}),
+      config: teamConfig(1323, 'madtown-1323', { coral: 'l4', intake: 'ground', algae: 'reefGround', algaeScore: 'both', climb: 2, align: true }, (c) => {
+        c.placement!.scoreSide = 'ends'; // the pivoting elevator scores front and back (team, CD 500435 #7)
+      }),
     },
     {
       id: 'undertow-254', team: 254, name: 'Undertow',

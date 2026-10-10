@@ -32,9 +32,8 @@ registerRobotModel('wildstang-111', k => {
   const carriage = pivot(stage,0,0);
   box(carriage,.05,.18,.25,black,ex+.07,0,0);
   // The axle runs fore/aft: the arm swings across the robot's sides,
-  // in front of the elevator rails rather than through their plane, over
-  // the robot's center (supplied CAD: CORAL head at x ≈ 0).
-  const px = 0, arm = pivot(carriage,px,0); arm.name='wildstang-shared-arm';
+  // in front of the elevator rails rather than through their plane.
+  const px = ex+.27, arm = pivot(carriage,px,0); arm.name='wildstang-shared-arm';
   bar(carriage,[ex+.07,0,0],[px,0,0],.04,silver);
   const armGeometry = new THREE.Group(); armGeometry.rotation.y=Math.PI/2; arm.add(armGeometry);
   for (const z of [-.07,.07]) {
