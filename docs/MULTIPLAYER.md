@@ -176,6 +176,7 @@ responsive:
 | Client | Interpolation delay adapts to arrival jitter (50–350 ms, eased). Robots extrapolate ≤ 100 ms past the newest snapshot. | Low delay on good links; no freeze-then-jump on a late packet. |
 | Client | A sequence gap requests a keyframe and retries ≤ 1/s until recovery; piece/rules deltas wait for that keyframe. | A dropped recovery frame no longer leaves replica state incomplete indefinitely. |
 | Client | Prediction reconciles only the newest pose in a received burst. | Queued poses cannot repeatedly pull the robot backward before local physics advances. |
+| Client | Game pieces within 0.35 m of the predicted robot's bumpers are simulated on the client (`net/localPieces.ts`), released past 0.7 m. Pieces near another robot, airborne, fast or in the running intake's mouth stay on the host's snapshots. | Before, a client's world had no pieces: the predicted robot drove through FUEL that beached it on the host, then got dragged back a round trip later. Now it rides up on them and pushes them as in single player, with the host still authoritative (see below). |
 | Relay | Drops host binary frames for a peer with > `MAX_BINARY_BACKLOG` (16 KiB) queued. | Limits stale snapshot backlog on a slow link. |
 | Host | Skips a snapshot while > 16 KiB is queued on its socket. Deltas carry over. | Everything queued there is latency for every client. |
 | Multiplayer | The worker allows one outstanding tick; host catch-up steps send one fresh snapshot per tick. | Avoids timer and snapshot bursts after a main-thread stall. |
@@ -198,8 +199,16 @@ Debug: append `?perf&fps` for the CPU/network panel, or inspect `game.netStats()
   Relay restarts lose rooms and checkpoints; this is not a persistent or server-authoritative simulation.
   Ranked rooms keep their existing disconnect adjudication. A future server authority would remove the
   remaining dependence on a player's simulation performance.
-- Clients don't simulate game pieces; the own-robot prediction ignores FUEL contact (small corrections
-  when plowing through balls). Other robots render ~100 ms in the past.
+- Clients simulate only the game pieces next to their own predicted robot (`LocalPieces`); the host stays
+  authoritative. A local piece at rest is eased to the host's resting pose once the host has had a round trip to catch
+  up (snapped past 1 m), a piece the host takes leaves local simulation at once, and pieces left behind glide back onto
+  the host's pose (`ClientSync.handBack`, 0.3 s). When the host has the robot up on pieces and the client doesn't (or
+  the reverse) for longer than a round trip, the client lifts the robot onto them (or lets go of the pieces under it).
+  Contact between two robots and the pieces between them stays fully host-side, so a pushing match in a pile still
+  shows the old round-trip lag. Intake captures aren't predicted: they were wrong about a third of the time (intake
+  rate, capacity, a different pile). Other robots render ~100 ms in the past.
+  Debug: `?nolocalfuel` (or `game.localPieces.enabled = false`) turns it off; `netStats()` shows `localPieces` and its
+  corrections. Tests: `tests/local-pieces.test.ts` on a host + client pair with latency (`tests/helpers/netPair.ts`).
 - A client that closes the tab (or is away past the grace period) cannot rejoin a running match; it rejoins for the next one.
   A brief network drop does resume mid-match.
 - Private room codes are 4 letters; the per-IP failed-join limit makes guessing impractical but there is no password. Chat is

@@ -99,6 +99,8 @@ export class GamePiecePool {
   private shown = new Uint8Array(0);
   /** Multiplayer client: poses come from snapshots, so only pieces touched since the last draw are redrawn. */
   private replica = false;
+  /** Multiplayer client: replica pieces simulated locally near the predicted robot (see net/localPieces.ts). */
+  private localSim = new Uint8Array(0);
   readonly mesh: THREE.InstancedMesh;
   readonly radius: number;
   readonly colliderRadius: number;
@@ -145,6 +147,7 @@ export class GamePiecePool {
     }
     this.mesh = this.meshes[0];
     this.shown = new Uint8Array(spec.count);
+    this.localSim = new Uint8Array(spec.count);
     this.prevPose = new Float32Array(spec.count * 7);
     this.prevOk = new Uint8Array(spec.count);
 
@@ -391,6 +394,7 @@ export class GamePiecePool {
   applyReplicaState(i: number, state: PieceState, owner: number, tag: string | null): void {
     this.replica = true;
     if (state !== this.state[i]) this.shown[i] = 0;
+    if (state !== 'field') this.releaseLocal(i);
     this.state[i] = state;
     this.owner[i] = owner;
     this.tag[i] = tag;
@@ -404,6 +408,56 @@ export class GamePiecePool {
   setReplicaRotation(i: number, x: number, y: number, z: number, w: number): void {
     this.bodies[i].setRotation({ x, y, z, w }, false);
     this.shown[i] = 0;
+  }
+
+  /**
+   * Multiplayer client: simulate replica piece i locally from this pose and velocity (it collides with the predicted
+   * robot and other local pieces) until `releaseLocal`. Snapshots stop posing it meanwhile.
+   */
+  adoptLocal(i: number, pos: { x: number; y: number; z: number }, vel: { x: number; y: number; z: number }): void {
+    const b = this.bodies[i];
+    this.localSim[i] = 1;
+    this.prevOk[i] = 0;
+    this.shown[i] = 0;
+    this.airborne[i] = false;
+    b.setLinearDamping(this.specs[i].groundDamping ?? 0.5);
+    b.setTranslation(pos, false);
+    b.setLinvel(vel, false);
+    b.setAngvel({ x: 0, y: 0, z: 0 }, false);
+    b.setEnabled(true);
+    b.wakeUp();
+  }
+
+  /** Back to a snapshot-posed replica (body disabled where it is). */
+  releaseLocal(i: number): void {
+    if (!this.localSim[i]) return;
+    this.localSim[i] = 0;
+    this.prevOk[i] = 0;
+    this.shown[i] = 0;
+    this.bodies[i].setEnabled(false);
+  }
+
+  isLocal(i: number): boolean { return this.localSim[i] === 1; }
+
+  /** Air/ground damping for one piece (see updateDamping). */
+  updateDampingOf(i: number): void {
+    const b = this.bodies[i];
+    if (b.isSleeping()) return;
+    const s = this.specs[i];
+    const inAir = b.translation().y > restHeightOf(s) + 0.03;
+    if (inAir !== this.airborne[i]) {
+      this.airborne[i] = inAir;
+      b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
+    }
+  }
+
+  /** Render-interpolation pose of one piece before a physics step (see capturePrevPoses). */
+  capturePrevPoseOf(i: number): void {
+    const b = this.bodies[i];
+    if (b.isSleeping()) { this.prevOk[i] = 0; return; }
+    const t = b.translation(), r = b.rotation(), k = i * 7, pp = this.prevPose;
+    pp[k] = t.x; pp[k + 1] = t.y; pp[k + 2] = t.z; pp[k + 3] = r.x; pp[k + 4] = r.y; pp[k + 5] = r.z; pp[k + 6] = r.w;
+    this.prevOk[i] = 1;
   }
 
   /** Indices in a state (optionally with a tag). */
@@ -439,17 +493,7 @@ export class GamePiecePool {
         if (g.t <= 0 || g.clear()) { this.ghost.delete(i); this.setIgnoreRobots(i, false); }
       }
     }
-    for (let i = 0; i < this.bodies.length; i++) {
-      if (this.state[i] !== 'field') continue;
-      const b = this.bodies[i];
-      if (b.isSleeping()) continue;
-      const s = this.specs[i];
-      const inAir = b.translation().y > restHeightOf(s) + 0.03;
-      if (inAir !== this.airborne[i]) {
-        this.airborne[i] = inAir;
-        b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
-      }
-    }
+    for (let i = 0; i < this.bodies.length; i++) if (this.state[i] === 'field') this.updateDampingOf(i);
   }
 
   /** Before each physics step: remember where every moving piece is (sleeping pieces are drawn where they are). */
@@ -481,7 +525,7 @@ export class GamePiecePool {
       // Multiplayer clients: poses only change through setReplicaPosition/Rotation, which mark the piece
       // stale — untouched pieces keep last frame's matrix. (The simulating side always reads the body: a
       // "sleeping" flag is not proof that a body hasn't moved.)
-      if (this.replica && this.shown[i] === 1) continue;
+      if (this.replica && this.shown[i] === 1 && !this.localSim[i]) continue;
       const t = b.translation();
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
