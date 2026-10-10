@@ -47,7 +47,9 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
   // Spectrum row 126 release + pit photos: dark elevator, large side-mounted climber sweep.
   // https://1678.onshape.com/documents/0d5fb3dc444f66866c3df100/w/3aa4dce6ea2c22f3ef57d096/e/0f84fb27f2a02ead9cf842de
   // Short arm and wrist: the end effector is a clear box with a pair of green rollers.
-  const la = 0.62, arm = pivot(carriage, ex + side * 0.07, 0.04);
+  // Supplied CAD: the arm hangs off the tower's right side, its claw 13 cm right of center (placement.toolOffset).
+  const la = 0.62, arm = pivot(carriage, ex + side * 0.07, 0.04, 0.13);
+  box(carriage, 0.05, 0.08, 0.1, black, ex + side * 0.07, 0.04, 0.08);
   for (const sz of [-1, 1]) bar(arm, [0, 0, sz * 0.06], [la - 0.05, 0, sz * 0.06], 0.026, silver);
   const eff = pivot(arm, la - 0.04, 0);
   sidePlates(eff, [[-0.03, -0.06], [0.1, -0.06], [0.14, 0], [0.1, 0.07], [-0.03, 0.06]], 0.085, clear, [], 0.008);
@@ -71,7 +73,7 @@ registerRobotModel('sublime-1678', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'conveyor', algaeAnchor: algaeHeld, algaeGripScale:[.76,.96,.72], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
-    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, .13), flowAt(k, held)] },
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
@@ -238,7 +240,7 @@ registerRobotModel('miss-daisy-341', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'toss', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
-    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, .13), flowAt(k, held)] },
     update(s) {
       const p = place(s);
       let goal: { yc: number; phi: number };
@@ -286,7 +288,10 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   box(carriage, 0.08, 0.12, 2 * ez, black, 0, 0, 0);
   const arm = pivot(carriage, 0.04, 0), la = 0.65;
   for (const sz of [-1, 1]) lattice(arm, [0, -0.025, sz * 0.045], [la - 0.07, 0, 0], [0, 0.05, 0], { cells: 8, w: 0.01, m: silver, zig: true });
-  const wrist = pivot(arm, la, 0);
+  // Supplied CAD: the head rides 0.24 m aft of the shoulder on a raked truss, so the CORAL is released 18 cm aft of
+  // center (placement.toolOffset). Carriage z is robot +x here.
+  const rake = -0.24, wrist = pivot(arm, la, 0, rake);
+  for (const sz of [-1, 1]) bar(arm, [la - 0.12, 0, sz * 0.045], [la, 0, rake + sz * 0.045], 0.014, silver);
   sidePlates(wrist, [[-0.07, -0.08], [0.1, -0.07], [0.1, 0.07], [-0.07, 0.08]], 0.08, black);
   const wheels = [wheelShaft(wrist, 0.045, -0.055, { n: 2, r: 0.045, w: 0.035, span: 0.12, colors: [0x282a2d] }), wheelShaft(wrist, 0.045, 0.055, { n: 2, r: 0.045, w: 0.035, span: 0.12, colors: [0x282a2d] })];
   const held = pivot(wrist, 0.07, 0), algaeHeld = pivot(wrist, .24, 0);
@@ -300,7 +305,7 @@ registerRobotModel('zuma-581', (k: ModelKit) => {
   let yc = bt + 0.15, phi = Math.PI / 2, deploy = 0;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'], heldAnchor: held, coralAxis:[0,0,1], handoffStyle:'conveyor', algaeAnchor: algaeHeld, algaeGripScale:[.94,1,.94], intakeAnchor: intake.tip, lightAt: [ex, top + 0.02, 0],
-    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), new THREE.Vector3(ex, bt + .1, 0)] },
+    flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .09, 0), flowAt(k, held)] },
     update(s) {
       const p = place(s), yMin = bt + 0.12;
       const goal = p.handoff ? { yc: bt + .1 + la, phi: -Math.PI / 2 } : stowed(p) ? { yc: yMin, phi: Math.PI / 2 } : reachWith(p, 1, ex + 0.04, la, yMin, top + 0.9);
@@ -325,6 +330,9 @@ const cfg = (team: number, model: string, o: { lift: number; release: number; ha
   if (o.frame) { c.frameLength = inch(o.frame[0]); c.frameWidth = inch(o.frame[1]); }
   if (o.frontIntake) { c.intake.groundSide = 'front'; c.intake.stationSide = 'front'; }
   if(model==='zuma-581')c.placement!.scoreSide='sides';
+  // Supplied CAD: Zuma's claw rides 18 cm aft of center on either side; SubLime's claw sits 13 cm right of center.
+  if(model==='zuma-581')c.placement!.toolOffset=[-0.18,0];
+  if(model==='sublime-1678')c.placement!.toolOffset=[0,-0.13];
   if (model === 'fiddler-971') c.placement!.handoffSeconds = 0; // claw picks directly from the floor
   c.placement!.liftSpeed = o.lift; c.placement!.cycleSeconds = o.release; c.placement!.harvestSeconds = o.harvest;
   c.climber.secondsToClimb = o.climb;

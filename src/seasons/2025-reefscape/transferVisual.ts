@@ -43,11 +43,11 @@ const smooth = (x: number) => x * x * (3 - 2 * x);
  * and lying across the scoring direction for the L1 trough.
  */
 export function coralReleasePose(height: number, forward: number, side: number, level: number,
-  position: THREE.Vector3, quaternion: THREE.Quaternion): void {
+  position: THREE.Vector3, quaternion: THREE.Quaternion, lateral = 0): void {
   const yaw = side * Math.PI / 2;
   const dir = level === 4 ? new THREE.Vector3(0, -1, 0) : level === 1 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(Math.cos(BRANCH_ANGLE), -Math.sin(BRANCH_ANGLE), 0);
   const turn = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
-  position.set(forward, height, 0).applyQuaternion(turn);
+  position.set(forward, height, -lateral).applyQuaternion(turn);
   quaternion.setFromUnitVectors(UP, dir).premultiply(turn);
 }
 

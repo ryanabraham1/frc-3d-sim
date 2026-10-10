@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { SEASONS } from '../src/seasons';
 import { PhysicsWorld, loadRapier } from '../src/engine/physics/world';
 import { Robot, IDLE_COMMAND } from '../src/engine/robot/robot';
-import { cloneConfig } from '../src/engine/robot/config';
+import { cloneConfig, toolLateral } from '../src/engine/robot/config';
 import { FieldFrame } from '../src/engine/coords';
 import { blendCoralPose, coralReleasePose, coralTransferPose, ejectTravel } from '../src/seasons/2025-reefscape/transferVisual';
 import { EJECT_SECONDS } from '../src/seasons/2025-reefscape/rules';
@@ -195,7 +195,7 @@ function frame(now: number) {
     if (i.coral?.visible && (r.placeAnim?.eject ?? 0) > 0) {
       // Scoring: slide from the tool's seat to where the match releases the CORAL (same helpers as the rules).
       const p = r.placeAnim!, to = new THREE.Vector3(), toQ = new THREE.Quaternion();
-      coralReleasePose(p.height, p.forward, p.side ?? 0, p.level, to, toQ);
+      coralReleasePose(p.height, p.forward, p.side ?? 0, p.level, to, toQ, toolLateral(r.config, p.side ?? 0));
       blendCoralPose(i.coral.position, i.coral.quaternion, to, toQ, ejectTravel(p.eject ?? 0));
     }
     if(pose.value==='both' && i.coral && r.config.options?.coralBufferLocation==='intake' && r.modelIntakeAnchor){

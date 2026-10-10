@@ -8,7 +8,7 @@ import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/seas
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
-import { groundSideSign, stationSideSign } from '@engine/robot/config';
+import { groundSideSign, stationSideSign, toolLateral } from '@engine/robot/config';
 import { animateAlgaeGrip } from './algaeVisual';
 import { blendCoralPose, coralReleasePose, coralTransferPose, ejectTravel, pickupTravel, PICKUP_SECONDS } from './transferVisual';
 import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
@@ -237,6 +237,11 @@ export class ReefscapeRules implements SeasonRules {
     return Math.sin(toward - robot.pose.yaw) >= 0 ? 1 : -1;
   }
 
+  /** The end effector's offset across the scoring direction (`placement.toolOffset`). */
+  private toolLateral(robot: Robot, side: number): number {
+    return toolLateral(robot.config, side);
+  }
+
   /** Half the bumper-to-bumper depth along the scoring direction. */
   private halfDepth(robot: Robot): number {
     return robot.config.placement!.scoreSide === 'sides' ? robot.footprint.width / 2 : robot.footprint.length / 2;
@@ -302,7 +307,8 @@ export class ReefscapeRules implements SeasonRules {
     const a = robot.alliance, c = C.reefCenter(a), yawOut = t.approach.faceYaw;
     const n = { x: Math.cos(yawOut), y: Math.sin(yawOut) }, tan = { x: -n.y, y: n.x };
     const rel = { x: t.approach.pos.x - c.x, y: t.approach.pos.y - c.y };
-    const radial = rel.x * n.x + rel.y * n.y, lateral = rel.x * tan.x + rel.y * tan.y + (this.alignNoise.get(robot.id) ?? 0);
+    // An off-center tool (`toolOffset`) puts the robot center beside the BRANCH so the tool lines up on it.
+    const radial = rel.x * n.x + rel.y * n.y, lateral = rel.x * tan.x + rel.y * tan.y + this.toolLateral(robot, t.side) + (this.alignNoise.get(robot.id) ?? 0);
     const [fMin, fMax] = this.forwardRange(robot);
     const bumper = C.REEF_APOTHEM + this.halfDepth(robot) + 0.03;
     // Robot center distance from the REEF center: as close as the bumpers allow, while the end effector reaches.
@@ -350,7 +356,7 @@ export class ReefscapeRules implements SeasonRules {
       m.eject = (m.eject ?? 0) + dt / EJECT_SECONDS;
       if (coral === undefined) m.eject = 0;
       else if (m.eject >= 1) { m.eject = 0; this.ejectCoral(robot, coral, m.level); }
-      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level, side: m.side, handoff: m.handoff, algae: m.algae, eject: m.eject };
+      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level, side: m.side, handoff: m.handoff, algae: m.algae, eject: m.eject, lateral: this.toolLateral(robot, m.side) };
       robot.advanceScoringMechanisms(dt);
       return true;
     }
@@ -408,7 +414,7 @@ export class ReefscapeRules implements SeasonRules {
     m.height += clamp(desiredHeight - m.height, -mechanism.liftSpeed * dt, mechanism.liftSpeed * dt);
     m.forward += clamp(desiredForward - m.forward, -1.2 * dt, 1.2 * dt);
     this.updateElevatorCollider(robot, m.height);
-    robot.placeAnim = { height:m.height, forward:m.forward, level:m.level, side:m.side, handoff:m.handoff, algae:m.algae, eject:m.eject };
+    robot.placeAnim = { height:m.height, forward:m.forward, level:m.level, side:m.side, handoff:m.handoff, algae:m.algae, eject:m.eject, lateral:this.toolLateral(robot, m.side) };
     robot.advanceScoringMechanisms(dt);
     if (robot.isClimbing) return true;
     if (harvest && Math.abs(m.height - desiredHeight) < 0.06) {
@@ -463,7 +469,8 @@ export class ReefscapeRules implements SeasonRules {
   ejectCoral(robot: Robot, i: number, level: number): void {
     const m = this.mechanisms.get(robot.id)!;
     const p = robot.pose, v = robot.fieldVelocity, dir = p.yaw + m.side * Math.PI / 2;
-    const pos = { x: p.x + Math.cos(dir) * m.forward, y: p.y + Math.sin(dir) * m.forward, z: m.height };
+    const lat = this.toolLateral(robot, m.side);
+    const pos = { x: p.x + Math.cos(dir) * m.forward - Math.sin(dir) * lat, y: p.y + Math.sin(dir) * m.forward + Math.cos(dir) * lat, z: m.height };
     const travel = level === 4 ? { x: 0, y: 0, z: -1 } : level === 1 ? C.dir3(dir, 0) : C.dir3(dir, -C.BRANCH_ANGLE);
     const axis = level === 1 ? C.dir3(dir + Math.PI / 2, 0) : travel;
     // Rollers spit CORAL out fast enough that it barely drops before the BRANCH tip is inside it.
@@ -1105,7 +1112,7 @@ export class ReefscapeRules implements SeasonRules {
       }
       // Team models (254's elevator, 2910's telescoping arm…) draw their own mast and follow the end effector.
       arm.visible = !robot.modelReplaces('mast');
-      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level, side: m.side, handoff: m.handoff, algae: m.algae, eject: m.eject };
+      robot.placeAnim = { height: m.height, forward: m.forward, level: m.level, side: m.side, handoff: m.handoff, algae: m.algae, eject: m.eject, lateral: this.toolLateral(robot, m.side) };
       const held = this.heldVisuals.get(robot.id)!;
       held.coral.visible = pool.owner.some((owner, i) => owner === robot.id && pool.state[i] === 'held' && i < C.CORAL_COUNT);
       held.algae.visible = pool.owner.some((owner, i) => owner === robot.id && pool.state[i] === 'held' && i >= C.CORAL_COUNT);
@@ -1186,7 +1193,7 @@ export class ReefscapeRules implements SeasonRules {
   private animateEject(robot: Robot, coral: THREE.Mesh, m: MechanismState): void {
     const pose = this.coralInRobotFrame(robot, coral);
     const to = new THREE.Vector3(), toQ = new THREE.Quaternion();
-    coralReleasePose(m.height, m.forward, m.side, m.level, to, toQ);
+    coralReleasePose(m.height, m.forward, m.side, m.level, to, toQ, this.toolLateral(robot, m.side));
     blendCoralPose(pose.position, pose.quaternion, to, toQ, ejectTravel(m.eject ?? 0));
     coral.position.copy(pose.position); coral.quaternion.copy(pose.quaternion);
   }

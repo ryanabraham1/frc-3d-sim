@@ -76,7 +76,10 @@ registerRobotModel('subzero-1778', (k: ModelKit) => {
   arm.add(armTube);
   box(arm, 0.05, 0.05, 0.05, black, 0, 0, 0); // pivot hub
   // End effector: black side plates and wheels on blue hubs that clamp the CORAL across the arm's end.
-  const head = pivot(arm, 0, -ARM);
+  // Supplied CAD: the claw sits 0.24 m aft of the arm on a cross plate, so it releases aft of center
+  // (placement.toolOffset).
+  const head = pivot(arm, -0.24, -ARM);
+  bar(arm, [0, -ARM + 0.03, 0], [-0.24, -ARM + 0.03, 0], 0.02, silver);
   sidePlates(head, [[-0.07, -0.03], [0.07, -0.03], [0.08, 0.07], [-0.08, 0.07]], 0.12, black, [[0, 0.03, 0.02]]);
   const wheels = [roller(head, 0.03, 0.22, black, -0.045, 0.045), roller(head, 0.03, 0.22, black, 0.045, 0.045)];
   for (const w of wheels) for (const z of [-0.06, 0.06]) roller(w, 0.018, 0.02, blue, 0, 0, z);
@@ -134,6 +137,7 @@ export function subZero1778(): TeamRobot {
   config.model = 'subzero-1778';
   config.options = { ...config.options, coralBuffer: true, coralBufferLocation: 'intake', dualPieceStorage: true };
   config.placement!.scoreSide = 'sides';
+  config.placement!.toolOffset = [-0.24, 0]; // supplied CAD: the arm hangs behind the elevator, its claw 24 cm aft of center
   config.placement!.handoffSeconds = 0.35; // [EST] linebreak-triggered: the CORAL is centered by the time the intake is up
   config.placement!.cycleSeconds = 0.4; // [EST] "some of the fastest CORAL scoring in the world"
   config.placement!.liftSpeed = 1.8; // [EST]
