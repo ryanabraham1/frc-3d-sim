@@ -17,6 +17,8 @@ export const MAX_INTERP_DELAY = 0.35;
 const SNAP_DT = 1 / 30;
 /** When snapshots run late, keep robots moving on their last velocity for at most this long (s). */
 const MAX_EXTRAPOLATE = 0.1;
+/** A piece the client simulated locally fades back onto the host's pose over this much render time (s). */
+const HAND_BACK_S = 0.3;
 /** Minimum spacing between keyframe requests after missed snapshots (ms). */
 const RESYNC_EVERY_MS = 1000;
 /** Host-clock estimate: largest step one snapshot may move it (s), so a burst of late packets can't drag
@@ -28,6 +30,16 @@ const MAX_OFFSET_STEP = 0.1;
 const MAX_REWIND = 0.3;
 const LATE_RESET = 0.5;
 const LATE_RESET_RUN = 15;
+
+export interface HostPieceSample {
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+  vx: number;
+  vy: number;
+  vz: number;
+}
 
 interface RobotSnap {
   t: number;
@@ -81,6 +93,12 @@ export class ClientSync {
   private readonly pt1: Float64Array;
   private readonly pp0: Float32Array;
   private readonly pp1: Float32Array;
+  /** Hand-back offsets (see handBack): drawn pose minus host pose, and the render time they start fading. */
+  private readonly backOff: Float32Array;
+  private readonly backAt: Float64Array;
+  /** Newest host orientation of each piece that has one on the wire (tubes). */
+  private readonly rot: Float32Array;
+  private readonly hasRot: Uint8Array;
   private readonly robotsById = new Map<number, Robot>();
   private seq = 0;
   private lastSentAt = -Infinity;
@@ -97,6 +115,10 @@ export class ClientSync {
     this.pp0 = new Float32Array(n * 3);
     this.pp1 = new Float32Array(n * 3);
     this.settled = new Uint8Array(n);
+    this.backOff = new Float32Array(n * 3);
+    this.backAt = new Float64Array(n).fill(-Infinity);
+    this.rot = new Float32Array(n * 4);
+    this.hasRot = new Uint8Array(n);
     for (const r of target.robots) this.robotsById.set(r.id, r);
   }
 
@@ -157,7 +179,11 @@ export class ClientSync {
       }
     }
     for (const [i, x, y, z, w] of m.rotations ?? []) {
-      if (i >= 0 && i < pool.count) {
+      if (i < 0 || i >= pool.count) continue;
+      this.rot.set([x, y, z, w], i * 4);
+      this.hasRot[i] = 1;
+      // A piece simulated here keeps its own orientation until it is handed back.
+      if (!pool.isLocal(i)) {
         pool.setReplicaRotation(i, x, y, z, w);
         this.settled[i] = 0;
       }
@@ -183,6 +209,7 @@ export class ClientSync {
       const j = i * 3;
       this.settled[i] = 0;
       if (fresh.has(i)) {
+        this.backAt[i] = -Infinity;
         this.pt0[i] = this.pt1[i] = s.time;
         for (let d = 0; d < 3; d++) this.pp0[j + d] = this.pp1[j + d] = s.piecePos[k * 3 + d];
         continue;
@@ -270,20 +297,75 @@ export class ClientSync {
     const pool = this.target.pool;
     const settled = this.settled;
     for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field' || settled[i]) continue;
+      if (pool.state[i] !== 'field' || settled[i] || pool.isLocal(i)) continue;
       const t0 = this.pt0[i];
       const t1 = this.pt1[i];
       const k = t1 > t0 ? Math.min(1, Math.max(0, (rt - t0) / (t1 - t0))) : 1;
-      const j3 = i * 3;
-      pool.setReplicaPosition(
-        i,
-        this.pp0[j3] + (this.pp1[j3] - this.pp0[j3]) * k,
-        this.pp0[j3 + 1] + (this.pp1[j3 + 1] - this.pp0[j3 + 1]) * k,
-        this.pp0[j3 + 2] + (this.pp1[j3 + 2] - this.pp0[j3 + 2]) * k,
-      );
+      const p = this.piecePosAt(i, rt);
+      // Fading hand-back offset (a piece the client simulated until now).
+      const w = this.backAt[i] > -Infinity ? Math.min(1, 1 - (rt - this.backAt[i]) / HAND_BACK_S) : 0;
+      if (w > 0) {
+        const j3 = i * 3;
+        pool.setReplicaPosition(i, p[0] + this.backOff[j3] * w, p[1] + this.backOff[j3 + 1] * w, p[2] + this.backOff[j3 + 2] * w);
+        continue;
+      }
+      this.backAt[i] = -Infinity;
+      pool.setReplicaPosition(i, p[0], p[1], p[2]);
       // At rest on its newest sample: nothing more to do until the next update for this piece.
       if (k >= 1) settled[i] = 1;
     }
+  }
+
+  /** Render time of the last `interpolate` (host seconds). */
+  get renderTime(): number {
+    return this.lastRt;
+  }
+
+  /**
+   * The host's newest sample of piece i: position, host time, and velocity from the last two samples (zero when it
+   * has been at rest since).
+   */
+  hostPiece(i: number, out: HostPieceSample): HostPieceSample {
+    const j = i * 3;
+    out.x = this.pp1[j];
+    out.y = this.pp1[j + 1];
+    out.z = this.pp1[j + 2];
+    out.t = this.pt1[i];
+    const dt = this.pt1[i] - this.pt0[i];
+    const live = dt > 1e-6 && this.latestTime - this.pt1[i] < 2 * SNAP_DT;
+    out.vx = live ? (this.pp1[j] - this.pp0[j]) / dt : 0;
+    out.vy = live ? (this.pp1[j + 1] - this.pp0[j + 1]) / dt : 0;
+    out.vz = live ? (this.pp1[j + 2] - this.pp0[j + 2]) / dt : 0;
+    return out;
+  }
+
+  /**
+   * A locally simulated piece goes back to snapshot posing. It is drawn from where it is now and the difference to
+   * the host's pose fades out over HAND_BACK_S of render time, so it glides instead of jumping.
+   */
+  handBack(i: number, from: { x: number; y: number; z: number }): void {
+    const rt = Number.isFinite(this.lastRt) ? this.lastRt : this.latestTime;
+    const p = this.piecePosAt(i, rt);
+    const j = i * 3;
+    this.backOff[j] = from.x - p[0];
+    this.backOff[j + 1] = from.y - p[1];
+    this.backOff[j + 2] = from.z - p[2];
+    this.backAt[i] = rt;
+    this.settled[i] = 0;
+    if (this.hasRot[i]) {
+      const r = this.rot;
+      this.target.pool.setReplicaRotation(i, r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3]);
+    }
+  }
+
+  private readonly tmpPos: [number, number, number] = [0, 0, 0];
+  private piecePosAt(i: number, rt: number): [number, number, number] {
+    const t0 = this.pt0[i];
+    const t1 = this.pt1[i];
+    const k = t1 > t0 ? Math.min(1, Math.max(0, (rt - t0) / (t1 - t0))) : 1;
+    const j = i * 3;
+    for (let d = 0; d < 3; d++) this.tmpPos[d] = this.pp0[j + d] + (this.pp1[j + d] - this.pp0[j + d]) * k;
+    return this.tmpPos;
   }
 
   private requestResync(localMs: number): void {
