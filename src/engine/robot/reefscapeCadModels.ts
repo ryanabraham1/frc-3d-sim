@@ -84,8 +84,9 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
   const q=new THREE.Quaternion(),seatFix=new SeatFix();let yc=.38,phi=1.2,deploy=0,climbAngle=0;
   // SubLime: one pivot about the robot's lateral axis carries a rigid clear end effector, no wrist (1678 C2025-Public
   // PivotConstants; the export's pivot axle runs along Z at x 0.178, y 0.52). Its CORAL follows the pivot, so the axis
-  // is set per frame to leave at the release angle; it hangs down into the indexer to load (pivot -90°).
-  const rigid=id==='sublime-1678',bind=Math.atan2(sourceVector.y,sourceVector.x);
+  // is set per frame to leave at the release angle; it hangs down into the indexer to load (pivot -90°). Firefly is
+  // the same (2025-Firefly code: elevator and arm motors only) and rests in its Handoff pose, arm down at the intake.
+  const rigid=id==='sublime-1678'||id==='firefly-118',bind=Math.atan2(sourceVector.y,sourceVector.x);
   const coralAxis:[number,number,number]=id==='whisper-1690'?[0,0,1]:[1,0,0];
   return {replaces:root.getObjectByName('climber')?replaces:replaces.filter(p=>p!=='climber'),climbAnchor:climbHeld,heldAnchor:held,coralAxis,algaeAnchor:algaeHeld,algaeGripScale:id==='zuma-581'?[.76,.94,.76]:[.78,.96,.76],intakeAnchor:tip,handoffStyle:id==='quixilver-604-2025'?'direct':'conveyor',lightAt:[f.shoulder[0],f.stageTop,.15],
     flow:{handoff:()=>id==='whisper-1690'?[point(k,tip),new THREE.Vector3(0,.29,.30),new THREE.Vector3(0,.29,0),point(k,held)]:[point(k,tip),new THREE.Vector3(-.28,.25,0),point(k,held)]},
@@ -96,8 +97,10 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       if(id==='whisper-1690'){
         const dy=f.grip[1]-f.shoulder[1];
         const targetZ=p.handoff?.25:parked?0:(p.side===1?-1:1)*p.forward;
-        const theta=Math.asin(THREE.MathUtils.clamp(targetZ/dy,-.98,.98));
-        const targetHeight=p.handoff?.29:parked?.48:p.height;
+        // Climbing: elevator to zero and the arm rotated to π (team post, CD 492064).
+        const climbing=s.climb>.01;
+        const theta=climbing?Math.PI:Math.asin(THREE.MathUtils.clamp(targetZ/dy,-.98,.98));
+        const targetHeight=climbing?0:p.handoff?.29:parked?.48:p.height;
         yc=scoringSlew(yc,Math.max(.32,targetHeight-dy*Math.cos(theta)),LIFT_RATE,s.dt);
         phi=scoringSlew(phi,theta,ARM_SWING_RATE,s.dt);
         carriage.position.y=yc-f.shoulder[1];
@@ -111,7 +114,7 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       let targetY:number,targetPhi:number;
       const floorAlgae=id==='quixilver-604-2025'&&s.intaking&&parked&&!p.handoff;
       if(floorAlgae){targetY=.70;targetPhi=-.60;}
-      else if(p.handoff){targetY=.31+length;targetPhi=-Math.PI/2;}
+      else if(p.handoff||(parked&&id==='firefly-118'&&!p.algae)){targetY=.31+length;targetPhi=-Math.PI/2;}
       else if(parked){targetY=id==='quixilver-604-2025'?.808:rigid?f.shoulder[1]:.38;targetPhi=rigid?-Math.PI/2:1.22;}
       else {
         // Solve with the measured seat correction: the exported tool point sits off the shoulder→wrist line.
@@ -129,7 +132,8 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
         // Arm at phi is the export pose turned by phi-bind; the wrist stays fixed to it.
         wrist.quaternion.identity();
         const release=parked||p.handoff?0:p.level===4?-Math.PI/2:p.level===1?0:-.61, rel=release-(phi-bind);
-        coralAxis[0]=Math.cos(rel);coralAxis[1]=Math.sin(rel);coralAxis[2]=0;
+        if(p.level===1&&!parked&&!p.handoff){coralAxis[0]=0;coralAxis[1]=0;coralAxis[2]=1;}
+        else{coralAxis[0]=Math.cos(rel);coralAxis[1]=Math.sin(rel);coralAxis[2]=0;}
       }else{
         wrist.quaternion.copy(arm.quaternion).invert().multiply(q.setFromAxisAngle(axis,toolAngle));
         wrist.quaternion.multiply(neutral);

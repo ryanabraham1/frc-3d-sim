@@ -26,6 +26,17 @@ export function reachWith(p: PlaceAnim, dir: number, ex: number, la: number, yMi
   return { yc, phi: dir > 0 ? tilt : Math.PI - tilt };
 }
 
+/**
+ * CORAL axis (in a rigid tool's frame, arm along +x) for a gripper with no wrist: the tube turns with the arm `phi`, so
+ * it is set to leave at the rules' release angle (L4 down, L2/L3 35° down, L1 across) and to lie level while loading.
+ */
+export function followRelease(axis: [number, number, number], p: PlaceAnim, phi: number, dir: number): void {
+  if (p.level === 1 && !p.handoff && !stowed(p)) { axis[0] = 0; axis[1] = 0; axis[2] = 1; return; }
+  const r = p.handoff || stowed(p) ? 0 : p.level === 4 ? -Math.PI / 2 : -0.61;
+  const rel = (dir > 0 ? r : Math.PI - r) - phi;
+  axis[0] = Math.cos(rel); axis[1] = Math.sin(rel); axis[2] = 0;
+}
+
 /** Star / spiked intake wheels (the compliant "spiky" rollers 1690 and 2056 used): `n` wheels across `span`. */
 export function starWheels(parent: THREE.Object3D, x: number, y: number, o: { n: number; r: number; span: number; m: THREE.Material; spikes?: number }): THREE.Group {
   const g = new THREE.Group();
@@ -226,9 +237,11 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
   box(climb, 0.1, 0.06, 0.05, black, 0, 0.24, 0); // printed cage guide
   let yc = bt + 0.2, phi = -0.6, deploy = 0;
   const yMin = bt + 0.12, yMax = top + 0.7, dir = -side;
+  // The gripper is rigid on the arm tip (binder p2, p14: no wrist), so the arm angle sets the CORAL angle.
+  const coralAxis: [number, number, number] = [1, 0, 0], seat = la + 0.03;
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, coralAxis:[1,0,0], algaeAnchor: algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'conveyor',
+    heldAnchor: held, coralAxis, algaeAnchor: algaeHeld, algaeGripScale:[.96,.96,.96], handoffStyle:'conveyor',
     intakeAnchor: intake.tip,
     flow: { handoff: () => [flowAt(k, intake.tip), new THREE.Vector3(side * L * .3, bt + .1, 0), new THREE.Vector3(ex - side * .02, bt + .1, 0)] },
     lightAt: [ex, top + 0.01, 0],
@@ -241,13 +254,13 @@ registerRobotModel('lightning-2056', (k: ModelKit) => {
         const angle = Math.atan2(-Math.sqrt(length * length - dx * dx), dx);
         goal = { yc: bt + .1 - .05 - length * Math.sin(angle), phi: angle };
       } else if (stowed(p)) goal = { yc: bt + (p.algae ? .2 : .05) + la * .9, phi: dir > 0 ? -1.35 : Math.PI + 1.35 };
-      else goal = reachWith(p, dir, ex, la, yMin, yMax);
+      else goal = reachWith(p, dir, ex - side * 0.11, seat, yMin, yMax);
       yc = scoringApproach(yc, goal.yc, 12, s.dt);
       phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.max(0, yc - (top - 0.12));
       stage.position.y = ext / 2; stage2.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      grip.rotation.z = -phi + (p.handoff ? 0 : p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
+      followRelease(coralAxis, p, phi, dir);
       for (const w of gripWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
@@ -324,9 +337,12 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
   plate(climb, [[-0.06, 0.32], [0.06, 0.32], [0.08, 0.42], [0.03, 0.4], [0, 0.36], [-0.03, 0.4], [-0.08, 0.42]], 0.01, white);
   let yc = bt + 0.2, phi = 1.2, deploy = 0;
   const yMin = bt + 0.12, yMax = top + 0.58, dir = -side; // single stage: the carriage rides to the top of the raised stage
+  // Only elevator and arm motors (2025-Firefly RobotControl.lua): the end effector is rigid on the arm, so the CORAL
+  // turns with it. Teleop rest is the Handoff pose, arm down over the CORAL intake.
+  const coralAxis: [number, number, number] = [1, 0, 0];
   return {
     replaces: ['chassis', 'mast', 'hopper', 'intakeRollers', 'climber', 'funnel'],
-    heldAnchor: held, coralAxis:[1,0,0], handoffStyle:'fold', algaeAnchor: algaeHeld, algaeGripScale:[.74,.96,.74],
+    heldAnchor: held, coralAxis, handoffStyle:'fold', algaeAnchor: algaeHeld, algaeGripScale:[.74,.96,.74],
     intakeAnchor: intake.tip,
     lightAt: [ex, top + 0.01, 0],
     update(s) {
@@ -334,14 +350,14 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
       let goal: { yc: number; phi: number };
       // Handoff: the end effector swings back down over the CORAL intake. Stowed: arm up, claw over the elevator.
       if (p.handoff) goal = { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
-      else if (stowed(p)) goal = { yc: yMin, phi: dir > 0 ? 1.25 : Math.PI - 1.25 };
+      else if (stowed(p)) goal = p.algae ? { yc: yMin, phi: dir > 0 ? 1.25 : Math.PI - 1.25 } : { yc: bt + 0.3, phi: dir > 0 ? Math.PI + 0.9 : -0.9 };
       else goal = reachWith(p, dir, ax, la, yMin, yMax);
       yc = scoringApproach(yc, goal.yc, 12, s.dt);
       phi = scoringSlew(phi, goal.phi, ARM_SWING_RATE, s.dt, 9);
       const ext = Math.min(top - bt - 0.25, Math.max(0, yc - (top - 0.14)));
       stage.position.y = ext; carriage.position.y = yc - ext;
       arm.rotation.z = phi;
-      eff.rotation.z = -phi + (p.level === 4 ? -1.2 : p.level === 1 ? 0 : -0.5);
+      followRelease(coralAxis, p, phi, dir);
       for (const w of effWheels) spin(w, s.intaking ? 22 : s.firing > 0 ? -30 : 0, s.dt);
       deploy = approach(deploy, intakeDeployTarget(s), 7, s.dt);
       intake.update(s, deploy);
@@ -355,15 +371,15 @@ registerRobotModel('firefly-118', (k: ModelKit) => {
 export function additionalReefscapeTeamRobots(): TeamRobot[] {
   return [
     { id: 'whisper-1690', team: 1690, name: 'WHISPER',
-      description: '1690 Orbit. Center differential elevator whose carbon arm rotates over the top: the rigid vacuum cup scores CORAL and ALGAE on the intake side and its opposite. Spiky floor intake, conveyor to the arm, deep climb. Simulator estimates: 2.2 m/s lift, 0.30 s rel0.35 s harvest and 5.4 m/s drive.',
+      description: '1690 Orbit. Center differential elevator whose carbon arm rotates over the top: the rigid vacuum cup scores CORAL and ALGAE on the intake side and its opposite. Spiky floor intake, conveyor to the arm, deep climb. 4.2 m/s drive (1690orbit.com). Simulator estimates: 2.2 m/s lift, 0.30 s release and 0.35 s harvest.',
       source: 'https://www.chiefdelphi.com/t/orbit-1690-2025-robot-reveal-whisper/492064 — reveal, team Q&A; 1690 CAD release; 1690orbit.com 2025 photos',
       config: whisper() },
     { id: 'lightning-2056', team: 2056, name: 'LIGHTNING',
-      description: '2056 OP Robotics. 32 × 28 in. Two-stage continuous-belt elevator, truss gripper arm, polycarbonate star-wheel floor intake with a "straightenator" feeding a cradle under the elevator; all REEF levels, NET, PROCESSOR and rope-winch deep climb. 15 ft/s drive; full elevator travel in about 0.6 s. Simulator tuning: 2.5 m/s lift, 0.40 s rel0.45 s harvest.',
+      description: '2056 OP Robotics. 32 × 28 in. Two-stage continuous-belt elevator, truss gripper arm, polycarbonate star-wheel floor intake with a "straightenator" feeding a cradle under the elevator; all REEF levels, NET, PROCESSOR and rope-winch deep climb. 15 ft/s drive; full elevator travel in about 0.6 s. Simulator tuning: 2.5 m/s lift, 0.40 s release, 0.45 s harvest.',
       source: 'https://2056.ca/wp-content/uploads/2025/05/OPR25-2056-Technical-Binder.pdf',
       config: config(2056, 'lightning-2056', 2.5, 0.40, 0.45, 4.572, 3.0, 40, [32, 28]) },
     { id: 'firefly-118', team: 118, name: 'Firefly',
-      description: '118 Robonauts. 29 in square. Single-stage elevator with a cycloidal-driven arm and a white end effector that takes CORAL from the floor intake and ALGAE from the REEF; separate ALGAE floor rollers; L1–L4, NET, PROCESSOR and deep cage climb. Simulator estimates: 1.9 m/s lift, 0.25 s rel0.30 s harvest, 4.9 m/s drive and 2.0 s climb.',
+      description: '118 Robonauts. 29 in square. Single-stage elevator with a cycloidal-driven arm and a white end effector that takes CORAL from the floor intake and ALGAE from the REEF; separate ALGAE floor rollers; L1–L4, NET, PROCESSOR and deep cage climb. Simulator estimates: 1.9 m/s lift, 0.25 s release, 0.30 s harvest, 4.9 m/s drive and 2.0 s climb. Rigid end effector (no wrist) that rests down at the intake.',
       source: 'Supplied 00_0000_2025_Firefly.stp; https://www.chiefdelphi.com/t/2025-robonauts-cad-and-code-release/502317 — Firefly technical binder; TBA 2025 photos',
       config: config(118, 'firefly-118', 1.9, 0.25, 0.30, 4.9, 2.0, 40, [29, 29]) },
   ];
@@ -383,7 +399,7 @@ function config(team: number, model: string, lift: number, release: number, harv
 
 /** WHISPER scores off both ends (the arm rotates over the top), including the end with its one floor intake. */
 function whisper() {
-  const c = config(1690, 'whisper-1690', 2.2, 0.30, 0.35, 5.4, 2.5, 36);
+  const c = config(1690, 'whisper-1690', 2.2, 0.30, 0.35, 4.2, 2.5, 36);
   c.placement!.scoreSide = 'sides';
   c.intake.groundYaw = -Math.PI / 2;
   c.frameLength = c.frameWidth = .744; c.height = 1.065;
