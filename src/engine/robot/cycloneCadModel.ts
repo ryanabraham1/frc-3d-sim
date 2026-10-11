@@ -1,4 +1,4 @@
-import { dyeRotorRate, HOOD_SHOT_MAX, scoringEase } from './scoringReadiness';
+import { dyeRotorRate, HOOD_SHOT_MAX, scoringEase, hoodLive } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { articulation, ease, fuel, point, replaces } from './additionalCadModels';
@@ -67,7 +67,7 @@ export function build1987Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       // Floating hood: steeper (closer to the wheel) for short shots, flatter for long ones.
       // Full travel across the shot map: ~82 deg up close, ~55 deg from deep in the zone.
       // One degree of hood per degree of launch angle, like the other contact hoods. [EST] travel: no team figure.
-      lift = ease(lift, s.enabled && s.aiming ? THREE.MathUtils.clamp(s.hood - .95, 0, HOOD_SHOT_MAX - .95) : 0, s.dt);
+      lift = ease(lift, s.enabled && hoodLive(s) ? THREE.MathUtils.clamp(s.hood - .95, 0, HOOD_SHOT_MAX - .95) : 0, s.dt);
       hood.rotation.z = lift;
     },
   };

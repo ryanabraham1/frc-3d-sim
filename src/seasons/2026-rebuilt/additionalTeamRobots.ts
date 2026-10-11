@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { scoringApproach, hoodLive } from '@engine/robot/scoringReadiness';
 import { adaptedDumper } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
@@ -112,7 +112,7 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
         p.needsUpdate=true; net!.geometry.computeBoundingSphere();
       }
       // Hood folds flat when idle and swings to the solved angle while aiming (see turretShooter).
-      hood = scoringApproach(hood, s.aiming || s.firing > 0 ? hoodFor(s.hood) : -0.35, 5, s.dt); for (const h of hoods) h.rotation.z = hood;
+      hood = scoringApproach(hood, hoodLive(s) ? hoodFor(s.hood) : -0.35, 5, s.dt); for (const h of hoods) h.rotation.z = hood;
       for (const w of wheels) spin(w, s.enabled ? 40 + 60 * s.firing : 0, s.dt);
     } };
 });
@@ -156,7 +156,7 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
       feed:(shot=0)=>{const exits=launcherExitOffsets(c),z=-exits[shot%exits.length];return [new THREE.Vector3(-L*.35,bt+.04+r,z),new THREE.Vector3(L*.22,bt+.12+r,z),flowAt(k,cadShooter?.flywheel ?? fly,-.09,-.02,z),flowAt(k,cadShooter?.flywheel ?? fly,.02,.04,z)];}},
     update(s){cadShooter?.update(s);db.update(s);fill.set(s.fill);pile.setFill(s.fill);
       deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
-      angle=scoringApproach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
+      angle=scoringApproach(angle,hoodLive(s)?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
       for(const wheel of [fly,overspeed,...conveyor])spin(wheel,s.enabled?40+60*s.firing:0,s.dt);
     }};
 });
@@ -200,7 +200,7 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
       feed:(shot=0)=>{const i=shot%heads.length,z=heads[i].position.z;return [new THREE.Vector3(-L*.2,bt+.04+r,z),new THREE.Vector3(L*.1,bt+.05+r,z),flowAt(k,wheels[i],-.08,-.02,0),flowAt(k,wheels[i],.02,.04,0)];}},
     update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
       deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
-      angle=scoringApproach(angle,s.aiming||s.firing>0?hoodFor(s.hood):-.35,5,s.dt);
+      angle=scoringApproach(angle,hoodLive(s)?hoodFor(s.hood):-.35,5,s.dt);
       for(const head of heads)head.rotation.y=k.turret.rotation.y;
       for(const hood of hoods)hood.rotation.z=angle;
       for(const wheel of wheels)spin(wheel,s.enabled?40+60*s.firing:0,s.dt);

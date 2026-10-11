@@ -1,4 +1,4 @@
-import { HOOD_SHOT_MAX, scoringEase } from './scoringReadiness';
+import { HOOD_SHOT_MAX, scoringEase, hoodLive } from './scoringReadiness';
 import * as THREE from 'three';
 import { box, bar, mat, fillBlock, drivebase, roller, hoodShell } from './models';
 import type { ModelKit, RobotModel } from './models';
@@ -77,7 +77,7 @@ export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       intake.position.x=-.36*deploy;
       for(const rail of rails){rail.scale.x=.025+.36*deploy;rail.position.x=-.147-.18*deploy;}
       // Hood turns with the launch angle across the shot map [EST travel].
-      angle=scoringEase(angle,s.aiming||s.firing>0 ? s.hood-.9 : -.2,s.dt);hood.rotation.z=angle;
+      angle=scoringEase(angle,hoodLive(s) ? s.hood-.9 : -.2,s.dt);hood.rotation.z=angle;
       drum.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?45:0)*s.dt;
       for(const r of feeds)r.rotation.z+=(s.enabled&&(s.intaking||s.firing>0)?32:0)*s.dt;
     }};
@@ -106,7 +106,7 @@ export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return; intake.position.x=(1-deploy)*.22;
       extension.position.x=slideRoof.position.x=intake.position.x;
-      angle=scoringEase(angle,s.aiming?THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-1.43:0,s.dt);hood.rotation.z=angle;
+      angle=scoringEase(angle,hoodLive(s)?THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-1.43:0,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};
 }
@@ -137,7 +137,7 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       intake.position.x=(1-deploy)*.1905;if(slide)slide.position.x=intake.position.x;
       roof.position.x=-.63+intake.position.x;roof.scale.x=.025-roof.position.x;
       // Park the hood forward/down during travel, rather than retaining the raised export.
-      const target=s.aiming||s.firing>0 ? THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX) : 1.5;
+      const target=hoodLive(s) ? THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX) : 1.5;
       angle=scoringEase(angle,target-.925,s.dt);hood.rotation.z=angle;
       wheel.rotation.z+=(s.enabled&&s.aiming?45:0)*s.dt;
     }};
@@ -223,7 +223,7 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       intake.rotation.z=-(1-deploy)*2.65;
       // Fitted horizontal compression; source supplies the extended hopper pose only.
       if(hopper)hopper.position.x=(1-deploy)*.25;
-      angle=scoringEase(angle,s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-1.05:0,s.dt);
+      angle=scoringEase(angle,hoodLive(s)?THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-1.05:0,s.dt);
       hood.rotation.z=angle;
       flywheel.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?70:0)*s.dt;
       for(const shaft of feederRollers)shaft.rotation.z=(shaft.rotation.z+(s.enabled&&(s.intaking||s.aiming||s.firing>0)?-35:0)*s.dt)%(Math.PI*2);

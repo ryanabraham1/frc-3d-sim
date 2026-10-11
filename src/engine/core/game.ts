@@ -393,7 +393,9 @@ export class Game {
   private startWorker(R: RapierModule): void {
     for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     const piece = this.pool.mesh;
-    const hopper = this.quality.hopperWorker;
+    // `?hopper=all|player|none` overrides the device tier's choice (testing the real-body hopper).
+    const asked = new URLSearchParams(location.search).get('hopper');
+    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : this.quality.hopperWorker;
     this.remote = new WorkerSim(this.world, {
       settings: this.settings, setup: this.setup, hopper, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
     }, (e) => this.onSimEvent(e), (reason) => {
@@ -511,7 +513,8 @@ export class Game {
   private wantsRealHopper(rs: RobotSetup, net?: GameNet): boolean {
     if (this.role === 'client' || net?.recovering) return false;
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
-    const mode = this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
+    const asked = this.role === 'local' ? new URLSearchParams(location.search).get('hopper') : null;
+    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
     if (mode === 'none') return false;
     if (this.role === 'host' && rs.peerId && rs.peerId !== net!.client.peerId) return false;
     return mode === 'all' || rs.id === mine?.id;

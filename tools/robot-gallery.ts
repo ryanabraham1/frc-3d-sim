@@ -41,6 +41,8 @@ addEventListener('pointerdown', e => { if (focus >= 0 && (e.target as HTMLElemen
 addEventListener('pointerup', () => { dragging = false; });
 addEventListener('pointermove', e => { if (!dragging) return; orbit -= e.movementX * 0.01; tiltView = THREE.MathUtils.clamp(tiltView + e.movementY * 0.01, 0.05, 1.45); });
 (window as unknown as { view(o: number, t: number, z: number): void }).view = (o, t, z) => { orbit = o; tiltView = t; zoom = z; };
+// Scripts (headless checks) reach the built robots through this.
+(window as unknown as { galleryRobots(): Robot[] }).galleryRobots = () => items.map(i => i.robot);
 addEventListener('wheel', e => { if (focus < 0) return; zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.25, 2); }, { passive: true });
 let items: { scene: THREE.Scene; robot: Robot; physics: PhysicsWorld; el: HTMLElement; camera: THREE.PerspectiveCamera; t: number; next: number; coral?: THREE.Mesh; algae?: THREE.Mesh }[] = [];
 /** One game piece as it rests on the carpet (the token the robot's piece flow animates). */

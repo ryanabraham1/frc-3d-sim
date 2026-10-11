@@ -1792,23 +1792,9 @@ export class Robot {
       desired = Math.atan2(-(target.point.z-origin.z), target.point.x-origin.x);
     }
     if (!this.lastCommand.shoot && !this.lastCommand.pass) this.aimSolveIn = 0;
-    // Pre-aim: an adjustable hood holding pieces keeps tracking the shot for where the robot is now (a few solves a second),
-    // the way real shooters run their hood off a distance map, so the shot isn't held up by the hood travelling.
-    const adjustable = c.launcher.maxAngle - c.launcher.minAngle > 0.01;
-    let preAim = false;
-    if (!aiming && adjustable && target && this.held.length > 0 && c.launcher.enabled && c.aimAssist !== 'off' && this.climbPhase === 'none' && !snoopy) {
-      preAim = true;
-      this.preAimIn -= dt;
-      if (this.preAimIn <= 0) {
-        this.preAimIn = 0.25;
-        const ex = this.launcherExit(0);
-        const sol = this.solveShot(this.localToWorld(ex.forward, ex.up, -ex.side, this.aimTmp), target);
-        if (sol) this.lastShotAngle = sol.angle;
-      }
-    } else if (!aiming) this.preAimIn = 0;
     this.turretAxis.pos = this.turretYaw;
     this.turretYaw = this.turretAxis.step(desired, dt);
-    const goal = aiming || preAim ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle;
+    const goal = aiming ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle;
     this.pitchAxis.pos = this.shooterPitch;
     this.shooterPitch = this.pitchAxis.step(goal, dt);
   }
@@ -1821,7 +1807,6 @@ export class Robot {
   private get pitchAxis(): ProfiledAxis {
     return this.pitchAxisState ??= new ProfiledAxis(this.shooterPitch, this.config.model === 'snoopy-6036' ? 5 : 3.5, this.config.model === 'snoopy-6036' ? 40 : 30);
   }
-  private preAimIn = 0;
   /** Actual shooter elevation, advanced by simulation rather than render frames. */
   private shooterPitch = 0;
   private scoringModelReady = false;

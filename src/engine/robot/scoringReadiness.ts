@@ -55,3 +55,8 @@ export const ARM_SWING_RATE = 6;
  * mappings clamp to this, not lower, or the near half of the hood's travel never shows.
  */
 export const HOOD_SHOT_MAX = 1.45;
+
+/** Is the hood following `s.hood` (shooting or just fired) rather than parked? */
+export function hoodLive(s: { aiming: boolean; firing: number }): boolean {
+  return s.aiming || s.firing > 0;
+}

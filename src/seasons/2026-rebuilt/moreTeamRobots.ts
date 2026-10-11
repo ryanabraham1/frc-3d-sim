@@ -1,4 +1,4 @@
-import { scoringApproach } from '@engine/robot/scoringReadiness';
+import { scoringApproach, hoodLive } from '@engine/robot/scoringReadiness';
 import { adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
@@ -454,7 +454,7 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);
       // Hood follows the shot map through its full travel [EST: 1114's travel is unpublished; matches 581's 35 deg].
-      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
+      hood.rotation.z = scoringApproach(hood.rotation.z, hoodLive(s) ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -511,7 +511,7 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);
       for (const r of hoodRolls) spin(r, -side * speed, s.dt);
       // 35 deg of hood travel (581's 2026 CAD and code release): hoodFor spans about that across the shot map.
-      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
+      hood.rotation.z = scoringApproach(hood.rotation.z, hoodLive(s) ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
     },
   };
 });

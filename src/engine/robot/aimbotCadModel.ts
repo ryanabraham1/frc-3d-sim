@@ -1,4 +1,4 @@
-import { dyeRotorRate, scoringEase } from './scoringReadiness';
+import { dyeRotorRate, scoringEase, hoodLive } from './scoringReadiness';
 import * as THREE from 'three';
 import type { ModelKit, RobotModel } from './models';
 import { articulation, ease, fuel, point, replaces } from './additionalCadModels';
@@ -74,7 +74,7 @@ export function buildAimbotCad(root: THREE.Group, k: ModelKit, isAnimated: () =>
       rotorRate = dyeRotorRate(rotorRate, s, 8);
       rotor.rotation.y += rotorRate * s.dt;
       // The whole flywheel pack tilts through the 27 degree range: flatter for long shots, steeper up close.
-      lift = ease(lift, s.enabled && s.aiming ? THREE.MathUtils.clamp((s.hood - .5) / .75, 0, 1) : 0, s.dt);
+      lift = ease(lift, s.enabled && hoodLive(s) ? THREE.MathUtils.clamp((s.hood - .5) / .75, 0, 1) : 0, s.dt);
       hood.rotation.z = AIMBOT_HOOD_RANGE * (lift - .5) * (s.enabled && s.aiming ? 1 : 0);
     },
   };
