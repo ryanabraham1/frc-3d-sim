@@ -3,10 +3,10 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { GROUPS } from '../physics/world';
 import { GamePiecePool } from '../gamepiece/pool';
 import type { Robot } from './robot';
-import { clearFuelKeepouts, clearHopperChamfer, type HopperChamfer, type FuelKeepout } from './fuelKeepouts';
+import { clearFuelOutline, clearFuelKeepouts, clearHopperChamfer, type HopperChamfer, type FuelKeepout } from './fuelKeepouts';
 
 /** Box (robot frame: x forward, y up, z right) a FUEL hopper holds its balls in. */
-export interface Cavity { min: THREE.Vector3; max: THREE.Vector3; open: boolean; keepouts?: readonly FuelKeepout[]; chamfer?:HopperChamfer }
+export interface Cavity { min: THREE.Vector3; max: THREE.Vector3; open: boolean; keepouts?: readonly FuelKeepout[]; chamfer?:HopperChamfer; outline?:readonly [number,number][] }
 
 const WALL = 0.05; // half-thickness of each wall slab (outside the cavity)
 /** Intake roller pull speed (m/s) and the time after which a ball that never made it in is dropped straight inside. */
@@ -137,7 +137,7 @@ export class StowBay {
       Math.min(cav.min.z + rc + j * row + shiftZ, cav.max.z - rc),
     );
     const probe = this.v.clone();
-    if (!clearFuelKeepouts(probe, rc, cav.keepouts ?? []) && !clearHopperChamfer(probe,rc,cav.chamfer) && valid++===this.stowed.size) break;
+    if (!clearFuelKeepouts(probe, rc, cav.keepouts ?? []) && !clearHopperChamfer(probe,rc,cav.chamfer) && !clearFuelOutline(probe,rc,cav.outline) && valid++===this.stowed.size) break;
     slot++;
     }
     this.place(i, this.v);
@@ -404,12 +404,15 @@ export class StowBay {
       if (this.staging.has(i)) continue;
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
+      const beyondLip = p.x < cav.min.x-r*.2 || p.x > cav.max.x+r*.2 || p.z < cav.min.z-r*.2 || p.z > cav.max.z+r*.2;
       const outX = Math.abs(p.x - cx) > hx + 0.01, outZ = Math.abs(p.z - cz) > hz + 0.01;
       const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + 0.01); // covered: the whole ball stays under the roof / net
-      const clipped=clearHopperChamfer(p,rs,cav.chamfer);
+      const clipped=clearHopperChamfer(p,rs,cav.chamfer)||clearFuelOutline(p,rs,cav.outline);
       const blocked = clearFuelKeepouts(p, rs, cav.keepouts ?? [], cav)||clipped;
-      if (!outX && !outZ && !outY && !blocked) continue;
-      if (cav.open && (outX || outZ) && p.y > cav.max.y - r * 0.5) {
+      const inverted = 1-2*(this.q.x*this.q.x+this.q.z*this.q.z)<.2;
+      const escaping = cav.open && ((beyondLip && p.y>cav.max.y-r*.5) || (inverted && p.y>cav.max.y+r*.5));
+      if (!outX && !outZ && !outY && !blocked && !escaping) continue;
+      if (escaping) {
         this.stats.released++;
         this.stowed.delete(i);
         const held = this.robot.held.lastIndexOf(i);

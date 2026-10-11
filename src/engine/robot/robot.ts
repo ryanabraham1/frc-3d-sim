@@ -403,7 +403,7 @@ export class Robot {
   private buildHopperNet(): void {
     if (!this.config.hopperExpansion || this.config.hopperExpansion.mechanism === 'telescoping') return;
     // Real crossed strands, anchored at the hopper rim, with a bowed flexible center.
-    const segments = 24, positions: number[] = [];
+    const segments = this.config.model === 'ripcurrent-4414' ? 40 : 24, positions: number[] = [];
     for (let axis = 0; axis < 2; axis++) for (let line = 0; line <= segments; line++) for (let step = 0; step < segments; step++) {
       for (const endpoint of [step, step + 1]) {
         // Clip two diagonal strand families to the rim: diamond openings stay open around protruding FUEL.
@@ -513,7 +513,7 @@ export class Robot {
         if (d2 >= reach * reach) continue;
         // Spherical contact over the ball, then tension carries the lift to nearby strands with a sloping falloff.
         const distance = Math.sqrt(d2);
-        const surface = t.y + .006 - R + Math.sqrt(Math.max(0, R * R - d2));
+        const surface = d2 < R * R ? t.y + .006 - R + Math.sqrt(R * R - d2) : -Infinity;
         const tension = t.y + .006 - .8 * distance;
         const cap = Math.max(surface, tension);
         const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
@@ -897,7 +897,7 @@ export class Robot {
     }
     // Covered net loads use the same count-dependent roof as their drawn net and clearance collider.
     if (this.hopperNet) max.y = Math.min(max.y, this.clearanceHeight - .006);
-    return Number.isFinite(min.x) ? { min, max, open: this.openHopper, keepouts: this.visual.userData.fuelKeepouts, chamfer:this.visual.userData.hopperChamfer } : null;
+    return Number.isFinite(min.x) ? { min, max, open: this.openHopper, keepouts: this.visual.userData.fuelKeepouts, chamfer:this.visual.userData.hopperChamfer, outline:this.visual.userData.fuelOutline } : null;
   }
 
   /** One conserved load across main and deployed extension bins. */
@@ -976,7 +976,7 @@ export class Robot {
     for (const pile of this.fuelPiles) {
       pile.userData.fuelManagedCount = true;
       pile.userData.setFuelOpen?.(open);
-      if (Robot.CAD_FUEL_CONTACTS) pile.userData.bindFuelContacts?.(this.visual, true);
+      if (Robot.CAD_FUEL_CONTACTS || this.config.model==='aimbot-3256') pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
     }
   }

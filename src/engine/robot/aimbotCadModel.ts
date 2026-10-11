@@ -45,7 +45,11 @@ export function buildAimbotCad(root: THREE.Group, k: ModelKit, isAnimated: () =>
   // Mouth: the lead roller sits on the carpet at the front of the slapdown plates.
   const tip = new THREE.Object3D(); tip.position.set(-.60 - AIMBOT_INTAKE_PIVOT.x, .08 - AIMBOT_INTAKE_PIVOT.y, 0); intake.add(tip);
   // FUEL fills the tall clear hopper around the turret tower (the +X/+Z quarter, source x,y >= 0, is the tower).
-  const pile = fuel(k, -.64, .34, .15, .72, .66, -.34, (x, z) => !(x > -.02 && z > -.02));
+  k.visual.userData.fuelKeepouts=[
+    {x:AIMBOT_TURRET.x,z:AIMBOT_TURRET.z,radius:.085,bottom:.15,top:.44},
+    {x:AIMBOT_TURRET.x,z:AIMBOT_TURRET.z,radius:.18,bottom:.44,top:.95},
+  ];
+  const pile = fuel(k, -.64, .34, .23, .72, .66, -.34, (x, z) => !(x > -.02 && z > -.02));
   let deploy = 1, spin = 0, lift = 0, rotorRate = 0;
   return {
     replaces, lightAt: [.17, .5, .36], intakeAnchor: tip,

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import type { RobotAnimState } from './models';
-import {clearFuelKeepouts,type FuelKeepout} from './fuelKeepouts';
+import {clearFuelOutline,clearFuelKeepouts,type FuelKeepout} from './fuelKeepouts';
 
 export interface FuelBin {
   x: number; y0: number; length: number; width: number; height: number;
   inside?: (x: number, z: number) => boolean;
   keepouts?:readonly FuelKeepout[];
+  outline?:readonly [number,number][];
   ceiling?: (x: number, z: number) => number;
 }
 export interface FuelSeed { x: number; y: number; z: number; s: number; sy?: number }
@@ -50,7 +51,8 @@ export class FuelPile {
     this.velocity = new Float32Array(seeds.length * 3);
     this.before = new Float32Array(seeds.length * 3);
     this.netted = 'setStretch' in (bin.ceiling ?? {});
-    this.contactRadius = Float32Array.from(seeds, b => radius * (this.netted ? 0.99 : Math.min(0.9, (b.sy ?? 0.94) * 1.92 / 1.9)) * b.s);
+    // Match the visible ball diameter. The former 0.9 radius let full loads overlap and settle visibly too low.
+    this.contactRadius = Float32Array.from(seeds, b => radius * (this.netted ? .99 : .98) * b.s);
     for (let i = 0; i < seeds.length; i++) this.reset(i);
   }
 
@@ -178,7 +180,7 @@ export class FuelPile {
         this.confine(i, oldX, oldZ);
       }
       // Bounded pair budget: small hoppers, bounded contact passes, no allocations in the contact loop.
-      for (let pass = 0; pass < (this.netted ? 8 : 3); pass++) {
+      for (let pass = 0; pass < (this.netted ? 8 : this.count >= 40 ? 6 : 3); pass++) {
         for (let a = 0; a < this.count; a++) for (let b = a + 1; b < this.count; b++) {
           const j = a * 3, k = b * 3;
           let dx = p[k] - p[j], dy = p[k + 1] - p[j + 1], dz = p[k + 2] - p[j + 2];
@@ -249,7 +251,11 @@ export class FuelPile {
     p[j] = x; p[j + 2] = z;
     if (!overLip && b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
     const floor = b.y0 + ry, roof = Math.min(b.y0 + b.height, b.ceiling?.(p[j], p[j + 2]) ?? Infinity) - ry;
-    if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.85; v[j + 2] *= 0.85; }
+    if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.94; v[j + 2] *= 0.94; }
+    if(b.outline) {
+      this.confinedPoint.set(p[j],p[j+1],p[j+2]);
+      if(clearFuelOutline(this.confinedPoint,r,b.outline)){p[j]=this.confinedPoint.x;p[j+2]=this.confinedPoint.z;v[j]*=-.08;v[j+2]*=-.08;}
+    }
     if(b.keepouts) {
       this.confinedPoint.set(p[j],p[j+1],p[j+2]);
       if(clearFuelKeepouts(this.confinedPoint,r,b.keepouts)) {

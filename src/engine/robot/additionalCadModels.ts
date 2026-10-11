@@ -28,7 +28,7 @@ export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,
   const g=new THREE.Group();g.name='cad-hopper-fuel';k.visual.add(g);
   // A stretching net roof lets FUEL rise above the rigid rim into the net's dome.
   const e=k.config.hopperExpansion,netted=!!e&&e.mechanism!=='telescoping',roof=netted?e!.fullHeight:rim;
-  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,color:0xf2c200,capacity:k.config.hopperCapacity,inside,ceiling:netted?hopperNetCeiling(k.config,rim):undefined});
+  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,allowAboveRim:!netted&&!e&&!k.config.hopperCovered,color:0xf2c200,capacity:k.config.hopperCapacity,inside,keepouts:k.visual.userData.fuelKeepouts,ceiling:netted?hopperNetCeiling(k.config,rim):undefined});
   const mesh=g.getObjectByName('hopper-fuel-pile')!;
   let fill=0,deploy=0;
   return {update(f:number,d:number){fill=f;deploy=d;

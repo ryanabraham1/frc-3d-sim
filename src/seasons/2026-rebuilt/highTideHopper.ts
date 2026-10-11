@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { bar, box, lattice } from '@engine/robot/models';
+import { bar, box } from '@engine/robot/models';
 import { pocketPlate } from './teamShooterDetail';
 
 /** Fitted from HighTide's Robot CAD render: two clipped corners at the fixed teal end, straight sliding intake end. */
@@ -15,7 +15,17 @@ export function highTideHopper(parent:THREE.Object3D,L:number,W:number,bottom:nu
     const h=top-bottom;
     // Teal pocketed rail at the fixed end, black carbon rails beside the sliding intake.
     const fixed=(a[0]+b[0])/2*side<0;
-    lattice(edge,[-length/2,h-.025,0],[length,0,0],[0,.025,0],{cells:Math.max(1,Math.round(length/.075)),w:.009,m:fixed?teal:black,zig:true});
+    if(fixed) {
+      // Broad horizontal shoulder visible in both the binder and the supplied single-image reconstruction.
+      const rw=.043,holes:[number,number][][]=[];
+      const cells=Math.max(1,Math.round(length/.080)),pitch=length/cells;
+      for(let j=0;j<cells;j++) {
+        const x=-length/2+j*pitch+.009;
+        holes.push([[x,-rw*.36],[x+pitch-.018,-rw*.36],[x+pitch/2-.009,rw*.36]]);
+      }
+      const shoulder=pocketPlate(edge,[[-length/2,-rw/2],[length/2,-rw/2],[length/2,rw/2],[-length/2,rw/2]],holes,teal,0,.004);
+      shoulder.rotation.x=Math.PI/2;shoulder.position.y=h;shoulder.name='hightide-pocketed-top-shoulder';
+    } else bar(edge,[-length/2,h,0],[length/2,h,0],.012,black);
     bar(root,[a[0],bottom,a[1]],[a[0],top,a[1]],.015,fixed?teal:black);
     if(fixed) {
       for(const sign of [-1,1]) {

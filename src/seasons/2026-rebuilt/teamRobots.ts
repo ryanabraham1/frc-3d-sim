@@ -1,6 +1,6 @@
 import { bumperNumber } from '@engine/render/bumper';
 import { highTideHopper } from './highTideHopper';
-import { highTideShooter, keplerShooter } from './teamShooterDetail';
+import { highTideShooter, keplerShooter, pocketPlate } from './teamShooterDetail';
 import { highTideIntake } from './highTideIntake';
 import { highTideRotor } from './highTideRotor';
 import { keplerPanel,keplerBridge } from './keplerPanels';
@@ -358,9 +358,12 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   bar(upperHopper,[sideEnd,lowTop,W*.46],[sideEnd,top,W*.46],.018,gray);
   bar(upperHopper,[L*.46,lowTop,frontEnd],[L*.46,top,frontEnd],.018,gray);
   bar(upperHopper,[L*.46,top,-W*.46],[L*.46,top,frontEnd],.018,gray);
-  // Pocketed structural plates from the CAD silhouette, with an open turret corner.
-  for (const sz of [-1, 1]) keplerPanel(k.visual,L*.94,(sz>0?lowTop:top)-bt,black,0,bt,sz*W*.47);
-  for (const sx of [-1, 1]) keplerPanel(k.visual,W*.94,(sx>0?lowTop:top)-bt,black,sx*L*.47,bt,0,Math.PI/2);
+  // The released robot has a pocketed intake face and solid carbon side walls, rather than X plates on every face.
+  keplerPanel(k.visual,W*.94,top-bt,black,k.groundSide*L*.47,bt,0,Math.PI/2);
+  for(const sz of [-1,1]) {
+    box(k.visual,L*.94,(sz>0?lowTop:top)-bt,.004,black,0,(bt+(sz>0?lowTop:top))/2,sz*W*.473);
+  }
+  for(const z of [-W*.46,W*.46])bar(k.visual,[-L*.46,bt,z],[-L*.46,top,z],.013,gray);
   box(k.visual, L * 0.92, 0.006, W * 0.92, gray, 0, bt + 0.01, 0);
   k.visual.userData.fuelKeepouts=[{x:tx,z:tz,radius:.145,bottom:bt-.12,top:H+.18}];
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: (x,z) => Math.hypot(x-tx,z-tz) > .23 });
@@ -393,7 +396,22 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const led=new THREE.Mesh(new THREE.RingGeometry(.112,.119,48),mat(0x30b6d0,{emissive:0x20aacc}));
   led.rotation.x=-Math.PI/2;led.position.set(tx,H-.13,tz);k.visual.add(led);
   for(const sz of [-1,1])decal(k.visual,'ORBIT 1690',{w:L*.55,h:.038,x:-L*.1,y:bt+.025,z:sz*W*.475,rotY:sz>0?0:Math.PI});
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black });
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, width:W*.89 });
+  const arms=intake.hinge.children[0],iw=W*.89,side=k.groundSide;
+  const armLength=Math.hypot(c.intake.reach+.03,c.bumperTop+.01);
+  const intakeAlloy=mat(0xb8bec1,{metal:.75,rough:.4});
+  // Exposed silver leading shaft with three separated rubber sleeves, and a carbon ball-support ramp behind it.
+  roller(arms,.013,iw,intakeAlloy,side*(armLength+.025),-.037,0);
+  for(const z of [-iw*.32,0,iw*.32]) {
+    const sleeve=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.030,16),black);sleeve.rotation.x=Math.PI/2;
+    sleeve.position.set(side*(armLength+.025),-.037,z);arms.add(sleeve);
+  }
+  for(const z of [-iw/2-.014,iw/2+.014])pocketPlate(arms,[
+    [side*.015,-.018],[side*(armLength+.044),-.057],[side*(armLength+.044),.033],[side*.015,.054],
+  ],[[[side*.055,.005],[side*(armLength-.040),-.022],[side*(armLength-.075),.027]]],black,z,.006);
+  const ramp=box(arms,armLength*.70,.004,iw*.96,black,side*armLength*.43,-.014,0);ramp.name='kepler-intake-support-plate';
+  const kicker=roller(k.visual,.026,iw*.82,rollerRubber,side*(L*.42),bt-.026,0);kicker.name='kepler-friction-kicker';
+
   const slide = slidingHopper(k);
   const deploy = { v: 0 };
   const pile = hopperStow({ x: 0, y0: bt + 0.02, length: L * 0.88, width: W * 0.88, height: top - bt, r: FUEL_R });
@@ -417,7 +435,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
       fill.set(s.fill);
       sh.update(s);
       const rate=s.enabled&&(s.intaking||s.aiming||s.firing>0)?22:0;
-      for(const wheel of [...floorRollers,...lifts])spin(wheel,-rate,s.dt);
+      for(const wheel of [...floorRollers,...lifts,kicker])spin(wheel,-rate,s.dt);
     },
   };
 });
@@ -542,19 +560,21 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
     const [x, z] = outline[Math.min(i, outline.length - 1)];
     bar(k.visual, [x, bt, z], [x, H - 0.045, z], 0.014, gray);
   }
+  k.visual.userData.fuelOutline=outline.map(p=>[...p]);
+  const funnelH = Math.max(.12,H-bt-.19);
+  k.visual.userData.fuelKeepouts=[{x:centerX,z:0,radius:.075,radiusTop:.16,bottom:bt+.1,top:bt+.1+funnelH}];
   // Keep the round pieces inside the curved half of the hopper.
   // The round hopper: FUEL packs the whole D-shaped footprint (semicircle plus the straight run to the flat edge).
   const fill = fillBlock(k.visual, {
     x: (flatX + centerX - side * R) / 2, y0: bt + 0.03, length: Math.abs(flatX - centerX) + R, width: W * 0.97, height: hopH * 0.97,
-    color: FUEL, capacity: c.hopperCapacity,
-    inside: (x, z) => (side * (x - centerX) > 0 || Math.hypot(x - centerX, z) < R - 0.01) && side * (flatX - x) > 0.01,
+    color: FUEL, capacity: c.hopperCapacity, allowAboveRim:true, outline, keepouts:k.visual.userData.fuelKeepouts,
+    inside: (x, z) => (side * (x - centerX) > 0 || Math.hypot(x - centerX, z) < R - .078) && side * (flatX - x) > .078,
   });
   // Dye rotor filling the round hopper, its tower rising to the 11 in turret ring at the top.
   const dye = dyeRotor(k.visual, { x: centerX, y0: bt + 0.02, R: R * 0.86, wallH: 0.1, towerX: centerX, towerR: 0.11, towerTop: H - 0.07, plate: gray, accent: black, motors: 2, motorSide: side > 0 ? 1 : -1 });
   // Spectrum row 57 / MOTO MOTO, Houston finalist build: the tall tapered feed funnel is a defining silhouette.
   // https://cad.onshape.com/documents/705d953d40f0cc3373a8313b/w/deefd59a3b22618d064531b8/e/eec4de188759a18321ec20c9
   // Turret, D-frame and same flat-side intake; clear curved hopper, black funnel, silver portal. Rates [EST].
-  const funnelH = Math.max(.12,H-bt-.19);
   const funnel = new THREE.Mesh(new THREE.CylinderGeometry(.16,.075,funnelH,28,1,true),black);
   funnel.position.set(centerX,bt+.1+funnelH/2,0);k.visual.add(funnel);
   const seam = new THREE.Mesh(new THREE.TorusGeometry(.12,.008,6,28),gray);
@@ -588,7 +608,9 @@ registerRobotModel('motomoto-4946', (k: ModelKit) => {
     update(s) {
       db.update(s);
       load = s.fill;
-      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill); }
+      { const dv = latchDeploy(deploy, s); intake.update(s, dv); slide.set(dv, s.fill);
+        k.visual.userData.fuelOutline[0][0]=k.visual.userData.fuelOutline[1][0]=flatX+side*dv*.2;
+      }
       fill.set(s.fill);
       rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 10 : -1.2, 6, s.dt);
       spin(dye.floor, rotorRate, s.dt, 'y');

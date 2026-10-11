@@ -38,6 +38,12 @@ it('4414 net follows local ball pressure instead of inflating empty pockets from
   }
   expect(near).toBeGreaterThan(c.height + .08);
   expect(far).toBeLessThanOrEqual(c.height + .001);
+  // One contact must fall continuously toward the rim. Extending the sphere's equator outside its radius
+  // created vertical steps at the tension cutoff, visible as spikes around a full load.
+  for(let i=0;i<p.count;i+=2) {
+    const distance=Math.hypot(p.getX(i)-p.getX(i+1),p.getZ(i)-p.getZ(i+1));
+    if(distance>.0001&&distance<.035)expect(Math.abs(p.getY(i)-p.getY(i+1))).toBeLessThan(.065);
+  }
   r.bay!.forEachLocal = () => {};
   for (let i = 0; i < 120; i++) r.syncVisual(1/60);
   for (let i = 0; i < p.count; i++) expect(p.getY(i)).toBeLessThanOrEqual(c.height + .001);
@@ -115,4 +121,26 @@ for(const team of [4414,1690])it(`${team}: a full hopper leaves the shooter enve
     }
   });
   expect(drawn).toBe(r.config.hopperCapacity);
+});
+
+it('4946 retains its full load inside the curved hopper wall in match and preview',()=>{
+  const sim=make(4946),r=sim.robot;sim.load(r.config.hopperCapacity);
+  const outline=r.visual.userData.fuelOutline as [number,number][];
+  expect(outline.length).toBeGreaterThan(12);
+  let area=0;for(let i=0;i<outline.length;i++){const a=outline[i],b=outline[(i+1)%outline.length];area+=a[0]*b[1]-b[0]*a[1];}
+  const sign=area>0?1:-1;
+  const check=(x:number,z:number,radius:number)=>{
+    for(let i=0;i<outline.length;i++){
+      const a=outline[i],b=outline[(i+1)%outline.length],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);
+      if(length<1e-8)continue;
+      expect((-(x-a[0])*dz+(z-a[1])*dx)/length*sign).toBeGreaterThan(radius-.004);
+    }
+  };
+  for(let i=0;i<120;i++){sim.step();r.syncVisual(1/60);}
+  r.bay!.forEachLocal((x,_y,z)=>check(x,z,sim.pool.colliderRadius*.93));
+  expect(r.held.length).toBe(r.config.hopperCapacity);
+  r.detachPool(sim.pool);for(let i=0;i<120;i++)r.syncVisual(1/60);
+  let drawn=0;r.visual.traverse(o=>{const surface=o.userData.fuelSurface?.();if(!surface)return;
+    for(let i=0;i<surface.count;i++){const p=r.visual.worldToLocal(o.localToWorld(new THREE.Vector3().fromArray(surface.positions,i*3)));check(p.x,p.z,surface.radius*.96);drawn++;}
+  });expect(drawn).toBe(r.config.hopperCapacity);
 });

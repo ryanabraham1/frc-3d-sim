@@ -1,4 +1,4 @@
-import type { FuelKeepout } from './fuelKeepouts';
+import { clearFuelKeepouts,type FuelKeepout } from './fuelKeepouts';
 import * as THREE from 'three';
 import { FuelPile } from './fuelPile';
 import { FuelContacts } from './fuelContacts';
@@ -304,7 +304,7 @@ const HOPPER_FLOOR = 0.09;
  * impacts form the pile; initial packing is only a starting pose, never a fixed resting target. Intake tokens hand
  * their exact endpoint to the new particle so it rolls into the pile without a second spawn.
  */
-export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; keepouts?:readonly FuelKeepout[]; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
+export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; allowAboveRim?:boolean; outline?:readonly [number,number][]; keepouts?:readonly FuelKeepout[]; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
   // A real hopper floor rides just above the chassis tubing, not up at bumper-top height: lower the bin to it (same roof) so
   // the FUEL fills the room under the old floor instead of leaving a dead gap above the frame.
   const drop = bin.exactFloor ? 0 : Math.max(0, Math.min(bin.y0 - HOPPER_FLOOR, 0.12));
@@ -338,7 +338,8 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
         if (Math.abs(px) > halfX || Math.abs(pz) > halfZ) continue;
         if (o.inside && !o.inside(o.x + px, pz)) continue;
         const py = restHeight(px, pz), key = py + rand() * r * 0.06;
-        const ceiling = Math.min(o.y0 + o.height, o.ceiling?.(o.x + px,pz) ?? Infinity);
+        if(o.keepouts && clearFuelKeepouts(new THREE.Vector3(o.x+px,o.y0+py,pz),r,o.keepouts))continue;
+        const ceiling = Math.min(o.allowAboveRim?Infinity:o.y0 + o.height, o.ceiling?.(o.x + px,pz) ?? Infinity);
         if (o.y0 + py + r * .95 * k / 1.92 > ceiling) continue;
         if (key < bk) { bk = key; by = py; bx = px; bz = pz; }
       }
@@ -363,6 +364,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
           if(dx>spanX/2 || dz>spanZ/2)continue;
           const x=o.x+(swapped?dz:dx),z=swapped?dx:dz,y=o.y0+r*sy+h*layer;
           if(o.inside&&!o.inside(x,z))continue;
+          if(o.keepouts&&clearFuelKeepouts(new THREE.Vector3(x,y,z),r,o.keepouts))continue;
           if(y+r*sy>Math.min(o.y0+o.height,o.ceiling?.(x,z)??Infinity))continue;
           out.push({x,y,z,s:1,sy,key:y-o.y0});
         }
@@ -378,13 +380,13 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   if (o.capacity) {
     let k = 1.92;
     slots = pour(r, o.capacity, k);
-    while ((slots.length < o.capacity || top(slots, r) > o.height) && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
+    while ((slots.length < o.capacity || (!o.allowAboveRim && top(slots, r) > o.height)) && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
     if(slots.length<o.capacity) {
       const packed=closePack(r,o.capacity,k);
       if(packed.length>slots.length)slots=packed;
     }
     // Still too tall: the bin holds fewer real-size balls than `capacity`, so show it full of those (never poking out).
-    slots = slots.filter((q) => q.y - o.y0 + r * q.s * (q.sy ?? .94) <= o.height);
+    if(!o.allowAboveRim) slots = slots.filter((q) => q.y - o.y0 + r * q.s * (q.sy ?? .94) <= o.height);
   } else {
     slots = pour(r, Math.floor(o.length / (r * 2)) * Math.floor(o.width / (r * 2)) * Math.max(1, Math.floor((o.height - r * 0.25) / (r * 1.75))));
   }

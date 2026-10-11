@@ -104,3 +104,43 @@ it('intake transport contacts CAD and hands off its actual position instead of t
   expect(arrived!.y).toBeGreaterThan(.4);
   expect(flow.inTransit).toBe(0);flow.dispose();
 });
+
+
+it('full 3256, 2910 and 1678 CAD hoppers retain their stated load and occupy the brim',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const {decodeCadModel}=await import('../src/engine/robot/cadModels');
+  const {default:RAPIER}=await import('@dimforge/rapier3d-compat');
+  const {SEASONS}=await import('../src/seasons');
+  const {HeadlessSim}=await import('../src/engine/testing/headless');
+  await RAPIER.init();
+  const season=SEASONS.find(s=>s.year===2026)!;
+  for(const [id,brim] of [['aimbot-3256',.72],['reblitz-2910',.5461],['limestone-1678',.737]] as const) {
+    const bytes=readFileSync(`public/models/robots/2026/${id}.glb`);
+    await decodeCadModel(id,bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+    const config=cloneConfig(season.teamRobots!.find(t=>t.id===id)!.config);
+    const sim=new HeadlessSim(season,RAPIER,{robot:config,alliance:'blue',pose:{x:2,y:2,yaw:0}});
+    try {
+      sim.robot.detachPool(sim.pool);sim.robot.enabled=true;sim.robot.hopperRaised=true;
+      sim.robot.held.length=config.hopperCapacity;
+      for(let i=0;i<240;i++)sim.robot.syncVisual(1/60);
+      const mesh=sim.robot.visual.getObjectByName('hopper-fuel-pile')!;
+      const surface=mesh.userData.fuelSurface();
+      expect(surface.count,id).toBe(config.hopperCapacity);
+      const tops=Array.from({length:surface.count},(_,i)=>surface.positions[i*3+1]+surface.radius).sort((a,b)=>a-b);
+      // A genuine full load has several balls in the upper hopper, not a solitary tall outlier.
+      expect(tops.at(-1)!,id).toBeGreaterThan(brim-.065);
+      expect(tops[Math.floor(tops.length*.8)],id).toBeGreaterThan(brim-.15);
+      if(id==='aimbot-3256') {
+        const contacts=new FuelContacts(sim.robot.visual,mesh,false,true);contacts.sync();
+        const probe=new Float32Array(surface.positions),velocity=new Float32Array(probe.length);
+        let penetration=0;
+        for(let i=0;i<surface.count;i++) {
+          const j=i*3,before=new THREE.Vector3().fromArray(probe,j);
+          contacts.resolve(probe,velocity,j,surface.radius*.94);
+          penetration=Math.max(penetration,before.distanceTo(new THREE.Vector3().fromArray(probe,j)));
+        }
+        expect(penetration,'full 3256 load must clear its actual intake and hopper CAD').toBeLessThan(.008);
+      }
+    }finally{sim.dispose();}
+  }
+},30000);
