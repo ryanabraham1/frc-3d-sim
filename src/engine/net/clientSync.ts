@@ -81,6 +81,7 @@ export class ClientSync {
   private lateRun = 0;
   private lastSeq = -1;
   private lastResyncAt = -Infinity;
+  private lastReadyAt = -Infinity;
   private needsKeyframe = true;
   /** Last full rules state (rules patches are merged into it). */
   private rulesState: Record<string, unknown> | null = null;
@@ -113,6 +114,14 @@ export class ClientSync {
   /** Sequence number of the last command sent. */
   get commandSeq(): number {
     return this.seq;
+  }
+
+  /** Loading and reconnects can lose the first ready message. Retry until authority confirms startup. */
+  maintainReady(localMs: number): void {
+    if (!this.client.connected || (this.gotKeyframe && this.netState !== 'waiting')) return;
+    if (localMs - this.lastReadyAt < RESYNC_EVERY_MS) return;
+    this.lastReadyAt = localMs;
+    this.client.send({ t: 'ready' });
   }
 
   /** Estimated current host sim time. */

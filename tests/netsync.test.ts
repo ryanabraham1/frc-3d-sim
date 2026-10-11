@@ -66,6 +66,59 @@ function settle(sim: HeadlessSim, seconds = 4) {
 }
 
 describe('HostSync snapshots', () => {
+  it('starts when the guest loaded before the host subscribed to readiness', async () => {
+    const sim = world('2025-reefscape');
+    const transport = fakeNet();
+    const target = { pool: sim.pool, robots: [], clock: sim.ctx.clock, score: sim.ctx.score, rules: sim.rules };
+    const guest = new ClientSync(transport.client, target);
+    // The start broadcast reaches the guest while the host is still loading its world.
+    guest.maintainReady(0);
+    transport.deliver(transport.sent.pop() as ClientMsg); // No HostSync listener yet.
+    const allReady = vi.fn();
+    const src = { ...target, netState: 'waiting' as 'waiting' | 'countdown', countdownLeft: 1, lastResults: null };
+    const hs = new HostSync(transport.client, { seasonId: sim.season.id, seed: 1, autoHumanPlayer: false, robots: [], peers: ['host', 'c1'] }, src,
+      { humanPlayer() {}, allReady() { allReady(); src.netState = 'countdown'; }, peerLeft() {} });
+    try {
+      await Promise.resolve();
+      hs.sendSnapshot(0);
+      guest.onBinary(transport.frames.at(-1)!, 200);
+      expect(guest.netState).toBe('waiting');
+      guest.maintainReady(999);
+      expect(transport.sent).toHaveLength(0);
+      guest.maintainReady(1000);
+      transport.deliver(transport.sent.pop() as ClientMsg);
+      expect(allReady).toHaveBeenCalledTimes(1);
+      hs.sendSnapshot(0.2);
+      guest.onBinary(transport.frames.at(-1)!, 1100);
+      expect(guest.netState).toBe('countdown');
+      guest.maintainReady(2000);
+      guest.maintainReady(3000);
+      expect(transport.sent).toHaveLength(0);
+    } finally {
+      hs.dispose();
+      sim.dispose();
+    }
+  });
+
+  it('retries readiness after reconnect, including spectators without a robot or keyframe', () => {
+    const sim = world('2025-reefscape');
+    const t = fakeNet();
+    const guest = new ClientSync(t.client, { pool: sim.pool, robots: [], clock: sim.ctx.clock, score: sim.ctx.score, rules: sim.rules });
+    try {
+      guest.maintainReady(0);
+      t.net.connected = false;
+      guest.maintainReady(1500);
+      expect(t.sent).toEqual([{ t: 'ready' }]);
+      t.net.connected = true;
+      guest.maintainReady(1600);
+      expect(t.sent).toEqual([{ t: 'ready' }, { t: 'ready' }]);
+      guest.maintainReady(1700);
+      expect(t.sent).toHaveLength(2);
+    } finally {
+      sim.dispose();
+    }
+  });
+
   it('numbers snapshots and sends resting pieces only once', () => {
     const sim = world('2026-rebuilt');
     settle(sim);

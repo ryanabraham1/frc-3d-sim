@@ -440,7 +440,7 @@ export class Game {
     else this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
     this.offs.push(this.hud.showIntro(6));
 
-    if (this.role === 'client') net!.client.send({ t: 'ready' });
+    if (this.role === 'client') this.clientSync!.maintainReady(performance.now());
   }
 
   /** Full gameplay state, independent of rendering and the local driver's camera/input. */
@@ -986,6 +986,7 @@ export class Game {
   private clientTick(inp: DriverInput, now: number): void {
     this.predictor?.flush();
     const cs = this.clientSync!;
+    cs.maintainReady(now);
     const p = this.player;
     if (!p || this.clientModal === 'closed') return;
     if (inp.humanPlayer && cs.netState === 'running') this.net!.client.send({ t: 'hp' });
