@@ -26,6 +26,19 @@ export default defineConfig({
       },
     },
   },
+  // The simulation worker (src/engine/sim/worker.ts) splits out the same vendor chunks, so a browser that already has
+  // Rapier and three cached from the page fetches only the worker's own code.
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three'],
+          rapier: ['@dimforge/rapier3d-simd-compat'],
+        },
+      },
+    },
+  },
   test: {
     environment: 'node',
     // Physics suites fire hundreds of real shots per test; the 5 s default times out on slower machines.

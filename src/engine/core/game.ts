@@ -34,6 +34,9 @@ import type { FieldBuilder } from '../field/builder';
 import type { GamePiecePool as Pool } from '../gamepiece/pool';
 import { MatchWorld } from './matchWorld';
 import { MatchSim, PRE_MATCH_COUNTDOWN, botSettings, type SimRecovery } from './matchSim';
+import { WorkerSim } from '../sim/workerSim';
+import type { SimEvent } from '../sim/protocol';
+import { Mesh } from 'three';
 
 type GameState = NetGameState;
 
@@ -122,8 +125,10 @@ export class Game {
   readonly setup: MatchSetup;
   readonly renderer: Renderer;
   readonly world: MatchWorld;
-  /** The match authority (single player and multiplayer host); null on a multiplayer client. */
-  readonly sim: MatchSim | null = null;
+  /** The match authority on this page (multiplayer host, or single player without the worker); null otherwise. */
+  sim: MatchSim | null = null;
+  /** Single player: the match runs in a worker and this page draws its frames (null = in-page, or multiplayer). */
+  remote: WorkerSim | null = null;
   readonly hud: Hud;
   get frame(): FieldFrame { return this.world.frame; }
   get physics(): PhysicsWorld { return this.world.physics; }
@@ -142,7 +147,9 @@ export class Game {
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
   private applyBoost(): void {
-    if (this.sim && this.input.justPressed('Period')) this.sim.setBoost(this.player, !this.sim.boost);
+    if (!this.input.justPressed('Period')) return;
+    if (this.sim) this.sim.setBoost(this.player, !this.sim.boost);
+    else if (this.remote) this.boostWanted = !this.remote.boost;
   }
   private readonly seasonHud: SeasonHud;
   /** The robot driven from this screen (null = multiplayer spectator). */
@@ -162,10 +169,14 @@ export class Game {
   /** Client mirror of the host's state (local / host read the sim's). */
   private clientState: GameState = 'waiting';
   private clientCountdown = 0;
-  private get state(): GameState { return this.sim?.state ?? this.clientState; }
+  private get state(): GameState { return this.sim?.state ?? this.remote?.state ?? this.clientState; }
   private set state(v: GameState) { if (this.sim) this.sim.state = v; else this.clientState = v; }
-  private get countdown(): number { return this.sim?.countdown ?? this.clientCountdown; }
+  private get countdown(): number { return this.sim?.countdown ?? this.remote?.countdown ?? this.clientCountdown; }
   private set countdown(v: number) { if (this.sim) this.sim.countdown = v; else this.clientCountdown = v; }
+  /** Worker mode: boost toggle to send with the next input. */
+  private boostWanted: boolean | undefined;
+  /** Worker mode: results already shown. */
+  private remoteResults: MatchResults | null = null;
   private raf = 0;
   private last = 0;
   private lastDraw = 0;
@@ -240,10 +251,11 @@ export class Game {
     // Local AI fills the other stations; network matches retain their human drivers.
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     const self = this;
+    const worker = this.role === 'local' && workerAllowed();
     this.world = new MatchWorld(R, season, this.setup, {
       scene: this.renderer.scene,
       playerId: mine?.id ?? null,
-      realHopper: (rs) => this.wantsRealHopper(rs, net),
+      realHopper: (rs) => !worker && this.wantsRealHopper(rs, net),
       pieceFlow: true,
       optimize: true,
       hud: this.hud,
@@ -290,14 +302,9 @@ export class Game {
           if (m?.t === 'notice') this.hud.toast(m.message, 'warn');
         }),
       );
-    } else {
-      const log = new URLSearchParams(location.search).get('log') !== '0';
-      this.sim = new MatchSim(this.world, season, settings, {
-        periodChange: (ch) => this.onPeriodChange(ch),
-        results: (res) => this.showResults(res),
-      }, log ? { log: { mode: this.role } } : {});
-      if (log) installConsoleHelpers();
-    }
+    } else if (worker) {
+      this.startWorker(R);
+    } else this.startSim();
 
     if (this.role === 'host') {
       this.state = 'waiting';
@@ -366,6 +373,60 @@ export class Game {
     if (this.role === 'client') this.clientSync!.maintainReady(performance.now());
   }
 
+  private get logging(): boolean {
+    return new URLSearchParams(location.search).get('log') !== '0';
+  }
+
+  /** Run the match on this page. */
+  private startSim(): void {
+    this.sim = new MatchSim(this.world, this.season, this.settings, {
+      periodChange: (ch) => this.onPeriodChange(ch),
+      results: (res) => this.showResults(res),
+    }, this.logging ? { log: { mode: this.role } } : {});
+    if (this.logging) installConsoleHelpers();
+  }
+
+  /**
+   * Run the match in the simulation worker; this page's world becomes a replica posed from its frames. If the worker
+   * can't start (no module workers, a model that differs), the match runs on this page as before.
+   */
+  private startWorker(R: RapierModule): void {
+    for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
+    const piece = this.pool.mesh;
+    const hopper = this.quality.hopperWorker;
+    this.remote = new WorkerSim(this.world, {
+      settings: this.settings, setup: this.setup, hopper, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
+    }, (e) => this.onSimEvent(e), (reason) => {
+      if (this.disposed) return;
+      console.warn('[sim] worker unavailable, simulating on the page:', reason);
+      workerBroken = true;
+      if (this.remote && this.remote.frames > 0) {
+        // Mid-match: this page's world is a replica of the worker's by now, so start the match again on the page.
+        this.remote = null;
+        this.callbacks.onRestart(this.settings);
+        return;
+      }
+      this.remote = null;
+      for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.Dynamic, true);
+      this.startSim();
+      this.acc = 0;
+    }, () => {
+      const m = new Mesh(piece.geometry, piece.material);
+      m.castShadow = true;
+      return m;
+    });
+    if (this.logging) installConsoleHelpers();
+  }
+
+  private onSimEvent(e: SimEvent): void {
+    const p = this.player;
+    if (e.k === 'toast') { if (e.robot === undefined || e.robot === p?.id) this.hud.toast(e.msg, e.kind, e.alliance); }
+    else if (e.k === 'cue') { if (e.robot === p?.id) this.hud.showBanner(e.text, CUE_SECONDS, e.cls); }
+    else if (e.k === 'period') this.onPeriodChange(e.ch);
+    else if (e.k === 'results') { this.remoteResults = e.res; this.showResults(e.res); }
+    else if (e.k === 'radio') radioFor(this.ctx).messages.push(e.m);
+  }
+
   /** Full gameplay state, independent of rendering and the local driver's camera/input. */
   recoveryState(): GameRecovery {
     return this.sim!.recoveryState();
@@ -393,7 +454,7 @@ export class Game {
     return this.countdown;
   }
   get lastResults(): MatchResults | null {
-    return this.sim?.results ?? this.clientResults;
+    return this.sim?.results ?? this.remoteResults ?? this.clientResults;
   }
 
   // ─────────────────────────── loop ───────────────────────────
@@ -488,6 +549,10 @@ export class Game {
       this.clientTick(inp, now);
       return;
     }
+    if (this.remote) {
+      this.remoteTick(inp);
+      return;
+    }
 
     if (this.state === 'countdown' || this.state === 'running') {
       const t0 = performance.now();
@@ -542,12 +607,15 @@ export class Game {
     // A client's predicted robot steps its own physics, so it needs the same sub-step blending (others are posed from snapshots).
     const predicting = this.role === 'client' && !!this.predictor?.active;
     const alpha = this.role !== 'client' || predicting ? clamp(this.acc / this.physics.dt, 0, 1) : 1;
-    for (const r of this.robots) {
-      r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= (this.season.endgameSeconds ?? 30);
-      r.syncVisual(undefined, this.role === 'client' && r !== this.player ? 1 : alpha);
+    if (this.remote) this.remote.draw(now);
+    else {
+      for (const r of this.robots) {
+        r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= (this.season.endgameSeconds ?? 30);
+        r.syncVisual(undefined, this.role === 'client' && r !== this.player ? 1 : alpha);
+      }
+      if (predicting && this.player) this.applyPredictionOffset(this.player, dt);
+      this.pool.syncVisuals(alpha);
     }
-    if (predicting && this.player) this.applyPredictionOffset(this.player, dt);
-    this.pool.syncVisuals(alpha);
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.visualPose ?? null, undefined, this.player?.visual.position.y ?? 0);
     const fadeStart = performance.now();
@@ -762,6 +830,17 @@ export class Game {
     return this.sim ? this.sim.manual(r) : this.clock.mode === 'teleop' || (this.robotSetups.get(r.id)?.manualAuto ?? false);
   }
 
+  /** Worker mode: send this frame's driver command and button presses. */
+  private remoteTick(inp: DriverInput): void {
+    const p = this.player;
+    const hp: number[] = [];
+    if (p && inp.humanPlayer) hp.push(1);
+    if (p && inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1)) hp.push(inp.humanPlayerAlt);
+    const cmd = p && p.enabled && this.manual(p) && this.state === 'running' ? this.playerCommand(inp, p) : IDLE_COMMAND;
+    this.remote!.input(cmd, hp, this.boostWanted);
+    this.boostWanted = undefined;
+  }
+
   private step(dt: number, inp: DriverInput): void {
     const humanPlayer: [Alliance, number][] = [];
     const p = this.player;
@@ -913,7 +992,7 @@ export class Game {
 
   private updateHud(dt: number): void {
     this.hud.update(dt);
-    if (this.role === 'local' && this.sim?.botPilots.size) {
+    if (this.role === 'local' && (this.sim?.botPilots.size || this.remote)) {
       const show = this.settings.aiRadio ?? 'all';
       for (const m of radioFor(this.ctx).since(this.radioSeq)) {
         this.radioSeq = m.seq;
@@ -961,7 +1040,10 @@ export class Game {
   }
 
   pause(): void {
-    if (!this.sim?.pause()) return;
+    if (this.remote) {
+      if (this.state !== 'running' && this.state !== 'countdown' && this.state !== 'waiting') return;
+      this.remote.pause();
+    } else if (!this.sim?.pause()) return;
     this.showPauseMenu();
   }
 
@@ -989,13 +1071,16 @@ export class Game {
   }
 
   resume(): void {
-    if (!this.sim?.resume()) return;
+    if (this.remote) {
+      if (this.state !== 'paused') return;
+      this.remote.resume();
+    } else if (!this.sim?.resume()) return;
     this.last = performance.now();
     this.hud.hideModal();
   }
 
   private showResults(res: MatchResults): void {
-    this.persistLog({ red: this.score.total('red'), blue: this.score.total('blue') });
+    void this.persistLog({ red: this.score.total('red'), blue: this.score.total('blue') });
     const html = Hud.resultsHtml(res, { red: this.score.total('red'), blue: this.score.total('blue') });
     if (this.role === 'host') {
       this.hostSync?.requestKeyframe();
@@ -1017,18 +1102,27 @@ export class Game {
   }
 
   /** Finish the match log and store it (once); also runs when a match is abandoned. */
-  private persistLog(totals?: Record<string, number>): void {
+  private persistLog(totals?: Record<string, number>): Promise<void> {
+    if (this.savedLog || this.logPending) return Promise.resolve();
+    const store = (text: string, frames: number) => {
+      const createdAt = new Date().toISOString();
+      this.savedLog = { name: logFileName(this.season.id, createdAt), text };
+      void saveLog({ createdAt, seasonId: this.season.id, frames, text });
+    };
+    if (this.remote && this.logging) {
+      this.logPending = true;
+      return this.remote.finishLog(totals).then(({ text, frames }) => store(text, frames));
+    }
     const log = this.sim?.matchLog;
-    if (!log || this.savedLog) return;
+    if (!log) return Promise.resolve();
     log.finish(totals);
-    const text = log.toJSONL();
-    const createdAt = new Date().toISOString();
-    this.savedLog = { name: logFileName(this.season.id, createdAt), text };
-    void saveLog({ createdAt, seasonId: this.season.id, frames: log.frameCount, text });
+    store(log.toJSONL(), log.frameCount);
+    return Promise.resolve();
   }
+  private logPending = false;
 
   private logButton(): { label: string; onClick: () => void }[] {
-    return this.sim?.matchLog ? [{ label: 'Download match log', onClick: () => this.savedLog && downloadText(this.savedLog.name, this.savedLog.text) }] : [];
+    return this.sim?.matchLog || (this.remote && this.logging) ? [{ label: 'Download match log', onClick: () => this.savedLog && downloadText(this.savedLog.name, this.savedLog.text) }] : [];
   }
 
   /** Multiplayer stats for debugging (window.game.netStats()). */
@@ -1053,7 +1147,10 @@ export class Game {
       hostSimLoad: Math.round(this.simLoad * 100) / 100,
       pixelRatio: this.renderer.currentPixelRatio,
       tier: ['low', 'medium', 'high'].indexOf(this.quality.tier),
-      realHoppers: this.robots.filter((r) => r.bay).length,
+      realHoppers: this.remote ? this.remote.perf.realHoppers : this.robots.filter((r) => r.bay).length,
+      workerStepMs: Math.round((this.remote?.perf.stepMs ?? 0) * 100) / 100,
+      workerFrameMs: Math.round((this.remote?.perf.frameMs ?? 0) * 100) / 100,
+      workerFrames: this.remote?.frames ?? 0,
       shadows: Number(this.renderer.shadowsOn),
       simTime: this.sim?.simTime ?? 0,
     };
@@ -1062,7 +1159,15 @@ export class Game {
   dispose(): void {
     this.disposed = true;
     // Quitting mid-match still keeps the demonstration (skip trivially short ones).
-    if (this.sim?.matchLog && this.sim.matchLog.frameCount > 300) this.persistLog();
+    if (this.sim?.matchLog && this.sim.matchLog.frameCount > 300) void this.persistLog();
+    if (this.remote) {
+      // Quitting mid-match still keeps the demonstration: fetch the worker's log before stopping it.
+      const remote = this.remote;
+      if (this.logging && remote.frames > 300 && !this.savedLog) {
+        const stop = setTimeout(() => remote.dispose(), 3000);
+        void this.persistLog().finally(() => { clearTimeout(stop); remote.dispose(); });
+      } else remote.dispose();
+    }
     this.perfPanel?.remove();
     cancelAnimationFrame(this.raf);
     this.ticker?.stop();
@@ -1081,3 +1186,11 @@ export class Game {
 
 /** Data transferred once to the new host when authority changes. */
 export type GameRecovery = SimRecovery;
+
+/** Set once the worker has failed in this session: later matches run on the page straight away. */
+let workerBroken = false;
+
+/** Single player runs the match in a worker unless the browser can't, or `?worker=0` asks not to. */
+function workerAllowed(): boolean {
+  return !workerBroken && typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined' && new URLSearchParams(location.search).get('worker') !== '0';
+}

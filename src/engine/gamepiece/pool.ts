@@ -528,6 +528,30 @@ export class GamePiecePool {
     }
   }
 
+  /** Is piece i drawn by the pool (on the field, or a real body in a robot's hopper)? Same test as syncVisuals. */
+  isDrawn(i: number): boolean {
+    return !((this.state[i] !== 'field' && !this.stowed[i]) || (this.state[i] === 'held' && this.drawnElsewhere.has(i)));
+  }
+
+  /** Screen mirror of a simulation running elsewhere: draw piece i at this pose, or hide it (null). Call flushMirror after. */
+  drawMirror(i: number, p: THREE.Vector3 | null, q?: THREE.Quaternion): void {
+    const mesh = this.meshes[this.meshIndex[i]];
+    if (!p) {
+      if (this.shown[i] !== 2) { mesh.setMatrixAt(i, HIDDEN); this.shown[i] = 2; this.mirrorDirty = true; }
+      return;
+    }
+    this.tmpM.compose(p, q ?? this.tmpQ.identity(), this.one);
+    mesh.setMatrixAt(i, this.tmpM);
+    this.shown[i] = 1;
+    this.mirrorDirty = true;
+  }
+  private mirrorDirty = false;
+  flushMirror(): void {
+    if (!this.mirrorDirty) return;
+    this.mirrorDirty = false;
+    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+  }
+
   /** `alpha`: how far the clock is between the previous physics step and the latest (1 = draw the latest). */
   syncVisuals(alpha = 1): void {
     let dirty = false;

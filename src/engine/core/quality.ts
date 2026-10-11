@@ -24,14 +24,16 @@ export interface QualityProfile {
   /** Real-body hoppers when solo / when hosting a multiplayer match (remote drivers' hoppers are never simulated on the host). */
   hopperSolo: HopperPhysics;
   hopperHost: HopperPhysics;
+  /** Real-body hoppers when single player runs in the simulation worker (off the page's thread, so it can afford more). */
+  hopperWorker: HopperPhysics;
   /** Simulated balls per hopper before the lower layers are buried (see StowBay). */
   activeMax: number;
 }
 
 export const QUALITY: Record<QualityTier, QualityProfile> = {
-  low: { tier: 'low', pixelRatioCap: 1, minPixelRatio: 0.6, shadows: false, hopperSolo: 'none', hopperHost: 'none', activeMax: 14 },
-  medium: { tier: 'medium', pixelRatioCap: 1.25, minPixelRatio: 0.7, shadows: true, hopperSolo: 'none', hopperHost: 'none', activeMax: 20 },
-  high: { tier: 'high', pixelRatioCap: 1.5, minPixelRatio: 0.75, shadows: true, hopperSolo: 'none', hopperHost: 'none', activeMax: 26 },
+  low: { tier: 'low', pixelRatioCap: 1, minPixelRatio: 0.6, shadows: false, hopperSolo: 'none', hopperHost: 'none', hopperWorker: 'none', activeMax: 14 },
+  medium: { tier: 'medium', pixelRatioCap: 1.25, minPixelRatio: 0.7, shadows: true, hopperSolo: 'none', hopperHost: 'none', hopperWorker: 'player', activeMax: 20 },
+  high: { tier: 'high', pixelRatioCap: 1.5, minPixelRatio: 0.75, shadows: true, hopperSolo: 'none', hopperHost: 'none', hopperWorker: 'all', activeMax: 26 },
 };
 
 export interface DeviceInfo {
