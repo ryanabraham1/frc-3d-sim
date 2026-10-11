@@ -40,7 +40,8 @@ export interface LocalPiecesTarget {
  * Without it a client's world has no game pieces: the predicted robot drives straight through FUEL that beaches it on
  * the host, then gets dragged back one round trip later. Here, replica pieces within a couple of meters of the
  * predicted robot get live Rapier bodies seeded from where they are drawn, so the robot rides up on them, loses
- * traction and pushes them exactly as in single player. The host stays authoritative:
+ * traction from immediate contacts. These are collision proxies only: every visible piece follows the host,
+ * because independently simulated piles diverge and visible hand-back would undo speculative pushes.
  *
  * - Pieces near another robot are contested and stay (or go back) on the host's snapshots, as do airborne and fast pieces.
  * - Pushed pieces remain local until both poses clear the moving robot and the host has had time to receive the push.
@@ -49,7 +50,7 @@ export interface LocalPiecesTarget {
  * - Pieces in the mouth of the running floor intake are the host's to take (captures aren't predicted: the host's intake
  *   rate, capacity and pile differ enough that a predicted capture was wrong about a third of the time, and a ball that
  *   vanishes and comes back reads worse than one swallowed a round trip late).
- * - Pieces leaving the bubble glide back onto the host's pose (ClientSync.handBack).
+ * - Releasing a collision proxy never moves its visible piece.
  */
 export class LocalPieces {
   /** Toggle for debugging / A-B comparison (`game.localPieces.enabled = false`, or `?nolocalfuel`). */
@@ -167,7 +168,7 @@ export class LocalPieces {
     for (let k = this.list.length - 1; k >= 0; k--) {
       const i = this.list[k];
       if (pool.state[i] !== 'field' || !pool.isLocal(i)) {
-        this.drop(k, false);
+        this.drop(k);
         continue;
       }
       const p = pool.position(i);
@@ -179,7 +180,7 @@ export class LocalPieces {
       const caughtUp = localMs / 1000 - this.nearAt[i] > rtt + clientSync.delay + 0.1;
       const hostGap = this.gap(s);
       if ((gap > RELEASE_GAP && caughtUp && hostGap > RELEASE_GAP) || contested(others, p, CONTEST_RELEASE) || (stranded && this.under(p)) || this.inMouth(p)) {
-        this.drop(k, true);
+        this.drop(k);
         continue;
       }
     }
@@ -192,7 +193,7 @@ export class LocalPieces {
       if (s.y > pool.restHeight(i) + FLOOR_BAND || Math.hypot(s.vx, s.vy, s.vz) > MAX_ADOPT_SPEED) continue;
       if (contested(others, s, CONTEST_ADOPT)) continue;
       // Start where drawn, so taking a piece over does not move it.
-      const p = pool.position(i);
+      const p = pool.replicaPosition(i);
       if (this.gap(p) > ADOPT_GAP) continue;
       // Already inside our chassis, here or on the host (we drove into it before it was ours, a correction moved us,
       // or our pose differs from the host's by a few cm): adopting would fling it out. It stays a snapshot replica
@@ -234,21 +235,17 @@ export class LocalPieces {
 
   /** Everything back to the host's snapshots (prediction stopped or snapped). */
   releaseAll(): void {
-    for (let k = this.list.length - 1; k >= 0; k--) this.drop(k, true);
+    for (let k = this.list.length - 1; k >= 0; k--) this.drop(k);
   }
 
-  /** Remove list[k] from local simulation (gliding back onto the host's pose when `glide`). */
-  private drop(k: number, glide: boolean): void {
+  /** Remove a collision proxy; visible pieces already follow the host. */
+  private drop(k: number): void {
     const i = this.list[k];
-    const { pool, clientSync } = this.target;
+    const { pool } = this.target;
     const last = this.list.pop()!;
     if (k < this.list.length) this.list[k] = last;
     if (!pool.isLocal(i)) return;
-    if (glide) {
-      const p = pool.position(i);
-      clientSync.handBack(i, { x: p.x, y: p.y, z: p.z });
-      this.corrections++;
-    }
+    this.corrections++;
     pool.releaseLocal(i);
   }
 

@@ -16,7 +16,7 @@ beforeAll(async () => {
 
 type Pair = ReturnType<typeof netPair>;
 
-/** Drawn pieces overlapping the client's robot chassis by more than 4 cm (the "driving through FUEL" look). */
+/** Collision proxies overlapping the client's robot chassis by more than 4 cm (the "driving through FUEL" look). */
 function overlapping(p: Pair): number {
   const r = p.clientSim.robot;
   const fp = footprint(r.config);
@@ -128,7 +128,7 @@ describe('client-side game pieces near the predicted robot', () => {
     }
   });
 
-  it('pushes the FUEL a robot plows through instead of drawing it inside the chassis, then agrees with the host', () => {
+  it('predicts FUEL contacts and robot motion through a pile, then releases collision proxies', () => {
     const plow = (k: number) => (k < 160 ? drive(3, 1.5) : k < 220 ? drive(0, 0) : drive(-2, 2));
     const opts = { latencyMs: 40, pose: { x: 6.3, y: 4.0, yaw: 0.3 } };
     const old = scenario({ ...opts, local: false }, 300, plow);
@@ -176,42 +176,38 @@ describe('client-side game pieces near the predicted robot', () => {
     }
   });
 
-  it.each([40, 100, 150])('does not drag pushed FUEL back toward a moving guest at %i ms one-way latency', (latencyMs) => {
-    const p = netPair({ latencyMs, local: true, pose: { x: 6.3, y: 4.0, yaw: 0.3 } });
+  it.each([40, 100, 150])('renders only host ball trajectories while driving, stopping and reversing at %i ms latency', (latencyMs) => {
+    const opts = { latencyMs, pose: { x: 6.3, y: 4.0, yaw: 0.3 } };
+    const predicted = netPair({ ...opts, local: true });
+    const authoritative = netPair({ ...opts, local: false });
     try {
-      p.hostSim.rules.stage();
-      p.run(1.5);
-      const pool = p.clientSim.pool;
-      const previous = pool.bodies.map((b) => ({ ...b.translation() }));
-      const lastLocal = new Int32Array(pool.count).fill(-1000);
-      const pushed = new Uint8Array(pool.count);
-      let backwardSteps = 0;
-      let worstBackward = 0;
-      for (let k = 0; k < 160; k++) {
-        p.step(drive(3, 1.5));
+      for (const p of [predicted, authoritative]) { p.hostSim.rules.stage(); p.run(1.5); }
+      const a = new THREE.Matrix4(), b = new THREE.Matrix4();
+      let worstVisibleDifference = 0;
+      let worstProxyDifference = 0;
+      for (let k = 0; k < 520; k++) {
+        const cmd = k < 160 ? drive(3, 1.5) : k < 350 ? drive(0, 0) : drive(-2, 2);
+        predicted.step(cmd);
+        authoritative.step(cmd);
+        const pool = predicted.clientSim.pool;
+        pool.syncVisuals(k % 2 ? 0.2 : 1);
+        authoritative.clientSim.pool.syncVisuals(1);
         for (let i = 0; i < pool.count; i++) {
-          if (pool.state[i] !== 'field') continue;
-          const q = pool.position(i);
-          const along = ((q.x - previous[i].x) * 3 + (q.z - previous[i].z) * 1.5) / Math.hypot(3, 1.5);
+          pool.mesh.getMatrixAt(i, a);
+          authoritative.clientSim.pool.mesh.getMatrixAt(i, b);
+          worstVisibleDifference = Math.max(worstVisibleDifference, ...a.elements.map((v, j) => Math.abs(v - b.elements[j])));
           if (pool.isLocal(i)) {
-            lastLocal[i] = k;
-            if (along > 0.01) pushed[i] = 1;
+            const q = pool.position(i), h = { x: a.elements[12], y: a.elements[13], z: a.elements[14] };
+            worstProxyDifference = Math.max(worstProxyDifference, Math.hypot(q.x - h.x, q.y - h.y, q.z - h.z));
           }
-          // Track both physics and the hand-back animation for pieces this guest recently pushed.
-          if (pushed[i] && k - lastLocal[i] < 60 && along < -0.025) {
-            backwardSteps++;
-            worstBackward = Math.min(worstBackward, along);
-          }
-          previous[i] = { ...q };
         }
       }
-      expect(p.lp.adoptions).toBeGreaterThan(50);
-      expect(backwardSteps).toBeLessThan(5);
-      expect(worstBackward).toBeGreaterThan(-0.05);
-      p.run(4);
-      expect(worstPieceError(p)).toBeLessThan(0.05);
+      // Exercise an actually divergent pile, including the old return animation after stopping.
+      expect(predicted.lp.adoptions).toBeGreaterThan(50);
+      expect(worstVisibleDifference).toBeLessThan(0.00001);
+      expect(worstProxyDifference).toBeGreaterThan(0.5);
     } finally {
-      p.dispose();
+      predicted.dispose(); authoritative.dispose();
     }
   });
 

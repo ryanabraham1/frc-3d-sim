@@ -206,30 +206,37 @@ describe('ClientSync', () => {
     } finally { p.dispose(); }
   });
 
-  it('a recovery keyframe preserves a piece hand-back instead of teleporting it to authority', () => {
+  it('keeps visible pieces authoritative through proxy adoption, recovery and release', () => {
     const p = pair('2026-rebuilt');
     try {
       p.h.hs.sendSnapshot(1);
       p.cs.onBinary(p.h.frames[0], 1000);
       p.cs.interpolate(1000);
-      const i = p.clientSim.pool.indices('field')[0];
-      const initial = p.clientSim.pool.position(i);
-      const from = { x: initial.x + 2, y: initial.y, z: initial.z };
-      p.clientSim.pool.setReplicaPosition(i, from.x, from.y, from.z);
-      p.cs.handBack(i, from);
-      p.cs.interpolate(1100);
-      const before = { ...p.clientSim.pool.position(i) };
+      const pool = p.clientSim.pool;
+      const i = pool.indices('field')[0];
+      const initial = { ...pool.position(i) };
+      const matrix = new THREE.Matrix4();
+      const visible = () => {
+        pool.syncVisuals(0.1);
+        pool.mesh.getMatrixAt(i, matrix);
+        return new THREE.Vector3().setFromMatrixPosition(matrix);
+      };
+      const before = visible();
+      pool.adoptLocal(i, { ...initial, x: initial.x + 2 }, { x: 3, y: 0, z: 0 });
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
       p.h.deliver({ t: 'resync' });
       p.h.hs.sendSnapshot(1.1);
       p.cs.onBinary(p.h.frames[p.h.frames.length - 1], 1100);
       p.cs.interpolate(1100);
-      const after = p.clientSim.pool.position(i);
-      expect(Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z)).toBeLessThan(0.01);
+      // Snapshots update the picture without teleporting the physical collision proxy.
+      expect(pool.position(i).x).toBeCloseTo(initial.x + 2, 3);
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
+      pool.releaseLocal(i);
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
+      expect(pool.position(i).x).toBeCloseTo(initial.x, 3);
       p.cs.interpolate(3100);
-      expect(p.clientSim.pool.position(i).x).toBeCloseTo(initial.x, 2);
-    } finally {
-      p.dispose();
-    }
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
+    } finally { p.dispose(); }
   });
 
   it('asks for a keyframe (at most once a second) when snapshots go missing', () => {
@@ -449,6 +456,36 @@ describe('pieces are where the host has them (regression: invisible FUEL that "s
 });
 
 describe('GamePiecePool.syncVisuals (replica)', () => {
+  it('updates a local CORAL proxy’s visible orientation and hides host captures immediately', () => {
+    const sim = world('2025-reefscape');
+    try {
+      const pool = sim.pool;
+      const i = pool.indices('field').find((k) => pool.specAt(k).shape === 'tube')!;
+      expect(i).toBeDefined();
+      const initial = { ...pool.position(i) };
+      pool.applyReplicaState(i, 'field', -1, null);
+      pool.setReplicaPosition(i, initial.x, initial.y, initial.z);
+      pool.adoptLocal(i, { ...initial, x: initial.x + 2 }, { x: 0, y: 0, z: 0 });
+      const physical = pool.bodies[i].rotation();
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.8);
+      pool.setReplicaRotation(i, q.x, q.y, q.z, q.w);
+      pool.syncVisuals(0.1);
+      const meshIndex = (pool as unknown as { meshIndex: number[] }).meshIndex[i];
+      const m = new THREE.Matrix4(), pos = new THREE.Vector3(), drawn = new THREE.Quaternion();
+      pool.meshes[meshIndex].getMatrixAt(i, m);
+      m.decompose(pos, drawn, new THREE.Vector3());
+      expect(pos.distanceTo(new THREE.Vector3(initial.x, initial.y, initial.z))).toBeLessThan(0.00001);
+      expect(drawn.angleTo(q)).toBeLessThan(0.0001);
+      expect(pool.bodies[i].rotation()).toEqual(physical);
+      pool.applyReplicaState(i, 'held', 0, null);
+      pool.syncVisuals();
+      pool.meshes[meshIndex].getMatrixAt(i, m);
+      expect(m.elements[0]).toBe(0);
+      expect(pool.isLocal(i)).toBe(false);
+      expect(pool.bodies[i].isEnabled()).toBe(false);
+    } finally { sim.dispose(); }
+  });
+
   it('redraws only pieces whose replica pose changed', () => {
     const sim = world('2026-rebuilt');
     const pool = sim.pool;

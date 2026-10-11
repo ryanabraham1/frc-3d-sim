@@ -176,7 +176,7 @@ responsive:
 | Client | Interpolation delay adapts to arrival jitter (50–350 ms, eased). Robots extrapolate ≤ 100 ms past the newest snapshot. | Low delay on good links; no freeze-then-jump on a late packet. |
 | Client | A sequence gap requests a keyframe and retries ≤ 1/s until recovery; piece/rules deltas wait for that keyframe. | A dropped recovery frame no longer leaves replica state incomplete indefinitely. |
 | Client | Prediction reconciles only the newest pose in a received burst. | Queued poses cannot repeatedly pull the robot backward before local physics advances. |
-| Client | Game pieces within 0.35 m of the predicted robot's bumpers are simulated on the client (`net/localPieces.ts`), released past 0.7 m. Pieces near another robot, airborne, fast or in the running intake's mouth stay on the host's snapshots. | Before, a client's world had no pieces: the predicted robot drove through FUEL that beached it on the host, then got dragged back a round trip later. Now it rides up on them and pushes them as in single player, with the host still authoritative (see below). |
+| Client | Game pieces within 0.35 m of the predicted robot's bumpers are simulated on the client (`net/localPieces.ts`), released past 0.7 m. Pieces near another robot, airborne, fast or in the running intake's mouth stay on the host's snapshots. | Before, a client's world had no pieces: the predicted robot drove through FUEL that beached it on the host, then got dragged back a round trip later. Local collision proxies provide immediate support/traction; visible pieces always follow host snapshots (see below). |
 | Relay | Drops host binary frames for a peer with > `MAX_BINARY_BACKLOG` (16 KiB) queued. | Limits stale snapshot backlog on a slow link. |
 | Host | Skips a snapshot while > 16 KiB is queued on its socket. Deltas carry over. | Everything queued there is latency for every client. |
 | Multiplayer | The worker allows one outstanding tick; host catch-up steps send one fresh snapshot per tick. | Avoids timer and snapshot bursts after a main-thread stall. |
@@ -199,10 +199,13 @@ Debug: append `?perf&fps` for the CPU/network panel, or inspect `game.netStats()
   Relay restarts lose rooms and checkpoints; this is not a persistent or server-authoritative simulation.
   Ranked rooms keep their existing disconnect adjudication. A future server authority would remove the
   remaining dependence on a player's simulation performance.
-- Clients simulate only the game pieces next to their own predicted robot (`LocalPieces`); the host stays
-  authoritative. While driving, pieces keep local contacts until both poses are clear of the robot and a round trip plus render
-  delay has passed. Large errors are handed back rather than snapped through the robot; released pieces blend onto
-  the host's pose over 0.3–2 s, with recovery keyframes preserving that blend. A piece the host captures leaves local
+- Clients simulate collision proxies for game pieces next to their own predicted robot (`LocalPieces`).
+  **All visible pieces follow interpolated host snapshots**, including those with a local collision proxy.
+  Independent client piles can diverge by metres; drawing those speculative pushes and blending them back caused
+  balls to move away then return to the guest. Proxy adoption/release now has no effect on the visible trajectory.
+  Ball reactions include network/interpolation delay, while local robot support and traction remain predicted.
+  While driving, collision proxies stay active until both poses clear the robot and a round trip plus render
+  delay has passed. A piece the host captures leaves local
   simulation immediately. Once a robot is idle, its support height/tilt follows the host and its pieces return to
   snapshots, avoiding independently settling piles that repeatedly drop and lift the chassis. When driving, if the host has the robot up on pieces and the client doesn't (or
   the reverse) for longer than a round trip, the client lifts the robot onto them (or lets go of the pieces under it).

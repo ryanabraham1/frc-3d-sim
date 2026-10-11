@@ -101,6 +101,8 @@ export class GamePiecePool {
   private replica = false;
   /** Multiplayer client: replica pieces simulated locally near the predicted robot (see net/localPieces.ts). */
   private localSim = new Uint8Array(0);
+  /** Host render poses are separate from speculative collision bodies on multiplayer clients. */
+  private replicaPose = new Float32Array(0);
   readonly mesh: THREE.InstancedMesh;
   readonly radius: number;
   readonly colliderRadius: number;
@@ -148,6 +150,8 @@ export class GamePiecePool {
     this.mesh = this.meshes[0];
     this.shown = new Uint8Array(spec.count);
     this.localSim = new Uint8Array(spec.count);
+    this.replicaPose = new Float32Array(spec.count * 7);
+    for (let i = 0; i < spec.count; i++) this.replicaPose[i * 7 + 6] = 1;
     this.prevPose = new Float32Array(spec.count * 7);
     this.prevOk = new Uint8Array(spec.count);
 
@@ -388,8 +392,8 @@ export class GamePiecePool {
   }
 
   /**
-   * Replica (multiplayer client) update: set bookkeeping without simulating. Bodies stay disabled —
-   * clients never step physics for pieces; positions come from snapshots via `setReplicaPosition`.
+   * Replica (multiplayer client) bookkeeping. Nearby collision proxies may step physics;
+   * all visible positions come from snapshots.
    */
   applyReplicaState(i: number, state: PieceState, owner: number, tag: string | null): void {
     this.replica = true;
@@ -401,18 +405,22 @@ export class GamePiecePool {
   }
 
   setReplicaPosition(i: number, x: number, y: number, z: number): void {
-    this.bodies[i].setTranslation({ x, y, z }, false);
+    const k = i * 7;
+    this.replicaPose[k] = x; this.replicaPose[k + 1] = y; this.replicaPose[k + 2] = z;
+    if (!this.localSim[i]) this.bodies[i].setTranslation({ x, y, z }, false);
     this.shown[i] = 0;
   }
 
   setReplicaRotation(i: number, x: number, y: number, z: number, w: number): void {
-    this.bodies[i].setRotation({ x, y, z, w }, false);
+    const k = i * 7;
+    this.replicaPose[k + 3] = x; this.replicaPose[k + 4] = y; this.replicaPose[k + 5] = z; this.replicaPose[k + 6] = w;
+    if (!this.localSim[i]) this.bodies[i].setRotation({ x, y, z, w }, false);
     this.shown[i] = 0;
   }
 
   /**
    * Multiplayer client: simulate replica piece i locally from this pose and velocity (it collides with the predicted
-   * robot and other local pieces) until `releaseLocal`. Snapshots stop posing it meanwhile.
+   * robot and other local pieces) until `releaseLocal`. Its visible pose continues following snapshots.
    */
   adoptLocal(i: number, pos: { x: number; y: number; z: number }, vel: { x: number; y: number; z: number }): void {
     const b = this.bodies[i];
@@ -428,13 +436,22 @@ export class GamePiecePool {
     b.wakeUp();
   }
 
-  /** Back to a snapshot-posed replica (body disabled where it is). */
+  /** Latest interpolated host position, independent of a local collision proxy. */
+  replicaPosition(i: number): { x: number; y: number; z: number } {
+    const k = i * 7;
+    return { x: this.replicaPose[k], y: this.replicaPose[k + 1], z: this.replicaPose[k + 2] };
+  }
+
+  /** Back to a disabled snapshot-posed body, without changing the visible pose. */
   releaseLocal(i: number): void {
     if (!this.localSim[i]) return;
     this.localSim[i] = 0;
     this.prevOk[i] = 0;
     this.shown[i] = 0;
-    this.bodies[i].setEnabled(false);
+    const b = this.bodies[i], k = i * 7, p = this.replicaPose;
+    b.setEnabled(false);
+    b.setTranslation({ x: p[k], y: p[k + 1], z: p[k + 2] }, false);
+    b.setRotation({ x: p[k + 3], y: p[k + 4], z: p[k + 5], w: p[k + 6] }, false);
   }
 
   isLocal(i: number): boolean { return this.localSim[i] === 1; }
@@ -525,12 +542,17 @@ export class GamePiecePool {
       // Multiplayer clients: poses only change through setReplicaPosition/Rotation, which mark the piece
       // stale — untouched pieces keep last frame's matrix. (The simulating side always reads the body: a
       // "sleeping" flag is not proof that a body hasn't moved.)
-      if (this.replica && this.shown[i] === 1 && !this.localSim[i]) continue;
+      if (this.replica && this.shown[i] === 1) continue;
       const t = b.translation();
       const r = b.rotation();
       this.tmpP.set(t.x, t.y, t.z);
       this.tmpQ.set(r.x, r.y, r.z, r.w);
-      if (alpha < 1 && this.prevOk[i] && this.shown[i] === 1) {
+      if (this.replica) {
+        const p = this.replicaPose, k = i * 7;
+        this.tmpP.set(p[k], p[k + 1], p[k + 2]);
+        this.tmpQ.set(p[k + 3], p[k + 4], p[k + 5], p[k + 6]);
+      }
+      if (!this.replica && alpha < 1 && this.prevOk[i] && this.shown[i] === 1) {
         const pp = this.prevPose, k = i * 7;
         this.prevP.set(pp[k], pp[k + 1], pp[k + 2]);
         // A piece that jumped (launched from a robot, reset, handed off) is drawn where it is, not streaked.
