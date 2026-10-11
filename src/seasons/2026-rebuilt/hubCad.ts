@@ -116,15 +116,6 @@ export function addHubCadVisual(b: FieldBuilder, a: Alliance, c: { x: number; y:
   if (a === 'red') g.rotation.y = Math.PI;
   g.name = `hub-${a}-cad`;
   b.root.add(g);
-  // [M Fig 5-5, 5-7] The side vinyl's teal REBUILT banner, below the AprilTag band (the CAD carries the vinyl as one solid).
-  const inch = 0.0254, drawn = b.drawn;
-  b.drawn = true;
-  for (const sy of [-1, 1]) {
-    const y = hubToField(a, c, 0, sy * 0.6, 0)[1];
-    b.box([c.x, y, 22 * inch], [47 * inch * 0.84, 0.004, 26 * inch], { color: 0x4f8a99, roughness: 0.7, collide: false, name: `hub-${a}-banner-${sy}` });
-    b.label([c.x, y + Math.sign(y - c.y) * 0.004, 23 * inch], 'REBUILT', 5.5 * inch, y > c.y ? Math.PI / 2 : -Math.PI / 2, '#ffffff');
-  }
-  b.drawn = drawn;
   return true;
 }
 
