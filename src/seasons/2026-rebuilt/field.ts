@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildHubFunnelAndNet, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } from './hubStructure';
+import type { NetSheet } from '../../engine/field/netSheet';
 import type { Alliance, FieldPoint } from '@engine/coords';
 import { FieldBuilder, Vec3 } from '@engine/field/builder';
 import { addAprilTags, AprilTagLayout } from '@engine/field/apriltags';
@@ -18,6 +19,8 @@ export const dir = (alliance: Alliance): number => (alliance === 'blue' ? 1 : -1
 export interface HubRefs {
   center: FieldPoint;
   lights: THREE.MeshStandardMaterial;
+  /** Flexible nets behind the opening (rear, then side wings). */
+  nets: NetSheet[];
 }
 
 export interface RebuiltFieldRefs {
@@ -198,7 +201,7 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   // Inner floor (sensor array) — slightly lighter
   b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z + 0.005], [C.HUB_SIZE - 2 * w, C.HUB_SIZE - 2 * w, 0.01], { color: 0x444c58, collide: false });
 
-  buildHubFunnelAndNet(b, a, c);
+  const nets = buildHubFunnelAndNet(b, a, c);
 
   // Light bars along the top edges
   const lights = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: col, emissiveIntensity: 0.1 });
@@ -220,7 +223,7 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   }
   // Alliance label on the alliance-facing side
   b.label([c.x - dir(a) * (hs + 0.004), c.y, inch(30)], 'HUB', inch(6), a === 'blue' ? Math.PI : 0, '#ffffff');
-  return { center: c, lights };
+  return { center: c, lights, nets };
 }
 
 function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance, handles:number[]): void {

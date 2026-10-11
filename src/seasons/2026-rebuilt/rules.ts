@@ -36,6 +36,8 @@ export interface RebuiltNetState {
   /** HubGrace.lastActive (null = never). */
   la: [number | null, number | null];
   co: [boolean, boolean];
+  /** Hub net bulges (NetSheet.netState) — red's nets then blue's; absent while every net hangs flat. */
+  nt?: (number[] | null)[];
 }
 
 interface Processing {
@@ -315,6 +317,7 @@ export class RebuiltRules implements SeasonRules {
   beforeStep(dt: number): void {
     const { pool, frame, rng, clock } = this.ctx;
     const t = this.now;
+    for (const a of ALLIANCES) for (const net of this.refs.hubs[a].nets) net.step(dt, pool);
 
     // Hub processing → exits into the NEUTRAL ZONE.
     // Each of the 4 exits is a narrow chute that passes FUEL one at a time, so a burst of scores trickles out
@@ -675,12 +678,14 @@ export class RebuiltRules implements SeasonRules {
       }
       const door = this.refs.chuteDoors[a];
       door.visible = !this.chuteOpen[a];
+      for (const net of this.refs.hubs[a].nets) net.syncVisual();
     }
   }
 
   netState(): RebuiltNetState {
     const la = (a: Alliance) => (Number.isFinite(this.grace.lastActive[a]) ? this.grace.lastActive[a] : null);
-    return { fi: this.firstInactive, la: [la('red'), la('blue')], co: [this.chuteOpen.red, this.chuteOpen.blue] };
+    const nets = ALLIANCES.flatMap((a) => this.refs.hubs[a].nets.map((n) => n.netState()));
+    return { fi: this.firstInactive, la: [la('red'), la('blue')], co: [this.chuteOpen.red, this.chuteOpen.blue], ...(nets.some((n) => n) ? { nt: nets } : {}) };
   }
 
   applyNetState(state: unknown): void {
@@ -689,6 +694,8 @@ export class RebuiltRules implements SeasonRules {
     this.grace.lastActive = { red: s.la[0] ?? -Infinity, blue: s.la[1] ?? -Infinity };
     this.chuteOpen.red = s.co[0];
     this.chuteOpen.blue = s.co[1];
+    let k = 0;
+    for (const a of ALLIANCES) for (const net of this.refs.hubs[a].nets) net.applyNetState(s.nt?.[k++]);
   }
 
   results(): MatchResults {

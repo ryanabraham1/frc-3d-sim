@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Alliance } from '../../engine/coords';
 import type { FieldBuilder, Vec3 } from '../../engine/field/builder';
+import { NetSheet } from '../../engine/field/netSheet';
 import * as C from './constants';
 
 const inch = (n: number) => n * 0.0254;
@@ -23,7 +24,8 @@ export function fuelInsideHubThroat(x: number, y: number, z: number, radius: num
   return true;
 }
 
-export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x: number; y: number }): void {
+/** Builds the funnel and frame; returns the hub's flexible nets (rear, then the two side wings). */
+export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x: number; y: number }): NetSheet[] {
   const forward = alliance === 'blue' ? 1 : -1;
   const point = (x: number, y: number, z: number): Vec3 => [c.x + forward * x, c.y + y, z];
   const mouthR = C.HUB_OPENING_HEX / Math.sqrt(3);
@@ -69,31 +71,31 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
   const netBottomZ = rimZ;
   const slopeX = (z: number) => front + (rear - front) * (z - footZ) / (topZ - footZ);
   const netFront = slopeX(netBottomZ);
-  const netMaterial = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
-  panel(`hub-${alliance}-net-rear-collision`, [point(rear, -half, netBottomZ), point(rear, half, netBottomZ), point(rear, half, topZ), point(rear, -half, topZ)], netMaterial, 0.05);
-  const cords: THREE.Vector3[] = [];
-  const cord = (a: Vec3, d: Vec3) => cords.push(b.frame.toWorld(...a), b.frame.toWorld(...d));
+  // The net is a real net: it bulges where FUEL hits it and springs back (NetSheet), so overshots are caught softly.
   const spacing = inch(2);
-  for (let y = -half; y <= half; y += spacing) cord(point(rear, y, netBottomZ), point(rear, y, topZ));
-  for (let z = netBottomZ; z <= topZ; z += spacing) cord(point(rear, -half, z), point(rear, half, z));
+  const nets: NetSheet[] = [];
+  const height = topZ - netBottomZ;
+  const sub = (p: Vec3, q: Vec3): Vec3 => [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+  const rearOrigin = point(rear, -half, netBottomZ);
+  nets.push(new NetSheet(b.frame, b.root, {
+    origin: rearOrigin, u: sub(rearOrigin, point(rear, half, netBottomZ)), v: [0, 0, height],
+    front: point(0, 0, rimZ), nu: 15, nv: 11, cordSpacing: spacing, name: `hub-${alliance}-net-rear`,
+  }));
   const pole = { color: C.COLORS.alu, metalness: 0.65, roughness: 0.35, collide: false as const };
   for (const side of [-1, 1]) {
     const y = side * half;
-    panel(`hub-${alliance}-net-wing-${side}-collision`, [point(netFront, y, netBottomZ), point(rear, y, netBottomZ), point(rear, y, topZ)], netMaterial, 0.05);
-    for (let x = netFront; x <= rear; x += spacing) {
-      const height = footZ + (topZ - footZ) * (x - front) / (rear - front);
-      cord(point(x, y, netBottomZ), point(x, y, height));
-    }
-    for (let z = netBottomZ; z <= topZ; z += spacing) {
-      const x = slopeX(z);
-      cord(point(x, y, z), point(rear, y, z));
-    }
+    // Side wings: the triangle between the inclined pole, the rear post and the net's lower edge.
+    const wingOrigin = point(netFront, y, netBottomZ);
+    nets.push(new NetSheet(b.frame, b.root, {
+      origin: wingOrigin, u: sub(wingOrigin, point(rear, y, netBottomZ)), v: [0, 0, height],
+      front: point((netFront + rear) / 2, 0, rimZ), nu: 6, nv: 11, cordSpacing: spacing, name: `hub-${alliance}-net-wing-${side}`,
+      // The inclined pole runs corner to corner (slopeX), so the net is the triangle below it.
+      inside: (s, t) => t <= s + 1e-6,
+    }));
     b.cylinder(point(front, y, footZ), point(rear, y, topZ), inch(0.65), { ...pole, name: `hub-${alliance}-net-inclined-pole-${side}` }, 10);
     b.cylinder(point(rear, y, footZ), point(rear, y, topZ), inch(0.65), pole, 10);
     b.cylinder(point(front, y, footZ), point(rear, y, footZ), inch(0.5), pole, 10);
   }
   b.cylinder(point(rear, -half, topZ), point(rear, half, topZ), inch(0.65), pole, 10);
-  const net = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(cords), new THREE.LineBasicMaterial({ color: 0x282b2e }));
-  net.name = `hub-${alliance}-net-mesh`;
-  b.root.add(net);
+  return nets;
 }

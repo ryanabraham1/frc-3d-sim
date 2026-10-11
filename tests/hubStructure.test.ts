@@ -8,19 +8,21 @@ import { buildHubFunnelAndNet } from '../src/seasons/2026-rebuilt/hubStructure';
 import * as C from '../src/seasons/2026-rebuilt/constants';
 
 beforeAll(async () => { await RAPIER.init(); });
-it('both hubs have an open funnel and three valid net collision surfaces', () => {
+it('both hubs have an open funnel and three flexible nets', () => {
   for (const alliance of ['blue', 'red'] as const) {
     const physics = new PhysicsWorld(RAPIER);
     const b = new FieldBuilder(physics, new THREE.Scene(), new FieldFrame(C.FIELD_LENGTH, C.FIELD_WIDTH));
-    buildHubFunnelAndNet(b, alliance, C.HUB_CENTER);
-    expect(physics.world.colliders.len()).toBe(9);
+    const nets = buildHubFunnelAndNet(b, alliance, C.HUB_CENTER);
+    // The six funnel panels collide; the nets are NetSheets (they catch pieces themselves), not rigid colliders.
+    expect(physics.world.colliders.len()).toBe(6);
+    expect(nets).toHaveLength(3);
     const panels = b.root.children.filter(o => o.name.includes('funnel-panel'));
     expect(panels).toHaveLength(6);
     const bounds = new THREE.Box3();
     for (const p of panels) bounds.union(new THREE.Box3().setFromObject(p));
     expect(bounds.max.y).toBeCloseTo(C.HUB_RIM_HEIGHT, 5);
     expect(bounds.min.y).toBeCloseTo(C.HUB_CUP_FLOOR + 0.0508, 5);
-    expect(b.root.getObjectByName(`hub-${alliance}-net-mesh`)).toBeInstanceOf(THREE.LineSegments);
+    for (const name of ['rear', 'wing--1', 'wing-1']) expect(b.root.getObjectByName(`hub-${alliance}-net-${name}`)).toBeInstanceOf(THREE.LineSegments);
     physics.world.free();
   }
 });
@@ -42,14 +44,15 @@ it('leaves the lower side frames open while retaining the upper rear nets on bot
       // A front-corner attachment incorrectly stretches the frame over the
       // entire hub. Both alliances must leave the front quarter exposed.
       expect((foot.x - C.HUB_CENTER.x) * forward).toBeCloseTo(-C.HUB_SIZE / 4, 5);
-      const hitAt = (height: number) => {
-        const origin = frame.toWorld(rearX, C.HUB_CENTER.y + side * (half + 0.2), height);
-        return physics.world.castRay(new RAPIER.Ray(origin, frame.velToWorld(0, -side, 0)), 0.3, true, undefined, GROUPS.piece);
-      };
-      expect(hitAt(C.HUB_RIM_HEIGHT - 0.1)).toBeNull();
-      expect(hitAt(C.HUB_RIM_HEIGHT + 0.3)).not.toBeNull();
+      // Nothing solid across the lower side frame; the side net starts at the rim and covers the upper rear corner.
+      const origin = frame.toWorld(rearX, C.HUB_CENTER.y + side * (half + 0.2), C.HUB_RIM_HEIGHT - 0.1);
+      expect(physics.world.castRay(new RAPIER.Ray(origin, frame.velToWorld(0, -side, 0)), 0.3, true, undefined, GROUPS.piece)).toBeNull();
+      const wing = new THREE.Box3().setFromObject(b.root.getObjectByName(`hub-${alliance}-net-wing-${side}`)!).expandByScalar(0.01); // flat: give it thickness
+      expect(wing.min.y).toBeCloseTo(C.HUB_RIM_HEIGHT - 0.01, 5);
+      expect(wing.max.y).toBeGreaterThan(C.HUB_RIM_HEIGHT + C.HUB_NET_HEIGHT - 0.15); // the triangle narrows to the rear post
+      expect(wing.containsPoint(frame.toWorld(rearX, C.HUB_CENTER.y + side * half, C.HUB_RIM_HEIGHT + 0.3))).toBe(true);
     }
-    const net = b.root.getObjectByName(`hub-${alliance}-net-mesh`) as THREE.LineSegments;
+    const net = b.root.getObjectByName(`hub-${alliance}-net-rear`) as THREE.LineSegments;
     expect(new THREE.Box3().setFromObject(net).min.y).toBeCloseTo(C.HUB_RIM_HEIGHT, 5);
     physics.free();
   }
