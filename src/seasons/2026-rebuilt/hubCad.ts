@@ -41,15 +41,32 @@ export const HUB_CAD = {
 } as const;
 
 let asset: THREE.Group | null = null;
+let fieldAsset: THREE.Group | null = null;
 let loading: Promise<void> | null = null;
 
-/** Load the drawn CAD hub (pages only; the simulation side needs only the generated collision). */
+/** Load the drawn field CAD: the HUB and the rest of the field (pages only; the simulation side needs only collision). */
 export function prepareHubCad(): Promise<void> {
   if (typeof document === 'undefined' || typeof window === 'undefined') return Promise.resolve();
-  return (loading ??= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
-    .loadAsync(`${import.meta.env.BASE_URL}models/field/2026-hub.glb`)
-    .then((g) => { asset = g.scene; })
-    .catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }));
+  const load = (file: string) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/field/${file}`);
+  return (loading ??= Promise.all([
+    load('2026-hub.glb').then((g) => { asset = g.scene; }).catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }),
+    load('2026-field.glb').then((g) => { fieldAsset = g.scene; }).catch((e) => { console.warn('[field] field CAD unavailable, drawing the stand-in', e); }),
+  ]).then(() => undefined));
+}
+
+/**
+ * Draw everything but the HUBs and AprilTags from the official field CAD (tools/prepare-field-cad-field.mjs). Returns false
+ * when it isn't loaded (the season draws its own field). Collision is never affected.
+ */
+export function addFieldCadVisual(b: FieldBuilder): boolean {
+  if (!fieldAsset) return false;
+  const field = fieldAsset.clone(true);
+  field.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  // CAD frame: metres, Z up, origin at the field centre (= world origin), blue at -x.
+  field.rotation.x = -Math.PI / 2;
+  field.name = 'field-cad';
+  b.root.add(field);
+  return true;
 }
 
 /** Hub-local point → FIELD point for an alliance's hub centred at `c`. */
@@ -100,12 +117,14 @@ export function addHubCadVisual(b: FieldBuilder, a: Alliance, c: { x: number; y:
   g.name = `hub-${a}-cad`;
   b.root.add(g);
   // [M Fig 5-5, 5-7] The side vinyl's teal REBUILT banner, below the AprilTag band (the CAD carries the vinyl as one solid).
-  const inch = 0.0254;
+  const inch = 0.0254, drawn = b.drawn;
+  b.drawn = true;
   for (const sy of [-1, 1]) {
     const y = hubToField(a, c, 0, sy * 0.6, 0)[1];
     b.box([c.x, y, 22 * inch], [47 * inch * 0.84, 0.004, 26 * inch], { color: 0x4f8a99, roughness: 0.7, collide: false, name: `hub-${a}-banner-${sy}` });
     b.label([c.x, y + Math.sign(y - c.y) * 0.004, 23 * inch], 'REBUILT', 5.5 * inch, y > c.y ? Math.PI / 2 : -Math.PI / 2, '#ffffff');
   }
+  b.drawn = drawn;
   return true;
 }
 
