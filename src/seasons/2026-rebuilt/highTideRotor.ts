@@ -4,8 +4,10 @@ import { bar, box, dyeRotor, mat, spin } from '@engine/robot/models';
 /** Original simplified geometry from HighTide's public 2026 binder, Dye Rotor CAD render.
  * Dimensions are fitted estimates; this assembly only supplies geometry and visual transport.
  */
+/* The tub is only a low lip: the hopper walls are the dye rotor's fence (photos show FUEL right down to the floor
+ * through the clear fixed end). */
 export function highTideRotor(parent: THREE.Object3D, x: number, y0: number, radius: number, top: number, black: THREE.Material, accent: THREE.Material) {
-  const rotor = dyeRotor(parent, { x, y0, R: radius, wallH: .1, towerX: x, towerR: .09, towerTop: top, plate: black, accent, motors: 3, guide: false });
+  const rotor = dyeRotor(parent, { x, y0, R: radius, wallH: .03, towerX: x, towerR: .09, towerTop: top, plate: black, accent, motors: 3, guide: false });
   rotor.tower.visible = false;
   const tower = new THREE.Group();
   tower.name = 'hightide-roller-throat';

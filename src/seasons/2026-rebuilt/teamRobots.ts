@@ -387,13 +387,18 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const lidHole: [number, number][] = Array.from({ length: 40 }, (_, i) => [tx + Math.cos(-i * Math.PI / 20) * .118, tz + Math.sin(-i * Math.PI / 20) * .118]);
   const lid = pocketPlate(tower, [[x0, z0], [hx, z0], [hx, hz], [x0, hz]], [lidHole], clear, 0, .004);
   lid.rotation.x = Math.PI / 2; lid.position.y = deckY + .002;
-  box(tower, .005, .13, hz - z0, clear, x0, deckY + .065, (z0 + hz) / 2).name = 'kepler-turret-shield';
-  box(tower, hx - x0, .09, .005, clear, (x0 + hx) / 2, deckY + .045, z0);
+  // Clear shields round the lower head (photos): tall on the hopper side, lower on the other three.
+  box(tower, .005, .17, hz - z0, clear, x0, deckY + .085, (z0 + hz) / 2).name = 'kepler-turret-shield';
+  box(tower, hx - x0, .1, .005, clear, (x0 + hx) / 2, deckY + .05, z0);
+  box(tower, hx - x0, .07, .005, clear, (x0 + hx) / 2, deckY + .035, hz + .004);
+  box(tower, .005, .07, hz - z0, clear, hx + .004, deckY + .035, (z0 + hz) / 2);
   // Blue LED arc round the turret base, on the hopper side (glows in every 2026 photo).
-  const ledMat = new THREE.MeshStandardMaterial({ color: 0x2a9dff, emissive: 0x0a8cff, emissiveIntensity: 2.2, roughness: .4 });
-  const led = new THREE.Mesh(new THREE.TorusGeometry(.135, .009, 8, 48, Math.PI * 1.05), ledMat);
+  const ledMat = new THREE.MeshBasicMaterial({ color: 0x1286ff });
+  // A flexible strip standing on the clear lid round the bearing opening, facing the hopper.
+  ledMat.side = THREE.DoubleSide;
+  const led = new THREE.Mesh(new THREE.CylinderGeometry(.128, .128, .018, 40, 1, true, -Math.PI * .25 - 1.2, 2.4), ledMat);
   led.name = 'kepler-blue-led-arc'; led.userData.noShadow = true;
-  led.rotation.x = -Math.PI / 2; led.rotation.z = Math.PI * .47; led.position.set(tx, deckY + .012, tz); tower.add(led);
+  led.position.set(tx, deckY + .011, tz); tower.add(led);
   // Dark interior of the tower (electronics, Talon FX motors, wiring), seen through the clear sides in every photo.
   box(tower, hx - tx - .03, deckY - bt - .05, hz - z0 - .04, black, (tx + .01 + hx) / 2, (bt + deckY) / 2 - .01, (z0 + hz) / 2).name = 'kepler-tower-electronics';
   // Hopper walls: clear polycarbonate on silver rails. The wall opposite the turret is the tall one, with triangular
@@ -430,7 +435,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: inHopper });
   const t = k.turret;
   // The bearing sits inside the tower under its clear lid; only the head stands above (about 4 in over the walls).
-  t.position.set(tx, top - 0.03, tz);
+  t.position.set(tx, top - 0.05, tz);
   const sh = keplerShooter(t);
   // Roller floor: long rollers running front to back, rolling FUEL across to the turret-side lane.
   const floorRollers: THREE.Group[] = [];
@@ -447,9 +452,11 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const lifts:THREE.Group[]=[];
   const liftGreen=mat(0x5fbf3a,{rough:.75});
   for(let i=0;i<3;i++)lifts.push(roller(transfer,.029,.158,liftGreen,tx-.12+i*.04,rollerY+.04+i*(deckY-rollerY-.08)/2,tz));
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, width:W*.89 });
+  // Hinged low, at bumper height: the deployed arms run nearly flat over the carpet (photo jJiksKT).
+  const hingeY = bt - .01;
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, width:W*.89, hingeY });
   const arms=intake.hinge.children[0],iw=W*.89;
-  const armLength=Math.hypot(c.intake.reach+.03,c.bumperTop+.01);
+  const armLength=Math.hypot(c.intake.reach+.03,hingeY-.05);
   // Exposed silver leading shaft with three separated rubber sleeves, silver pocketed end gussets, and the
   // ball-support ramp behind it.
   roller(arms,.013,iw,alu,side*(armLength+.025),-.037,0);
