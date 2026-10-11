@@ -137,6 +137,41 @@ registerRobotModel('matterhorn-9496', (k: ModelKit) => {
   };
 });
 
+// ── 3256 AIMBOT: tall clear-walled hopper over a spindexer floor, one black turret in the +X/+Z quarter fed by a feeder
+//    column, slapdown intake out the back that pushes the hopper end out. ──
+registerRobotModel('aimbot-3256', (k: ModelKit) => {
+  const c = k.config, L = c.frameLength, W = c.frameWidth, H = c.height, bt = c.bumperTop, side = k.groundSide;
+  const alu = mat(0xc4c9d0, { metal: 0.7, rough: 0.35 }), blackTube = tubeMat(0x24262b), black = mat(0x1a1c20, { metal: 0.2, rough: 0.6 });
+  const clear = mat(0xdde8f0, { rough: 0.15 }); clear.transparent = true; clear.opacity = .25; clear.depthWrite = false;
+  const db = drivebase(k, { tube: blackTube, motorRing: 0x2d55d8 });
+  hopperWalls(k.visual, { intakeSide: side, floorDepth: .12, x: -L * .15, y0: bt, length: L * 1.2, width: W * .97, height: H - bt - .01, m: clear, frame: blackTube });
+  const fill = fillBlock(k.visual, { x: -L * .15, y0: bt + .03, length: L * 1.1, width: W * .88, height: H - bt - .14, color: FUEL, capacity: c.hopperCapacity });
+  const rotor = new THREE.Group(); rotor.position.set(-.07, bt + .02, 0); k.visual.add(rotor);
+  rotor.add(new THREE.Mesh(new THREE.CylinderGeometry(.17, .17, .01, 36), mat(0x55595f, { metal: .3 })));
+  rotor.add(new THREE.Mesh(new THREE.ConeGeometry(.1, .15, 24), mat(0x888d94, { metal: .2 }))).position.y = .08;
+  for (const sx of [0, .34]) for (const sz of [0, .34]) bar(k.visual, [sx, bt, sz], [sx, .49, sz], .02, blackTube);
+  box(k.visual, .34, .012, .34, black, .17, .495, .17);
+  const t = new THREE.Group(); t.position.set(.145, .5, .145); k.visual.add(t);
+  const sh = turretShooter(t, { width: .15, wheelR: .038, wheel: black, plate: black, accent: alu, height: .13, topY: .2 });
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 3, frame: black, rollerMaterial: black });
+  const d = { v: 0 };
+  let rotorRate = 0;
+  const pile = hopperStow({ x: -L * .15, y0: bt + .03, length: L * .95, width: W * .82, height: H - bt - .2, r: FUEL_R });
+  return {
+    replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
+    lightAt: [-L * .3, H - .01, W * .38],
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow,
+      feed: () => [flowAt(k, rotor, .12, .06, .1), flowAt(k, t, 0, -.1), flowAt(k, sh.flywheel, -.08, 0, 0), flowAt(k, sh.flywheel, .02, .04, 0)] },
+    update(s) {
+      db.update(s); fill.set(s.fill); pile.setFill(s.fill);
+      intake.update(s, latch(d, s.enabled, s.dt));
+      t.rotation.y = k.turret.rotation.y; sh.update(s);
+      rotorRate = dyeRotorRate(rotorRate, s, 8);
+      spin(rotor, rotorRate, s.dt, 'y');
+    },
+  };
+});
+
 const cfg = (team: number, model: string, o: Parameters<typeof build>[0], tweak: (c: ReturnType<typeof build>) => void) => {
   const c = build(o);
   c.teamNumber = team; c.model = model;
@@ -145,6 +180,8 @@ const cfg = (team: number, model: string, o: Parameters<typeof build>[0], tweak:
 };
 
 export const MIRAGE_CAPACITY = 40, CYCLONE_CAPACITY = 45, MATTERHORN_CAPACITY = 40;
+/** 3256's own figures (told to us by the team): 100 FUEL, 8-10 per second. */
+export const AIMBOT_CAPACITY = 100;
 
 export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
   return [
@@ -186,6 +223,19 @@ export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
         c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle;
         c.intake.reach = .2; c.intake.width = .62;
         c.maxSpeed = 4.6; setRebuiltAccuracy(c, 84);
+      }) },
+    { id: 'aimbot-3256', team: 3256, name: 'Aimbot',
+      description: '3256 WarriorBorgs. Tall (30 in) bump bot: a turret on an 8 in bearing carries a pivoting-hood shooter (3 in flywheel, inertia wheel, 1 in hood rollers) fed by a rotating spindexer floor and a feeder column, so it shoots on the move. A gear-driven slapdown intake out the back pushes the clear hopper end out with it. Holds 100 FUEL and shoots 8-10 per second (the team\'s figures; the binder\'s design target was ~7/s). Too tall for the TRENCH. Loads the supplied CAD. Drive speed is a simulator estimate.',
+      source: 'User supplied "Real Real Main.glb" and the 2026 "AIMBOT TECH BINDER.pdf"; https://www.thebluealliance.com/team/3256/2026',
+      config: cfg(3256, 'aimbot-3256', { intake: 'both', aim: 'turret', hopper: AIMBOT_CAPACITY, tall: true, rate: 9, climb: 0 }, c => {
+        // MK5n swerve chassis 27 x 27 in (binder p.3, CAD rails +-0.34 m); hopper walls reach 0.754 m (CAD).
+        c.frameLength = c.frameWidth = .68; c.height = inch(30);
+        c.launcher.height = .63;
+        // Turret ring centre 0.145 m forward and to the right of the frame centre (side is positive left).
+        c.launcher.mounts = [{ forward: .145, side: -.145 }];
+        c.launcher.muzzleForward = .10;
+        c.intake.reach = .22; c.intake.width = .62;
+        c.maxSpeed = 4.3; setRebuiltAccuracy(c, 84);
       }) },
   ];
 }

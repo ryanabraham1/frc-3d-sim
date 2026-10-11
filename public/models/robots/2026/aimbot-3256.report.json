@@ -1,0 +1,30 @@
+{
+  "id": "aimbot-3256",
+  "sourceFile": "Real Real Main.glb",
+  "inputBytes": 206689100,
+  "outputBytes": 9194980,
+  "inputTriangles": 4071774,
+  "outputTriangles": 903169,
+  "omittedOccurrences": 440,
+  "bounds": {
+    "min": [
+      -0.6508750021457672,
+      -0.11014458537101746,
+      -0.42544999718666077
+    ],
+    "max": [
+      0.3714750111103058,
+      0.7620000243186951,
+      0.3492499887943268
+    ]
+  },
+  "groups": [
+    "frame",
+    "turret",
+    "intake",
+    "rotor",
+    "hopper-ext",
+    "hood",
+    "flywheel"
+  ]
+}

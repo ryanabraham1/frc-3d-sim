@@ -460,6 +460,42 @@ const specs = {
     },
     // The drum is black (grip tape) between its brass flywheels on the robot (TBA photo); the CAD swatch is pale grey.
     finish: ({ name }) => /^Drum$/.test(name) ? { name: 'drum-grip', color: [.07,.07,.08,1], metal: 0, rough: .85 } : undefined },
+  // 3256 WarriorBorgs "Aimbot": 27 in MK5n swerve, turret on an 8 in X-contact ring in the +,+ corner of the frame, pivoting
+  // hood shooter, rotating spindexer floor + feeder column, slapdown intake pushing a tall hopper end out. Z-up export,
+  // source -Y is the intake, so 'yzx' puts it on robot -X. The export has the turret assembly twice (once nested in the
+  // drivebase), so identical name+bounds occurrences are dropped.
+  'aimbot-3256': { file: 'Real Real Main.glb', axes: 'yzx', lossless: true, preserveColors: true,
+    omit: /Origin Cube|Foam|Back Wood|Front Wood|Left Wood|Right Wood|Bumper Mount|Robot Battery|PDP 2\.0|Main Breaker|Simplified MPM|BHCS|Socket head|Nylon-Insert|Shaft End Screw|HeatSet|Dowel|Binding head|PCB|Anderson/,
+    groups: [],
+    drop: (() => { const seen = new Set(); return (name, full, b) => {
+      if (b.min[0] > .8 || Math.max(...b.max.map((v, i) => v - b.min[i])) < .02) return true;
+      // Molded bumper shells in the drivebase (the simulator draws alliance bumpers).
+      if (/Drivebase Assembly/.test(full) && /^Part 3[45]$/.test(name) && b.max[0] - b.min[0] > .4) return true;
+      const sig = name + [...b.min, ...b.max].map(v => v.toFixed(4)).join(',');
+      if (seen.has(sig)) return true; seen.add(sig); return false;
+    }; })(),
+    classify: ({ full, name, bounds: b }) => {
+      const cx = (b.min[0] + b.max[0]) / 2, cy = (b.min[1] + b.max[1]) / 2;
+      if (/0900_V2_Shooter_Assembly/.test(full)) {
+        if (/^(?:Rubber|Core|Mass Wheel|0922_Flywheel_Mass)$/.test(name)) return 'flywheel';
+        // Fixed plates, base plate and the pivot motor stay with the turret deck; the rest pivots as one pack.
+        if (/^(?:0300_Base_Plate|0901_Left_Plate|0905_Right_Plate|Kraken X44.*|0916_Pivot_Kraken_Spacer|14T Steel.*|0921_Pivot_Hardstop|0902_Left_Pivot_Plate)$/.test(name) && !/0902/.test(name)) return 'turret';
+        return 'hood';
+      }
+      if (/0200_Turret_Assembly/.test(full)) {
+        if (/^(?:0201_|0223_|0212_|Part 5[789]|Part 6[2347]$|Corner Cam|0207_|0208_|0209_|0210_|0211_|0218_Gearbox|0240_|12T Steel|10t Aluminum|Kraken|TTB-0241|WCP Through Bore|48t Pocketed|1" x 1" Tube Plug)/.test(name)) return 'frame';
+        return b.min[2] > .475 ? 'turret' : 'frame';
+      }
+      if (/0550_Ground_Intake_Assembly/.test(full)) return b.min[1] > -.345 ? 'frame' : 'intake';
+      if (/Assembly 3/.test(full) && /^Part 4[234]$/.test(name)) return 'hopper-ext';
+      // Spindexer: the disc, cone and hub stack turn about the spline shaft at source (0, -0.07).
+      const r = Math.hypot(cx, cy + .07);
+      if (/Assembly 1/.test(full) && r < .19 && b.min[2] > .085 && b.max[2] < .31
+        && !/Ring_Of_Death|Main_Plate|ROUND Spacer 3\.25|Block MK5n|Kraken|ramp|Tube|Plate|Standoff|Intake_/i.test(name)) return 'rotor';
+      return 'frame';
+    },
+    // The hopper walls are clear 1/8 in polycarbonate on the robot (binder p.8, TBA photos), grey in the CAD.
+    finish: ({ full, name }) => /Assembly 3/.test(full) && /^Part (?:42|43|44|61)$/.test(name) ? { name: 'clear-hopper-sheet', color: [.8, .86, .91, .22], metal: 0, rough: .3 } : undefined },
   'rubble-581': { file: '2026 Dumper Champs Bot581.glb', axes: 'xzy', groups: [
     ['hopper-roof', /^Part 22\/.*Hopper </],
     ['hood', /Hood Assem/], ['flywheel', /#1: 4.*Roller Shaft/],
