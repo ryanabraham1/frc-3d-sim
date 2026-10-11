@@ -94,3 +94,25 @@ it('604 captures from the carpet even while its intake starts folded',()=>{
   expect(pos.x).toBeLessThan(cavity.max.x);
   expect(pos.y).toBeLessThan(cavity.max.y-sim.pool.colliderRadius*.8);
 });
+
+for(const team of [4414,1690])it(`${team}: a full hopper leaves the shooter envelope clear in match and preview`,()=>{
+  const sim=make(team),r=sim.robot;sim.load(r.config.hopperCapacity);
+  for(let i=0;i<120;i++){sim.step();r.syncVisual(1/60);}
+  const envelopes=r.visual.userData.fuelKeepouts as {x:number;z:number;radius:number;bottom:number;top:number}[];
+  const check=(x:number,y:number,z:number,radius:number)=>{
+    for(const e of envelopes)if(y+radius>e.bottom+.002&&y-radius<e.top-.002)
+      expect(Math.hypot(x-e.x,z-e.z)).toBeGreaterThanOrEqual(e.radius+radius-.003);
+  };
+  r.bay!.forEachLocal((x,y,z)=>check(x,y,z,sim.pool.colliderRadius*(r.config.hopperExpansion?1:.93)));
+  expect(r.held.length).toBe(r.config.hopperCapacity);
+  r.detachPool(sim.pool);
+  for(let i=0;i<120;i++)r.syncVisual(1/60);
+  let drawn=0;
+  r.visual.traverse(o=>{const surface=o.userData.fuelSurface?.();if(!surface)return;
+    for(let i=0;i<surface.count;i++){
+      const p=r.visual.worldToLocal(o.localToWorld(new THREE.Vector3().fromArray(surface.positions,i*3)));
+      check(p.x,p.y,p.z,surface.radius*.94);drawn++;
+    }
+  });
+  expect(drawn).toBe(r.config.hopperCapacity);
+});

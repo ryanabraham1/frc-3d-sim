@@ -55,7 +55,7 @@ describe('photo-fitted CAD mechanisms', () => {
       }
     }
     const roots: THREE.Object3D[] = []; visual.traverse(o => {if(o.userData.cadDonor) roots.push(o);});
-    expect(roots.length).toBe(id==='croquembouche-5940'||id==='madtown-2026-1323'?2:1);
+    expect(roots.length).toBe(id==='ripcurrent-4414'||id==='kepler-1690'?0:id==='croquembouche-5940'||id==='madtown-2026-1323'?2:1);
     if(id==='ripcurrent-4414') {
       expect(visual.getObjectByName('hightide-dolphin-fin')).toBeDefined();
       expect(visual.getObjectByName('hightide-roller-throat')).toBeDefined();
@@ -74,6 +74,13 @@ describe('photo-fitted CAD mechanisms', () => {
     }
     model.update(idle); visual.updateMatrixWorld(true);
     for(const root of roots) expect(new THREE.Box3().setFromObject(root,true).max.y).toBeLessThan(config.height+.02);
+    if(!roots.length) {
+      const head=visual.getObjectByName(id==='kepler-1690'?'kepler-gear-shooter':'hightide-pancake-shooter');
+      expect(head).toBeDefined();
+      // The compact idle head must not regress into a tall generic shooter above the hopper.
+      expect(new THREE.Box3().setFromObject(head!,true).max.y).toBeLessThan(config.height+.09);
+      return;
+    }
     const donor=roots[0].userData.cadDonor;
     const part=donor==='mixtape-971'?'turret-left':'frame';
     const a=cloneCadPart(donor,part)!,b=cloneCadPart(donor,part)!;

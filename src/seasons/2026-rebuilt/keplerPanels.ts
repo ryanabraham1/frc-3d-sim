@@ -26,3 +26,23 @@ export function keplerPanel(parent: THREE.Object3D, width: number, height: numbe
   panel.name='kepler-pocketed-panel'; panel.position.set(x,y,z); panel.rotation.y=yaw;
   parent.add(panel); return panel;
 }
+
+/** Horizontal pocketed bridge follows the curved turret clearance in Orbit's CAD release. */
+export function keplerBridge(parent:THREE.Object3D,L:number,W:number,y:number,tx:number,tz:number,material:THREE.Material) {
+  const hx=L*.46,hz=W*.46,r=.245;
+  const start=Math.atan2(-Math.sqrt(r*r-(hx-tx)**2),hx-tx);
+  const end=Math.atan2(hz-tz,-Math.sqrt(r*r-(hz-tz)**2))-Math.PI*2;
+  const outline=new THREE.Shape();outline.moveTo(-hx,-hz);outline.lineTo(hx,-hz);
+  outline.lineTo(tx+Math.cos(start)*r,tz+Math.sin(start)*r);
+  outline.absarc(tx,tz,r,start,end,true);outline.lineTo(-hx,hz);outline.closePath();
+  const pitch=.125;
+  for(let x=-hx+.018;x+pitch<hx-.014;x+=pitch)for(let z=-hz+.018;z+pitch<hz-.014;z+=pitch) {
+    const triangles=[[[x,z],[x+pitch-.012,z],[x+pitch*.5,z+pitch*.43]],[[x,z+pitch-.012],[x+pitch*.5,z+pitch*.55],[x+pitch-.012,z+pitch-.012]]];
+    for(const points of triangles) {
+      if(points.some(p=>Math.hypot(p[0]-tx,p[1]-tz)<r+.018))continue;
+      const hole=new THREE.Path(points.map(p=>new THREE.Vector2(p[0],p[1])));hole.closePath();outline.holes.push(hole);
+    }
+  }
+  const geo=new THREE.ExtrudeGeometry(outline,{depth:.006,bevelEnabled:false,curveSegments:24});
+  const mesh=new THREE.Mesh(geo,material);mesh.name='kepler-curved-bridge';mesh.rotation.x=Math.PI/2;mesh.position.y=y;parent.add(mesh);
+}

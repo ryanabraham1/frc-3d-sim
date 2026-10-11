@@ -23,6 +23,7 @@ export interface HubRefs {
 export interface RebuiltFieldRefs {
   hubs: Record<Alliance, HubRefs>;
   chuteDoors: Record<Alliance, THREE.Mesh>;
+  bumpColliders: number[];
 }
 
 const V = (p: FieldPoint, z: number): Vec3 => [p.x, p.y, z];
@@ -62,12 +63,13 @@ export function buildRebuiltField(b: FieldBuilder): RebuiltFieldRefs {
   const refs: RebuiltFieldRefs = {
     hubs: {} as Record<Alliance, HubRefs>,
     chuteDoors: {} as Record<Alliance, THREE.Mesh>,
+    bumpColliders: [],
   };
 
   for (const a of ['blue', 'red'] as Alliance[]) {
     buildAllianceWall(b, a, refs);
     refs.hubs[a] = buildHub(b, a);
-    buildBumpsAndTrenches(b, a);
+    buildBumpsAndTrenches(b, a,refs.bumpColliders);
     buildDepot(b, a);
     buildTower(b, a);
   }
@@ -170,7 +172,20 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   const col = C.COLORS[a];
   const body = { color: 0x2e3440, metalness: 0.3, roughness: 0.6 };
   // Solid lower body
-  b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z / 2], [C.HUB_SIZE, C.HUB_SIZE, HUB_SENSOR_FLOOR_Z], body);
+  b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z / 2], [C.HUB_SIZE, C.HUB_SIZE, HUB_SENSOR_FLOOR_Z], {...body,visible:false});
+  // Draw an actual shell around recessed discharge openings. The original solid collision envelope is retained.
+  const skin=inch(.25), height=HUB_SENSOR_FLOOR_Z, neutral=c.x+dir(a)*hs;
+  b.box([c.x-dir(a)*hs,c.y,height/2],[skin,C.HUB_SIZE,height],{...body,collide:false});
+  for(const sy of [-1,1])b.box([c.x,c.y+sy*hs,height/2],[C.HUB_SIZE,skin,height],{...body,collide:false});
+  const portW=inch(8),portH=inch(7),pitch=C.HUB_SIZE/C.HUB_EXIT_COUNT,portBottom=C.HUB_EXIT_HEIGHT-portH/2,portTop=C.HUB_EXIT_HEIGHT+portH/2;
+  b.box([neutral,c.y,portBottom/2],[skin,C.HUB_SIZE,portBottom],{...body,collide:false});
+  b.box([neutral,c.y,(height+portTop)/2],[skin,C.HUB_SIZE,height-portTop],{...body,collide:false});
+  for(let i=0;i<=C.HUB_EXIT_COUNT;i++) {
+    const left=i===0?-hs:(i-1-(C.HUB_EXIT_COUNT-1)/2)*pitch+portW/2;
+    const right=i===C.HUB_EXIT_COUNT?hs:(i-(C.HUB_EXIT_COUNT-1)/2)*pitch-portW/2;
+    b.box([neutral,c.y+(left+right)/2,C.HUB_EXIT_HEIGHT],[skin,right-left,portH],{...body,collide:false});
+  }
+  for(const sx of [-1,1])for(const sy of [-1,1])b.box([c.x+sx*(hs+.006),c.y+sy*(hs-.016),height/2],[inch(1),inch(1),height],{color:0x78818a,metalness:.7,collide:false});
   // Cup walls above the internal floor
   const cupH = HUB_THROAT_Z - HUB_SENSOR_FLOOR_Z;
   const zc = HUB_SENSOR_FLOOR_Z + cupH / 2;
@@ -198,14 +213,17 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   for (let i = 0; i < C.HUB_EXIT_COUNT; i++) {
     const oy = c.y + (i - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT);
     // Match the simulated discharge centre: a ball emerges through the port rather than the panel above it.
-    b.box([ex, oy, C.HUB_EXIT_HEIGHT], [0.004, inch(8), inch(7)], { color: 0x0a0a0a, collide: false, castShadow: false });
+    b.box([ex-dir(a)*.09,oy,C.HUB_EXIT_HEIGHT],[.006,inch(8),inch(7)],{color:0x090b0d,collide:false,castShadow:false,name:`hub-${a}-discharge-recess-${i}`});
+    for(const sy of [-1,1])b.box([ex-dir(a)*.045,oy+sy*inch(4),C.HUB_EXIT_HEIGHT],[.09,.005,inch(7)],{color:0x535c65,metalness:.6,collide:false});
+    // A short metal lip gives the emerging ball a visible continuation to the carpet.
+    b.box([ex+dir(a)*.018,oy,C.HUB_EXIT_HEIGHT-inch(3.5)],[.13,inch(8),.006],{color:0x8d969d,metalness:.65,roughness:.45,pitch:-dir(a)*.15,collide:false,name:`hub-${a}-discharge-lip-${i}`});
   }
   // Alliance label on the alliance-facing side
   b.label([c.x - dir(a) * (hs + 0.004), c.y, inch(30)], 'HUB', inch(6), a === 'blue' ? Math.PI : 0, '#ffffff');
   return { center: c, lights };
 }
 
-function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
+function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance, handles:number[]): void {
   const hub = side(a, C.HUB_CENTER.x, C.HUB_CENTER.y);
   const hs = C.HUB_SIZE / 2;
   const col = C.COLORS[a];
@@ -215,7 +233,7 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
   const h = Math.min(C.BUMP_HEIGHT, hd * Math.tan(deg(C.BUMP_RAMP_DEG)) + inch(0.5));
   for (const s of [-1, 1]) {
     const yc = hub.y + s * (hs + hw);
-    b.convex(
+    const bump=b.convex(
       [hub.x, yc, 0],
       [
         [-hd, -hw, 0],
@@ -227,6 +245,7 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance): void {
       ],
       { color: col, roughness: 0.85, friction: 0.7 },
     );
+    if(bump.collider)handles.push(bump.collider.handle);
   }
 
   // TRENCHes along both guardrails [M 5.6, Figure 5-10]: a sloped-end pedestal between the opening and the BUMP

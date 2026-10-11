@@ -135,6 +135,58 @@ export interface LivePreview {
   dispose(): void;
 }
 
+/** Visible picker cards share one GL context; small 2D canvases receive its renders without image encoding. */
+export function createRotatingPreviews(season: SeasonDefinition, cards: {host:HTMLElement;config:RobotConfig;alliance:'red'|'blue'}[]): {dispose():void} {
+  let disposed=false,renderer:THREE.WebGLRenderer|null=null,frameId=0,last=0;
+  const records=cards.map(card=>({...card,visible:false,built:null as Built|null,pending:false,canvas:null as HTMLCanvasElement|null}));
+  const camera=new THREE.PerspectiveCamera(32,1,.01,40);
+  const prepare=async (record:typeof records[number])=>{
+    if(record.pending||record.built)return;
+    record.pending=true;
+    try {
+      await Promise.all([init(),prepareCadModels([record.config.model])]);
+      if(disposed||!record.visible||!record.host.isConnected)return;
+      renderer??=new THREE.WebGLRenderer({antialias:true,alpha:true});
+      renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+      renderer.setClearColor(0,0);renderer.setSize(300,200,false);
+      record.built=build(season,record.config,record.alliance);
+      const canvas=document.createElement('canvas');canvas.width=300;canvas.height=200;canvas.className='robot-turntable';
+      canvas.setAttribute('aria-hidden','true');record.canvas=canvas;
+      record.host.append(canvas);
+    } catch { /* Keep the cached thumbnail if a preview cannot load. */ }
+    finally {record.pending=false;}
+  };
+  const observer=new IntersectionObserver(entries=>{
+    for(const entry of entries) {
+      const record=records.find(record=>record.host===entry.target)!;
+      record.visible=entry.isIntersecting;
+      if(record.visible)void prepare(record);
+      else {record.built?.dispose();record.built=null;record.canvas?.remove();record.canvas=null;}
+    }
+  });
+  for(const record of records)observer.observe(record.host);
+  const loop=(now:number)=>{
+    if(disposed)return;
+    frameId=requestAnimationFrame(loop);
+    if(document.hidden||now-last<1000/18||!renderer)return;
+    last=now;
+    const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for(const record of records) {
+      if(!record.visible||!record.built||!record.host.isConnected||!record.canvas)continue;
+      if(reduced&&record.canvas.dataset.rendered)continue;
+      frame(camera,record.built.scale,.9+(reduced?0:now/1000*.28),.42,1,1.5);
+      renderer.render(record.built.scene,camera);
+      record.canvas.getContext('2d')?.clearRect(0,0,300,200);
+      record.canvas.getContext('2d')?.drawImage(renderer.domElement,0,0);
+      record.canvas.dataset.rendered='true';
+    }
+  };
+  frameId=requestAnimationFrame(loop);
+  return {dispose(){disposed=true;cancelAnimationFrame(frameId);observer.disconnect();renderer?.dispose();
+    for(const record of records){record.built?.dispose();record.canvas?.remove();}
+  }};
+}
+
 /** A turning, draggable 3D view of a robot that runs its mechanisms in a gentle loop. */
 export function createLivePreview(season: SeasonDefinition, config: RobotConfig, alliance: 'red' | 'blue'): LivePreview {
   let disposed = false;
@@ -143,6 +195,7 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
   let built: Built | null = null;
   let renderer: THREE.WebGLRenderer | null = null;
   let az = 0.9, tilt = 0.4, zoom = 1, dragging = false, last = 0, clock = 0;
+  let needsDraw=true;
   let cur = { config, alliance };
   let wantRebuild = false;
   let revision = 0;
@@ -170,29 +223,36 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
       if (!dragging) return;
       az -= e.movementX * 0.01;
       tilt = THREE.MathUtils.clamp(tilt + e.movementY * 0.008, 0.08, 1.2);
+      needsDraw=true;
     };
     renderer.domElement.addEventListener('pointerdown', down);
     addEventListener('pointerup', up);
     addEventListener('pointermove', move);
-    renderer.domElement.addEventListener('wheel', (e) => { zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.6, 1.6); e.preventDefault(); }, { passive: false });
+    renderer.domElement.addEventListener('wheel', (e) => { zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.6, 1.6); needsDraw=true; e.preventDefault(); }, { passive: false });
     const loop = (now: number) => {
       if (disposed) { removeEventListener('pointerup', up); removeEventListener('pointermove', move); return; }
       requestAnimationFrame(loop);
+      if(now-last<1000/30)return;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!host?.isConnected) return;
+      if (!host?.isConnected || document.hidden) return;
       if (wantRebuild) {
         built?.dispose();
         built = build(season, cur.config, cur.alliance);
         wantRebuild = false;
+        needsDraw=true;
       }
       const rect = host.getBoundingClientRect();
       if (!built || rect.width < 4) return;
       const pr = Math.min(2, devicePixelRatio || 1);
       renderer!.setPixelRatio(pr);
-      if (renderer!.domElement.width !== Math.round(rect.width * pr)) renderer!.setSize(rect.width, rect.height, false);
-      clock += dt;
-      if (!dragging) az += dt * 0.35;
+      if (renderer!.domElement.width !== Math.round(rect.width * pr) || renderer!.domElement.height !== Math.round(rect.height * pr)) {
+        renderer!.setSize(rect.width, rect.height, false); needsDraw=true;
+      }
+      const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if(reduced&&!needsDraw)return;
+      clock += reduced ? 0 : dt;
+      if (!dragging && !reduced) az += dt * 0.35;
       // Showcase loop: stowed, then intake out and rolling, then stowed (so the intake and its side are visible).
       const r = built.robot;
       const t = clock % 6;
@@ -202,6 +262,7 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
       r.syncVisual(dt);
       frame(cam, built.scale, az, tilt, zoom, rect.width / rect.height);
       renderer!.render(built.scene, cam);
+      needsDraw=false;
     };
     requestAnimationFrame(loop);
   };

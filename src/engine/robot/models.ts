@@ -1,3 +1,4 @@
+import type { FuelKeepout } from './fuelKeepouts';
 import * as THREE from 'three';
 import { FuelPile } from './fuelPile';
 import { FuelContacts } from './fuelContacts';
@@ -303,7 +304,7 @@ const HOPPER_FLOOR = 0.09;
  * impacts form the pile; initial packing is only a starting pose, never a fixed resting target. Intake tokens hand
  * their exact endpoint to the new particle so it rolls into the pile without a second spawn.
  */
-export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
+export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; keepouts?:readonly FuelKeepout[]; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
   // A real hopper floor rides just above the chassis tubing, not up at bumper-top height: lower the bin to it (same roof) so
   // the FUEL fills the room under the old floor instead of leaving a dead gap above the frame.
   const drop = bin.exactFloor ? 0 : Math.max(0, Math.min(bin.y0 - HOPPER_FLOOR, 0.12));
@@ -626,22 +627,22 @@ export function drivebase(kit: ModelKit, o: { tube?: THREE.Material; motorRing?:
   };
 }
 
-/** Intake orange (reserved for intakes so they read at a glance; matches Robot.buildGroundIntake). */
-export const INTAKE_ORANGE = (): THREE.MeshStandardMaterial => mat(0xff7a1a, { rough: 0.55, metal: 0.1, emissive: 0xff5a00 });
+/** Dark compliant tread; team frame colors are supplied separately. */
+export const INTAKE_RUBBER = (): THREE.MeshStandardMaterial => mat(0x191d20, { rough: 0.92, metal: 0 });
 
 /**
- * Under-bumper intake: `n` orange rollers across the intake face just outside the bumper (where
+ * Under-bumper intake: `n` rubber rollers across the intake face just outside the bumper (where
  * `groundMouthContains` captures). They spin while the driver intakes.
  */
 export function underBumperIntake(kit: ModelKit, o: { n?: number; width?: number } = {}): { update(s: RobotAnimState): void } {
   const c = kit.config;
   const side = kit.groundSide;
   const w = Math.min(o.width ?? c.intake.width, kit.fp.width - 0.04);
-  const orange = INTAKE_ORANGE();
+  const rubber = INTAKE_RUBBER();
   const edge = kit.fp.length / 2;
   const rollers: THREE.Group[] = [];
   const n = o.n ?? 2;
-  for (let i = 0; i < n; i++) rollers.push(roller(kit.visual, 0.028, w, orange, side * (edge + 0.03 - i * 0.045), 0.07 + i * 0.045, 0));
+  for (let i = 0; i < n; i++) rollers.push(roller(kit.visual, 0.028, w, rubber, side * (edge + 0.03 - i * 0.045), 0.07 + i * 0.045, 0));
   for (const sz of [-1, 1]) box(kit.visual, 0.1, 0.06, 0.012, kit.mats.dark, side * (edge - 0.01), 0.09, sz * (w / 2 + 0.008));
   let speed = 0;
   return {
@@ -654,7 +655,7 @@ export function underBumperIntake(kit: ModelKit, o: { n?: number; width?: number
 
 /**
  * Over-the-bumper intake on a hinge at the top of the intake face: stowed upright inside the frame perimeter,
- * swings out and down over the bumper to the carpet when `set(deploy)` reaches 1. An orange roller bar at the tip
+ * swings out and down over the bumper to the carpet when `set(deploy)` reaches 1. A rubber roller bar at the tip
  * spins while intaking. `reach` = how far past the frame the roller lands.
  */
 /** Ground intake deploy target: out while the driver intakes, folding back in (carrying the piece) during a handoff. */
@@ -679,10 +680,10 @@ export function deployableIntake(kit: ModelKit, o: { reach: number; hingeY?: num
   hinge.add(arms);
   const frameM = o.frame ?? kit.mats.alu;
   for (const sz of [-1, 1]) box(arms, len, 0.035, 0.02, frameM, (side * len) / 2, 0, sz * (w / 2 + 0.012));
-  const orange = o.rollerMaterial ?? INTAKE_ORANGE();
+  const rubber = o.rollerMaterial ?? INTAKE_RUBBER();
   const rollers: THREE.Group[] = [];
   const nr = o.rollers ?? 2;
-  for (let i = 0; i < nr; i++) rollers.push(roller(arms, 0.03, w, orange, side * (len - i * 0.075), 0, 0));
+  for (let i = 0; i < nr; i++) rollers.push(roller(arms, 0.03, w, rubber, side * (len - i * 0.075), 0, 0));
   // A captured piece rides just inboard of the rollers.
   const tip = pivot(arms, side * (len - 0.06), 0.05);
   sidePlates(arms, [[side * (len - nr * 0.075), -0.035], [side * (len + 0.04), -0.035], [side * (len + 0.04), 0.035], [side * (len - nr * 0.075), 0.035]], w / 2 + 0.012, frameM);
@@ -735,10 +736,11 @@ export function fourBarIntake(kit: ModelKit, o: { reach: number; frame: THREE.Ma
 }
 
 /** Flat decal (sponsor logo / name plate) facing +z or −z: a text texture on a disc or rectangle. */
-export function decal(parent: THREE.Object3D, text: string, o: { w: number; h: number; color?: string; background?: string; round?: boolean; x?: number; y?: number; z?: number; rotY?: number }): THREE.Mesh {
-  const tex = makeTextTexture(text, { color: o.color ?? '#ffffff', background: o.background, width: 256, height: Math.round((256 * o.h) / o.w) });
+export function decal(parent: THREE.Object3D, text: string, o: { w: number; h: number; color?: string; background?: string; round?: boolean; x?: number; y?: number; z?: number; rotY?: number; lit?: boolean; font?: string }): THREE.Mesh {
+  const tex = makeTextTexture(text, { color: o.color ?? '#ffffff', background: o.background, font:o.font, width: 256, height: Math.round((256 * o.h) / o.w) });
   const geo = o.round ? new THREE.CircleGeometry(o.w / 2, 28) : new THREE.PlaneGeometry(o.w, o.h);
-  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: !o.background, polygonOffset: true, polygonOffsetFactor: -2 }));
+  const material = o.lit ? new THREE.MeshStandardMaterial({map:tex,transparent:!o.background,roughness:.96,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}) : new THREE.MeshBasicMaterial({ map: tex, transparent: !o.background, polygonOffset: true, polygonOffsetFactor: -2 });
+  const m = new THREE.Mesh(geo,material);
   m.position.set(o.x ?? 0, o.y ?? 0, o.z ?? 0);
   m.rotation.y = o.rotY ?? 0;
   m.userData.noShadow = true;

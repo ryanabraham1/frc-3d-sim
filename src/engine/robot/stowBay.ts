@@ -3,9 +3,10 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { GROUPS } from '../physics/world';
 import { GamePiecePool } from '../gamepiece/pool';
 import type { Robot } from './robot';
+import { clearFuelKeepouts, clearHopperChamfer, type HopperChamfer, type FuelKeepout } from './fuelKeepouts';
 
 /** Box (robot frame: x forward, y up, z right) a FUEL hopper holds its balls in. */
-export interface Cavity { min: THREE.Vector3; max: THREE.Vector3; open: boolean }
+export interface Cavity { min: THREE.Vector3; max: THREE.Vector3; open: boolean; keepouts?: readonly FuelKeepout[]; chamfer?:HopperChamfer }
 
 const WALL = 0.05; // half-thickness of each wall slab (outside the cavity)
 /** Intake roller pull speed (m/s) and the time after which a ball that never made it in is dropped straight inside. */
@@ -123,7 +124,9 @@ export class StowBay {
     const w = cav.max.x - cav.min.x - 2 * rc, l = cav.max.z - cav.min.z - 2 * rc;
     const perRow = Math.max(1, Math.floor(w / d) + 1), rows = Math.max(1, Math.floor(l / row) + 1);
     const perLayer = perRow * rows;
-    const slot = this.stowed.size;
+    let slot = 0, valid=0;
+    // Skip mechanism space while packing; never preload a ball inside the shooter.
+    for (;;) {
     const layer = Math.floor(slot / perLayer), k = slot % perLayer;
     const j = Math.floor(k / perRow), c = k % perRow;
     // Alternate row/layer offsets (A-B-A stacking); shifts are trimmed so every ball stays inside the walls.
@@ -133,6 +136,10 @@ export class StowBay {
       cav.min.y + this.floorLift + rc + layer * layerH,
       Math.min(cav.min.z + rc + j * row + shiftZ, cav.max.z - rc),
     );
+    const probe = this.v.clone();
+    if (!clearFuelKeepouts(probe, rc, cav.keepouts ?? []) && !clearHopperChamfer(probe,rc,cav.chamfer) && valid++===this.stowed.size) break;
+    slot++;
+    }
     this.place(i, this.v);
     this.stowed.add(i);
     this.pool.setStowed(i, GROUPS.stowed, this.ballScale);
@@ -399,7 +406,9 @@ export class StowBay {
       this.toLocal(body.translation(), p);
       const outX = Math.abs(p.x - cx) > hx + 0.01, outZ = Math.abs(p.z - cz) > hz + 0.01;
       const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + 0.01); // covered: the whole ball stays under the roof / net
-      if (!outX && !outZ && !outY) continue;
+      const clipped=clearHopperChamfer(p,rs,cav.chamfer);
+      const blocked = clearFuelKeepouts(p, rs, cav.keepouts ?? [], cav)||clipped;
+      if (!outX && !outZ && !outY && !blocked) continue;
       if (cav.open && (outX || outZ) && p.y > cav.max.y - r * 0.5) {
         this.stats.released++;
         this.stowed.delete(i);

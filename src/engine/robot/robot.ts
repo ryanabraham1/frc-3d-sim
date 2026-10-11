@@ -9,7 +9,7 @@ import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
 import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
-import { makeTextTexture } from '../render/text';
+import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 import type { ClimbGrip } from '../field/climbGrip';
 import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
@@ -259,7 +259,7 @@ export class Robot {
     const R = this.physics.R;
     const c = this.config;
     const m = c.mass;
-    const rw = 0.045;
+    const rw = .045;
     // Mass split sets the center of mass, which decides how easily the robot tips: about half the weight is
     // drivetrain + battery down at wheel level, ~15% bumpers, the rest spread through the superstructure
     // (CoM ≈ 6 in up on a 20 in robot, ≈ 8 in on a 30 in one). [EST]
@@ -403,7 +403,7 @@ export class Robot {
   private buildHopperNet(): void {
     if (!this.config.hopperExpansion || this.config.hopperExpansion.mechanism === 'telescoping') return;
     // Real crossed strands, anchored at the hopper rim, with a bowed flexible center.
-    const segments = 16, positions: number[] = [];
+    const segments = 24, positions: number[] = [];
     for (let axis = 0; axis < 2; axis++) for (let line = 0; line <= segments; line++) for (let step = 0; step < segments; step++) {
       for (const endpoint of [step, step + 1]) {
         // Clip two diagonal strand families to the rim: diamond openings stay open around protruding FUEL.
@@ -415,9 +415,11 @@ export class Robot {
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x25282d }));
+    this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x141516 }));
     this.hopperNet.name = 'stretching-hopper-net';
+    this.hopperNet.userData.segments = segments;
     this.hopperNet.userData.grid = positions;
+    this.hopperNet.userData.heights = new Float32Array(positions.length/3);
     // Sewn reinforcement cords give the flexible roof a readable silhouette against dark CAD and yellow FUEL.
     // Two soft seams follow the same contact surface; they never lift into a separate cage above the balls.
     const cords = new THREE.InstancedMesh(new THREE.CylinderGeometry(.002, .002, 1, 5),
@@ -469,7 +471,8 @@ export class Robot {
     }
     const area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
     // Imported sliding hoppers carry the roof anchors with the moving wall, including when stowed.
-    const cx = bin ? bin.x : area.cx, sx = bin ? bin.length / 2 : area.sx, sz = bin ? bin.width / 2 : area.sz;
+    const extension=this.visual.userData.netIntakeExtension;
+    const cx = bin ? bin.x : area.cx+(extension?.side??0)*(extension?.length??0)/2, sx = bin ? bin.length / 2 : area.sx+(extension?.length??0)/2, sz = bin ? bin.width / 2 : area.sz;
     // Uncovered FUEL rides up under the net; its tops are where the strands drape.
     const tops: { x: number; z: number; y: number }[] = [];
     // Drape over the current simulated pile, including articulated extension bins.
@@ -494,7 +497,10 @@ export class Robot {
     for (let i = 0; i < p.count; i++) {
       const x = grid[i * 3], z = grid[i * 3 + 2];
       const bow = Math.max(0, 1 - x ** 4) * Math.max(0, 1 - z ** 4);
-      const px = cx + x * sx, pz = z * sz;
+      let px = cx + x * sx, pz = z * sz;
+      const chamfer=this.visual.userData.hopperChamfer;
+      const clipped=chamfer && chamfer.fixedSide*px+Math.abs(pz)>chamfer.hx+chamfer.hz-chamfer.cut;
+      if(clipped)px=chamfer.fixedSide*(chamfer.hx+chamfer.hz-chamfer.cut-Math.abs(pz));
       // A slack net hangs lower than the balls it covers: it rests on their tops and drapes over each ball's curve
       // (smoothly blended, like cloth), sagging in the gaps between them.
       // Load count sets the allowed expansion, but only actual ball contacts lift the fabric. Between contacts the
@@ -517,19 +523,36 @@ export class Robot {
       // load look like a rigid bubble; tension above already carries each real contact into neighbouring strands.
       const maximum = Math.min(c.hopperExpansion?.fullHeight ?? c.height, c.height + extra);
       // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
+      if(clipped)y=c.height;
       y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
       // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
-      const previous = p.getY(i);
+      const heights=net.userData.heights as Float32Array;
+      const previous = heights[i];
       const shown = previous === 0 || dt <= 0 ? y : lerp(previous, y, 1 - Math.exp(-(y > previous ? 18 : 8) * Math.min(dt,.1)));
+      heights[i]=shown;
       p.setXYZ(i, px, shown, pz);
+    }
+    const openings = this.visual.userData.fuelKeepouts as {x:number;z:number;radius:number;bottom:number;top:number}[] | undefined;
+    if (openings) for (let i=0;i<p.count;i+=2) {
+      const ax=p.getX(i),az=p.getZ(i),bx=p.getX(i+1),bz=p.getZ(i+1);
+      for (const o of openings) {
+        if (o.top < c.height || o.bottom > c.height) continue;
+        const dx=bx-ax,dz=bz-az,t=THREE.MathUtils.clamp(((o.x-ax)*dx+(o.z-az)*dz)/(dx*dx+dz*dz||1),0,1);
+        if (Math.hypot(ax+t*dx-o.x,az+t*dz-o.z)>=o.radius) continue;
+        // Collapse segments intersecting the aperture; no fabric covers the moving turret.
+        const rimB=Math.abs(grid[(i+1)*3])===1||Math.abs(grid[(i+1)*3+2])===1;
+        if(rimB)p.setXYZ(i,bx,p.getY(i+1),bz);
+        else p.setXYZ(i+1,ax,p.getY(i),az);
+      }
     }
     p.needsUpdate = true; net.geometry.computeBoundingSphere();
     const cords = net.getObjectByName('stretching-hopper-cords') as THREE.InstancedMesh;
     const transform = new THREE.Object3D(), from = new THREE.Vector3(), to = new THREE.Vector3();
     const direction = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     let cord = 0;
-    for (const axis of [1]) for (const line of [3, 13]) for (let step = 0; step < 16; step++) {
-      const index = (axis * 17 * 16 + line * 16 + step) * 2;
+    const segments=net.userData.segments as number;
+    for (const axis of [1]) for (const line of [Math.round(segments*.2),Math.round(segments*.8)]) for (let step = 0; step < segments; step++) {
+      const index = (axis * (segments+1) * segments + line * segments + step) * 2;
       from.fromBufferAttribute(p, index); to.fromBufferAttribute(p, index + 1);
       direction.subVectors(to, from);
       const length = direction.length();
@@ -544,7 +567,7 @@ export class Robot {
   private buildVisual(scene: THREE.Scene): void {
     const c = this.config;
     const color = ALLIANCE_COLORS[this.alliance];
-    const bumperMat = new THREE.MeshStandardMaterial({ color, roughness: 0.92 });
+    const bumperMat = bumperFabric(color);
     const dark = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.5, roughness: 0.5 });
     const alu = new THREE.MeshStandardMaterial({ color: 0xa8adb5, metalness: 0.7, roughness: 0.35 });
     const bt = c.bumperThickness;
@@ -567,23 +590,20 @@ export class Robot {
     mk(L, bt, 0, W / 2 - bt / 2);
     mk(L, bt, 0, -W / 2 + bt / 2);
 
-    // Team numbers on both sides + back.
-    const numTex = makeTextTexture(String(c.teamNumber), { color: '#ffffff', width: 256, height: 96 });
-    const numMat = new THREE.MeshBasicMaterial({ map: numTex, transparent: true });
-    const numW = Math.min(L * 0.8, 0.5);
+    // Printed numbers use tight glyph bounds and the available straight bumper face.
     for (const side of [1, -1]) {
-      const n = new THREE.Mesh(new THREE.PlaneGeometry(numW, bh * 0.9), numMat);
+      const n = bumperNumber(c.teamNumber, bh, L * .8);
       n.position.set(0, by, side * (W / 2 + 0.002));
       n.rotation.y = side > 0 ? 0 : Math.PI;
       this.visual.add(n);
       this.addPart('bumpers', n);
     }
-    // Back number.
-    const back = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(W * 0.8, 0.5), bh * 0.9), numMat);
-    back.position.set(-L / 2 - 0.002, by, 0);
-    back.rotation.y = -Math.PI / 2;
-    this.visual.add(back);
-    this.addPart('bumpers', back);
+    for(const end of [-1,1]) {
+      const n=bumperNumber(c.teamNumber,bh,W*.8);
+      n.position.set(end*(L/2+.002),by,0);
+      n.rotation.y=end*Math.PI/2;
+      this.visual.add(n);this.addPart('bumpers',n);
+    }
 
     // Belly pan + frame rails.
     const pan = new THREE.Mesh(new THREE.BoxGeometry(c.frameLength, 0.02, c.frameWidth), dark);
@@ -633,7 +653,7 @@ export class Robot {
       }
     }
 
-    // Floor intake (orange) on the face opposite the scoring mechanism, funnel (station intake) on its own face.
+    // Floor intake (rubber) on the face opposite the scoring mechanism, funnel (station intake) on its own face.
     const groundVisible = c.intake.enabled && (c.intake.ground !== false || !!c.options?.algaeGround);
     if (groundVisible) this.buildGroundIntake(groundSideSign(c), dark);
     if (c.intake.enabled && c.intake.station) this.buildFunnel(stationSideSign(c), alu);
@@ -683,25 +703,21 @@ export class Robot {
     scene.add(this.visual);
   }
 
-  /**
-   * Orange intake assembly on chassis face `side` (+1 front, -1 back): a roller bar just outside the bumper, side
-   * arms back to the frame, a stripe along the bumper, an INTAKE label and a glowing patch on the carpet showing
-   * exactly where pieces get picked up. Orange is reserved for the intake so it reads at a glance from any camera.
-   */
+  /** Dark rubber rollers on the capture face; guide overlays remain optional. */
   private buildGroundIntake(side: 1 | -1, dark: THREE.Material): void {
     const c = this.config;
     const yaw=c.intake.groundYaw;
     const L = yaw===undefined?this.fp.length:Math.abs(Math.cos(yaw))*this.fp.length+Math.abs(Math.sin(yaw))*this.fp.width;
     const crossSpan=yaw===undefined?this.fp.width:Math.abs(Math.sin(yaw))*this.fp.length+Math.abs(Math.cos(yaw))*this.fp.width;
     const bt = c.bumperThickness;
-    const orange = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.55, emissive: 0xff5a00, emissiveIntensity: 0.25 });
+    const rubber = new THREE.MeshStandardMaterial({ color: 0x191d20, roughness: .92 });
     const w = Math.min(c.intake.width, crossSpan - 0.04);
     const edge = L / 2;
     const g = new THREE.Group();g.name='ground-intake-guide';
     if(yaw!==undefined)g.rotation.y=yaw-(side<0?Math.PI:0);
     // Roller bar (two stacked drums, like a real under-bumper roller pair).
     for (const [dx, dy] of [[0.035, 0.085], [0.0, 0.14]] as const) {
-      const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, w, 14), orange);
+      const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, w, 14), rubber);
       roller.rotation.x = Math.PI / 2;
       roller.position.set(side * (edge + dx), dy, 0);
       g.add(roller);
@@ -714,14 +730,10 @@ export class Robot {
       g.add(arm);
       this.addPart('intakeRollers', arm);
     }
-    // Stripe along the whole bumper face on this side.
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.03, crossSpan * 0.98), orange);
-    stripe.position.set(side * (edge + 0.002), c.bumperTop + 0.002, 0);
-    g.add(stripe);
     // Capture zone on the carpet (the same strip `groundMouthContains` tests).
     const zone = new THREE.Mesh(
       new THREE.PlaneGeometry(c.intake.reach, c.intake.width),
-      new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.28, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: 0xaab7c3, transparent: true, opacity: 0.28, depthWrite: false }),
     );
     zone.rotation.x = -Math.PI / 2;
     zone.position.set(side * (edge + c.intake.reach / 2), 0.006, 0);
@@ -738,7 +750,7 @@ export class Robot {
     chevShape.lineTo(-0.04, -0.06);
     chevShape.lineTo(-0.04, -0.1);
     const chevGeo = new THREE.ShapeGeometry(chevShape);
-    const chevMat = new THREE.MeshBasicMaterial({ color: 0xff7a1a, side: THREE.DoubleSide });
+    const chevMat = new THREE.MeshBasicMaterial({ color: 0xaab7c3, side: THREE.DoubleSide });
     for (let k = 0; k < 2; k++) {
       const chev = new THREE.Mesh(chevGeo, chevMat);
       chev.rotation.set(-Math.PI / 2, 0, side > 0 ? Math.PI : 0); // lies flat, tip toward the robot
@@ -885,7 +897,7 @@ export class Robot {
     }
     // Covered net loads use the same count-dependent roof as their drawn net and clearance collider.
     if (this.hopperNet) max.y = Math.min(max.y, this.clearanceHeight - .006);
-    return Number.isFinite(min.x) ? { min, max, open: this.openHopper } : null;
+    return Number.isFinite(min.x) ? { min, max, open: this.openHopper, keepouts: this.visual.userData.fuelKeepouts, chamfer:this.visual.userData.hopperChamfer } : null;
   }
 
   /** One conserved load across main and deployed extension bins. */
@@ -1303,9 +1315,11 @@ export class Robot {
   static readonly TIP_RECOVERY_S = 5;
   /** Shorter wait when the chassis is still roughly upright but every wheel is off the floor (high-centered on pieces or a ramp lip). */
   static readonly WEDGE_RECOVERY_S = 2;
+  /** REBUILT ramp contacts use surface-aligned traction and a tighter airborne tolerance. */
+  readonly slopeTractionColliders = new Set<number>();
   private static readonly WHEEL_RADIUS = 0.05;
   private readonly wheelShape: RAPIER.Shape;
-  private readonly wheelHits: { x: number; y: number; z: number; grip: number }[] = [];
+  private readonly wheelHits: { x: number; y: number; z: number; grip: number; nx: number; ny: number; nz: number; ramp:boolean }[] = [];
   private readonly q = new THREE.Quaternion();
 
   /** Vertical component of the chassis up axis: 1 = level, 0 = on its side, < 0 = upside down. */
@@ -1341,27 +1355,31 @@ export class Robot {
 
   /**
    * Which wheels touch something? Each wheel (a 5cm-radius sphere at its corner, following the chassis tilt)
-   * is swept 5cm down. A wheel on the field has full grip, one on a game piece `PIECE_GRIP`, one in the air
+   * is swept down to find the ground. A wheel on the field has full grip, one on a game piece `PIECE_GRIP`, one in the air
    * none — so a robot rocked up onto two wheels, beached on FUEL or airborne off a bump has the traction it
    * would really have.
    */
   private updateWheels(): void {
     const c = this.config;
-    const hx = c.frameLength / 2 - 0.06;
-    const hz = c.frameWidth / 2 - 0.06;
     const rw = Robot.WHEEL_RADIUS;
+    const hx = c.frameLength / 2 - .06;
+    const hz = c.frameWidth / 2 - .06;
     const r = this.body.rotation();
     this.wheelHits.length = 0;
     let grip = 0;
     let down = 0;
     for (const [a, b] of [[hx, hz], [hx, -hz], [-hx, hz], [-hx, -hz]]) {
       const w = this.localToWorld(a, rw, b, this.tmp);
-      const hit = this.physics.world.castShape(w, r, { x: 0, y: -1, z: 0 }, this.wheelShape, 0, 0.05, true, undefined, Robot.WHEEL_QUERY, undefined, this.body);
+      const hit = this.physics.world.castShape(w, r, { x: 0, y: -1, z: 0 }, this.wheelShape, 0, .05, true, undefined, Robot.WHEEL_QUERY, undefined, this.body);
       if (!hit) continue;
       const onField = ((hit.collider.collisionGroups() >>> 16) & Group.PIECE) === 0;
+      // Preserve the existing wheel contact tolerance; only actual BUMP surfaces redirect tread forces.
+      const ramp=this.slopeTractionColliders.has(hit.collider.handle);
       const g = onField ? 1 : Robot.PIECE_GRIP;
       const p = hit.witness1;
-      this.wheelHits.push({ x: p.x, y: p.y, z: p.z, grip: g });
+      const n = hit.normal1;
+      // World.castShape returns the hit surface normal in world coordinates.
+      this.wheelHits.push({ x: p.x, y: p.y, z: p.z, grip: g, nx: n.x, ny: n.y, nz: n.z, ramp });
       grip += g;
       if (onField) down++;
     }
@@ -1489,7 +1507,17 @@ export class Robot {
       const roll = ps > 1e-4 && h.grip === 1 ? Math.min(ROLLING_RESISTANCE * load, (m * ps) / (this.wheelHits.length * dt)) / ps : 0;
       // Wheel force acts where the tread meets the ground (below the center of mass): hard acceleration or
       // shoving pitches the chassis, and only wheels that touch something can push.
-      this.body.applyImpulseAtPoint({ x: (this.force.x - pv.x * roll) * dt, y: 0, z: (this.force.z - pv.z * roll) * dt }, p, true);
+      let wx = this.force.x - pv.x * roll, wz = this.force.z - pv.z * roll, wy = 0;
+      // Tread pushes along the contact surface. A horizontal impulse on a ramp drives into the face and makes
+      // climbing/cresting unnaturally abrupt. Preserve the motor/friction budget in three dimensions; no upward
+      // assist when airborne, resting on a rolling piece, or hitting a vertical obstacle.
+      if (h.ramp && h.grip === 1 && h.ny > .5 && h.ny < .999) {
+        wy = -(wx * h.nx + wz * h.nz) / h.ny;
+        const horizontal = Math.hypot(wx, wz), tangent = Math.hypot(wx, wy, wz);
+        const scale = tangent > 1e-9 ? horizontal / tangent : 1;
+        wx *= scale; wy *= scale; wz *= scale;
+      }
+      this.body.applyImpulseAtPoint({ x: wx * dt, y: wy * dt, z: wz * dt }, p, true);
     }
     const nv = this.body.linvel();
     this.driven = { x: nv.x, z: nv.z, w: this.body.angvel().y };

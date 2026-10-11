@@ -223,19 +223,29 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   let live: import('./robotPreview').LivePreview | null = null;
   let liveKey = '';
   let thumbObserver: IntersectionObserver | null = null;
+  let pickerPreviews: {dispose():void} | null = null;
   /** Fill the picker thumbnails and the live 3D preview of the selected robot (lazy: loads three/Rapier on first use). */
   const mountPreviews = () => {
+    pickerPreviews?.dispose();pickerPreviews=null;
+    thumbObserver?.disconnect();
     const host = el.querySelector<HTMLElement>('[data-live]');
     const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img[data-thumb]'));
     if (!host && !imgs.length) return;
     void import('./robotPreview').then((m) => {
       if (!el.isConnected) return;
+      if (host && !host.isConnected) return;
       if (host) {
         const key = `${season.id}|${s.alliance}|${JSON.stringify(s.robot)}`;
         if (!live || !liveKey.startsWith(season.id + '|')) { live?.dispose(); live = m.createLivePreview(season, s.robot, s.alliance); liveKey = ''; }
         if (key !== liveKey) { live.set(s.robot, s.alliance); liveKey = key; }
         live.attach(host);
       }
+      const cards=imgs.flatMap(img=>{
+        const card=img.closest<HTMLElement>('.team-thumb');
+        const robot=season.teamRobots?.find(robot=>robot.id===img.dataset.thumb);
+        return card&&robot&&img.isConnected?[{host:card,config:robot.config,alliance:s.alliance}]:[];
+      });
+      if(cards.length&&typeof IntersectionObserver!=='undefined')pickerPreviews=m.createRotatingPreviews(season,cards);
       // Only fetch/render the cards that are on (or near) the screen, in the order they scroll into view: the CAD
       // files are several MB each, so loading every robot up front made the whole picker crawl.
       thumbObserver?.disconnect();
@@ -394,34 +404,35 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const resume = act && act.page !== 'home'
       ? `<div class="resume"><span class="mp-dot on"></span><div><b>You're in ${esc(act.detail)}</b><span>Your spot is saved while you look around.</span></div><button class="bbtn primary" data-page="${act.page}">Return</button></div>`
       : '';
-    const mode = (cls: string, ic: string, title: string, desc: string, tags: string[], cta: string, target: Page, extra = '') =>
-      `<article class="mode-card ${cls}">
-        <div class="mode-ic">${ic}</div>
-        <h2>${title}</h2>
-        <p>${desc}</p>
-        <div class="mode-tags">${tags.map((x) => `<span>${x}</span>`).join('')}</div>
-        <div class="mode-actions"><button class="bbtn primary" data-page="${target}">${cta}</button>${extra}</div>
-      </article>`;
-    const help = (season.controlsHelp ?? DEFAULT_CONTROLS_HELP).slice(0, 5);
+    const r=s.robot;
     return `
       <div class="home">
         ${resume}
-        <div class="home-lead"><h1>Choose how you want to play</h1><p>${esc(seasonLabel(season))} · ${formatClock(matchLength())} match. New here? Start with <b>Solo</b>: it works instantly, no account or friends needed.</p></div>
-        <div class="mode-grid">
-          ${mode('solo', icon.gamepad(26), 'Solo', 'Drive a full match against AI. Play 3 v 3 with AI teammates, or practice alone with the field to yourself.', ['3 v 3 with AI', 'Solo practice', 'Choose your AUTO'], 'Set up &amp; play', 'solo', `<button class="link" data-k="quick" title="Start with your last settings">Quick start ▸</button>`)}
-          ${mode('online', icon.users(26), 'Online', 'Play with friends or strangers. Quick play, browse public lobbies, or share a 4-letter code. Bots fill empty stations.', ['Up to 6 drivers', 'Public &amp; private rooms', 'Chat'], 'Play online', 'multiplayer')}
-          ${mode('ranked', icon.flag(26), 'Ranked', 'Rated matches with a ban/pick robot draft, a rank ladder and a yearly leaderboard.', ['1v1 · 2v2 · 3v3', 'Robot draft', 'Leaderboard'], 'Play ranked', 'ranked')}
-        </div>
-        ${robotStrip(true)}
-        <div class="learn-grid">
-          <section class="panel learn">
-            <div class="panel-head"><span>Basic controls</span><button class="link" data-page="controls">All controls &amp; rebinding</button></div>
-            <div class="learn-keys">${help.map(([k, v]) => `<div><kbd>${esc(k)}</kbd><span>${esc(v)}</span></div>`).join('')}</div>
-          </section>
-          <section class="panel learn">
-            <div class="panel-head"><span>${esc(season.name)} rules</span><button class="link" data-page="rules">Match timeline &amp; key rules</button></div>
-            <p class="learn-sum">${esc(season.summary)}</p>
-          </section>
+        <section class="home-stage">
+          <div class="home-intro">
+            <h1>${esc(season.name)}</h1>
+            <div class="home-start">
+              <button class="bbtn primary" data-page="solo">${icon.gamepad(22)} Play solo</button>
+              <button class="link" data-k="quick" title="Start with your last settings">Quick start ↗</button>
+            </div>
+            <div class="home-other-modes">
+              <button data-page="multiplayer">${icon.users(20)}<span><b>Play online</b><small>Join friends or find a room</small></span><i>↗</i></button>
+              <button data-page="ranked">${icon.flag(20)}<span><b>Play ranked</b><small>Robot draft · rated matches</small></span><i>↗</i></button>
+            </div>
+          </div>
+          <div class="home-showcase">
+            <div class="home-robot-view" data-live aria-label="Rotating preview of your selected robot"></div>
+            <div class="home-robot-caption">
+              <div><span>Your robot · Team ${r.teamNumber}</span><h2>${esc(robotName())}</h2></div>
+              <button class="bbtn" data-page="garage">${icon.sliders(18)} Change robot</button>
+            </div>
+            <div class="home-robot-specs"><span>${toInch(r.frameLength).toFixed(0)} × ${toInch(r.frameWidth).toFixed(0)} in</span><span>${(r.maxSpeed / FT).toFixed(1)} ft/s</span>${season.robotSummary?.(r) ? `<span>${esc(season.robotSummary(r)!)}</span>` : ''}</div>
+          </div>
+        </section>
+        <div class="home-guide">
+          <span>First time driving?</span>
+          <button class="link" data-page="controls">Controls &amp; key bindings ↗</button>
+          <button class="link" data-page="rules">${esc(season.name)} rules ↗</button>
         </div>
       </div>`;
   };
@@ -611,6 +622,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     save(s);
     document.removeEventListener('keydown', onKey);
     live?.dispose();
+    pickerPreviews?.dispose();
+    thumbObserver?.disconnect();
     el.remove();
     onStart(s);
   };

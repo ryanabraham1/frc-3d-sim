@@ -96,6 +96,7 @@ export const rebuilt2026: SeasonDefinition = {
 
   buildField(ctx) {
     fieldRefs = buildRebuiltField(ctx.builder);
+    for(const robot of ctx.robots)for(const handle of fieldRefs.bumpColliders)robot.slopeTractionColliders.add(handle);
   },
   createRules(ctx) {
     if (!fieldRefs) throw new Error('buildField must run before createRules');

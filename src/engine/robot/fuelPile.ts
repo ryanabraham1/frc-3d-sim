@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import type { RobotAnimState } from './models';
+import {clearFuelKeepouts,type FuelKeepout} from './fuelKeepouts';
 
 export interface FuelBin {
   x: number; y0: number; length: number; width: number; height: number;
   inside?: (x: number, z: number) => boolean;
+  keepouts?:readonly FuelKeepout[];
   ceiling?: (x: number, z: number) => number;
 }
 export interface FuelSeed { x: number; y: number; z: number; s: number; sy?: number }
@@ -20,6 +22,7 @@ export class FuelPile {
   private readonly before: Float32Array;
   private readonly contactRadius: Float32Array;
   private readonly netted: boolean;
+  private readonly confinedPoint=new THREE.Vector3();
   /** Where intaken balls were handed over (robot frame), with the pile clock at the time. */
   private readonly arrivals: { p: THREE.Vector3; t: number }[] = [];
   private clock = 0;
@@ -247,6 +250,12 @@ export class FuelPile {
     if (!overLip && b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
     const floor = b.y0 + ry, roof = Math.min(b.y0 + b.height, b.ceiling?.(p[j], p[j + 2]) ?? Infinity) - ry;
     if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.85; v[j + 2] *= 0.85; }
+    if(b.keepouts) {
+      this.confinedPoint.set(p[j],p[j+1],p[j+2]);
+      if(clearFuelKeepouts(this.confinedPoint,r,b.keepouts)) {
+        p[j]=this.confinedPoint.x;p[j+2]=this.confinedPoint.z;v[j]*=-.08;v[j+2]*=-.08;
+      }
+    }
     // Uncovered bins have no lid: only the rim (see releaseOverRim) ends a ball's climb.
     if (!this.open && p[j + 1] > roof) { p[j + 1] = roof; v[j + 1] = Math.min(0, -v[j + 1] * 0.06); }
   }
