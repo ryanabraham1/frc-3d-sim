@@ -1117,6 +1117,10 @@ export class Game {
     const p = this.player;
     if (p && p.tippedTime > 0.5 && !this.tipNotified) {
       this.tipNotified = true;
+      if (!p.tippedOver) {
+        const t = p.body.translation();
+        console.info('[wedge] upright robot lost all wheel contact', { x: +t.x.toFixed(2), y: +t.y.toFixed(3), z: +t.z.toFixed(2), up: +p.uprightness.toFixed(2), speed: +p.speed.toFixed(2), wheelsDown: p.wheelsDown, traction: p.traction, held: p.held.length, role: this.role });
+      }
       this.hud.toast(`Robot ${p.tippedOver ? 'tipped over' : 'stuck off its wheels'} — back on its wheels in ${Math.ceil(p.rightingIn)} s`, 'warn');
     } else if (p && p.tippedTime === 0) this.tipNotified = false;
     const link = this.net?.client.reconnecting ? 'Reconnecting…' :

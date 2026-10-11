@@ -1293,6 +1293,8 @@ export class Robot {
   static readonly TIPPED_UP_Y = Math.cos((60 * Math.PI) / 180);
   /** Seconds a tipped-over robot lies there before it is set back on its wheels (sim rule, not the manual). */
   static readonly TIP_RECOVERY_S = 5;
+  /** Shorter wait when the chassis is still roughly upright but every wheel is off the floor (high-centered on pieces or a ramp lip). */
+  static readonly WEDGE_RECOVERY_S = 2;
   private static readonly WHEEL_RADIUS = 0.05;
   private readonly wheelShape: RAPIER.Shape;
   private readonly wheelHits: { x: number; y: number; z: number; grip: number }[] = [];
@@ -1311,7 +1313,11 @@ export class Robot {
 
   /** Seconds until a tipped-over (or wedged) robot is set back on its wheels (0 while fine). */
   get rightingIn(): number {
-    return this.tippedTime > 0 ? Math.max(0, Robot.TIP_RECOVERY_S - this.tippedTime) : 0;
+    return this.tippedTime > 0 ? Math.max(0, this.recoveryS - this.tippedTime) : 0;
+  }
+
+  private get recoveryS(): number {
+    return this.tippedOver ? Robot.TIP_RECOVERY_S : Robot.WEDGE_RECOVERY_S;
   }
 
   /** World position of a point in the chassis frame (x forward, y up, z = robot right; origin = floor, center). */
@@ -1327,7 +1333,7 @@ export class Robot {
 
   /**
    * Which wheels touch something? Each wheel (a 5cm-radius sphere at its corner, following the chassis tilt)
-   * is swept 3cm down. A wheel on the field has full grip, one on a game piece `PIECE_GRIP`, one in the air
+   * is swept 5cm down. A wheel on the field has full grip, one on a game piece `PIECE_GRIP`, one in the air
    * none — so a robot rocked up onto two wheels, beached on FUEL or airborne off a bump has the traction it
    * would really have.
    */
@@ -1342,7 +1348,7 @@ export class Robot {
     let down = 0;
     for (const [a, b] of [[hx, hz], [hx, -hz], [-hx, hz], [-hx, -hz]]) {
       const w = this.localToWorld(a, rw, b, this.tmp);
-      const hit = this.physics.world.castShape(w, r, { x: 0, y: -1, z: 0 }, this.wheelShape, 0, 0.03, true, undefined, Robot.WHEEL_QUERY, undefined, this.body);
+      const hit = this.physics.world.castShape(w, r, { x: 0, y: -1, z: 0 }, this.wheelShape, 0, 0.05, true, undefined, Robot.WHEEL_QUERY, undefined, this.body);
       if (!hit) continue;
       const onField = ((hit.collider.collisionGroups() >>> 16) & Group.PIECE) === 0;
       const g = onField ? 1 : Robot.PIECE_GRIP;
@@ -1492,7 +1498,7 @@ export class Robot {
       return;
     }
     this.tippedTime += dt;
-    if (this.tippedTime >= Robot.TIP_RECOVERY_S) this.setUpright();
+    if (this.tippedTime >= this.recoveryS) this.setUpright();
   }
 
   /**
