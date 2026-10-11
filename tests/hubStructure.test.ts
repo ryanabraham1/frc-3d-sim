@@ -36,6 +36,12 @@ it('leaves the lower side frames open while retaining the upper rear nets on bot
     const half = C.HUB_SIZE / 2 + 3 * 0.0254;
     const rearX = C.HUB_CENTER.x + forward * (C.HUB_SIZE / 2 + 0.0254 - 0.1);
     for (const side of [-1, 1]) {
+      const pole = b.root.getObjectByName(`hub-${alliance}-net-inclined-pole-${side}`) as THREE.Mesh<THREE.CylinderGeometry>;
+      pole.updateWorldMatrix(true, false);
+      const foot = frame.toField(pole.localToWorld(new THREE.Vector3(0, -pole.geometry.parameters.height / 2, 0)));
+      // A front-corner attachment incorrectly stretches the frame over the
+      // entire hub. Both alliances must leave the front quarter exposed.
+      expect((foot.x - C.HUB_CENTER.x) * forward).toBeCloseTo(-C.HUB_SIZE / 4, 5);
       const hitAt = (height: number) => {
         const origin = frame.toWorld(rearX, C.HUB_CENTER.y + side * (half + 0.2), height);
         return physics.world.castRay(new RAPIER.Ray(origin, frame.velToWorld(0, -side, 0)), 0.3, true, undefined, GROUPS.piece);

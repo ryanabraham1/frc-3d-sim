@@ -58,7 +58,9 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
 
   const half = C.HUB_SIZE / 2 + inch(3);
   const rear = C.HUB_SIZE / 2 + inch(1);
-  const front = -C.HUB_SIZE / 2;
+  // [EST, Game Manual Fig. 5-7 / field photo] The inclined poles attach
+  // about a quarter of the way along the side, not at the front corners.
+  const front = -C.HUB_SIZE / 4;
   const footZ = baseZ - inch(5);
   const topZ = rimZ + C.HUB_NET_HEIGHT;
   // Game Manual TU22, Figs. 5-5 and 5-7: the net hangs at the upper
@@ -86,7 +88,7 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
       const x = slopeX(z);
       cord(point(x, y, z), point(rear, y, z));
     }
-    b.cylinder(point(front, y, footZ), point(rear, y, topZ), inch(0.65), pole, 10);
+    b.cylinder(point(front, y, footZ), point(rear, y, topZ), inch(0.65), { ...pole, name: `hub-${alliance}-net-inclined-pole-${side}` }, 10);
     b.cylinder(point(rear, y, footZ), point(rear, y, topZ), inch(0.65), pole, 10);
     b.cylinder(point(front, y, footZ), point(rear, y, footZ), inch(0.5), pole, 10);
   }
