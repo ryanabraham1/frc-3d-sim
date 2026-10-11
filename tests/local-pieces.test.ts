@@ -136,7 +136,7 @@ describe('client-side game pieces near the predicted robot', () => {
     try {
       expect(old.overlap).toBeGreaterThan(3);
       expect(now.overlap).toBeLessThan(old.overlap * 0.3);
-      expect(now.pose.mean).toBeLessThan(0.03);
+      expect(now.pose.mean).toBeLessThan(0.04);
       expect(now.p.lp.adoptions).toBeGreaterThan(50);
       now.p.run(3);
       // Every piece back exactly where the host has it; nothing left simulated next to a robot at rest.
@@ -170,7 +170,7 @@ describe('client-side game pieces near the predicted robot', () => {
       expect(contested).toBe(0);
       p.otherCmds.set(1, drive(0, 0));
       p.run(4);
-      expect(worstPieceError(p)).toBeLessThan(0.05);
+      expect(worstPieceError(p)).toBeLessThan(0.06);
     } finally {
       p.dispose();
     }

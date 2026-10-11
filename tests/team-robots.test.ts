@@ -6,6 +6,7 @@ import { HeadlessSim } from '../src/engine/testing/headless';
 import { runShotTrial } from '../src/engine/testing/shotHarness';
 import { cloneConfig } from '../src/engine/robot/config';
 import { hasRobotModel } from '../src/engine/robot/models';
+import { FREE_SPEED_RATIO } from '../src/engine/robot/drivetrain';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import { decodeSnapshot, encodeSnapshot } from '../src/engine/net/protocol';
 
@@ -59,7 +60,7 @@ describe('real team robots', () => {
     const y26 = SEASONS.find((s) => s.id === '2026-rebuilt')!.id;
     expect(team(y24, 'vortex-254').launcher.turret).toBe(true);
     expect(team(y24, 'doppler-1690').height).toBeLessThan(0.3); // 11 in
-    expect(team(y24, 'doppler-1690').maxSpeed).toBeCloseTo(5.6);
+    expect(team(y24, 'doppler-1690').maxSpeed).toBeCloseTo(5.6 / FREE_SPEED_RATIO); // quoted as free speed
     expect(team(y25, 'spectre-2910').climber.secondsToClimb).toBeCloseTo(1.5);
     expect(team(y25, 'undertow-254').intake.ground && team(y25, 'undertow-254').intake.station).toBe(true);
     const rip = team(y26, 'ripcurrent-4414');

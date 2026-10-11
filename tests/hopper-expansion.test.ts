@@ -25,6 +25,7 @@ for (const team of [254,4414]) it(`${team}: expanded net physically blocks a ful
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: start }); sims.push(sim);
   const r = sim.robot, threshold = c.hopperExpansion!.startCount;
   expect(loadedRobotHeight(c, threshold)).toBeLessThan(C.TRENCH_CLEARANCE);
+  const mass = r.body.mass(); // empty: the carried load only weighs on the chassis from the next physics step
   r.syncVisual(0.05);
   sim.load(c.hopperCapacity);
   const net = r.visual.getObjectByName(team === 1678 ? 'telescoping-hopper-net' : 'stretching-hopper-net') as THREE.LineSegments;
@@ -45,7 +46,6 @@ for (const team of [254,4414]) it(`${team}: expanded net physically blocks a ful
   let maxY = 0; for (let i = 0; i < p.count; i++) maxY = Math.max(maxY,p.getY(i));
   expect(maxY).toBeGreaterThan(C.TRENCH_CLEARANCE);
   expect(r.clearanceHeight).toBeGreaterThan(C.TRENCH_CLEARANCE);
-  const mass = r.body.mass();
   sim.run(2.5, { ...IDLE_COMMAND, vx: 2 });
   expect(r.pose.x).toBeLessThan(C.HUB_CENTER.x + C.TRENCH_DEPTH / 2);
   // Emptying lowers the collision envelope and allows the same robot through.
@@ -53,6 +53,7 @@ for (const team of [254,4414]) it(`${team}: expanded net physically blocks a ful
   for (let k = 0; k < 60; k++) r.syncVisual(0.05);
   expect(r.clearanceHeight).toBe(c.height);
   if(team === 1678) expect(r.visual.getObjectByName('telescoping-hopper-roof')!.position.y).toBe(0);
+  sim.run(0.1, IDLE_COMMAND);
   expect(r.body.mass()).toBeCloseTo(mass, 3);
   sim.run(3, { ...IDLE_COMMAND, vx: 2 });
   expect(r.pose.x).toBeGreaterThan(C.HUB_CENTER.x + C.TRENCH_DEPTH / 2 + 0.5);

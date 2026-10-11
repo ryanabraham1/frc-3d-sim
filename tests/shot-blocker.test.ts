@@ -87,6 +87,7 @@ it('a raised shot blocker catches the TRENCH arm; lowered, the robot drives thro
     const c = team(1323);
     const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: hubX - 2.5, y, yaw: 0 } }); sims.push(sim);
     sim.run(0.6, { ...IDLE_COMMAND, block });
+    const deployed = sim.robot.blockerDeploy;
     // Front first: the blocker trails over the intake side and catches the arm's near face.
     let maxTilt = 0;
     sim.run(4, { ...IDLE_COMMAND, block, vx: c.maxSpeed }, () => {
@@ -94,10 +95,11 @@ it('a raised shot blocker catches the TRENCH arm; lowered, the robot drives thro
       maxTilt = Math.max(maxTilt, Math.acos(Math.min(1, 1 - 2 * (q.x * q.x + q.z * q.z))));
       return false;
     });
-    return { robot: sim.robot, maxTilt };
+    return { robot: sim.robot, maxTilt, deployed };
   };
   const up = drive(true);
-  expect(up.robot.blockerDeploy).toBe(1);
+  // Raised going in (a hard hit may tip the robot, which drops the blocker afterwards).
+  expect(up.deployed).toBe(1);
   // The arm is a 6in tube [Figure 5-10], not a ceiling: the sloped panel wedges under it, so the robot either stops
   // against it or is levered into a hard wheelie. It never passes level.
   expect(up.robot.pose.x < hubX || up.maxTilt > (30 * Math.PI) / 180).toBe(true);
