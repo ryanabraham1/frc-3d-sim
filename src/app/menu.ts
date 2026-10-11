@@ -1,4 +1,5 @@
 import type { CameraMode } from '@engine/camera/cameras';
+import { setSoundMuted, soundMuted } from '@engine/audio/sfx';
 import { detectTier, qualityPref, setQualityPref, type QualityPref } from '@engine/core/quality';
 import { normalizeSkill, seasonLabel, type GameSettings, type SeasonDefinition } from '@engine/core/season';
 import { DEFAULT_CONTROLS_HELP } from '@engine/input/input';
@@ -20,11 +21,11 @@ const LBF = 4.4482216;
 const STORAGE_KEY = 'frc-sim-settings-v1';
 const FT = 0.3048;
 
-type Page = 'home' | 'solo' | 'garage' | 'controls' | 'rules' | 'multiplayer' | 'ranked';
+type Page = 'home' | 'solo' | 'garage' | 'controls' | 'rules' | 'settings' | 'multiplayer' | 'ranked';
 type PlayTab = 'match' | 'ai';
 /** Pages that are reached from another page and return to it (Garage from the lobby goes back to the lobby). */
-const SIDE_PAGES: Page[] = ['garage', 'controls', 'rules'];
-const PAGE_LABEL: Record<Page, string> = { home: 'home', solo: 'solo setup', garage: 'the garage', controls: 'controls', rules: 'rules', multiplayer: 'the lobby', ranked: 'ranked' };
+const SIDE_PAGES: Page[] = ['garage', 'controls', 'rules', 'settings'];
+const PAGE_LABEL: Record<Page, string> = { home: 'home', solo: 'solo setup', garage: 'the garage', controls: 'controls', rules: 'rules', settings: 'settings', multiplayer: 'the lobby', ranked: 'ranked' };
 
 function load(): Partial<GameSettings> | null {
   try {
@@ -208,6 +209,15 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   /** Asking before a solo match drops the room the player is in. */
   let leavePrompt = false;
   let playTab: PlayTab = 'match';
+  /** Garage robot search text, and the last few real robots picked (kept per device). */
+  let teamQuery = '';
+  const RECENT_KEY = 'frc-sim:recent-robots';
+  const recentTeams = (): string[] => {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as string[]; } catch { return []; }
+  };
+  const pushRecent = (id: string) => {
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify([id, ...recentTeams().filter((x) => x !== id)].slice(0, 4))); } catch { /* not persisted */ }
+  };
   /** Robot preview images already rendered (seasonId|robot id|alliance → data URL), so re-renders don't flash. */
   const thumbUrls = new Map<string, string>();
   let live: import('./robotPreview').LivePreview | null = null;
@@ -482,14 +492,18 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const cardBars = (cfg: RobotConfig) => [speedBar(cfg), ...(season.robotCardBars?.(cfg) ?? season.robotSpecBars?.(cfg)?.slice(0, 3) ?? [])];
     const miniBar = (b: { label: string; value: string; frac: number }) =>
       `<div class="mini-bar"><span>${esc(b.label)}</span><i><u style="width:${Math.round(Math.min(1, Math.max(0, b.frac)) * 100)}%"></u></i><b>${esc(b.value)}</b></div>`;
+    const recentChips = () => {
+      const r = recentTeams().map((id) => teams.find((t) => t.id === id)).filter((t): t is (typeof teams)[number] => !!t);
+      return r.length ? `<div class="team-recent"><span>Recent</span>${r.map((t) => `<button class="chip-btn ${t === team ? 'on' : ''}" data-team-robot="${t.id}">${t.team} ${esc(t.name)}</button>`).join('')}</div>` : '';
+    };
     const teamCard = (t: (typeof teams)[number]) =>
-      `<button class="team-card ${t === team ? 'on' : ''}" data-team-robot="${t.id}" title="${esc(t.description)}">
+      `<button class="team-card ${t === team ? 'on' : ''}" data-team-robot="${t.id}" data-search="${esc(`${t.team} ${t.name} ${t.description}`.toLowerCase())}" title="${esc(t.description)}">
         <span class="team-thumb"><img alt="" data-thumb="${t.id}" ${thumbUrls.get(`${season.id}|${t.id}|${s.alliance}`) ? `src="${thumbUrls.get(`${season.id}|${t.id}|${s.alliance}`)}"` : ''} /></span>
         <span class="team-name"><b>${t.team}</b> ${esc(t.name)}</span>
         <span class="mini-bars">${cardBars(t.config).map(miniBar).join('')}</span>
       </button>`;
     const teamPicker = teams.length
-      ? `<div class="config-presets"><div class="group"><div class="label">Play as a real robot</div><div class="team-grid">${teams.map(teamCard).join('')}</div><div class="hint">${esc(team ? `${team.description} Source: ${team.source}.` : `Top ${season.year} robots, simplified and animated. Capabilities come from their Chief Delphi reveals and tech binders; stats not published by the team are estimates.`)}</div></div></div>`
+      ? `<div class="config-presets"><div class="group"><div class="label">Play as a real robot</div>${teams.length > 4 ? `<input class="team-search" type="search" data-team-search placeholder="Search ${teams.length} robots by team number or name" aria-label="Search robots" value="${esc(teamQuery)}" />` : ''}${recentChips()}<div class="team-grid">${teams.map(teamCard).join('')}</div><div class="team-empty" data-team-empty hidden>No robots match.</div><div class="hint">${esc(team ? `${team.description} Source: ${team.source}.` : `Top ${season.year} robots, simplified and animated. Capabilities come from their Chief Delphi reveals and tech binders; stats not published by the team are estimates.`)}</div></div></div>`
       : '';
     const profiles = presets.length
       ? `<div class="config-presets">${group('Robot archetype', `<div class="seg">${presets.map((p) => opt(`data-preset="${p.id}" title="${esc(p.description)}"`, p.label, p === current)).join('')}</div>`, current ? current.description : team ? `Playing as ${team.team} ${team.name} — changing a mechanism below turns it into a custom build.` : 'Custom build — pick an archetype to start from, then change mechanisms below.')}</div>`
@@ -529,6 +543,20 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   let capturing: { id: ActionId; slot: number } | null = null;
   let bindNote = '';
   const labelOf = (id: ActionId) => ACTIONS.find((a) => a.id === id)!.label;
+
+  /** Every preference that outlives a match, on one page. Match-specific choices (alliance, start spot) stay in Solo setup. */
+  const settingsPage = () => `
+    <section class="panel settings">
+      <div class="panel-head"><span>Preferences</span><button class="link" data-k="resetPrefs">${icon.reset(13)} Reset to defaults</button></div>
+      <div class="settings-grid">
+        ${group('Sound', `<div class="seg">${opt('data-sound="on"', 'On', !soundMuted())}${opt('data-sound="off"', 'Off', soundMuted())}</div>`, 'Match start, period change, endgame and buzzer cues.')}
+        ${group('Graphics quality', `<div class="seg">${(['auto', 'low', 'medium', 'high'] as const).map((q) => opt(`data-quality="${q}"`, q[0].toUpperCase() + q.slice(1), qualityPref() === q)).join('')}</div>`, `Auto picked ${detectTier()} for this device. Lower settings simulate less (hoppers) and draw less; applies to the next match.`)}
+        ${group('Shadows', `<div class="seg">${opt('data-toggle="shadows"', s.shadows ? 'On' : 'Off', s.shadows)}</div>`, 'Turn off for a smoother frame rate on slower devices.')}
+        ${group('Default camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, 'Press V in a match to switch.', 'wide')}
+        ${group('Driving aids', `<div class="seg">${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}</div>`, 'None of these change scoring.', 'wide')}
+        ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate during 3 v 3.', 'wide')}
+      </div>
+    </section>`;
 
   const controlsPage = () => {
     const groups = [...new Set(ACTIONS.map((a) => a.group))];
@@ -627,6 +655,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       garage: { h1: 'Garage', sub: 'Build the robot you drive.' },
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
       rules: { h1: `${season.name} rules`, sub: season.summary },
+      settings: { h1: 'Settings', sub: 'Sound, graphics and practice options in one place. Saved on this device.' },
       multiplayer: { h1: 'Online', sub: lobby?.lobby ? '' : 'Join a lobby, host your own, or watch a live match.' },
       ranked: { h1: 'Online', sub: lobby?.lobby ? '' : 'Rated matches with a robot draft.' },
     };
@@ -650,7 +679,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       ? `<div class="subtabs" role="tablist">${([['multiplayer', 'Lobbies'], ['ranked', 'Ranked']] as [Page, string][]).map(([id, label]) => `<button class="subtab ${page === id ? 'on' : ''}" role="tab" aria-selected="${page === id}" data-page="${id}">${label}</button>`).join('')}</div>`
       : '';
     const modeNav = nav('home', 'Home') + nav('solo', 'Solo') + (lobby ? navOnline : '') + nav('garage', 'Garage');
-    const backLabel = `Back to ${page === 'garage' || page === 'controls' || page === 'rules' ? PAGE_LABEL[backTo === 'multiplayer' && act?.page !== 'multiplayer' ? 'home' : backTo] : 'home'}`;
+    const backLabel = `Back to ${SIDE_PAGES.includes(page) ? PAGE_LABEL[backTo === 'multiplayer' && act?.page !== 'multiplayer' ? 'home' : backTo] : 'home'}`;
     const footer = mp
       ? mp.footer
       : page === 'home'
@@ -664,13 +693,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       <header class="topbar">
         <button class="brand" data-page="home" ${locked ? 'disabled' : ''} aria-label="FRC Sim home">FRC Sim</button><span class="brand-sep"></span>
         <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch || lobby.lobby.ranked) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${esc(seasonLabel(x))}</option>`).join('')}</select></label>
-        <nav class="nav" aria-label="Main">${modeNav}<span class="nav-sep"></span>${nav('controls', 'Controls')}${nav('rules', 'Rules')}</nav>
+        <nav class="nav" aria-label="Main">${modeNav}<span class="nav-sep"></span>${nav('controls', 'Controls')}${nav('rules', 'Rules')}${nav('settings', 'Settings')}</nav>
         ${act && act.page !== page ? `<button class="live-chip" data-page="${act.page}"><span class="mp-dot on"></span>${esc(act.label)}</button>` : ''}
         <button class="team-chip" data-page="garage" ${locked ? 'disabled' : ''} title="Change your robot in the Garage"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i><span>Team ${s.robot.teamNumber}<small>${esc(robotName())}</small></span></button>
       </header>
       <main class="main ${page === 'home' ? 'is-home' : ''}">
         ${page === 'home' ? '' : `<div class="titlebar"><h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>${page === 'solo' ? (s.aiOpponents !== false ? playTabs : '') : onlineTabs}</div>`}
-        ${mp ? mp.body : page === 'home' ? homePage() : page === 'solo' ? soloPage() : page === 'garage' ? garagePage() : page === 'controls' ? controlsPage() : rulesPage()}
+        ${mp ? mp.body : page === 'home' ? homePage() : page === 'solo' ? soloPage() : page === 'garage' ? garagePage() : page === 'controls' ? controlsPage() : page === 'settings' ? settingsPage() : rulesPage()}
       </main>
       ${footer ? `<footer class="bar-bottom">${footer}</footer>` : ''}
       ${leavePrompt && act ? `<div class="modal-back" data-modal="cancel"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-h"><h3 id="modal-h">Leave ${esc(act.detail)}?</h3><p>Starting a solo match takes you out of ${esc(act.detail)}. To keep playing online, go back to it instead.</p><div class="modal-actions"><button class="bbtn" data-modal="cancel">Stay</button><button class="bbtn primary" data-modal="confirm">Leave &amp; start solo</button></div></div></div>` : ''}`;
@@ -721,6 +750,9 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
   document.addEventListener('keydown', onKey);
 
   const bind = () => {
+    // On narrow screens the nav scrolls sideways: keep the current page's tab in view.
+    const navEl = el.querySelector<HTMLElement>('.nav'), onTab = navEl?.querySelector<HTMLElement>('.nav-btn.on');
+    if (navEl && onTab) navEl.scrollLeft = Math.max(0, onTab.offsetLeft - (navEl.clientWidth - onTab.offsetWidth) / 2);
     const all = <T extends Element>(sel: string) => Array.from(el.querySelectorAll<T & HTMLElement>(sel));
     all<HTMLButtonElement>('[data-bind]').forEach((b) => (b.onclick = () => {
       capturing = { id: b.dataset.bind as ActionId, slot: Number(b.dataset.slot) };
@@ -756,8 +788,21 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       const t = season.teamRobots?.find((x) => x.id === b.dataset.teamRobot);
       if (!t) return;
       s.robot = cloneConfig(t.config);
+      pushRecent(t.id);
       render();
     }));
+    const applyTeamFilter = () => {
+      const q = teamQuery.trim().toLowerCase();
+      let shown = 0;
+      all('.team-card').forEach((c) => {
+        const hit = !q || (c.dataset.search ?? '').includes(q);
+        c.hidden = !hit;
+        if (hit) shown++;
+      });
+      all('[data-team-empty]').forEach((e) => (e.hidden = shown > 0));
+    };
+    all('[data-team-search]').forEach((i) => ((i as HTMLInputElement).oninput = () => { teamQuery = (i as HTMLInputElement).value; applyTeamFilter(); }));
+    applyTeamFilter();
     all('[data-opt]').forEach((b) => (b.onclick = () => {
       // A real team's robot is a fixed build: changing a mechanism makes it a custom robot with the generic model.
       delete s.robot.model;
@@ -785,6 +830,14 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-radio]').forEach((b) => (b.onclick = () => ((s.aiRadio = b.dataset.radio as GameSettings['aiRadio']), render())));
     all('[data-ai]').forEach((b) => (b.onclick = () => ((s.aiOpponents = b.dataset.ai === '1'), render())));
     all('[data-hp]').forEach((b) => (b.onclick = () => ((s.autoHumanPlayer = b.dataset.hp === '1'), render())));
+    all('[data-sound]').forEach((b) => (b.onclick = () => (setSoundMuted(b.dataset.sound === 'off'), render())));
+    all('[data-k="resetPrefs"]').forEach((b) => (b.onclick = () => {
+      const d = defaultSettings(season);
+      s = { ...s, camera: d.camera, shadows: d.shadows, autoIntake: d.autoIntake, manualAuto: d.manualAuto, aiRadio: d.aiRadio };
+      setQualityPref('auto');
+      setSoundMuted(false);
+      render();
+    }));
     all('[data-quality]').forEach((b) => (b.onclick = () => (setQualityPref(b.dataset.quality as QualityPref), render())));
     all('[data-toggle]').forEach(
       (b) =>

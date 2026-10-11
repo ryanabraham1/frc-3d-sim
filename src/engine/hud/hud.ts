@@ -191,28 +191,55 @@ export class Hud {
 
   static resultsHtml(r: MatchResults, scores: Record<Alliance, number>): string {
     const w = r.winner === 'tie' ? 'TIE' : `${r.winner.toUpperCase()} WINS`;
+    const total = scores.red + scores.blue;
+    const bluePct = total > 0 ? Math.round((scores.blue / total) * 100) : 50;
+    const num = (v: string | number): number => (typeof v === 'number' ? v : /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN);
     const rows = r.rows
-      .map((row) => `<tr class="${row.emphasis ? 'em' : ''}"><td class="red">${esc(String(row.red))}</td><th>${esc(row.label)}</th><td class="blue">${esc(String(row.blue))}</td></tr>`)
+      .map((row) => {
+        const b = num(row.blue), rd = num(row.red);
+        const both = Number.isFinite(b) && Number.isFinite(rd) && Math.abs(b) + Math.abs(rd) > 0;
+        const bw = both ? Math.round((Math.abs(b) / (Math.abs(b) + Math.abs(rd))) * 100) : 0;
+        const bar = both ? `<div class="res-bar"><i class="blue" style="width:${bw}%"></i><i class="red" style="width:${100 - bw}%"></i></div>` : '';
+        const lead = both && b !== rd ? (b > rd ? 'lead-blue' : 'lead-red') : '';
+        return `<div class="res-row ${row.emphasis ? 'em' : ''} ${lead}"><span class="blue">${esc(String(row.blue))}</span><div class="res-mid"><span class="res-label">${esc(row.label)}</span>${bar}</div><span class="red">${esc(String(row.red))}</span></div>`;
+      })
       .join('');
-    const rp = (a: Alliance) => `<div class="rp ${a}"><b>${r.rp[a]} RP</b><div>${r.rpDetail[a].map(esc).join('<br>') || '—'}</div></div>`;
+    const rp = (a: Alliance) => `<div class="rp ${a}"><div class="rp-head"><span>${a.toUpperCase()}</span><b>${r.rp[a]} RP</b></div><div class="rp-detail">${r.rpDetail[a].map((d) => `<span class="chip">${esc(d)}</span>`).join('') || '<span class="chip dim">No bonus</span>'}</div></div>`;
     return `
-      <div class="results-winner ${r.winner}">${w}</div>
-      <div class="results-scores"><span class="red">${scores.red}</span><span class="dash">–</span><span class="blue">${scores.blue}</span></div>
-      <table class="results-table">${rows}</table>
-      <div class="results-rp">${rp('red')}${rp('blue')}</div>
+      <div class="results-hero ${r.winner}">
+        <div class="results-winner ${r.winner}">${w}</div>
+        <div class="results-scores"><span class="blue">${scores.blue}</span><span class="dash">–</span><span class="red">${scores.red}</span></div>
+        <div class="results-split" title="Share of total points"><i class="blue" style="width:${bluePct}%"></i><i class="red" style="width:${100 - bluePct}%"></i></div>
+        <div class="results-names"><span class="blue">BLUE</span><span class="red">RED</span></div>
+      </div>
+      <div class="res-rows">${rows}</div>
+      <div class="results-rp">${rp('blue')}${rp('red')}</div>
       ${Hud.playersHtml(r)}`;
   }
 
-  /** Per-player breakdown: one card per robot, grouped by alliance. */
+  /** Per-player breakdown: one card per robot, grouped by alliance, with share of the alliance's credited points. */
   static playersHtml(r: MatchResults): string {
     if (!r.players?.length) return '';
+    const top = Math.max(...r.players.map((p) => p.total));
     const card = (p: PlayerResults) => {
-      const rows = p.rows.map((x) => `<tr class="${x.value ? '' : 'zero'}"><th>${esc(x.label)}</th><td>${x.value}</td></tr>`).join('');
-      const stats = p.stats.map((x) => `<tr><th>${esc(x.label)}</th><td>${esc(String(x.value))}</td></tr>`).join('');
+      const allied = r.players!.filter((x) => x.alliance === p.alliance);
+      const sum = allied.reduce((s, x) => s + x.total, 0) + (r.uncredited?.[p.alliance] ?? 0);
+      const share = sum > 0 ? Math.round((p.total / sum) * 100) : 0;
+      const peak = Math.max(1, ...p.rows.map((x) => x.value));
+      const rows = p.rows
+        .map((x) => `<div class="pc-row ${x.value ? '' : 'zero'}"><span>${esc(x.label)}</span><div class="pc-track"><i style="width:${Math.round((Math.max(0, x.value) / peak) * 100)}%"></i></div><b>${x.value}</b></div>`)
+        .join('');
+      const acc = p.stats.find((x) => x.label === 'Accuracy');
+      const accPct = acc ? Number.parseInt(String(acc.value), 10) : NaN;
+      const accHtml = Number.isFinite(accPct) ? `<div class="pc-acc"><span>Accuracy</span><div class="pc-track"><i style="width:${accPct}%"></i></div><b>${accPct}%</b></div>` : '';
+      const chips = p.stats.filter((x) => x !== acc).map((x) => `<div class="pc-stat"><b>${esc(String(x.value))}</b><span>${esc(x.label)}</span></div>`).join('');
+      const mvp = top > 0 && p.total === top ? '<span class="pc-mvp">TOP SCORER</span>' : '';
       return `<div class="player-card ${p.alliance}">
-        <div class="player-head"><span class="player-name">${esc(p.name)}</span><span class="player-team">#${p.team}</span><b class="player-total">${p.total}</b></div>
-        <table class="player-table">${rows}</table>
-        <table class="player-table stats">${stats}</table>
+        <div class="player-head"><span class="player-name">${esc(p.name)}</span><span class="player-team">#${p.team}</span>${mvp}<b class="player-total">${p.total}</b></div>
+        <div class="pc-share"><div class="pc-track"><i style="width:${share}%"></i></div><span>${share}% of ${p.alliance} credited points</span></div>
+        <div class="pc-rows">${rows}</div>
+        ${accHtml}
+        <div class="pc-stats">${chips}</div>
       </div>`;
     };
     const col = (a: Alliance) => {
@@ -221,7 +248,7 @@ export class Hud {
       const rest = r.uncredited?.[a] ?? 0;
       return `<div class="players-col ${a}">${mine.map(card).join('')}${rest ? `<div class="players-rest">${rest} pts not credited to a player</div>` : ''}</div>`;
     };
-    return `<h3 class="results-sub">Player breakdown</h3><div class="results-players">${col('red')}${col('blue')}</div>`;
+    return `<h3 class="results-sub">Player breakdown</h3><div class="results-players">${col('blue')}${col('red')}</div>`;
   }
 
   dispose(): void {

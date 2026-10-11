@@ -8,6 +8,14 @@ import { TRENCH_SAFE_HEIGHT } from './constants';
 
 const LIGHT_TEXT = { off: 'INACTIVE', active: 'ACTIVE', warning: 'ENDING', chase: 'ACTIVE · OFF NEXT', post: 'SCORING' } as const;
 
+/** A labelled progress meter for the scoreboard: count / goal, with the ranking point it earns underneath. */
+function meter(label: string, value: number, goal: number, rp: string): string {
+  const pct = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+  const done = value >= goal ? ' done' : '';
+  return `<div class="sb-meter${done}"><div class="sb-meter-top"><span>${label}</span><b>${value}<i>/${goal}</i></b></div>` +
+    `<div class="sb-meter-bar"><div style="width:${pct}%"></div></div><div class="sb-meter-rp">${rp}</div></div>`;
+}
+
 /** REBUILT HUD widgets: hub status per alliance, RP progress, shift info, hopper / climb / chute. */
 export class RebuiltHud implements SeasonHud {
   private hud: Hud;
@@ -31,8 +39,8 @@ export class RebuiltHud implements SeasonHud {
       this.hud.setHtml(
         this.slots[a],
         `<div class="chip hub-${light}">HUB ${LIGHT_TEXT[light]}</div>` +
-          `<div class="mini">FUEL ${fuel}/${goal} <span class="dim">${rpName}</span></div>` +
-          `<div class="mini">TOWER ${tower}/${th.traversal} <span class="dim">TRAVERSAL</span></div>` +
+          meter('FUEL', fuel, goal, rpName) +
+          meter('TOWER', tower, th.traversal, 'TRAVERSAL') +
           `<div class="mini dim">Chute ${rules.chuteCount(a)}${rules.chuteOpen[a] ? ' · OPEN' : ''}</div>`,
       );
     }

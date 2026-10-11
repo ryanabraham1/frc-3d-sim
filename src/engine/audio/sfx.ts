@@ -8,6 +8,23 @@ const KEY = 'frc-sim:sound';
 
 export type Cue = 'start' | 'autoEnd' | 'teleop' | 'period' | 'endgame' | 'end';
 
+/** Sound preference without a running match (the Settings page). */
+export function soundMuted(): boolean {
+  try {
+    return localStorage.getItem(KEY) === 'off';
+  } catch {
+    return false;
+  }
+}
+
+export function setSoundMuted(m: boolean): void {
+  try {
+    localStorage.setItem(KEY, m ? 'off' : 'on');
+  } catch {
+    // Not persisted.
+  }
+}
+
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
