@@ -144,11 +144,11 @@ export interface RobotConfig {
     /** Exit height above floor. */
     height: number;
     /**
-     * How far (m) the raised shooter hood sticks up above the frame top when it is fully open at `maxAngle`. It scales
-     * with the hood angle above the parked `angle`; a parked or fixed hood adds nothing. The robot gets a collider at
-     * that height, so a robot shooting with its hood up cannot drive under a low overhead (2026 TRENCH).
+     * Height (m) the whole drawn hood assembly sits above (+) or below (-) where the model draws it, when parked (`rest`)
+     * and when open for a shot (`open`); it slides between them as the hood opens. Seasons use it so a stowed hood clears
+     * a low overhead and an open one rises clearly above it, like the real robot's hood lift.
      */
-    hoodRise?: number;
+    hoodLift?: { rest: number; open: number };
     /** True = turret can yaw independently of the drivetrain. */
     turret: boolean;
     /**

@@ -29,7 +29,7 @@ function assembly(id: string, names: string[], origin: THREE.Vector3, scale: THR
 }
 function hinge(root: THREE.Group, name: string, at: THREE.Vector3) {
   const part = root.getObjectByName(name)!;
-  const g = new THREE.Group(); g.name = `adapted-${name}-pivot`; g.position.copy(at);
+  const g = new THREE.Group(); g.name = `adapted-${name}-pivot`; if (name.startsWith('hood')) { g.userData.hood = true; g.userData.hoodRotor = g; } g.position.copy(at);
   // Coordinates are still in source meters within the shared scaled assembly.
   part.removeFromParent(); part.position.sub(at); g.add(part); root.add(g);
   return g;

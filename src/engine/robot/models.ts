@@ -254,6 +254,8 @@ export function hoodShell(parent: THREE.Object3D, radius: number, width: number,
   const geo = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, curveSegments: n });
   geo.translate(0, 0, -width / 2);
   g.add(new THREE.Mesh(geo, m));
+  g.userData.hood = true; // the hood collider follows this drawn shell (Robot.updateHoodCollider)
+  g.userData.hoodRotor = parent; // ...and the node that swings it is the pivot it hangs on
   parent.add(g);
   return g;
 }

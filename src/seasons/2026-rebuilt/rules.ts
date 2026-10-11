@@ -177,7 +177,7 @@ export class RebuiltRules implements SeasonRules {
   overheadClearance(robot: Robot): number {
     const blocker = robot.config.shotBlocker;
     // An open shooter hood sticks up above the frame, so it needs the arm known too (the hood is held down under it).
-    if (!robot.config.hopperExpansion && !blocker && !((robot.config.launcher.hoodRise ?? 0) > 0)) return Infinity;
+    if (!robot.config.hopperExpansion && !blocker && !robot.hasHood) return Infinity;
     // Self-expanding net hoppers stop growing ~1.2 m before the arm (they can't shrink back in time once a FUEL is
     // taken). A shot blocker that is up or being raised turns the intake off, and a driver-raised telescoping hopper
     // (1678) only grows on command, so for those only the arm actually overhead counts.

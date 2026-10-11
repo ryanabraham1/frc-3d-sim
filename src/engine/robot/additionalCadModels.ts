@@ -14,7 +14,7 @@ import { articulateRollers } from './rollerArticulation';
 export const ease = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;
 export function articulation(root: THREE.Group) {
   return (name:string, at:[number,number,number], yaw=0) => {
-    const g=new THREE.Group(); g.name=`cad-${name}-pivot`; g.position.fromArray(at); g.rotation.y=yaw;
+    const g=new THREE.Group(); g.name=`cad-${name}-pivot`; if(name.startsWith('hood')){g.userData.hood=true;g.userData.hoodRotor=g;} g.position.fromArray(at); g.rotation.y=yaw;
     root.add(g); root.updateMatrixWorld(true);
     const part=root.getObjectByName(name); if(part) g.attach(part);
     return g;

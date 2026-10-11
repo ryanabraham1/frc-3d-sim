@@ -396,7 +396,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   // A raised shooter hood blocks the robot at a TRENCH arm: drivers stow it (stop shooting) before rolling through.
   const stowNearTrench = (cmd: RobotCommand): RobotCommand => {
     // Only while rolling: a robot planted at a stance beside an arm keeps shooting.
-    if (!(r.config.launcher.hoodRise! > 0) || r.speed < 0.8 || !rules.nearTrenchArm(r, 1.2)) return cmd;
+    if (!r.hasHood || r.speed < 0.8 || !rules.nearTrenchArm(r, 1.2)) return cmd;
     return { ...cmd, shoot: false, pass: false, aim: false };
   };
   const bot: CycleBot = new CycleBot(ctx, r, {

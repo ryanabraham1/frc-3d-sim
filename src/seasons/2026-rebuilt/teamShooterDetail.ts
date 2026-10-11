@@ -156,7 +156,7 @@ export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number
   const flywheel=wheelStack(root,F[0],F[1],wheelR,[-.06,-.02,.02,.06],.034,rubber,alloy,2*plateZ+.01); flywheel.name='hightide-quad-flywheel';
   // Hood: a curved black sheet concentric with the flywheel, pivoting on its axis. Rotating the hood group by the
   // exit angle puts the hood's lip where the ball leaves (direction = lip angle - 90°).
-  const hood=new THREE.Group(); hood.name='hightide-adjustable-hood'; hood.position.set(F[0],F[1],0); root.add(hood);
+  const hood=new THREE.Group(); hood.name='hightide-adjustable-hood'; hood.userData.hood=true; hood.userData.hoodRotor=hood; hood.position.set(F[0],F[1],0); root.add(hood);
   const span=1.15, shell=new THREE.Shape();
   shell.absarc(0,0,hoodR+.006,0,span,false);shell.absarc(0,0,hoodR,span,0,true);shell.closePath();
   const shellMesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shell,{depth:2*plateZ-.012,bevelEnabled:false,curveSegments:20}),black);
@@ -223,7 +223,7 @@ export function keplerShooter(t:THREE.Object3D) {
   const cable=mat(0x14171a,{rough:.9});
   for(const sz of [-1,1])bar(root,[F[0]-.02,F[1]-.03,sz*(plateZ+.03)],[-.09,-.105,sz*(plateZ+.02)],.007,cable);
   // Hollow hood: two black printed rails concentric with the flywheel (no centre sheet), tied by a rod at the back.
-  const hood=new THREE.Group();hood.name='kepler-adjustable-hood';hood.position.set(F[0],F[1],0);root.add(hood);
+  const hood=new THREE.Group();hood.name='kepler-adjustable-hood';hood.userData.hood=true;hood.userData.hoodRotor=hood;hood.position.set(F[0],F[1],0);root.add(hood);
   const hoodR=rb+.075, span=1.05;
   for(const z of [-.058,.058]) {
     const rail=new THREE.Shape();rail.absarc(0,0,hoodR+.024,0,span,false);rail.absarc(0,0,hoodR,span,0,true);rail.closePath();

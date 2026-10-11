@@ -94,9 +94,6 @@ export const REBUILT_ROBOT_MASS = lb(150);
 /** FUEL/s a stock robot's floor intake can swallow [EST]; real teams override it (INTAKE_RATE in teamRobots.ts). */
 export const DEFAULT_INTAKE_RATE = 20;
 
-/** How far an open shooter hood sticks up above a stock robot's frame (m): 6 in at full travel [EST]. */
-export const HOOD_RISE = inch(6);
-
 /** Boost applied to every real team robot's INTAKE_RATE (user decision 2026-10-05: intakes felt too weak). */
 export const INTAKE_RATE_BOOST = 1.7;
 
@@ -106,7 +103,6 @@ export function rebuiltRobotDefaults(): RobotConfig {
   c.mass = REBUILT_ROBOT_MASS;
   c.height = inch(21);
   c.launcher.height = inch(19);
-  c.launcher.hoodRise = HOOD_RISE;
   c.hopperCapacity = 40;
   c.preload = C.FUEL_MAX_PRELOAD;
   c.climber.maxLevel = 0;
@@ -144,6 +140,31 @@ export function chunkCad(c: RobotConfig): void {
   c.launcher.height = .52; c.intake.reach = .2; c.intake.width = .62;
 }
 
+/**
+ * How the DRAWN shooter hood moves vertically on the trench-height team robots (`launcher.hoodLift`: parked / open offset
+ * from the model's own pose, m). Their CAD hoods sit on the flywheel axis and barely rise when they swing, so on its own
+ * the hood would never reach the 22.25 in TRENCH arm. Tuned with a sweep over the drawn hood bounds (CAD model and the procedural fallback used while CAD loads, whichever needs more) so each
+ * hood parks at or below 0.535 m (clears the arm with the robot's frame) and opens to at least 0.61 m at every shooting
+ * range (the solved hood angle changes its height by a few cm), 4.5 cm into the arm's height. [EST: lift distances are a modelling choice; real hoods are not published to this level.]
+ * Robots with a fixed/absent hood (Roman, Matterhorn, Mirage, Triple Threat) and the 30 in robots are not listed.
+ */
+export const HOOD_LIFT: Record<string, { rest: number; open: number }> = {
+  'overload-254': { rest: 0, open: 0.07 },
+  'rubble-581': { rest: -0.013, open: 0.061 },
+  'mixtape-971': { rest: -0.054, open: 0.041 },
+  'madtown-2026-1323': { rest: 0, open: 0.094 },
+  'limestone-1678': { rest: -0.021, open: 0.09 },
+  'kepler-1690': { rest: -0.029, open: 0.12 },
+  'hailstorm-1778': { rest: 0, open: 0.094 },
+  'cyclone-1987': { rest: -0.013, open: 0.128 },
+  'reblitz-2910': { rest: 0, open: 0.087 },
+  'ripcurrent-4414': { rest: -0.013, open: 0.101 },
+  'croquembouche-5940': { rest: 0, open: 0.094 },
+  'downpour-6800': { rest: 0, open: 0.014 },
+  'chunk-7769': { rest: -0.043, open: 0.032 },
+  'ctrl-alt-defeat-9470': { rest: -0.012, open: -0.002 },
+};
+
 /** R104/R107 size limits plus defaults for mechanism options added after configs were first saved. */
 export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   const c = sanitizeConfig(config, C.MAX_ROBOT_HEIGHT, C.MAX_ROBOT_PERIMETER);
@@ -152,9 +173,8 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
-  // An adjustable hood sticks up above the frame when it opens for a shot (6 in at full travel [EST]); the TRENCH arm then
-  // blocks the robot until the hood is parked. A fixed hood never moves, so it adds nothing.
-  c.launcher.hoodRise = c.launcher.maxAngle > c.launcher.minAngle ? c.launcher.hoodRise ?? HOOD_RISE : 0;
+  const lift = c.model ? HOOD_LIFT[c.model] : undefined;
+  if (lift) c.launcher.hoodLift = { ...lift }; else delete c.launcher.hoodLift;
   // Saved picks of the former turret ROMAN I preset (47 FUEL, 14/s, turret) become the imported Roman II drum robot.
   if (c.model === 'roman-6329' && c.launcher.turret && c.hopperCapacity === 47 && c.launcher.rate === 14) {
     c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 20;

@@ -112,7 +112,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   if (id === 'aimbot-3256') return buildAimbotCad(root,k,()=>animated);
   const get = (name: string) => root.getObjectByName(name);
   const pivot = (name: string, at: [number, number, number], parent: THREE.Object3D = root): THREE.Group => {
-    const group = new THREE.Group(); group.name = `cad-${name}-pivot`; group.position.fromArray(at);
+    const group = new THREE.Group(); group.name = `cad-${name}-pivot`; if (name === 'hood') { group.userData.hood = true; group.userData.hoodRotor = group; } group.position.fromArray(at);
     parent.add(group);
     const part = get(name);
     if (part) { part.removeFromParent(); part.position.sub(group.position); group.add(part); }
