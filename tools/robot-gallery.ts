@@ -119,6 +119,8 @@ function frame(now: number) {
     r.ampDeploy = seasonSelect.value === '2024-crescendo' ? pose.value === 'score' : null;
     r.lastCommand={...IDLE_COMMAND,intake:pose.value==='intake',pass:pose.value==='score'||pose.value==='pass',shoot:pose.value==='aim'};
     r.lastShotAngle = pose.value==='pass' ? .5 : Number(hood.value);
+    // The hood and pivot animations follow the shooter's current pitch, not the last solved angle.
+    (r as unknown as { shooterPitch: number }).shooterPitch = r.lastShotAngle;
     // Exercise the same relative turret target used by gameplay instead of leaving every preview at yaw zero.
     r.turretYaw = r.config.launcher.turret && ['aim','pass','score','flow'].includes(pose.value)
       ? turretYaw.value === 'sweep' ? Math.sin(now / 2200) * Math.PI * .8 : Number(turretYaw.value) : 0;

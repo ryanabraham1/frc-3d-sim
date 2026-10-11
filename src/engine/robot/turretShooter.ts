@@ -1,4 +1,4 @@
-import { scoringApproach } from './scoringReadiness';
+import { HOOD_SHOT_MAX, scoringApproach } from './scoringReadiness';
 import * as THREE from 'three';
 import { approach, hoodShell, mat, pivot, roller, sidePlates, spin, type RobotAnimState } from './models';
 import { belt, fasteners, motor } from './mechanicalDetail';
@@ -162,5 +162,5 @@ const HOOD_STOW = -0.35;
 
 /** Hood angle for a launch elevation `theta` (rad): flatter shots (long range) close the hood, lobs open it. */
 export function hoodFor(theta: number): number {
-  return Math.max(-0.3, Math.min(0.75, (theta - 0.75) * 1.4));
+  return Math.max(-0.3, Math.min((HOOD_SHOT_MAX - 0.75) * 1.4, (theta - 0.75) * 1.4));
 }
