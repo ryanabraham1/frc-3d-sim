@@ -873,6 +873,10 @@
 .team-thumb img:not([src]) {
   visibility: hidden;
 }
+/* The turntable is transparent: once it has drawn, hide the still thumbnail under it so the robot isn't doubled. */
+.team-thumb:has(.robot-turntable[data-rendered]) img {
+  visibility: hidden;
+}
 .team-name {
   font-size: 13px;
 }

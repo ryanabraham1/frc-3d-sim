@@ -42,6 +42,8 @@ interface Processing {
   idx: number;
   alliance: Alliance;
   releaseAt: number;
+  /** Exit lane picked from where the ball dropped through the funnel (balls don't cross lanes inside). */
+  lane: number;
 }
 
 /**
@@ -50,13 +52,13 @@ interface Processing {
  */
 export class RebuiltRules implements SeasonRules {
   recoveryState() {
-    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen processing exitFreeAt exitCursor launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
+    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen processing exitFreeAt launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
       ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
   }
   restoreRecovery(state: unknown): void {
     const s = state as ReturnType<RebuiltRules['recoveryState']>;
     this.applyNetState(s.visible);
-    restoreFields(this, 'releaseTimer lastHpOpen processing exitFreeAt exitCursor launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' '), s.fields);
+    restoreFields(this, 'releaseTimer lastHpOpen processing exitFreeAt launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' '), s.fields);
     this.ref.restoreRecovery(s.ref);
     this.pins.restoreRecovery(s.pins);
   }
@@ -68,7 +70,6 @@ export class RebuiltRules implements SeasonRules {
   private lastHpOpen: Record<Alliance, number> = { red: -99, blue: -99 };
   private processing: Processing[] = [];
   private exitFreeAt: Record<Alliance, number[]> = { red: [0, 0, 0, 0], blue: [0, 0, 0, 0] };
-  private exitCursor: Record<Alliance, number> = { red: 0, blue: 0 };
   /** Recently launched FUEL → who launched it and whether from outside their ALLIANCE ZONE (for G407). */
   private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; t: number; team: number }>();
   private g407Cooldown = new Map<number, number>();
@@ -324,13 +325,14 @@ export class RebuiltRules implements SeasonRules {
       const hub = this.refs.hubs[pr.alliance].center;
       const d = dir(pr.alliance);
       const free = this.exitFreeAt[pr.alliance];
+      // Each exit is fed by its own ramp: a ball leaves through its own lane, or a neighbour when that one is
+      // backed up. Released balls are spaced by the chute's single-file gap.
       let exit = -1;
-      for (let k = 0; k < C.HUB_EXIT_COUNT; k++) {
-        const e = (this.exitCursor[pr.alliance] + k) % C.HUB_EXIT_COUNT;
-        if (free[e] <= t) { exit = e; break; }
+      for (const e of [pr.lane, pr.lane - 1, pr.lane + 1]) {
+        if (e >= 0 && e < C.HUB_EXIT_COUNT && free[e] <= t) { exit = e; break; }
       }
       if (exit < 0) { i++; continue; }
-      const oy = hub.y + (exit - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT) + rng.range(-0.03, 0.03);
+      const oy = hub.y + (exit - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT) + rng.range(-0.015, 0.015);
       const ox = hub.x + d * (C.HUB_SIZE / 2 + pool.radius + 0.04);
       // Don't spawn inside a robot parked at the exit (it will be released when clear).
       const blocked = this.ctx.robots.some((r) => {
@@ -342,15 +344,17 @@ export class RebuiltRules implements SeasonRules {
         i++;
         continue;
       }
-      // Roll out of the opening: mostly forward, fanned sideways in proportion to the exit's offset from center.
-      const fan = (exit - (C.HUB_EXIT_COUNT - 1) / 2) * 0.35 + rng.range(-0.2, 0.2);
-      const speed = rng.range(1.4, 3.2);
+      // Gravity-fed: the ball rolls off the internal ramp at walking pace, pitched down along the discharge lip,
+      // and spreads only a little sideways. No fan by lane; each exit points straight out.
+      const [vLo, vHi] = C.HUB_EXIT_SPEED;
+      const speed = rng.range(vLo, vHi);
+      const yaw = rng.range(-1, 1) * C.HUB_EXIT_SPREAD;
+      const h = speed * Math.cos(C.HUB_EXIT_PITCH);
       frame.toWorld(ox, oy, C.HUB_EXIT_HEIGHT, this.tmp);
-      frame.velToWorld(d * speed * Math.cos(fan), speed * Math.sin(fan), 0.1, this.tmp2);
+      frame.velToWorld(d * h * Math.cos(yaw), h * Math.sin(yaw), -speed * Math.sin(C.HUB_EXIT_PITCH), this.tmp2);
       pool.placeWorld(pr.idx, this.tmp, this.tmp2);
       this.hubDrops.set(pr.idx, { t, grounded: false });
-      free[exit] = t + rng.range(0.14, 0.26);
-      this.exitCursor[pr.alliance] = (exit + 1) % C.HUB_EXIT_COUNT;
+      free[exit] = t + C.HUB_LANE_GAP + rng.range(0, 0.06);
       this.processing.splice(i, 1);
     }
 
@@ -560,7 +564,11 @@ export class RebuiltRules implements SeasonRules {
     }
     pool.reserve(idx, HUB_TAG(a));
     const [lo, hi] = C.HUB_PROCESS_TIME;
-    this.processing.push({ idx, alliance: a, releaseAt: this.now + this.ctx.rng.range(lo, hi) });
+    // Lane from the lateral entry point: the funnel drops onto four side-by-side ramps.
+    const f = this.ctx.frame.toField(pool.position(idx));
+    const u = (f.y - this.refs.hubs[a].center.y) / C.HUB_OPENING_HEX + 0.5;
+    const lane = Math.min(C.HUB_EXIT_COUNT - 1, Math.max(0, Math.floor(u * C.HUB_EXIT_COUNT)));
+    this.processing.push({ idx, alliance: a, lane, releaseAt: this.now + this.ctx.rng.range(lo, hi) });
   }
 
   onLaunch(robot: Robot, pieceIndex: number): void {

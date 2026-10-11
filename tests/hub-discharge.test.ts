@@ -7,7 +7,7 @@ import * as C from '../src/seasons/2026-rebuilt/constants';
 import { side, dir } from '../src/seasons/2026-rebuilt/field';
 import { HUB_SENSOR_FLOOR_Z } from '../src/seasons/2026-rebuilt/hubStructure';
 
-for (const alliance of ['blue', 'red'] as const) it(`${alliance} hub returns the scored ball through the low opening without changing the return speed`, async () => {
+for (const alliance of ['blue', 'red'] as const) it(`${alliance} hub returns the scored ball through the low opening rolling out at the gravity-fed exit speed`, async () => {
   await RAPIER.init();
   const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const sim = new HeadlessSim(season, RAPIER, {robot: cloneConfig(season.robotDefaults), alliance, pose:{x:2,y:2,yaw:0}, log:true});
@@ -25,8 +25,10 @@ for (const alliance of ['blue', 'red'] as const) it(`${alliance} hub returns the
     expect(p.z + sim.pool.radius).toBeLessThan(C.HUB_EXIT_HEIGHT + .0889);
     expect((p.x - hub.x) * dir(alliance)).toBeGreaterThan(C.HUB_SIZE / 2);
     const v = sim.pool.bodies[idx].linvel();
-    expect(Math.abs(v.y)).toBeLessThan(.2);
-    expect(Math.hypot(v.x, v.z)).toBeLessThan(3.25);
+    // Rolls off the discharge lip pitched down, at the gravity-fed exit speed.
+    expect(v.y).toBeLessThan(0);
+    expect(Math.hypot(v.x, v.y, v.z)).toBeLessThan(C.HUB_EXIT_SPEED[1] + .3);
+    expect(Math.hypot(v.x, v.z)).toBeGreaterThan(C.HUB_EXIT_SPEED[0] * Math.cos(C.HUB_EXIT_PITCH) - .3);
     expect(sim.pool.count).toBe(total);
   } finally { sim.dispose(); }
 });
