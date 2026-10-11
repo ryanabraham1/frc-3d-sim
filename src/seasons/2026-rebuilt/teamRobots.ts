@@ -390,7 +390,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   box(tower, .005, .13, hz - z0, clear, x0, deckY + .065, (z0 + hz) / 2).name = 'kepler-turret-shield';
   box(tower, hx - x0, .09, .005, clear, (x0 + hx) / 2, deckY + .045, z0);
   // Blue LED arc round the turret base, on the hopper side (glows in every 2026 photo).
-  const ledMat = new THREE.MeshStandardMaterial({ color: 0x5fd0ff, emissive: 0x23a6ff, emissiveIntensity: 1.6, roughness: .4 });
+  const ledMat = new THREE.MeshStandardMaterial({ color: 0x2a9dff, emissive: 0x0a8cff, emissiveIntensity: 2.2, roughness: .4 });
   const led = new THREE.Mesh(new THREE.TorusGeometry(.135, .009, 8, 48, Math.PI * 1.05), ledMat);
   led.name = 'kepler-blue-led-arc'; led.userData.noShadow = true;
   led.rotation.x = -Math.PI / 2; led.rotation.z = Math.PI * .47; led.position.set(tx, deckY + .012, tz); tower.add(led);

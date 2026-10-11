@@ -238,7 +238,8 @@ export function keplerShooter(t:THREE.Object3D) {
     pocketPlate(group,pts,holes,gearMat,0,.006);
     return group;
   }
-  const gz=plateZ+.014, step=rollerD/3;
+  // The train runs inside the +z plate (photos show plates, not a gear stack, from outside).
+  const gz=plateZ-.008, step=rollerD/3;
   const gears=[gear(hood,0,0,step*.52,gz)];
   for(let i=1;i<=3;i++)gears.push(gear(hood,Math.cos(lipA)*step*i,Math.sin(lipA)*step*i,step*.47,gz));
   camera(root,-.085,.05,-.11);
