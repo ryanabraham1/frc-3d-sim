@@ -228,6 +228,12 @@ export interface RobotConfig {
     secondsToClimb?: number;
     /** Deployed cage contact in robot-local visual X/Z meters; omitted uses the generic front climber. */
     gripOffset?: [number,number];
+    /** How the climber holds a hanging element (see `GripStyle` in field/climbGrip.ts); omitted picks by game. */
+    grip?: 'rollers' | 'hooks';
+    /** Seconds from catching the pipe/bar to latched (roller pull-in or hooks seating). */
+    latchSeconds?: number;
+    /** 0..1: how nearly the climber brings the chain over the robot's CG (1 = hangs level, 0 = hangs off its side; default 0.8). */
+    balance?: number;
   };
 }
 

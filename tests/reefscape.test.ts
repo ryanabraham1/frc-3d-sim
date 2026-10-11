@@ -423,16 +423,19 @@ describe('2025 REEFSCAPE manual implementation', () => {
     const rules = sim.rules as ReefscapeRules, cage = rules.refs.cages.blue[1];
     run(sim, 0.9, { ...IDLE_COMMAND, vx: 1.2 });
     expect(cage.swing()).toBeGreaterThan(0.05);
-    rules.requestClimb(sim.robot, 2); run(sim, 5);
+    rules.requestClimb(sim.robot, 2); run(sim, 8);
     expect(sim.robot.climbPhase).toBe('hanging');
-    expect(cage.isHeld).toBe(true);
-    expect(cage.swing()).toBeLessThan(0.01); // robot and cage hang plumb under the pivot
+    expect(sim.robot.grip?.latched).toBe(true); // a joint on the swinging cage, not a kinematic carry
+    expect(sim.robot.elevation).toBeGreaterThan(0.2);
+    // Hanging still, the robot's CG settles under the truss pivot (the cage tilts toward it).
+    const com = sim.ctx.frame.toField(sim.robot.body.worldCom());
+    expect(Math.hypot(com.x - p.x, com.y - p.y)).toBeLessThan(0.08);
     rules.onPeriodChange({ from: season.timeline.at(-1)!, to: null, at: 156 });
     expect(sim.ctx.score.category('blue', 'barge')).toBe(12);
-    rules.requestDescend(sim.robot); run(sim, 2);
+    rules.requestDescend(sim.robot); run(sim, 4);
     expect(sim.robot.isClimbing).toBe(false);
-    expect(cage.isHeld).toBe(false);
-    run(sim, 1);
+    expect(sim.robot.grip).toBeNull();
+    run(sim, 3);
     const v = sim.robot.body.linvel(), w = cage.body.linvel();
     expect(Math.hypot(v.x, v.z)).toBeLessThan(0.3);
     expect(Math.hypot(w.x, w.y, w.z)).toBeLessThan(1);

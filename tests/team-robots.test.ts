@@ -61,7 +61,8 @@ describe('real team robots', () => {
     expect(team(y24, 'vortex-254').launcher.turret).toBe(true);
     expect(team(y24, 'doppler-1690').height).toBeLessThan(0.3); // 11 in
     expect(team(y24, 'doppler-1690').maxSpeed).toBeCloseTo(5.6 / FREE_SPEED_RATIO); // quoted as free speed
-    expect(team(y25, 'spectre-2910').climber.secondsToClimb).toBeCloseTo(1.5);
+    const spectreClimber = team(y25, 'spectre-2910').climber;
+    expect((spectreClimber.latchSeconds ?? 0) + (spectreClimber.secondsToClimb ?? 0)).toBeCloseTo(1.5);
     expect(team(y25, 'undertow-254').intake.ground && team(y25, 'undertow-254').intake.station).toBe(true);
     const rip = team(y26, 'ripcurrent-4414');
     expect([rip.launcher.turret, rip.hopperCapacity, rip.climber.maxLevel]).toEqual([true, 85, 0]);

@@ -386,7 +386,9 @@ export function reefscapeTeamRobots(): TeamRobot[] {
         c.options={...c.options,dualPieceStorage:true};
         c.placement!.scoreSide='ends';
         c.climber.gripOffset=[-.43,0];
-        c.climber.secondsToClimb = 1.5;
+        // Onshape "Spectre": compliant wheels pull the CAGE into one-way latches, then the arm pulls down and locks,
+        // about 1.5 s in all; the carriage keeps the chain directly above the robot's CG.
+        c.climber.grip = 'rollers'; c.climber.latchSeconds = 0.35; c.climber.secondsToClimb = 1.15; c.climber.balance = 1;
         c.placement!.liftSpeed = 1.6; // [EST]
         c.placement!.handoffSeconds = 0; // the end effector itself picks CORAL off the carpet
       }),
@@ -408,6 +410,9 @@ export function reefscapeTeamRobots(): TeamRobot[] {
         c.frameWidth = inch(30);
         c.height = inch(42);
         c.mass = lb(115);
+        // 2025 binder: two 4 in flex wheels grab a vertical CAGE pipe into a latch, then a 1:224 winch pivots the claw to
+        // pull the robot under the CAGE. Targets: engage in <1 s, winch climb in <1 s.
+        c.climber.grip = 'rollers'; c.climber.latchSeconds = 0.4; c.climber.secondsToClimb = 0.95; c.climber.balance = 0.95;
       }),
     },
     subZero1778(),

@@ -70,6 +70,12 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   // Cage approaches use the actual CAD mechanism, independent of intake/scoring faces.
   const cageGrips:Record<string,[number,number]>={'wildstang-111':[.72,.05],'firefly-118':[.60,0],'zuma-581':[0,.49],'sublime-1678':[.03,-.60],'quixilver-604-2025':[-.37,0],'whisper-1690':[.43,0],'spectre-2910':[-.43,0],'taiyaki-5940':[-.16,.60],'wisp-422':[-.05,.46],'singularity-1706':[-.45,0],'relay-3005':[0,.44],'redundancy-190':[-.3,0]};
   if(c.model && cageGrips[c.model])c.climber.gripOffset ??= cageGrips[c.model];
+  // How each team's climber holds the CAGE (docs/ROBOT-ARCHETYPES.md "2025 cage climbers"): roller claws pull one
+  // vertical pipe into a latch; hooks / cross-bars catch the bar between two pipes. [EST] = no team source found.
+  const cageGripStyles:Record<string,'rollers'|'hooks'>={'undertow-254':'rollers','spectre-2910':'rollers','singularity-1706':'rollers','madtown-1323':'rollers',
+    'wisp-422':'hooks','relay-3005':'hooks','redundancy-190':'hooks','taiyaki-5940':'hooks','lightning-2056':'hooks','whisper-1690':'hooks','miss-daisy-341':'hooks','fiddler-971':'hooks','sublime-1678':'hooks','firefly-118':'hooks',
+    'zuma-581':'rollers','wildstang-111':'rollers','quixilver-604-2025':'rollers'};
+  if(c.model && cageGripStyles[c.model])c.climber.grip ??= cageGripStyles[c.model];
   // Older configs flagged NET scoring with the launcher; NET scoring is now the elevator outtake.
   c.options = { ...d.options, ...c.options, net: !!(c.options?.net ?? c.launcher.enabled) };
   c.launcher.enabled = false;
@@ -101,6 +107,9 @@ export function normalizeReefscapeConfig(config: RobotConfig): RobotConfig {
   c.autoAlign ??= true;
   c.climber.maxLevel = Math.round(bounded(c.climber.maxLevel, 2, 0, 2));
   c.climber.secondsToClimb = bounded(c.climber.secondsToClimb, 3.6, 0.5, 12);
+  if (c.climber.grip !== undefined && c.climber.grip !== 'rollers' && c.climber.grip !== 'hooks') delete c.climber.grip;
+  if (c.climber.latchSeconds !== undefined) c.climber.latchSeconds = bounded(c.climber.latchSeconds, 0.35, 0.1, 3);
+  if (c.climber.balance !== undefined) c.climber.balance = bounded(c.climber.balance, 0.8, 0, 1);
   c.launcher.rate = bounded(c.launcher.rate, 2, 0.25, 4);
   c.launcher.height = bounded(c.launcher.height, Math.min(inch(38), c.height), inch(8), c.height);
   return c;
@@ -171,6 +180,9 @@ export const reefscapeRobotOptions: RobotOption[] = [
   opt('climb', 'CAGE climber', [['0', 'None'], ['1', 'Shallow'], ['2', 'Deep']],
     (c) => String(c.climber.maxLevel), (c, v) => { c.climber.maxLevel = Number(v); },
     'Park 2 · shallow 6 · deep 12. Sets your station’s cage depth; you may climb any matching alliance cage.'),
+  opt('cageGrip', 'CAGE grabber', [['rollers', 'Roller claw', 'Powered wheels pull one CAGE pipe into a latch (254, 2910): catches the pipe from a few inches off, but the robot can twist around that pipe when hit'], ['hooks', 'Hooks / bar', 'Hooks or a cross-bar catch the CAGE between two pipes: simpler, but you must drive in square and close; robot and CAGE then swing as one']],
+    (c) => c.climber.grip ?? (c.climber.maxLevel === 1 ? 'hooks' : 'rollers'), (c, v) => { c.climber.grip = v === 'hooks' ? 'hooks' : 'rollers'; },
+    'How the climber holds the swinging CAGE. The winch then lifts the robot; a hit swings robot and CAGE together.'),
 ];
 
 export function reefscapeSpecBars(config: RobotConfig) {
@@ -183,6 +195,9 @@ export function reefscapeSpecBars(config: RobotConfig) {
   ];
 }
 
+/** Latch + winch time once the climber is on the CAGE. */
+export const climbSeconds = (c: RobotConfig) => (c.climber.latchSeconds ?? (c.climber.grip === 'hooks' ? 0.3 : 0.35)) + (c.climber.secondsToClimb ?? 3.6);
+
 /** Headline stats on a robot's picker card. */
 export function reefscapeCardBars(config: RobotConfig) {
   const c = normalizeReefscapeConfig(config);
@@ -190,7 +205,7 @@ export function reefscapeCardBars(config: RobotConfig) {
   return [
     { label: 'Lift', value: `${lift.toFixed(0)} in/s`, frac: lift / 98 },
     { label: 'Cycle', value: `${c.placement!.cycleSeconds.toFixed(2)} s`, frac: 1 - (c.placement!.cycleSeconds - 0.2) / 1.2 },
-    { label: 'Climb', value: ['Park', 'Shallow', 'Deep'][c.climber.maxLevel], frac: c.climber.maxLevel / 2 },
+    { label: 'Climb', value: ['Park', 'Shallow', 'Deep'][c.climber.maxLevel] + (c.climber.maxLevel ? ` · ${climbSeconds(c).toFixed(1)} s` : ''), frac: c.climber.maxLevel / 2 },
   ];
 }
 

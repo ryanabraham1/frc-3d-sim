@@ -113,7 +113,11 @@ cage climbed. Park/cage points are assessed at the end of the final scoring wind
 
 Cages are not locked in place: each one hangs from the truss as a pendulum, so driving into it pushes it
 and it swings, then settles. **C** grabs the cage wherever it has swung to; robot and cage then settle
-plumb under the pivot with the cage just ahead of the front bumper. After you descend, it swings freely again.
+under the pivot through a physical grip joint. The wheels drive the grabber onto a pipe or bar,
+then the winch pulls the robot up. Roller claws allow some twist around one pipe; hooks constrain
+that twist. A side impact swings both robot and cage, and the disabled winch holds its position.
+After **X** lowers the robot onto its wheels, the joint releases and the cage swings freely again.
+The CAGE grabber option selects rollers or hooks; robot cards show latch plus winch time.
 
 Scripted AUTO options are leave + L4, leave + L1, leave only and do nothing. Manual AUTO remains a
 practice option, as in the existing 2026 simulator.
@@ -157,8 +161,9 @@ The end effector is kinematic: it holds CORAL rigidly and releases it at a fixed
 handoff is a timed transfer animated between the model's intake and end effector. Reef auto-align drives to the ideal pose with a P-controller
 plus Gaussian noise rather than simulating a camera. Nets use a rigid cup/sensor instead of deformable fabric. Staged
 reef ALGAE is retained until harvested. Cages swing as rigid pendulums (the chain is treated as a rigid link,
-~8 kg estimated mass). The climb itself is the engine's kinematic animation, during which the robot
-carries its cage. Anchor contact (G419) is not adjudicated.
+~8 kg estimated mass). Climbs use a dynamic robot/cage joint with an animated winch anchor; gripper contact,
+winch travel, grip compliance and balance are estimated rather than detailed roller/rope simulation.
+The approach remains assisted. Anchor contact (G419) is not adjudicated.
 
 Multiplayer is host authoritative. CORAL placements, harvested reef ALGAE, held pieces, piece rotations,
 elevator state, swinging cage poses, scores, clock, fouls and results are replicated. Clients predict driving against
@@ -171,3 +176,7 @@ branch occupancy, harvest, intake limits, processor/net flight, human-player tra
 both cage heights, AUTO re-scoring, ranking points, tags and replica state. Shared physics regressions
 exercise both registered seasons. Browser checks cover year selection, room year changes, driver and
 spectator synchronization, remote scoring/driving, results and restarting a room.
+
+`tests/reefscape-climb.test.ts` checks roller/hook capture, hanging and impact response, shallow/deep
+descent for both alliances, disabled ratchet hold, missed/vertically unreachable cages, team climb
+timing and recovery-joint reconstruction.

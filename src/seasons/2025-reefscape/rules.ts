@@ -15,6 +15,7 @@ import type { AimTarget, Robot, RobotCommand } from '@engine/robot/robot';
 import { clamp, inch, wrapAngle } from '@engine/units';
 import * as C from './constants';
 import type { HangingNetState } from '@engine/field/hanging';
+import { ClimbGrip, type ClimbGripSpec, type GripRecovery } from '@engine/field/climbGrip';
 import { coralGeometry, type ReefscapeFieldRefs } from './field';
 import { coralPoints, reefscapeResults } from './scoring';
 
@@ -50,13 +51,10 @@ export interface ReefscapeNetState {
   cages: HangingNetState[];
 }
 
-/** A climbing robot carries its cage from wherever it swung to its hanging pose over the align phase. */
-interface CageGrip { robot: Robot; alliance: Alliance; slot: number; from: { x: number; y: number; z: number }; t: number }
-
 export class ReefscapeRules implements SeasonRules {
   recoveryState() {
     return { visible: this.netState(), fields: captureFields(this, 'plannedTargets hpTimer chuteQueue candidates autoKeys autoTrough passThrough alignNoise simTime defenderTime cageContacts protectedContacts notices launchedBy autoAssessed bargeAssessed'.split(' ')),
-      ref: this.ref.recoveryState(), pins: this.pins.recoveryState(), cages: ALLIANCES.flatMap(a => this.refs.cages[a].map(c => c.recoveryState())), grips: this.grips.map(({ robot, ...grip }) => ({ ...grip, robotId: robot.id })) };
+      ref: this.ref.recoveryState(), pins: this.pins.recoveryState(), cages: ALLIANCES.flatMap(a => this.refs.cages[a].map(c => c.recoveryState())), grips: this.ctx.robots.flatMap((r) => r.grip && r.climbSlot !== null ? [{ robotId: r.id, slot: r.climbSlot, grip: r.grip.recoveryState() }] : []) as { robotId: number; slot: number; grip: GripRecovery }[] };
   }
   restoreRecovery(state: unknown): void {
     const s = state as ReturnType<ReefscapeRules['recoveryState']>;
@@ -65,10 +63,12 @@ export class ReefscapeRules implements SeasonRules {
     this.ref.restoreRecovery(s.ref);
     this.pins.restoreRecovery(s.pins);
     ALLIANCES.flatMap(a => this.refs.cages[a]).forEach((c, i) => c.restoreRecovery(s.cages[i]));
-    this.grips.splice(0, this.grips.length, ...s.grips.flatMap(({ robotId, ...grip }) => {
-      const robot = this.ctx.robots.find(r => r.id === robotId);
-      return robot ? [{ ...grip, robot }] : [];
-    }));
+    // Joints aren't part of the physics snapshot: rebuild each climber's grip on its cage.
+    for (const r of this.ctx.robots) r.grip?.destroy();
+    for (const r of this.ctx.robots) {
+      const g = s.grips.find((x) => x.robotId === r.id);
+      r.grip = g ? ClimbGrip.restore(this.ctx.physics, r.body, this.refs.cages[r.alliance][g.slot], g.grip) : null;
+    }
   }
 
   readonly plannedTargets = new Map<number, { face: number; branch: number }>();
@@ -103,7 +103,6 @@ export class ReefscapeRules implements SeasonRules {
   /** G425: 3-count on PINS. */
   private readonly pins = new PinTracker({ rule: 'G425', countSeconds: 3, separation: PIN_SEPARATION });
   private readonly notices = new Map<number, number>();
-  private readonly grips: CageGrip[] = [];
   private readonly launchedBy = new Map<number, { robotId: number; at: number }>();
   private autoAssessed = false;
   private bargeAssessed = false;
@@ -148,7 +147,7 @@ export class ReefscapeRules implements SeasonRules {
     this.placements.length = 0; this.bufferPassLatch.clear(); this.autoKeys.clear(); this.candidates.clear(); this.passThrough.clear(); this.launchedBy.clear(); this.cageContacts.clear(); this.protectedContacts.clear(); this.pins.reset(); this.ref.reset();
     this.autoTrough = { blue: 0, red: 0 };
     this.autoAssessed = this.bargeAssessed = false;
-    this.grips.length = 0;
+    for (const r of robots) r.releaseGrip();
     for (const a of ALLIANCES) for (const cage of this.refs.cages[a]) cage.reset();
     this.hpTimer = { blue: 0, red: 0 };
     this.chuteQueue = { blue: [], red: [] };
@@ -761,7 +760,6 @@ export class ReefscapeRules implements SeasonRules {
   beforeStep(dt: number): void {
     this.simTime += dt;
     for (const [i, until] of this.passThrough) if (this.simTime >= until) { this.ctx.pool.setIgnoreRobots(i, false); this.passThrough.delete(i); }
-    this.updateGrips(dt);
     if (!this.activeScoring()) return;
     for (const a of ALLIANCES) {
       this.hpTimer[a] -= dt;
@@ -976,40 +974,56 @@ export class ReefscapeRules implements SeasonRules {
     const cage = this.climbableCage(robot);
     if (!cage) { this.tell(robot, `Drive to one of your alliance's ${want.toUpperCase()} cages in your BARGE ZONE`); return; }
     if (cage.occupied) { this.tell(robot, 'CAGE already occupied · try another of your cages'); return; }
-    const p = C.cage(robot.alliance, cage.slot + 1);
     const yaw = this.climbYaw(robot);
     const live = this.refs.cages[robot.alliance][cage.slot].fieldPosition();
     const grab = this.climbCenter(robot,live,yaw);
     if (Math.hypot(robot.pose.x-grab.x,robot.pose.y-grab.y)>.4 || Math.abs(wrapAngle(robot.pose.yaw-yaw))>Math.PI/6) {
       this.tell(robot,'Line up square with the CAGE · move closer and face it'); return;
     }
-    // Chassis height when hanging: a shallow climb only needs to clear the carpet; a deep climb pulls higher.
-    const lift = cage.depth === 'shallow' ? 0.15 : 0.28;
-    // The climber grabs the cage where it hangs (swung or not), then robot and cage settle plumb under
-    // the pivot with the cage just ahead of the front bumper.
-    robot.startClimb({ ...this.climbCenter(robot,p,yaw), yaw }, lift, cage.depth === 'shallow' ? 1 : 2, cage.slot);
-    this.grips.push({ robot, alliance: robot.alliance, slot: cage.slot, from: this.refs.cages[robot.alliance][cage.slot].fieldPosition(), t: 0 });
+    robot.startGripClimb(new ClimbGrip(this.ctx.physics, robot.body, this.refs.cages[robot.alliance][cage.slot], this.gripSpec(robot, cage.depth, yaw)),
+      cage.depth === 'shallow' ? 1 : 2, cage.slot);
+  }
+
+  /**
+   * The climber as teams built it: the seat where the pipe ends up in the gripper (the CAD cage contact, moved from the
+   * cage's center to its near face), the cage's pipes (roller claws) or the bars between pipes (hooks), and the
+   * winch. A deep climb pulls the bumpers well clear of the carpet; a shallow one only has to clear it.
+   */
+  private gripSpec(robot: Robot, depth: C.CageDepth, yaw: number): ClimbGripSpec {
+    const cl = robot.config.climber, style = cl.grip ?? (depth === 'shallow' ? 'hooks' : 'rollers');
+    const s2 = C.CAGE_SIZE / 2 - C.CAGE_PIPE_RADIUS;
+    const [gx, gz] = cl.gripOffset ?? [this.gripReach(robot), 0], r = Math.hypot(gx, gz) || 1;
+    // [EST] grip heights: deep climbers reach about 16 in up the hanging pipes, shallow ones the cage's lower bar.
+    const seatY = depth === 'shallow' ? C.CAGE_BOTTOM.shallow + 0.1 : 0.4;
+    const hc = clamp(seatY - C.CAGE_BOTTOM[depth], 0.06, C.CAGE_HEIGHT - 0.06);
+    const seat = new THREE.Vector3(gx - gx / r * s2, seatY, gz - gz / r * s2);
+    const pullIn = 0.1;
+    // Cage body axes are world axes (x, up, -field y); its pipes stand at the corners of the square.
+    const up = new THREE.Vector3(0, 1, 0);
+    const targets = style === 'rollers'
+      ? [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([x, z]) => ({ point: new THREE.Vector3(x * s2, hc, z * s2), axis: up }))
+      : [...[-1, 1].map((x) => ({ point: new THREE.Vector3(x * s2, hc, 0), axis: new THREE.Vector3(0, 0, 1) })),
+         ...[-1, 1].map((z) => ({ point: new THREE.Vector3(0, hc, z * s2), axis: new THREE.Vector3(1, 0, 0) }))];
+    return {
+      style, seat, targets, yaw,
+      captureHeight: 0.15, // [EST] compliant grabber reach above/below the intended contact
+      captureRadius: style === 'rollers' ? 0.1 : 0.06, yawTolerance: style === 'rollers' ? 0.5 : 0.3,
+      latchSeconds: cl.latchSeconds ?? (style === 'rollers' ? 0.35 : 0.3),
+      liftSeconds: cl.secondsToClimb ?? cl.secondsPerLevel * 2,
+      lift: depth === 'shallow' ? 0.15 : 0.28, pullIn,
+      // Good climbers rotate the cage (and its taut chain) over the chassis until the truss pivot is above the CG,
+      // so the robot hangs level; a climber that doesn't hangs pitched off its side.
+      tilt: Math.asin(clamp((cl.balance ?? 0.8) * Math.max(0, Math.hypot(seat.x, seat.z) - pullIn) / (C.CAGE_PIVOT_HEIGHT - C.CAGE_BOTTOM[depth] - hc), 0, 0.7)),
+      // Roller wheels let the robot twist about the pipe and spring back; hooks only rock a little on their bar.
+      compliance: style === 'rollers' ? { limit: 0.35, stiffness: 12, damping: 3 } : { limit: 0.08, stiffness: 400, damping: 40 },
+      approachSeconds: 3, reach: 0.6,
+    };
   }
   private gripReach(robot: Robot): number { return robot.footprint.length / 2 + C.CAGE_SIZE / 2 + 0.02; }
   private climbYaw(robot:Robot):number {const g=robot.config.climber.gripOffset;return C.sideYaw(robot.alliance,0)-(g?Math.atan2(-g[1],g[0]):0);}
   private climbCenter(robot:Robot,cage:{x:number;y:number},yaw:number){const [x,z]=robot.config.climber.gripOffset??[this.gripReach(robot),0];return{x:cage.x-Math.cos(yaw)*x-Math.sin(yaw)*z,y:cage.y-Math.sin(yaw)*x+Math.cos(yaw)*z};}
 
 
-  /** Held cages follow their climbing robot; a cage is released to swing once its robot is back down. */
-  private updateGrips(dt: number): void {
-    for (let k = this.grips.length - 1; k >= 0; k--) {
-      const g = this.grips[k], cage = this.refs.cages[g.alliance][g.slot];
-      if (!g.robot.isClimbing || g.robot.climbSlot !== g.slot) { cage.release(); this.grips.splice(k, 1); continue; }
-      g.t += dt;
-      const blend = clamp(g.t / 0.6, 0, 1), p = g.robot.pose;
-      const rest = C.CAGE_BOTTOM[this.refs.cageDepth[g.alliance][g.slot]];
-      const [x,z]=g.robot.config.climber.gripOffset??[this.gripReach(g.robot),0];
-      let tx=p.x+Math.cos(p.yaw)*x+Math.sin(p.yaw)*z,ty=p.y+Math.sin(p.yaw)*x-Math.cos(p.yaw)*z;
-      const anchor=g.robot.modelClimbAnchor;
-      if(anchor){g.robot.visual.updateMatrixWorld(true);const contact=this.ctx.frame.toField(anchor.getWorldPosition(new THREE.Vector3()));tx=contact.x;ty=contact.y;}
-      cage.hold(g.from.x + (tx - g.from.x) * blend, g.from.y + (ty - g.from.y) * blend, g.from.z + (rest - g.from.z) * blend);
-    }
-  }
   requestDescend(robot: Robot): void { robot.startDescend(); }
 
   private enforceDefenders(dt: number): void {

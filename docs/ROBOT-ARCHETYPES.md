@@ -318,3 +318,22 @@ truss turret with eight wheels, TIDEPOD’s broad roller channel and angled teal
 AXL’s silver elevator with two outer hooks. These are procedural reference-based models,
 not exact CAD imports. MadTown reference: https://www.thebluealliance.com/team/1323/2024
 (pit photo https://i.imgur.com/bdVVTHY.jpeg).
+
+### 2025 cage climbers
+
+Climbs drive the real chassis onto a swinging cage, attach a revolute grip joint, then move the
+robot-side anchor to model winching. The cage stays dynamic. Roller claws grip one vertical pipe
+and permit limited twist; hooks/bar grabs constrain twist and allow limited rocking. Grabber
+reach, stiffness, damping, winch travel and balance are simulation estimates.
+
+- 254 Undertow: roller claw and latch, followed by a winch that pivots the claw under the cage
+  ([team page](https://www.team254.com/first/2025/),
+  [2025 binder, climber p17](https://media.team254.com/2025/09/985607eb-2025-Tech-Binder-254.pdf)).
+  The simulated 0.4 s latch and 0.95 s winch are estimates based on the binder's sub-second targets.
+- 2910 Spectre: compliant wheels intake the cage into one-way latches, then the arm pulls down
+  and locks; the sliding carriage positions the chain over the center of mass
+  ([team's Onshape article](https://www.onshape.com/en/blog/spectre-2025-first-world-championship-robot-built-in-cloud-native-cad)).
+  Total latch plus winch time is the reported 1.5 s; the 0.35/1.15 s split is estimated.
+- Other roster grip-style assignments are estimates from the existing mechanism representations.
+  Custom robots default to rollers for deep cages and hooks for shallow cages; drivers can choose
+  either style. Stock winch time remains 3.6 s.

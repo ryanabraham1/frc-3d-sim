@@ -11,6 +11,7 @@ import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, footp
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { makeTextTexture } from '../render/text';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
+import type { ClimbGrip } from '../field/climbGrip';
 import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, type RobotAnimState, type RobotModel } from './models';
 import { PieceFlow } from './pieceFlow';
 import { FuelContacts } from './fuelContacts';
@@ -134,6 +135,8 @@ export class Robot {
   climbLevel = 0;
   climbTargetLevel = 0;
   climbSlot: number | null = null;
+  /** Physical climb: the climber's joint on a hanging element (null for the kinematic climb animation). */
+  grip: ClimbGrip | null = null;
   private climbT = 0;
   private climbDur = 0;
   private climbFrom = { x: 0, y: 0, z: 0, yaw: 0 };
@@ -1406,8 +1409,9 @@ export class Robot {
     this.updateHopperEnvelope();
     this.updateBlocker(cmd, dt);
     if (this.climbPhase !== 'none') {
-      this.driven = null;
-      return;
+      // A physical climb keeps the wheels: the climb assist drives onto the cage, then they hold while the winch lifts.
+      if (!this.grip) { this.driven = null; return; }
+      cmd = { ...cmd, ...this.grip.driveCommand() };
     }
     this.updateWheels();
     this.wheelsSlipping = 0;
@@ -2102,8 +2106,25 @@ export class Robot {
 
   private pendingLift = 0;
 
+  /** Physical climb: `grip` drives the chassis onto the element, latches, and winches the robot up. */
+  startGripClimb(grip: ClimbGrip, level: number, slot: number): void {
+    if (this.climbPhase !== 'none') { grip.destroy(); return; }
+    this.grip = grip;
+    this.climbTargetLevel = level;
+    this.climbSlot = slot;
+    this.climbLevel = 0;
+    this.climbPhase = 'align';
+  }
+
+  /** Let go of the element (missed it, set back down, or match reset). */
+  releaseGrip(): void {
+    this.grip?.destroy();
+    this.grip = null;
+  }
+
   startDescend(): void {
     if (this.climbPhase === 'none' || this.climbPhase === 'lower') return;
+    if (this.grip) { this.grip.lower(); this.climbPhase = this.grip.phase === 'lower' ? 'lower' : this.climbPhase; this.climbLevel = 0; return; }
     const p = this.pose;
     this.climbFrom = { x: p.x, y: p.y, z: this.elevation, yaw: p.yaw };
     this.climbTo = { ...this.climbFrom, z: 0.002 };
@@ -2114,6 +2135,17 @@ export class Robot {
   }
 
   private updateClimb(dt: number): void {
+    if (this.grip) {
+      const phase = this.grip.update(dt, this.enabled);
+      if (phase === 'done' || phase === 'missed') {
+        this.releaseGrip();
+        this.climbPhase = 'none'; this.climbSlot = null; this.climbLevel = 0;
+      } else {
+        this.climbPhase = phase === 'approach' || phase === 'latch' ? 'align' : phase === 'lift' ? 'rise' : phase === 'hang' ? 'hanging' : 'lower';
+        if (phase === 'hang') this.climbLevel = this.climbTargetLevel;
+      }
+      return;
+    }
     if (this.climbPhase === 'none' || this.climbPhase === 'hanging') return;
     if (!this.enabled) return; // disabled robots freeze in place
     this.climbT += dt;
@@ -2149,6 +2181,7 @@ export class Robot {
   /** Progress 0..1 of the current climb (for HUD). */
   get climbProgress(): number {
     if (this.replicaClimbProgress !== null) return this.replicaClimbProgress;
+    if (this.grip) return this.grip.progress;
     if (this.climbPhase === 'hanging') return 1;
     if (this.climbPhase === 'rise') return clamp(this.climbT / this.climbDur, 0, 1);
     return 0;
@@ -2240,6 +2273,7 @@ export class Robot {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.resetDriveState();
+    this.releaseGrip();
     this.climbPhase = 'none';
     this.climbLevel = 0;
     this.climbSlot = null;
@@ -2430,6 +2464,7 @@ export class Robot {
   }
 
   dispose(scene: THREE.Scene): void {
+    this.releaseGrip();
     scene.remove(this.visual);
     this.physics.world.removeRigidBody(this.body);
   }
