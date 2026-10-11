@@ -1,31 +1,31 @@
 import * as THREE from 'three';
 import type { Alliance } from '../../engine/coords';
 import type { FieldBuilder, Vec3 } from '../../engine/field/builder';
-import { NetSheet } from '../../engine/field/netSheet';
 import * as C from './constants';
 
 const inch = (n: number) => n * 0.0254;
 
-/** Field manual pp. 88, 92–95: six plastic funnel panels and rear net frame.
- * Unspecified throat/net dimensions are visual approximations. */
-export const HUB_THROAT_RADIUS = C.HUB_OPENING_HEX / Math.sqrt(3) * 0.70;
-export const HUB_THROAT_Z = C.HUB_CUP_FLOOR + inch(2);
-// Leave enough depth beneath the throat for the entire 5.9-inch FUEL to enter.
-export const HUB_SENSOR_FLOOR_Z = C.HUB_CUP_FLOOR - inch(6);
+import { HUB_CAD } from './hubCad';
 
-/** Only collect FUEL once it has cleared the sloped panels into the throat. */
-export function fuelInsideHubThroat(x: number, y: number, z: number, radius: number): boolean {
-  if (z - radius < HUB_SENSOR_FLOOR_Z - 0.02 || z + radius > HUB_THROAT_Z - 0.005) return false;
-  const clearance = HUB_THROAT_RADIUS * Math.sqrt(3) / 2 - radius;
-  for (let i = 0; i < 6; i++) {
-    const angle = Math.PI / 3 + i * Math.PI / 3;
-    if (x * Math.cos(angle) + y * Math.sin(angle) > clearance) return false;
-  }
-  return true;
+/**
+ * HUB scoring test and the drawn stand-in used until the CAD asset loads. Collision is the field CAD (hubCad.ts).
+ * [CAD] The funnel narrows to its base (GE-26315) 1.40 m up; below it the ball drops onto the internal ramps.
+ */
+export const HUB_THROAT_Z = HUB_CAD.funnelBaseZ;
+const HUB_THROAT_RADIUS = C.HUB_OPENING_HEX / Math.sqrt(3) * 0.70;
+
+/**
+ * Scored: the ball's centre crossed down past the bottom of the funnel (`prevZ` above, `z` at or below) inside the funnel
+ * base's opening. Hub-local `x`, `y` (either alliance: the opening is symmetric). Crossing, not a band, so no fall speed
+ * skips it.
+ */
+export function fuelCrossedHubFunnel(prevZ: number, z: number, x: number, y: number, radius: number): boolean {
+  const plane = HUB_CAD.funnelBaseZ - radius;
+  return prevZ > plane && z <= plane && Math.abs(x) < HUB_CAD.funnelHalfX && Math.abs(y) < HUB_CAD.funnelHalfY;
 }
 
-/** Builds the funnel and frame; returns the hub's flexible nets (rear, then the two side wings). */
-export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x: number; y: number }): NetSheet[] {
+/** Drawn stand-in for the funnel and net frame (no collision: the CAD collides), used until the CAD asset loads. */
+export function buildHubStandIn(b: FieldBuilder, alliance: Alliance, c: { x: number; y: number }): void {
   const forward = alliance === 'blue' ? 1 : -1;
   const point = (x: number, y: number, z: number): Vec3 => [c.x + forward * x, c.y + y, z];
   const mouthR = C.HUB_OPENING_HEX / Math.sqrt(3);
@@ -33,7 +33,7 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
   const baseZ = HUB_THROAT_Z;
   const rimZ = C.HUB_RIM_HEIGHT;
   const plastic = new THREE.MeshStandardMaterial({ color: 0xdde3e7, transparent: true, opacity: 0.53, roughness: 0.48, metalness: 0.05, side: THREE.DoubleSide, depthWrite: false });
-  const panel = (name: string, vertices: Vec3[], material: THREE.Material, restitution = 0.38) => {
+  const panel = (name: string, vertices: Vec3[], material: THREE.Material) => {
     const world = vertices.map(v => b.frame.toWorld(...v));
     const geometry = new THREE.BufferGeometry().setFromPoints(world);
     geometry.setIndex(vertices.length === 3 ? [0, 1, 2] : [0, 1, 2, 0, 2, 3]);
@@ -43,11 +43,6 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
     mesh.name = name;
     mesh.receiveShadow = true;
     b.root.add(mesh);
-    // Thin, closed hulls avoid turning the open funnel into a solid collider.
-    const normal = new THREE.Vector3().subVectors(new THREE.Vector3(...vertices[1]), new THREE.Vector3(...vertices[0]))
-      .cross(new THREE.Vector3().subVectors(new THREE.Vector3(...vertices[2]), new THREE.Vector3(...vertices[0])))
-      .normalize().multiplyScalar(inch(0.12));
-    b.convex([0, 0, 0], vertices.flatMap(v => [v, [v[0] + normal.x, v[1] + normal.y, v[2] + normal.z] as Vec3]), { visible: false, collide: 'pieces', restitution, friction: 0.22 });
   };
   for (let i = 0; i < 6; i++) {
     const angles = [i, i + 1].map(j => Math.PI / 6 + j * Math.PI / 3);
@@ -65,37 +60,12 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
   const front = -C.HUB_SIZE / 4;
   const footZ = baseZ - inch(5);
   const topZ = rimZ + C.HUB_NET_HEIGHT;
-  // Game Manual TU22, Figs. 5-5 and 5-7: the net hangs at the upper
-  // rear of the frame; the lower/front lengths of the support poles are bare.
-  // Approximate its undimensioned lower edge at the opening's rim height.
-  const netBottomZ = rimZ;
-  const slopeX = (z: number) => front + (rear - front) * (z - footZ) / (topZ - footZ);
-  const netFront = slopeX(netBottomZ);
-  // The net is a real net: it bulges where FUEL hits it and springs back (NetSheet), so overshots are caught softly.
-  const spacing = inch(2);
-  const nets: NetSheet[] = [];
-  const height = topZ - netBottomZ;
-  const sub = (p: Vec3, q: Vec3): Vec3 => [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
-  const rearOrigin = point(rear, -half, netBottomZ);
-  nets.push(new NetSheet(b.frame, b.root, {
-    origin: rearOrigin, u: sub(rearOrigin, point(rear, half, netBottomZ)), v: [0, 0, height],
-    front: point(0, 0, rimZ), nu: 15, nv: 11, cordSpacing: spacing, name: `hub-${alliance}-net-rear`,
-  }));
   const pole = { color: C.COLORS.alu, metalness: 0.65, roughness: 0.35, collide: false as const };
   for (const side of [-1, 1]) {
     const y = side * half;
-    // Side wings: the triangle between the inclined pole, the rear post and the net's lower edge.
-    const wingOrigin = point(netFront, y, netBottomZ);
-    nets.push(new NetSheet(b.frame, b.root, {
-      origin: wingOrigin, u: sub(wingOrigin, point(rear, y, netBottomZ)), v: [0, 0, height],
-      front: point((netFront + rear) / 2, 0, rimZ), nu: 6, nv: 11, cordSpacing: spacing, name: `hub-${alliance}-net-wing-${side}`,
-      // The inclined pole runs corner to corner (slopeX), so the net is the triangle below it.
-      inside: (s, t) => t <= s + 1e-6,
-    }));
     b.cylinder(point(front, y, footZ), point(rear, y, topZ), inch(0.65), { ...pole, name: `hub-${alliance}-net-inclined-pole-${side}` }, 10);
     b.cylinder(point(rear, y, footZ), point(rear, y, topZ), inch(0.65), pole, 10);
     b.cylinder(point(front, y, footZ), point(rear, y, footZ), inch(0.5), pole, 10);
   }
   b.cylinder(point(rear, -half, topZ), point(rear, half, topZ), inch(0.65), pole, 10);
-  return nets;
 }

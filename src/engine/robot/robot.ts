@@ -2532,6 +2532,7 @@ export class Robot {
       this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
     }
     this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
+    if (this.bay && this.flow && this.piecesInTransit === 0) this.bay.releaseStaged();
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
     this.roundHopper?.set(frac);

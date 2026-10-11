@@ -102,6 +102,8 @@ async function loadEngine(settings: GameSettings, setup: MatchSetup | undefined,
   const { R, Game, localSetup, getSeason } = await withTimeout(loadEngineModules(), ENGINE_LOAD_TIMEOUT_MS, 'Engine load');
   // Only fetch/decode the CAD models of robots actually in this match (the full set is ~130 MB).
   const lineup = setup ?? localSetup(settings, getSeason(settings.seasonId));
+  status('LOADING FIELD\u2026');
+  await withTimeout(getSeason(settings.seasonId).prepareAssets?.() ?? Promise.resolve(), CAD_LOAD_TIMEOUT_MS, 'Field load').catch(() => undefined);
   status('LOADING ROBOTS\u2026');
   await prepareCadModels(lineup.robots.map((r) => r.config.model), {
     timeoutMs: CAD_LOAD_TIMEOUT_MS,

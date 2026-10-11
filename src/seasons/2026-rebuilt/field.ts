@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { buildHubFunnelAndNet, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } from './hubStructure';
-import type { NetSheet } from '../../engine/field/netSheet';
+import { buildHubStandIn, HUB_THROAT_Z } from './hubStructure';
+import { addHubCadColliders, addHubCadVisual, hubCadNet, HUB_CAD } from './hubCad';
+import { NetSheet } from '../../engine/field/netSheet';
 import type { Alliance, FieldPoint } from '@engine/coords';
 import { FieldBuilder, Vec3 } from '@engine/field/builder';
 import { addAprilTags, AprilTagLayout } from '@engine/field/apriltags';
@@ -171,59 +172,76 @@ function buildAllianceWall(b: FieldBuilder, a: Alliance, refs: RebuiltFieldRefs)
 
 function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   const c = side(a, C.HUB_CENTER.x, C.HUB_CENTER.y);
-  const hs = C.HUB_SIZE / 2;
   const col = C.COLORS[a];
-  const body = { color: 0x2e3440, metalness: 0.3, roughness: 0.6 };
-  // Solid lower body
-  b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z / 2], [C.HUB_SIZE, C.HUB_SIZE, HUB_SENSOR_FLOOR_Z], {...body,visible:false});
-  // Draw an actual shell around recessed discharge openings. The original solid collision envelope is retained.
-  const skin=inch(.25), height=HUB_SENSOR_FLOOR_Z, neutral=c.x+dir(a)*hs;
-  b.box([c.x-dir(a)*hs,c.y,height/2],[skin,C.HUB_SIZE,height],{...body,collide:false});
-  for(const sy of [-1,1])b.box([c.x,c.y+sy*hs,height/2],[C.HUB_SIZE,skin,height],{...body,collide:false});
-  const portW=inch(8),portH=inch(7),pitch=C.HUB_SIZE/C.HUB_EXIT_COUNT,portBottom=C.HUB_EXIT_HEIGHT-portH/2,portTop=C.HUB_EXIT_HEIGHT+portH/2;
-  b.box([neutral,c.y,portBottom/2],[skin,C.HUB_SIZE,portBottom],{...body,collide:false});
-  b.box([neutral,c.y,(height+portTop)/2],[skin,C.HUB_SIZE,height-portTop],{...body,collide:false});
-  for(let i=0;i<=C.HUB_EXIT_COUNT;i++) {
-    const left=i===0?-hs:(i-1-(C.HUB_EXIT_COUNT-1)/2)*pitch+portW/2;
-    const right=i===C.HUB_EXIT_COUNT?hs:(i-(C.HUB_EXIT_COUNT-1)/2)*pitch-portW/2;
-    b.box([neutral,c.y+(left+right)/2,C.HUB_EXIT_HEIGHT],[skin,right-left,portH],{...body,collide:false});
+  // [M 5.4; CAD: FE-2026 REBUILT field] Collision is the official field CAD: shell, funnel, internal walls and ramps, so a
+  // scored ball rolls through the HUB and out of its exit slot as the same ball (hubCad.ts).
+  addHubCadColliders(b, a, c);
+  // [M Table 5-3] The DMX lights shine through the diffusers that cap the body: white plastic glowing in alliance colour.
+  const lights = new THREE.MeshStandardMaterial({ color: 0xe9eef1, emissive: col, emissiveIntensity: 0.1, roughness: 0.5, transparent: true, opacity: 0.9 });
+  if (!addHubCadVisual(b, a, c, lights)) drawHubStandIn(b, a, c, lights);
+  // [CAD GE-26318] The net behind the opening, flexible (NetSheet) on the CAD net's own rectangle.
+  const nets = [new NetSheet(b.frame, b.root, { ...hubCadNet(a, c), nu: 15, nv: 15, cordSpacing: inch(2), name: `hub-${a}-net` })];
+  return { center: c, lights, nets };
+}
+
+/** Drawn approximation of the HUB (no collision), shown only if the CAD asset could not load. */
+function drawHubStandIn(b: FieldBuilder, a: Alliance, c: { x: number; y: number }, lights: THREE.MeshStandardMaterial): void {
+  const hs = C.HUB_SIZE / 2;
+  const d = dir(a);
+  const BODY_TOP = HUB_CAD.bodyTop;
+  const black = { color: 0x16181b, metalness: 0.25, roughness: 0.65 };
+  const alu = { color: 0xb8bec4, metalness: 0.7, roughness: 0.35, collide: false as const };
+  const capGray = { color: 0xd9dde1, metalness: 0.15, roughness: 0.55, collide: false as const };
+  const skin = inch(.25), neutral = c.x + d * hs, alliance = c.x - d * hs;
+  // [M Fig 5-5, 5-7] Alliance face: black. Side faces (the side view in Fig 5-7): black with the teal REBUILT banner and a
+  // gray base strip. NEUTRAL ZONE face (the back, under the net): the four exits at the base and open frame above them,
+  // so the ramps inside are visible.
+  b.box([alliance, c.y, BODY_TOP / 2], [skin, C.HUB_SIZE, BODY_TOP], { ...black, collide: false });
+  for (const sy of [-1, 1]) {
+    const y = c.y + sy * hs;
+    b.box([c.x, y, (BODY_TOP + inch(3)) / 2], [C.HUB_SIZE, skin, BODY_TOP - inch(3)], { ...black, collide: false });
+    b.box([c.x, y, inch(1.5)], [C.HUB_SIZE, skin, inch(3)], { ...capGray, name: `hub-${a}-base-strip-${sy}` });
+    b.box([c.x, y + sy * .004, inch(22)], [C.HUB_SIZE * .84, .004, inch(26)], { color: 0x4f8a99, roughness: .7, collide: false, name: `hub-${a}-banner-${sy}` });
+    b.label([c.x, y + sy * .008, inch(23)], 'REBUILT', inch(5.5), sy > 0 ? Math.PI / 2 : -Math.PI / 2, '#ffffff');
   }
-  for(const sx of [-1,1])for(const sy of [-1,1])b.box([c.x+sx*(hs+.006),c.y+sy*(hs-.016),height/2],[inch(1),inch(1),height],{color:0x78818a,metalness:.7,collide:false});
-  // Cup walls above the internal floor
-  const cupH = HUB_THROAT_Z - HUB_SENSOR_FLOOR_Z;
-  const zc = HUB_SENSOR_FLOOR_Z + cupH / 2;
-  const w = C.HUB_WALL;
-  const wallMat = { color: col, metalness: 0.2, roughness: 0.6 };
-  b.box([c.x - hs + w / 2, c.y, zc], [w, C.HUB_SIZE, cupH], wallMat);
-  b.box([c.x + hs - w / 2, c.y, zc], [w, C.HUB_SIZE, cupH], wallMat);
-  b.box([c.x, c.y - hs + w / 2, zc], [C.HUB_SIZE - 2 * w, w, cupH], wallMat);
-  b.box([c.x, c.y + hs - w / 2, zc], [C.HUB_SIZE - 2 * w, w, cupH], wallMat);
-  // Inner floor (sensor array) — slightly lighter
-  b.box([c.x, c.y, HUB_SENSOR_FLOOR_Z + 0.005], [C.HUB_SIZE - 2 * w, C.HUB_SIZE - 2 * w, 0.01], { color: 0x444c58, collide: false });
+  const portW = inch(8), portH = inch(7), pitch = C.HUB_SIZE / C.HUB_EXIT_COUNT, portBottom = C.HUB_EXIT_HEIGHT - portH / 2, portTop = C.HUB_EXIT_HEIGHT + portH / 2;
+  const exitStrip = portTop + inch(2), tagBand = inch(12);
+  b.box([neutral, c.y, portBottom / 2], [skin, C.HUB_SIZE, portBottom], { ...black, collide: false });
+  b.box([neutral, c.y, (portTop + exitStrip) / 2], [skin, C.HUB_SIZE, exitStrip - portTop], { ...black, collide: false });
+  for (let i = 0; i <= C.HUB_EXIT_COUNT; i++) {
+    const left = i === 0 ? -hs : (i - 1 - (C.HUB_EXIT_COUNT - 1) / 2) * pitch + portW / 2;
+    const right = i === C.HUB_EXIT_COUNT ? hs : (i - (C.HUB_EXIT_COUNT - 1) / 2) * pitch - portW / 2;
+    b.box([neutral, c.y + (left + right) / 2, C.HUB_EXIT_HEIGHT], [skin, right - left, portH], { ...black, collide: false });
+  }
+  b.box([neutral, c.y, BODY_TOP - tagBand / 2], [skin, C.HUB_SIZE, tagBand], { ...black, collide: false });
+  b.box([neutral, c.y, (exitStrip + BODY_TOP - tagBand) / 2], [inch(.12), C.HUB_SIZE, BODY_TOP - tagBand - exitStrip], { color: 0xdfe8ee, opacity: .16, roughness: .2, collide: false, name: `hub-${a}-back-clear` });
+  for (const z of [exitStrip, inch(26), BODY_TOP - tagBand]) b.box([neutral - d * inch(.8), c.y, z], [inch(1), C.HUB_SIZE - inch(2), inch(1)], alu);
+  for (const sy of [-1, 1]) b.box([neutral - d * inch(.8), c.y + sy * inch(11.75), (exitStrip + BODY_TOP - tagBand) / 2], [inch(1), inch(1), BODY_TOP - tagBand - exitStrip], alu);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) b.box([c.x + sx * (hs - inch(.5)), c.y + sy * (hs - inch(.5)), BODY_TOP / 2], [inch(1), inch(1), BODY_TOP], alu);
+  const capH = HUB_THROAT_Z - BODY_TOP, slope = Math.atan2(inch(3), capH), len = Math.hypot(capH, inch(3));
+  for (const sx of [-1, 1]) b.box([c.x + sx * (hs - inch(1.5)), c.y, BODY_TOP + capH / 2], [inch(.3), C.HUB_SIZE - inch(2), len], { ...capGray, material: lights, pitch: sx * slope, name: `hub-${a}-cap-${sx}` });
+  for (const sy of [-1, 1]) b.box([c.x, c.y + sy * (hs - inch(1.5)), BODY_TOP + capH / 2], [C.HUB_SIZE - inch(2), inch(.3), len], { ...capGray, material: lights, roll: -sy * slope, name: `hub-${a}-cap-y${sy}` });
 
-  const nets = buildHubFunnelAndNet(b, a, c);
-
-  // Light bars along the top edges
-  const lights = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: col, emissiveIntensity: 0.1 });
-  const lb = inch(1.5);
-  b.box([c.x - hs, c.y, C.HUB_RIM_HEIGHT + lb / 2], [lb, C.HUB_SIZE, lb], { material: lights, collide: false });
-  b.box([c.x + hs, c.y, C.HUB_RIM_HEIGHT + lb / 2], [lb, C.HUB_SIZE, lb], { material: lights, collide: false });
-  b.box([c.x, c.y - hs, C.HUB_RIM_HEIGHT + lb / 2], [C.HUB_SIZE, lb, lb], { material: lights, collide: false });
-  b.box([c.x, c.y + hs, C.HUB_RIM_HEIGHT + lb / 2], [C.HUB_SIZE, lb, lb], { material: lights, collide: false });
+  buildHubStandIn(b, a, c);
+  // [M 5.4, Table 5-3] DMX light bars on the top angles of the opening: along the hexagon's rim.
+  const mouthR = C.HUB_OPENING_HEX / Math.sqrt(3);
+  for (let i = 0; i < 6; i++) {
+    const t0 = Math.PI / 6 + i * Math.PI / 3, t1 = t0 + Math.PI / 3;
+    const p0 = [c.x + d * mouthR * Math.cos(t0), c.y + mouthR * Math.sin(t0)], p1 = [c.x + d * mouthR * Math.cos(t1), c.y + mouthR * Math.sin(t1)];
+    b.box([(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, C.HUB_RIM_HEIGHT + inch(.75)], [Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), inch(1.5), inch(1.5)],
+      { material: lights, collide: false, yaw: Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) });
+  }
 
   // Exit openings at the base (neutral-zone face)
-  const ex = c.x + dir(a) * (hs + 0.003);
+  const ex = c.x + d * (hs + 0.003);
   for (let i = 0; i < C.HUB_EXIT_COUNT; i++) {
     const oy = c.y + (i - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT);
     // Match the simulated discharge centre: a ball emerges through the port rather than the panel above it.
-    b.box([ex-dir(a)*.09,oy,C.HUB_EXIT_HEIGHT],[.006,inch(8),inch(7)],{color:0x090b0d,collide:false,castShadow:false,name:`hub-${a}-discharge-recess-${i}`});
-    for(const sy of [-1,1])b.box([ex-dir(a)*.045,oy+sy*inch(4),C.HUB_EXIT_HEIGHT],[.09,.005,inch(7)],{color:0x535c65,metalness:.6,collide:false});
+    b.box([ex-d*.09,oy,C.HUB_EXIT_HEIGHT],[.006,inch(8),inch(7)],{color:0x090b0d,collide:false,castShadow:false,name:`hub-${a}-discharge-recess-${i}`});
+    for(const sy of [-1,1])b.box([ex-d*.045,oy+sy*inch(4),C.HUB_EXIT_HEIGHT],[.09,.005,inch(7)],{color:0x535c65,metalness:.6,collide:false});
     // A short metal lip gives the emerging ball a visible continuation to the carpet.
-    b.box([ex+dir(a)*.018,oy,C.HUB_EXIT_HEIGHT-inch(3.5)],[.13,inch(8),.006],{color:0x8d969d,metalness:.65,roughness:.45,pitch:-dir(a)*.15,collide:false,name:`hub-${a}-discharge-lip-${i}`});
+    b.box([ex+d*.018,oy,C.HUB_EXIT_HEIGHT-inch(3.5)],[.13,inch(8),.006],{color:0x8d969d,metalness:.65,roughness:.45,pitch:-d*.15,collide:false,name:`hub-${a}-discharge-lip-${i}`});
   }
-  // Alliance label on the alliance-facing side
-  b.label([c.x - dir(a) * (hs + 0.004), c.y, inch(30)], 'HUB', inch(6), a === 'blue' ? Math.PI : 0, '#ffffff');
-  return { center: c, lights, nets };
 }
 
 function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance, handles:number[]): void {

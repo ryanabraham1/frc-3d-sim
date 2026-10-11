@@ -5,30 +5,53 @@ import { HeadlessSim } from '../src/engine/testing/headless';
 import { cloneConfig } from '../src/engine/robot/config';
 import * as C from '../src/seasons/2026-rebuilt/constants';
 import { side, dir } from '../src/seasons/2026-rebuilt/field';
-import { HUB_SENSOR_FLOOR_Z } from '../src/seasons/2026-rebuilt/hubStructure';
+import { HUB_CAD } from '../src/seasons/2026-rebuilt/hubCad';
 
-for (const alliance of ['blue', 'red'] as const) it(`${alliance} hub returns the scored ball through the low opening rolling out at the gravity-fed exit speed`, async () => {
+// A scored ball is the same physical ball from the funnel to the exits: it falls through the HUB (field CAD) onto its ramps,
+// through the FUEL counter and out of the exit slot in the NEUTRAL ZONE face, never hidden or respawned.
+for (const alliance of ['blue', 'red'] as const) it(`${alliance} hub carries a scored ball through its ramps and counter and out of the exit slot`, async () => {
   await RAPIER.init();
   const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const sim = new HeadlessSim(season, RAPIER, {robot: cloneConfig(season.robotDefaults), alliance, pose:{x:2,y:2,yaw:0}, log:true});
   try {
-    const idx = sim.pool.indices('reserve')[0], hub = side(alliance, C.HUB_CENTER.x, C.HUB_CENTER.y);
+    const hub = side(alliance, C.HUB_CENTER.x, C.HUB_CENTER.y), d = dir(alliance);
+    const exits = new Set<number>();
     const total = sim.pool.count;
-    sim.pool.placeField(idx, hub.x, hub.y, HUB_SENSOR_FLOOR_Z + sim.pool.radius + .01);
-    sim.step();
-    expect(sim.pool.state[idx]).toBe('reserve');
-    for (let i = 0; i < 300 && sim.pool.state[idx] !== 'field'; i++) sim.step();
-    expect(sim.pool.state[idx]).toBe('field');
-    const p = sim.frame.toField(sim.pool.bodies[idx].translation());
-    expect(p.z).toBeLessThan(C.HUB_EXIT_HEIGHT + .005);
-    expect(p.z - sim.pool.radius).toBeGreaterThan(0);
-    expect(p.z + sim.pool.radius).toBeLessThan(C.HUB_EXIT_HEIGHT + .0889);
-    expect((p.x - hub.x) * dir(alliance)).toBeGreaterThan(C.HUB_SIZE / 2);
-    const v = sim.pool.bodies[idx].linvel();
-    // Rolls off the discharge lip pitched down, at the gravity-fed exit speed.
-    expect(v.y).toBeLessThan(0);
-    expect(Math.hypot(v.x, v.y, v.z)).toBeLessThan(C.HUB_EXIT_SPEED[1] + .3);
-    expect(Math.hypot(v.x, v.z)).toBeGreaterThan(C.HUB_EXIT_SPEED[0] * Math.cos(C.HUB_EXIT_PITCH) - .3);
+    for (const [k, dy] of [[0, -0.25], [1, -0.08], [2, 0.1], [3, 0.27]] as const) {
+      const idx = sim.pool.indices('reserve')[0];
+      const before = sim.ctx.score.total(alliance);
+      sim.pool.placeField(idx, hub.x - d * 0.05, hub.y + dy, C.HUB_RIM_HEIGHT + 0.25);
+      let scoredAt = -1, out = -1, maxSpeed = 0;
+      for (let i = 0; i < 6 / sim.physics.dt; i++) {
+        sim.step();
+        // Never taken out of play on the way through.
+        expect(sim.pool.state[idx]).toBe('field');
+        const p = sim.frame.toField(sim.pool.bodies[idx].translation());
+        if (scoredAt < 0 && sim.ctx.score.total(alliance) > before) scoredAt = i;
+        if (scoredAt >= 0 && (p.x - hub.x) * d > C.HUB_SIZE / 2) {
+          out = i;
+          // [CAD] Leaves through the exit slot in the NEUTRAL ZONE face, from one of the counter's four lanes.
+          expect(p.z).toBeGreaterThan(HUB_CAD.exitBottom - 0.2);
+          expect(p.z).toBeLessThan(HUB_CAD.exitTop);
+          exits.add(Math.sign(p.y - hub.y) * (Math.abs(p.y - hub.y) > 0.27 ? 2 : 1));
+          const v = sim.pool.bodies[idx].linvel();
+          maxSpeed = Math.hypot(v.x, v.y, v.z);
+          break;
+        }
+      }
+      expect(scoredAt).toBeGreaterThanOrEqual(0);
+      expect(out).toBeGreaterThan(scoredAt);
+      // About a second inside, and out at a roll rather than a spray.
+      expect((out - scoredAt) * sim.physics.dt).toBeGreaterThan(0.3);
+      expect(maxSpeed).toBeLessThan(3.5);
+      // Counted once: rolling out and on does not score again.
+      const after = sim.ctx.score.total(alliance);
+      for (let i = 0; i < 60; i++) sim.step();
+      expect(sim.ctx.score.total(alliance)).toBe(after);
+      sim.pool.reserve(idx);
+      void k;
+    }
+    expect(exits.size).toBeGreaterThanOrEqual(2);
     expect(sim.pool.count).toBe(total);
   } finally { sim.dispose(); }
 });

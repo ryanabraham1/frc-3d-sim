@@ -1,5 +1,6 @@
 import { captureFields, restoreFields } from '@engine/net/recovery';
-import { fuelInsideHubThroat, HUB_SENSOR_FLOOR_Z, HUB_THROAT_Z } from './hubStructure';
+import { fuelCrossedHubFunnel } from './hubStructure';
+import { HUB_CAD } from './hubCad';
 import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
@@ -27,7 +28,6 @@ import { hubShotAngle } from './config';
 const CHUTE_TAG = (a: Alliance) => `chute-${a}`;
 /** FUEL that left the FIELD is put back on the carpet this far inside the edge it crossed (m, [EST]). */
 const OUT_OF_BOUNDS_INSET = 0.35;
-const HUB_TAG = (a: Alliance) => `hub-${a}`;
 const HP_RELEASE_INTERVAL = 0.14;
 
 /** What multiplayer clients need from the rules (score/clock are synced by the engine). */
@@ -40,12 +40,16 @@ export interface RebuiltNetState {
   nt?: (number[] | null)[];
 }
 
-interface Processing {
-  idx: number;
+/** Shots aim at a point inside the funnel, above its base (the accuracy table and shot map are calibrated to it) [EST]. */
+const HUB_AIM_Z = 1.524;
+
+/** A scored ball rolling through its HUB's ramps (counted once, at the sensor). */
+interface InHub {
   alliance: Alliance;
-  releaseAt: number;
-  /** Exit lane picked from where the ball dropped through the funnel (balls don't cross lanes inside). */
-  lane: number;
+  /** Seconds it has barely moved (a jam is nudged toward the exits). */
+  still: number;
+  /** Compressed by the counter wheels (its collider is shrunk until it leaves). */
+  squeezed?: boolean;
 }
 
 /**
@@ -54,13 +58,13 @@ interface Processing {
  */
 export class RebuiltRules implements SeasonRules {
   recoveryState() {
-    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen processing exitFreeAt launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
+    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
       ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
   }
   restoreRecovery(state: unknown): void {
     const s = state as ReturnType<RebuiltRules['recoveryState']>;
     this.applyNetState(s.visible);
-    restoreFields(this, 'releaseTimer lastHpOpen processing exitFreeAt launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' '), s.fields);
+    restoreFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' '), s.fields);
     this.ref.restoreRecovery(s.ref);
     this.pins.restoreRecovery(s.pins);
   }
@@ -70,8 +74,10 @@ export class RebuiltRules implements SeasonRules {
   readonly chuteOpen: Record<Alliance, boolean> = { red: false, blue: false };
   private releaseTimer: Record<Alliance, number> = { red: 0, blue: 0 };
   private lastHpOpen: Record<Alliance, number> = { red: -99, blue: -99 };
-  private processing: Processing[] = [];
-  private exitFreeAt: Record<Alliance, number[]> = { red: [0, 0, 0, 0], blue: [0, 0, 0, 0] };
+  /** Scored FUEL inside a HUB, by pool index, until it rolls out of an exit. */
+  private inHub = new Map<number, InHub>();
+  /** Each FUEL's height (field z) last step, for the funnel crossing test. */
+  private lastZ = new Float32Array(0);
   /** Recently launched FUEL → who launched it and whether from outside their ALLIANCE ZONE (for G407). */
   private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; t: number; team: number }>();
   private g407Cooldown = new Map<number, number>();
@@ -259,7 +265,7 @@ export class RebuiltRules implements SeasonRules {
     this.pins.reset();
     this.ref.reset();
     this.g420Live.clear(); this.g420Award.clear(); this.g403Contacts.clear();
-    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear();
+    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear(); this.inHub.clear();
     const st = stageFuel(
       robots.map((r) => Math.min(r.config.preload, r.config.hopperCapacity)),
       rng,
@@ -335,48 +341,6 @@ export class RebuiltRules implements SeasonRules {
     const t = this.now;
     for (const a of ALLIANCES) for (const net of this.refs.hubs[a].nets) net.step(dt, pool);
 
-    // Hub processing → exits into the NEUTRAL ZONE.
-    // Each of the 4 exits is a narrow chute that passes FUEL one at a time, so a burst of scores trickles out
-    // as a stream of balls fanning into the neutral zone instead of one clump. Oldest ready ball first.
-    for (let i = 0; i < this.processing.length; ) {
-      const pr = this.processing[i];
-      if (pr.releaseAt > t) { i++; continue; }
-      const hub = this.refs.hubs[pr.alliance].center;
-      const d = dir(pr.alliance);
-      const free = this.exitFreeAt[pr.alliance];
-      // Each exit is fed by its own ramp: a ball leaves through its own lane, or a neighbour when that one is
-      // backed up. Released balls are spaced by the chute's single-file gap.
-      let exit = -1;
-      for (const e of [pr.lane, pr.lane - 1, pr.lane + 1]) {
-        if (e >= 0 && e < C.HUB_EXIT_COUNT && free[e] <= t) { exit = e; break; }
-      }
-      if (exit < 0) { i++; continue; }
-      const oy = hub.y + (exit - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT) + rng.range(-0.015, 0.015);
-      const ox = hub.x + d * (C.HUB_SIZE / 2 + pool.radius + 0.04);
-      // Don't spawn inside a robot parked at the exit (it will be released when clear).
-      const blocked = this.ctx.robots.some((r) => {
-        const p = r.pose;
-        return Math.hypot(p.x - ox, p.y - oy) < Math.max(r.footprint.length, r.footprint.width) / 2 + pool.radius;
-      });
-      if (blocked) {
-        pr.releaseAt = t + 0.25;
-        i++;
-        continue;
-      }
-      // Gravity-fed: the ball rolls off the internal ramp at walking pace, pitched down along the discharge lip,
-      // and spreads only a little sideways. No fan by lane; each exit points straight out.
-      const [vLo, vHi] = C.HUB_EXIT_SPEED;
-      const speed = rng.range(vLo, vHi);
-      const yaw = rng.range(-1, 1) * C.HUB_EXIT_SPREAD;
-      const h = speed * Math.cos(C.HUB_EXIT_PITCH);
-      frame.toWorld(ox, oy, C.HUB_EXIT_HEIGHT, this.tmp);
-      frame.velToWorld(d * h * Math.cos(yaw), h * Math.sin(yaw), -speed * Math.sin(C.HUB_EXIT_PITCH), this.tmp2);
-      pool.placeWorld(pr.idx, this.tmp, this.tmp2);
-      this.hubDrops.set(pr.idx, { t, grounded: false });
-      free[exit] = t + C.HUB_LANE_GAP + rng.range(0, 0.06);
-      this.processing.splice(i, 1);
-    }
-
     // Human players: automatic ones open the CHUTE when it has stock and their hub is (about to be) active.
     const running = clock.started && !clock.finished;
     for (const a of ALLIANCES) {
@@ -410,22 +374,29 @@ export class RebuiltRules implements SeasonRules {
     const t = this.now;
     const pid = this.periodId;
     if (pid && pid !== 'done') this.grace.update(t, pid, this.firstInactive);
+    if (this.lastZ.length !== pool.count) this.lastZ = new Float32Array(pool.count).fill(-Infinity);
 
     for (let i = 0; i < pool.count; i++) {
       if (pool.state[i] !== 'field') continue;
       const w = pool.position(i);
       const f = frame.toField(w);
+      const prevZ = this.lastZ[i];
+      this.lastZ[i] = f.z;
+      const inside = this.inHub.get(i);
+      if (inside) { this.trackInHub(i, f, inside, dt); continue; }
 
-      // Collect below the funnel, leaving panel impacts and rebounds in the physics simulation.
-      if (f.z > HUB_SENSOR_FLOOR_Z - 0.02 && f.z < C.HUB_RIM_HEIGHT - 0.01) {
+      // Scored as it drops out of the bottom of the funnel; panel impacts and rebounds stay in the physics.
+      if (f.z < C.HUB_RIM_HEIGHT + 0.5 && prevZ > f.z) {
+        let scored = false;
         for (const a of ALLIANCES) {
           const hc = this.refs.hubs[a].center;
-          if (fuelInsideHubThroat(f.x - hc.x, f.y - hc.y, f.z, pool.radius)) {
+          if (fuelCrossedHubFunnel(prevZ, f.z, f.x - hc.x, f.y - hc.y, pool.radius)) {
             this.scoreFuel(a, i);
+            scored = true;
             break;
           }
         }
-        continue;
+        if (scored) continue;
       }
 
       // [M 5.9.2] CORRAL: FUEL pushed through the floor opening at the base of the OUTPOST lands in the
@@ -560,7 +531,7 @@ export class RebuiltRules implements SeasonRules {
   }
 
   private scoreFuel(a: Alliance, idx: number): void {
-    const { score, pool } = this.ctx;
+    const { score } = this.ctx;
     // G407: FUEL launched into your own HUB while your bumpers were outside your ALLIANCE ZONE.
     const l = this.launches.get(idx);
     this.launches.delete(idx);
@@ -581,13 +552,60 @@ export class RebuiltRules implements SeasonRules {
     } else {
       score.inc(a, 'fuelInactive');
     }
-    pool.reserve(idx, HUB_TAG(a));
-    const [lo, hi] = C.HUB_PROCESS_TIME;
-    // Lane from the lateral entry point: the funnel drops onto four side-by-side ramps.
-    const f = this.ctx.frame.toField(pool.position(idx));
-    const u = (f.y - this.refs.hubs[a].center.y) / C.HUB_OPENING_HEX + 0.5;
-    const lane = Math.min(C.HUB_EXIT_COUNT - 1, Math.max(0, Math.floor(u * C.HUB_EXIT_COUNT)));
-    this.processing.push({ idx, alliance: a, lane, releaseAt: this.now + this.ctx.rng.range(lo, hi) });
+    // The ball keeps falling through the HUB onto its ramps and rolls out of its exit slot by itself (hubCad.ts).
+    this.inHub.set(idx, { alliance: a, still: 0 });
+  }
+
+  /** A scored ball inside its HUB: out of an exit → released (G408 watch); stalled → nudged toward the exits. */
+  private trackInHub(i: number, f: { x: number; y: number; z: number }, h: InHub, dt: number): void {
+    const { pool } = this.ctx;
+    const hc = this.refs.hubs[h.alliance].center, d = dir(h.alliance);
+    const u = (f.x - hc.x) * d, v = f.y - hc.y, half = C.HUB_SIZE / 2;
+    if (u > half + pool.radius * 0.5) {
+      if (h.squeezed) pool.squeeze(i, 1);
+      this.inHub.delete(i);
+      this.hubDrops.set(i, { t: this.now, grounded: false });
+      return;
+    }
+    // Anywhere else outside the body (bounced back out of the funnel): an ordinary ball again.
+    if (u < -half - pool.radius || Math.abs(v) > half + pool.radius || f.z > C.HUB_RIM_HEIGHT + 0.3) {
+      if (h.squeezed) pool.squeeze(i, 1);
+      this.inHub.delete(i);
+      return;
+    }
+    // Stalled? (measured before the counter's push below adds to it this step)
+    const vel = pool.velocity(i);
+    h.still = Math.hypot(vel.x, vel.y, vel.z) < 0.05 ? h.still + dt : 0;
+    // [CAD GE-264xx] The FUEL counter's driven treaded wheels carry a ball through toward the exit slot.
+    if (u > HUB_CAD.counterFromX && u < half && f.z > HUB_CAD.exitBottom - 0.02 && f.z < HUB_CAD.counterTopZ) {
+      const b = pool.bodies[i], m = b.mass(), lv = b.linvel();
+      this.ctx.frame.velToWorld(d * HUB_CAD.counterSpeed, 0, 0, this.tmp2);
+      // Only along the push direction, and only up to the wheel speed (friction-limited drive).
+      const along = (lv.x * this.tmp2.x + lv.z * this.tmp2.z) / HUB_CAD.counterSpeed;
+      const add = Math.max(0, Math.min(HUB_CAD.counterSpeed - along, 18 * dt));
+      b.applyImpulse({ x: m * add * this.tmp2.x / HUB_CAD.counterSpeed, y: 0, z: m * add * this.tmp2.z / HUB_CAD.counterSpeed }, true);
+      // The wheels squeeze the foam ball through a gap narrower than it (top plate to bottom plate ~0.11 m).
+      if (!h.squeezed) { pool.squeeze(i, HUB_CAD.counterSqueeze); h.squeezed = true; }
+    }
+    // Riding into the nose of a lane divider (pairs on the centre line and at ±0.27 m): the wheels roll it off into the
+    // lane on whichever side it leans (dead centre: by ball, so the streams split).
+    if (Math.abs(u - HUB_CAD.laneFromX) < 0.07) {
+      for (const dv of HUB_CAD.dividerCenters) {
+        if (Math.abs(v - dv) > 0.045) continue;
+        const away = Math.abs(v - dv) > 0.004 ? Math.sign(v - dv) : (i % 2 ? 1 : -1);
+        this.ctx.frame.velToWorld(0, away * 0.8, 0, this.tmp2);
+        const b = pool.bodies[i], m = b.mass(), lv = b.linvel();
+        const now = (lv.x * this.tmp2.x + lv.z * this.tmp2.z) / 0.8;
+        if (now < 0.8) b.applyImpulse({ x: m * (0.8 - now) * this.tmp2.x / 0.8, y: 0, z: m * (0.8 - now) * this.tmp2.z / 0.8 }, true);
+        break;
+      }
+    }
+    if (h.still > 2.5) {
+      h.still = 0;
+      this.ctx.frame.velToWorld(d * 0.8, this.ctx.rng.range(-0.3, 0.3), 0.6, this.tmp2);
+      const b = pool.bodies[i], m = b.mass(), lv = b.linvel();
+      b.applyImpulse({ x: m * (this.tmp2.x - lv.x), y: m * (this.tmp2.y - lv.y), z: m * (this.tmp2.z - lv.z) }, true);
+    }
   }
 
   onLaunch(robot: Robot, pieceIndex: number): void {
@@ -614,7 +632,7 @@ export class RebuiltRules implements SeasonRules {
 
   aimTarget(robot: Robot): AimTarget | null {
     const hc = this.refs.hubs[robot.alliance].center;
-    const point = this.ctx.frame.toWorld(hc.x, hc.y, HUB_THROAT_Z);
+    const point = this.ctx.frame.toWorld(hc.x, hc.y, HUB_AIM_Z);
     // Aim through the narrower throat, not just the rim plane: a shot centered at
     // the rim keeps moving sideways as it descends and can rebound off a funnel panel.
     // The clearance checks still keep the incoming ball above the mouth.

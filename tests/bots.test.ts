@@ -101,12 +101,13 @@ it('two AI robots pass head-on without needing the player to bump them', () => {
 
 it('REBUILT defender role reduces a shooter’s physical scoring instead of just following it', () => {
   const season = SEASONS[0];
-  const totals: number[] = [];
-  for (const defense of [false, true]) {
+  const totals = [0, 0];
+  // One 12 s run swings by a few FUEL either way on contact details, so sum several lanes across the ALLIANCE ZONE.
+  for (const y of [4.5, 5.5, 6.5]) for (const defense of [false, true]) {
     const config = season.botRobotConfig!('hard');
     const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', station: 2,
-      pose: { x: 2.6, y: 5.5, yaw: 0 }, extraRobots: [
-        { config, alliance: 'red', station: 3, pose: { x: 5.8, y: 5.5, yaw: Math.PI }, id: 1 },
+      pose: { x: 2.6, y, yaw: 0 }, extraRobots: [
+        { config, alliance: 'red', station: 3, pose: { x: 5.8, y, yaw: Math.PI }, id: 1 },
         { config, alliance: 'red', station: 1, pose: season.startPose('red', 1), id: 2 },
       ] });
     try {
@@ -135,7 +136,7 @@ it('REBUILT defender role reduces a shooter’s physical scoring instead of just
         }
         sim.rules.beforeStep(dt); sim.pool.updateDamping(); sim.physics.step(); sim.rules.afterStep(dt);
       }
-      totals.push(sim.ctx.score.earned('blue'));
+      totals[defense ? 1 : 0] += sim.ctx.score.earned('blue');
     } finally { sim.dispose(); }
   }
   console.log('REBUILT shooting without/with defense', totals);

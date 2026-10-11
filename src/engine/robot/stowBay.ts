@@ -294,6 +294,16 @@ export class StowBay {
     } };
   }
 
+  /** The indexer has nothing in flight: any ball still claimed for it goes back to being a hopper ball where it is. */
+  releaseStaged(): void {
+    if (!this.staging.size) return;
+    for (const i of this.staging) {
+      this.pool.drawnElsewhere.delete(i);
+      if (this.stowed.has(i)) this.pool.bodies[i].setEnabled(true);
+    }
+    this.staging.clear();
+  }
+
   private clearStaging(): void {
     for (const i of this.staging) this.pool.drawnElsewhere.delete(i);
     this.staging.clear();

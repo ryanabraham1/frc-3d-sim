@@ -169,11 +169,12 @@ export class NetSheet {
       // How far behind the flat net the piece's back surface reaches; the net is touched where that passes its bulge.
       const reach = r - sn;
       if (reach <= bulge - 0.002 || reach > this.maxBulge + 2 * r) continue;
-      // A new contact starts only from the front (centre still ahead of the net): a piece dropping past behind it is not pushed through.
-      if (!this.touching.has(i) && sn < -bulge) continue;
-      this.touchingNow.add(i);
       const v = b.linvel();
       const vn = v.x * n.x + v.y * n.y + v.z * n.z; // + toward the front
+      // A new contact starts only from the front: the centre is ahead of the net now, or was a step ago (a fast ball crosses
+      // the thin sheet within one step). A piece dropping past behind it is not pushed through.
+      if (!this.touching.has(i) && sn < -bulge && sn - vn * dt < -bulge) continue;
+      this.touchingNow.add(i);
       const into = Math.max(0, -vn);
       // The piece drags the knots under it back to where it is.
       const deficit = Math.min(reach, this.maxBulge) - bulge;

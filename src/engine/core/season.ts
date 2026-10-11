@@ -280,6 +280,8 @@ export interface SeasonDefinition {
   climberLabels?: string[];
   robotHint?: string;
   robotLimits?: { capacity: number; preload: number };
+  /** Load drawn assets the field needs before a match is built on a page (e.g. field CAD). Not called in workers/Node. */
+  prepareAssets?(): Promise<void>;
   normalizeRobotConfig?(config: RobotConfig): RobotConfig;
   robotPresets?: { id: string; label: string; description: string; config: RobotConfig }[];
   /**

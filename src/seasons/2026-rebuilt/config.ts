@@ -45,10 +45,12 @@ export function hubShotAngle(distance: number): number {
 }
 const SPEED_ERROR_RATIO = 1.25;
 /** [accuracy %, 1-sigma launch angle (rad)], measured at REBUILT_ACCURACY_RANGE; ordered by falling accuracy. */
+// Re-measured 2026-10-11 after the HUB became hollow (balls roll through its ramps) and its top was closed around the
+// throat: 6 bearings x 100 shots per row.
 const ACCURACY_TABLE: [number, number][] = [
-  [100, 0.002], [99, 0.006], [95, 0.01], [91, 0.016], [89, 0.02], [82, 0.025], [80, 0.03],
-  [71, 0.04], [65, 0.05], [60, 0.06], [54, 0.07], [45, 0.085], [34, 0.1], [24, 0.13],
-  [19, 0.17], [11, 0.22], [4, 0.3], [0, 0.5],
+  [100, 0.002], [99, 0.012], [97, 0.016], [93, 0.02], [88, 0.025], [81, 0.03], [71, 0.04],
+  [61, 0.05], [54, 0.06], [43, 0.07], [34, 0.085], [24.5, 0.1], [17.5, 0.13], [10, 0.17],
+  [5, 0.22], [2.5, 0.3], [0, 0.5],
 ];
 
 /** Launch-angle sigma (rad) that makes `acc`% of shots go in at REBUILT_ACCURACY_RANGE. */

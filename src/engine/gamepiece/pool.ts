@@ -307,6 +307,14 @@ export class GamePiecePool {
     this.bodies[i].collider(0).setRadius(radius);
   }
 
+  /**
+   * Squeeze a foam piece (a mechanism compressing it, e.g. a HUB's counter wheels): its collider shrinks to `scale` of
+   * its normal radius while it is drawn full size. `scale` 1 restores it.
+   */
+  squeeze(i: number, scale: number): void {
+    this.setColliderRadius(i, this.colliderRadius * scale);
+  }
+
   private setGroups(i: number, groups: number): void {
     const b = this.bodies[i];
     for (let k = 0; k < b.numColliders(); k++) b.collider(k).setCollisionGroups(groups);

@@ -146,6 +146,21 @@ export class FieldBuilder {
     return { mesh, collider };
   }
 
+  /**
+   * Static triangle-mesh collider from FIELD-frame vertices (x, y, z-up triples) and triangle indices: imported CAD
+   * geometry (open shells, ramps, funnels) that boxes and hulls can't represent. Collision only; draw it separately.
+   */
+  trimesh(vertices: ArrayLike<number>, indices: ArrayLike<number>, o: ElementOptions = {}): RAPIER.Collider | null {
+    const world = new Float32Array(vertices.length);
+    for (let i = 0; i < vertices.length; i += 3) {
+      const w = this.frame.toWorld(vertices[i], vertices[i + 1], vertices[i + 2], this.tmpV);
+      world[i] = w.x; world[i + 1] = w.y; world[i + 2] = w.z;
+    }
+    const desc = this.physics.R.ColliderDesc.trimesh(world, Uint32Array.from(indices));
+    return this.finishCollider(desc, new THREE.Vector3(), new THREE.Quaternion(), o);
+  }
+  private readonly tmpV = new THREE.Vector3();
+
   /** Cylinder between two field points (rungs, pipes, posts). */
   cylinder(a: Vec3, b: Vec3, radius: number, o: ElementOptions = {}, radialSegments = 16): Element {
     const wa = this.frame.toWorld(a[0], a[1], a[2]);

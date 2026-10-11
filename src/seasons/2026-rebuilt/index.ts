@@ -1,3 +1,4 @@
+import { prepareHubCad } from './hubCad';
 import type { RobotConfig } from '@engine/robot/config';
 import { createRebuiltBot, REBUILT_AI_ROLES, REBUILT_AI_STRATEGIES } from './bots';
 import type { MapShape, SeasonDefinition } from '@engine/core/season';
@@ -37,6 +38,7 @@ function mapShapes(): MapShape[] {
 let fieldRefs: RebuiltFieldRefs | null = null;
 
 export const rebuilt2026: SeasonDefinition = {
+  prepareAssets: prepareHubCad,
   id: '2026-rebuilt',
   year: 2026,
   name: 'REBUILT',

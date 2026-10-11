@@ -29,12 +29,7 @@ export const HUB_CUP_FLOOR = inch(58); // [EST] internal floor where the sensor 
 export const HUB_WALL = inch(2.5); // [EST]
 export const HUB_NET_HEIGHT = inch(40); // [EST] net above the rim on the neutral-zone side
 export const HUB_EXIT_COUNT = 4; // [M 5.4 Fig 5-8]
-export const HUB_EXIT_HEIGHT = inch(8); // [EST]
-export const HUB_PROCESS_TIME: [number, number] = [0.5, 1.4]; // [EST] seconds from sensor down the ramp to the exit
-export const HUB_EXIT_SPEED: [number, number] = [1.2, 1.8]; // [EST] m/s, gravity-fed roll off the internal ramp
-export const HUB_EXIT_PITCH = 20 * Math.PI / 180; // [EST] down-angle of the discharge lip
-export const HUB_EXIT_SPREAD = 16 * Math.PI / 180; // [EST] max sideways scatter per ball
-export const HUB_LANE_GAP = 0.12; // [EST] s between balls through one single-file exit
+export const HUB_EXIT_HEIGHT = (0.765 + 0.991) / 2; // [CAD FE-2026: slot between Rear Panel, Bottom and Front Panel, Top] centre of the exit slot
 
 // ─── BUMP [M 5.5] ───────────────────────────────────────────────────────────
 export const BUMP_WIDTH = inch(73); // along y
