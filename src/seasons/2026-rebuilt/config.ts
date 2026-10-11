@@ -148,7 +148,7 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   c.intake.ground ??= true;
   // Saved picks of the former turret ROMAN I preset (47 FUEL, 14/s, turret) become the imported Roman II drum robot.
   if (c.model === 'roman-6329' && c.launcher.turret && c.hopperCapacity === 47 && c.launcher.rate === 14) {
-    c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 16;
+    c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 20;
     romanII(c); stretchNet(c, 22); // same net roof as the Roman II preset (40 rigid + 22 stretch)
   }
   // Saved CHUNK picks from before the CAD import carry the generic 27 x 27 x 21 in box: adopt the measured CAD size.

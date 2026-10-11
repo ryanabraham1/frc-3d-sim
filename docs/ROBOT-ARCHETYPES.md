@@ -305,7 +305,7 @@ Use the gallery's “Full hopper (100%)” pose to inspect the bulge and “Stow
 
 Limestone’s `hopperExpansion.mechanism = 'telescoping'` uses a rigid raised rectangular rim,
 exposed nested lift tubes and slider collars. A crossed net bridges the roof to the intake lip;
-it is separate from the elastic domes on 254/4414. F raises this mechanism from 50 to 65 FUEL capacity; lowering waits until the load is at most 50 FUEL, so its visual roof, collision height
+it is separate from the elastic domes on 254/4414. F raises this mechanism from 50 to 70 FUEL capacity; lowering waits until the load is at most 50 FUEL, so its visual roof, collision height
 and routing agree. Real Citrus uses hybrid driver/automatic controls; this implementation
 uses the hopper toggle to approximate that control sequence. The 50-FUEL
 threshold is simulator tuning, not a published Citrus measurement. Source:

@@ -175,7 +175,7 @@ export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
     { id: 'matterhorn-9496', team: 9496, name: 'Matterhorn',
       description: '9496 LYNK. Fixed full-width drum shooter with brass inertia flywheels and three printed shot guides, fed by a three-roller vertical feeder from a sloped roller floor; black hopper under a net. The intake pivots out the back on a sector gear and pulls the slotted hopper end out with it. Aimed by turning the chassis so the intake faces the HUB: the drum throws FUEL out toward the intake end. The net roof stretches (40 FUEL in the rigid box, 62 with the net). Loads the public CAD. Capacity, rate and speed are simulator estimates.',
       source: 'Onshape public release "9496_2026_LYNK_Matterhorn_Public" https://cad.onshape.com/documents/768d7890bafac55a2a891aae; Chief Delphi 9496 build log',
-      config: cfg(9496, 'matterhorn-9496', { intake: 'both', aim: 'align', dumper: true, hopper: MATTERHORN_CAPACITY, tall: false, rate: 15, climb: 0 }, c => {
+      config: cfg(9496, 'matterhorn-9496', { intake: 'both', aim: 'align', dumper: true, hopper: MATTERHORN_CAPACITY, tall: false, rate: 19, climb: 0 }, c => {
         // Chassis 27 x 27 in; CAD top 0.556 m.
         c.frameLength = inch(27); c.frameWidth = inch(27); c.height = .55;
         c.launcher.height = .50; c.launcher.exitSpan = .57;

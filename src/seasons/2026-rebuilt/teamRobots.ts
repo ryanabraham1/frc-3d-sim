@@ -723,9 +723,9 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, fits under the TRENCH up to 50, 62 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, fits under the TRENCH up to 50, 62 with the net stretched), 29 FUEL/s in the sim, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
-      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 62, tall: false, rate: 25, climb: 0 }, (c) => {
+      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 62, tall: false, rate: 29, climb: 0 }, (c) => {
         c.hopperCovered = true; // net hopper
         // Capacity from packing real-size FUEL into this hopper: 40 under the rigid rim, +22 under the stretched net. [EST]
         c.hopperExpansion = { startCount: 40, fullHeight: inch(27), slack: { count: 50, height: inch(21.7) } }; // slack net: drives under the TRENCH (21.75 in safe) up to 50 FUEL
@@ -764,9 +764,9 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'sandspit-3476', team: 3476, name: 'Sandspit',
-      description: '3476 Code Orange — a tall closed-hopper BUMP bot: a 20 FUEL/s wide multi-lane shooter fed by a top roller, the intake retracts while shooting to compact FUEL into it, chassis-aimed.',
+      description: '3476 Code Orange — a tall closed-hopper BUMP bot: a wide multi-lane shooter (20 FUEL/s published, 24 in the sim) fed by a top roller, the intake retracts while shooting to compact FUEL into it, chassis-aimed.',
       source: 'Chief Delphi "Team 3476: Code Orange 2026 Sandspit Robot Reveal"; The Blue Alliance 2026 media',
-      config: teamConfig(3476, 'sandspit-3476', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: true, rate: 20, climb: 0 }, (c) => {
+      config: teamConfig(3476, 'sandspit-3476', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: true, rate: 24, climb: 0 }, (c) => {
         c.launcher.exits = 3; // [EST] "2/3 lane shooter"
         c.hopperCapacity = 70; // [EST]
       }),
