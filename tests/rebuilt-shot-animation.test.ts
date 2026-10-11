@@ -1,10 +1,12 @@
-import { afterEach, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { SEASONS } from '../src/seasons';
 import { cloneConfig } from '../src/engine/robot/config';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
+import { CAD_MODEL_IDS, decodeCadModel, setCadModelsEnabled } from '../src/engine/robot/cadModels';
 import { hubShotAngle, REBUILT_ACCURACY_RANGE } from '../src/seasons/2026-rebuilt/config';
 import * as C from '../src/seasons/2026-rebuilt/constants';
 
@@ -97,4 +99,32 @@ it.each([254, 4414, 1987])('team %s intakes FUEL onto the pile surface instead o
   }
   // An empty hopper: the ball arrives at floor level, not one ball higher with a drop onto the floor.
   expect(first - (bin.y0 + 0.075)).toBeLessThan(0.04);
+});
+
+describe('imported CAD hoods', () => {
+  beforeAll(async () => {
+    // 254 wears 581's shooter (adaptedDumper), so load that donor too.
+    for (const id of [...CAD_MODEL_IDS, 'shooter-581-donor']) {
+      const b = readFileSync(`public/models/robots/2026/${id}.glb`);
+      await decodeCadModel(id, b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+    }
+    setCadModelsEnabled(true);
+  });
+  afterAll(() => setCadModelsEnabled(false));
+
+  /** Rotation of the robot's hood pivot once it has settled on a shot from `dx` metres out. */
+  function hoodPose(team: number, dx: number): number {
+    const s = sim(team, dx);
+    s.robot.held.length = 0;
+    for (let i = 0; i < 80; i++) { s.step({ ...IDLE_COMMAND, shoot: true }); s.robot.syncVisual(1 / 90); }
+    let pivot: THREE.Object3D | undefined;
+    s.robot.visual.traverse((o) => { if (!pivot && /hood.*pivot/.test(o.name)) pivot = o; });
+    expect(pivot).toBeDefined();
+    return pivot!.rotation.z;
+  }
+
+  // The hood visibly follows the whole shot map (~82 deg close to ~56 deg deep), not just its flatter half.
+  it.each([2910, 254, 971, 1678, 1987, 6800, 9470])('team %s turns its hood through the whole shot range', (team) => {
+    expect(deg(Math.abs(hoodPose(team, 1.2) - hoodPose(team, 5.5)))).toBeGreaterThan(22);
+  });
 });

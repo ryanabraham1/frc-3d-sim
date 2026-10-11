@@ -49,3 +49,9 @@ export function nearestTurn(target: number, current: number): number {
 }
 /** Top swing speed of a 2025 scoring arm or wrist, rad/s (about 340°/s; a half-turn flip in ~0.5 s). [EST] */
 export const ARM_SWING_RATE = 6;
+
+/**
+ * Steepest launch elevation (rad) a 2026 hooded shooter is asked for: the close lob at the HUB is about 82 deg. Hood
+ * mappings clamp to this, not lower, or the near half of the hood's travel never shows.
+ */
+export const HOOD_SHOT_MAX = 1.45;

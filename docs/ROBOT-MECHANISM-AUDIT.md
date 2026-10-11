@@ -51,3 +51,14 @@ surface beside the intake (`FuelPile.entry`), instead of at the height of the in
 each new ball one ball-height up, then drop. Hand-over points expire after 0.5 s so a stale one (from a full hopper) never
 places a later ball, and FUEL the indexer backs down out of its lanes rejoins the pile at the lane's start.
 `tests/rebuilt-shot-animation.test.ts` checks the empty-hopper case.
+
+### Imported CAD hoods cover the whole shot map
+
+The imported and adapted CAD hoods (2910, 254, 581, 971, 1323, 1678, 1690, 3476, 4414, 5940, 6800, 9470 and
+604) clamped the requested launch angle at 1.25 rad (72 deg), so close lobs (up to ~82 deg) all drew the same hood
+pose and only ~16 deg of the ~26 deg sweep showed. They now clamp at `HOOD_SHOT_MAX` (1.45 rad), as does `hoodFor` for
+the procedural turret shooters, and 1987's floating hood turns one degree per degree of launch angle. Hood travel per
+team is still [EST] where no team figure exists; the mappings are 1:1 with launch angle about each CAD's measured
+reference pose. The robot gallery's shot selector now drives the hood (it set the solved angle but not the shooter
+pitch the animation follows) and has HUB deep-shot and close-lob options.
+
