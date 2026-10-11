@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildHubStandIn, HUB_THROAT_Z } from './hubStructure';
-import { addHubCadColliders, addHubCadVisual, hubCadNet, HUB_CAD } from './hubCad';
+import { addFieldCadVisual, addHubCadColliders, addHubCadVisual, hubCadNet, HUB_CAD } from './hubCad';
 import { NetSheet } from '../../engine/field/netSheet';
 import type { Alliance, FieldPoint } from '@engine/coords';
 import { FieldBuilder, Vec3 } from '@engine/field/builder';
@@ -35,6 +35,9 @@ const V = (p: FieldPoint, z: number): Vec3 => [p.x, p.y, z];
 export function buildRebuiltField(b: FieldBuilder): RebuiltFieldRefs {
   const L = C.FIELD_LENGTH;
   const W = C.FIELD_WIDTH;
+  // [CAD FE-2026] Drawn from the official field CAD when it is loaded; the elements below then only add their colliders.
+  // The game still draws the carpet and tape lines, the AprilTags, the CHUTE door the rules move, and the HUBs.
+  const cad = addFieldCadVisual(b);
   b.carpet(C.COLORS.carpet, 0.9);
 
   // ── Tape lines ────────────────────────────────────────────────────────────
@@ -53,6 +56,7 @@ export function buildRebuiltField(b: FieldBuilder): RebuiltFieldRefs {
     b.tapeRect(d0.x, d0.y, d1.x, d1.y, inch(1), col);
   }
 
+  b.drawn = !cad;
   // ── Guardrails (y = 0 and y = W) ─────────────────────────────────────────
   for (const y of [0, W]) {
     const out = y === 0 ? -1 : 1;
@@ -78,6 +82,7 @@ export function buildRebuiltField(b: FieldBuilder): RebuiltFieldRefs {
     buildTower(b, a);
   }
 
+  b.drawn = true;
   addAprilTags(b, layoutJson as AprilTagLayout);
   return refs;
 }
@@ -161,12 +166,15 @@ function buildAllianceWall(b: FieldBuilder, a: Alliance, refs: RebuiltFieldRefs)
     pitch: a === 'blue' ? -deg(15) : deg(15),
     collide: false,
   });
-  // CHUTE DOOR (rotated by the human player; animated by rules)
+  // CHUTE DOOR (rotated by the human player; animated by rules): always drawn, the rules show and hide it.
+  const drawn = b.drawn;
+  b.drawn = true;
   const door = b.box([side(a, -t - inch(1), 0).x, oc, C.CHUTE_OPENING_Z + C.CHUTE_OPENING_H / 2], [inch(0.75), C.CHUTE_OPENING_W, C.CHUTE_OPENING_H], {
     color: 0xffffff,
     collide: false,
   }).mesh!;
   refs.chuteDoors[a] = door;
+  b.drawn = drawn;
   b.label([side(a, 0.01, 0).x, oc, C.WALL_BASE_HEIGHT + inch(10)], 'OUTPOST', inch(5), a === 'blue' ? 0 : Math.PI, a === 'blue' ? '#8fb8ff' : '#ff8f8f');
 }
 

@@ -89,13 +89,19 @@ export class FieldBuilder {
     return q;
   }
 
+  /**
+   * When false, elements still get their colliders but their meshes are not added to the scene: a season drawing its field
+   * from imported CAD keeps its own (tested) collision geometry underneath.
+   */
+  drawn = true;
+
   private finishMesh(mesh: THREE.Mesh, pos: THREE.Vector3, q: THREE.Quaternion, o: ElementOptions): THREE.Mesh {
     mesh.position.copy(pos);
     mesh.quaternion.copy(q);
     mesh.castShadow = o.castShadow ?? (o.opacity ?? 1) >= 1;
     mesh.receiveShadow = o.receiveShadow ?? true;
     if (o.name) mesh.name = o.name;
-    (o.parent ?? this.root).add(mesh);
+    if (this.drawn) (o.parent ?? this.root).add(mesh);
     return mesh;
   }
 
@@ -231,7 +237,7 @@ export class FieldBuilder {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(L, W), this.material({ color, roughness: 1 }));
     mesh.rotation.x = -Math.PI / 2;
     mesh.receiveShadow = true;
-    this.root.add(mesh);
+    if (this.drawn) this.root.add(mesh);
     const desc = this.physics.R.ColliderDesc.cuboid(L / 2 + 5, 0.5, W / 2 + 5).setTranslation(0, -0.5, 0).setFriction(friction).setRestitution(0.1);
     desc.setCollisionGroups(GROUPS.field);
     this.physics.world.createCollider(desc, this.body);
