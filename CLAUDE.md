@@ -53,6 +53,10 @@ pose from several angles in `tools/robot-gallery.html`.
 
 ## Other conventions
 
+- Single-player matches simulate in a Web Worker (`src/engine/sim/worker.ts`): the page builds the same `MatchWorld` and
+  copies each robot model node by node (`RobotMirror`). Robot model builders must produce the same scene graph on both
+  sides (no structure that depends on randomness or the DOM), and moving field elements must replicate through
+  `rules.netState()`. `?worker=0` runs the match on the page. Game logic belongs in `MatchSim`, not `Game` (the view).
 - Field coordinates are WPILib's (meters, blue alliance wall at x = 0). Tag manual values with their
   section; mark estimates.
 - Follow the manual literally for who/what qualifies for points and fouls (e.g. any alliance cage
