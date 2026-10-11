@@ -18,6 +18,8 @@ import type { FuelContacts } from './fuelContacts';
  * directly placing the ball: velocity, gravity and surface reactions determine its position.
  */
 export interface FlowPaths {
+  /** Claim an actual stored ball at its current position; null means the intake has not delivered one yet. */
+  take?(entry: THREE.Vector3): { position: THREE.Vector3; release(position: THREE.Vector3): void } | null | undefined;
   /** Intake path after the capture point, ending at the stow point (where the held piece rests / the hopper). */
   intake(from?: THREE.Vector3 | null): THREE.Vector3[];
   /** Hand a completed intake token to the hopper at this exact robot-frame position. */
@@ -35,6 +37,9 @@ interface Staged {
   obj: THREE.Object3D;
   s: number;
   slot: number;
+  source?: { position: THREE.Vector3; release(position: THREE.Vector3): void };
+  /** Distance travelled from the stored ball to the fixed conveyor entrance. */
+  approach: number;
 }
 
 interface Token {
@@ -108,7 +113,10 @@ export class PieceFlow {
   clear(held: number): void {
     for (const t of this.live) this.release(t.obj);
     this.live.length = 0;
-    for (const lane of this.lanes) for (const b of lane) this.release(b.obj);
+    for (const lane of this.lanes) for (const b of lane) {
+      b.source?.release(b.obj.position);
+      this.release(b.obj);
+    }
     this.lanes.length = 0;
     this.idleFor = 0;
     this.sinceShot = Infinity;
@@ -245,6 +253,7 @@ export class PieceFlow {
       const lane = this.lanes.reduce((a, b) => (b.length > a.length ? b : a));
       const last = lane.pop();
       if (!last) break;
+      last.source?.release(last.obj.position);
       this.release(last.obj);
       excess--;
     }
@@ -267,13 +276,17 @@ export class PieceFlow {
         const len = c[c.length - 1];
         const slots = Math.max(1, Math.min(MAX_SLOTS, Math.floor(len / pitch) + 1));
         const tail = lane[lane.length - 1];
-        if (p.length >= 2 && lane.length < slots && (!tail || tail.s >= pitch)) {
-          const obj = this.free.pop() ?? this.make();
-          obj.userData.flowToken = true;
-          if (!obj.parent) this.visual.add(obj);
-          obj.visible = true;
-          obj.rotation.set(0, 0, 0);
-          lane.push({ obj, s: 0, slot: lane.length });
+        if (p.length >= 2 && lane.length < slots && (!tail || tail.s - tail.approach >= pitch)) {
+          const source = this.paths.take?.(p[0]);
+          if (source !== null) {
+            const obj = this.free.pop() ?? this.make();
+            obj.userData.flowToken = true;
+            if (!obj.parent) this.visual.add(obj);
+            obj.visible = true;
+            obj.rotation.set(0, 0, 0);
+            obj.position.copy(source?.position ?? p[0]);
+            lane.push({ obj, s: 0, slot: lane.length, source: source ?? undefined, approach: source?.position.distanceTo(p[0]) ?? 0 });
+          }
         }
       }
       if (!lane.length) continue;
@@ -286,13 +299,14 @@ export class PieceFlow {
         const b = lane[i];
         // Slot 0 sits against the shooter wheels at the end of the path; each slot behind it is one piece back. Pieces
         // queue nose to tail: none passes the one ahead (loading) or the one behind it (backing down).
-        const goal = draining ? -pitch : Math.max(0, len - b.slot * pitch);
+        const goal = draining ? -pitch : b.approach + Math.max(0, len - b.slot * pitch);
         let next = b.s + Math.max(-step, Math.min(step, goal - b.s));
-        if (!draining && i > 0) next = Math.min(next, lane[i - 1].s - pitch);
-        if (draining && i < lane.length - 1) next = Math.max(next, lane[i + 1].s + pitch);
+        if (!draining && i > 0) next = Math.min(next, lane[i - 1].s - lane[i - 1].approach + b.approach - pitch);
+        if (draining && i < lane.length - 1) next = Math.max(next, lane[i + 1].s - lane[i + 1].approach + b.approach + pitch);
         b.s = draining ? next : Math.max(0, next);
         this.tmp.copy(b.obj.position);
-        this.sample(p, c, Math.max(0, b.s), b.obj.position);
+        if (b.source && b.s < b.approach) b.obj.position.lerpVectors(b.source.position, p[0], Math.max(0, b.s) / Math.max(1e-6, b.approach));
+        else this.sample(p, c, Math.max(0, b.s - b.approach), b.obj.position);
         if (this.roll) {
           // Roll in the actual travel direction rather than spin in place.
           b.obj.rotation.x += (b.obj.position.z - this.tmp.z) / this.radius;
@@ -303,7 +317,8 @@ export class PieceFlow {
       // starts rather than at some packed slot.
       while (draining && lane.length && lane[lane.length - 1].s <= 0) {
         const b = lane.pop()!;
-        this.paths.arrive?.(b.obj.position);
+        if (b.source) b.source.release(b.obj.position);
+        else this.paths.arrive?.(b.obj.position);
         this.release(b.obj);
       }
     }

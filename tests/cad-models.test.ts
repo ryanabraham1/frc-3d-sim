@@ -55,7 +55,11 @@ describe('photo-fitted CAD mechanisms', () => {
       }
     }
     const roots: THREE.Object3D[] = []; visual.traverse(o => {if(o.userData.cadDonor) roots.push(o);});
-    expect(roots.length).toBe(id==='croquembouche-5940'||id==='ripcurrent-4414'||id==='madtown-2026-1323'?2:1);
+    expect(roots.length).toBe(id==='croquembouche-5940'||id==='madtown-2026-1323'?2:1);
+    if(id==='ripcurrent-4414') {
+      expect(visual.getObjectByName('hightide-dolphin-fin')).toBeDefined();
+      expect(visual.getObjectByName('hightide-roller-throat')).toBeDefined();
+    }
     for (let i=0;i<80;i++) {
       turret.rotation.y = (i/79-.5)*Math.PI*2;
       model.update({...idle,dt:.02,enabled:true,intaking:true,aiming:true,hood:.5+i/79*.75,fill:i/79,firing:.2});

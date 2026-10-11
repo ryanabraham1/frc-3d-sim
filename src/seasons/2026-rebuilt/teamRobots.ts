@@ -1,3 +1,5 @@
+import { highTideRotor } from './highTideRotor';
+import { keplerPanel } from './keplerPanels';
 import { dyeRotorRate, scoringApproach } from '@engine/robot/scoringReadiness';
 import { cadRebuiltTeamRobots } from './cadTeamRobots';
 import { cadBatchRebuiltTeamRobots } from './cadBatchTeamRobots';
@@ -67,9 +69,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-(L*.05),z) > .095, ceiling: hopperNetCeiling(c) });
   // Dye rotor: pocketed spinning plate in a fenced tub, spiral guide wall into the open tower under the turret.
   const rr = Math.min(L, W) * 0.44;
-  const dye = dyeRotor(k.visual, { x: L * 0.05, y0: bt + 0.02, R: rr, wallH: 0.1, towerX: L * 0.05, towerR: 0.09, towerTop: H - 0.08, plate: black, accent: teal, motors: 2 });
-  const cadColumn = adaptedRotorColumn(k.visual, { x: L * 0.05, y0: bt + .02, top: H - .08, radius: .085, color: 0x17a3b3 });
-  if (cadColumn) dye.tower.visible = false;
+  const dye = highTideRotor(k.visual, L*.05, bt+.02, rr, H-.08, black, teal);
   const t = k.turret;
   t.position.set(L * 0.05, H - 0.07, 0);
   // Pancake turret: wide black disc with a teal ring, shooter on top.
@@ -98,11 +98,9 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
       trayFill.set(d > .35 ? s.fill : 0);
       fill.set(s.fill);
       // Slowly counter-rotates to agitate; spins hard to feed while firing.
-      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.firing > 0 ? 9 : -1.2, 6, s.dt);
-      spin(dye.floor, rotorRate, s.dt, 'y');
-      for (const r of dye.rollers) spin(r, rotorRate * 4, s.dt, 'y');
+      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.aiming || s.firing > 0 ? 9 : -1.2, 6, s.dt);
+      dye.update(rotorRate, s.dt);
       sh.update(s);
-      cadColumn?.update(s);
     },
   };
 });
@@ -333,9 +331,9 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   bar(upperHopper,[sideEnd,lowTop,W*.46],[sideEnd,top,W*.46],.018,gray);
   bar(upperHopper,[L*.46,lowTop,frontEnd],[L*.46,top,frontEnd],.018,gray);
   bar(upperHopper,[L*.46,top,-W*.46],[L*.46,top,frontEnd],.018,gray);
-  // X-lattice walls on all four sides.
-  for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.47, bt, sz * W * 0.47], [L * 0.94, 0, 0], [0, (sz>0?lowTop:top) - bt, 0], { cells: 5, w: 0.014, m: black });
-  for (const sx of [-1, 1]) lattice(k.visual, [sx * L * 0.47, bt, -W * 0.47], [0, 0, W * 0.94], [0, (sx>0?lowTop:top) - bt, 0], { cells: 4, w: 0.014, m: black });
+  // Pocketed structural plates from the CAD silhouette, with an open turret corner.
+  for (const sz of [-1, 1]) keplerPanel(k.visual,L*.94,(sz>0?lowTop:top)-bt,black,0,bt,sz*W*.47);
+  for (const sx of [-1, 1]) keplerPanel(k.visual,W*.94,(sx>0?lowTop:top)-bt,black,sx*L*.47,bt,0,Math.PI/2);
   box(k.visual, L * 0.92, 0.006, W * 0.92, gray, 0, bt + 0.01, 0);
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x-tx,z-tz) > .23 });
   // Curved lattice arch over the front half.

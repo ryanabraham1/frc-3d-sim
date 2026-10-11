@@ -433,6 +433,15 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   mesh.userData.setFuelOpen = (open: boolean) => { pile.open = open; };
   mesh.userData.fuelEntry = (hint: THREE.Vector3) => pile.entry(hint);
   mesh.userData.receiveFuel = (position: THREE.Vector3) => pile.receive(position);
+  mesh.userData.takeFuel = (entry: THREE.Vector3) => {
+    const position = pile.take(entry);
+    if (position) {
+      mesh.count = pile.size;
+      for (let i = 0; i < mesh.count; i++) place(i);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    return position;
+  };
   mesh.userData.animateFuel = (s: RobotAnimState) => {
     const moved = pile.step(s, (x, y, z, vx, vy, vz) => mesh.userData.fuelEscape?.(mesh, x, y, z, vx, vy, vz));
     if (pile.size !== mesh.count) mesh.count = pile.size; // balls that went over the rim
@@ -1044,7 +1053,7 @@ export function columnFeed(k: ModelKit, colX: number, wheel: THREE.Object3D, rot
  * `floor` spins about y (positive = the direction FUEL travels along the spiral); `feed(r)` is the path a ball of
  * radius r takes from the rim, along the spiral wall and up the tower.
  */
-export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1 }): { floor: THREE.Group; tower: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
+export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1; guide?: boolean }): { floor: THREE.Group; tower: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
   const { x, y0, R, wallH } = o;
   const pocketM = o.pocket ?? mat(0x34373d, { metal: 0.3, rough: 0.55 });
   const accent = o.accent ?? mat(0x24272c, { metal: 0.4, rough: 0.45 });
@@ -1105,7 +1114,7 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
   const spiralR = (u: number) => rStart + (rEnd - rStart) * u;
   const wallM = mat(0x22252a, { rough: 0.45 });
   const SEG = 18;
-  for (let i = 0; i < SEG; i++) {
+  for (let i = 0; i < (o.guide === false ? 0 : SEG); i++) {
     const p0 = pt(a0 + sweep * (i / SEG), spiralR(i / SEG), wallH / 2, i / SEG);
     const p1 = pt(a0 + sweep * ((i + 1) / SEG), spiralR((i + 1) / SEG), wallH / 2, (i + 1) / SEG);
     const seg = box(g, p0.distanceTo(p1) + 0.004, wallH * 0.95, 0.006, wallM, (p0.x + p1.x) / 2, wallH / 2, (p0.z + p1.z) / 2);
@@ -1113,7 +1122,7 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
   }
   const rollers: THREE.Object3D[] = [];
   const rollerM = mat(0x111214, { rough: 0.8 });
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < (o.guide === false ? 0 : 7); i++) {
     const u = 0.55 + i * 0.065;
     const p = pt(a0 + sweep * u, spiralR(u) - 0.016, wallH * 0.48, u);
     const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, wallH * 0.8, 10), rollerM);

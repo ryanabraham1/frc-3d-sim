@@ -10,6 +10,21 @@ function pile() {
   const step = mesh.userData.animateFuel as (s:RobotAnimState) => void;
   return {fill, mesh, step};
 }
+it('withdraws the nearest settled ball without relocating the remaining load', () => {
+  const { fill, mesh, step } = pile();
+  fill.set(.5);
+  for (let i = 0; i < 360; i++) step(state());
+  const surface = mesh.userData.fuelSurface(), before = Array.from(surface.positions.slice(0, surface.count * 3)) as number[];
+  const target = new THREE.Vector3().fromArray(surface.positions, 6);
+  const taken = mesh.userData.takeFuel(target) as THREE.Vector3;
+  expect(taken.distanceTo(target)).toBeLessThan(1e-6);
+  expect(mesh.count).toBe(surface.count - 1);
+  const after = mesh.userData.fuelSurface();
+  for (let i = 0; i < after.count; i++) {
+    const p = new THREE.Vector3().fromArray(after.positions, i * 3);
+    expect(Array.from({length: surface.count}, (_, j) => p.distanceTo(new THREE.Vector3().fromArray(before, j * 3))).some(d => d < 1e-6)).toBe(true);
+  }
+});
 it('stirs with driving and feeding, settles, then stops uploading idle matrices', () => {
   const {fill,mesh,step} = pile(), s = state();
   fill.set(0.8);

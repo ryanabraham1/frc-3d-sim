@@ -197,7 +197,8 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   const ex = c.x + dir(a) * (hs + 0.003);
   for (let i = 0; i < C.HUB_EXIT_COUNT; i++) {
     const oy = c.y + (i - (C.HUB_EXIT_COUNT - 1) / 2) * (C.HUB_SIZE / C.HUB_EXIT_COUNT);
-    b.box([ex, oy, inch(4)], [0.004, inch(8), inch(7)], { color: 0x0a0a0a, collide: false, castShadow: false });
+    // Match the simulated discharge centre: a ball emerges through the port rather than the panel above it.
+    b.box([ex, oy, C.HUB_EXIT_HEIGHT], [0.004, inch(8), inch(7)], { color: 0x0a0a0a, collide: false, castShadow: false });
   }
   // Alliance label on the alliance-facing side
   b.label([c.x - dir(a) * (hs + 0.004), c.y, inch(30)], 'HUB', inch(6), a === 'blue' ? Math.PI : 0, '#ffffff');

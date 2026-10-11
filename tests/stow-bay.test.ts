@@ -25,6 +25,52 @@ const local = (sim: HeadlessSim, i: number) => {
   return { x: dx * c - dz * s, y: p.y - t.y, z: dx * s + dz * c };
 };
 
+it('claims a specific hopper ball for the indexer without simulating its hidden duplicate, then returns it where the conveyor ends', async () => {
+  await RAPIER.init();
+  const sim = make(undefined, 20);
+  try {
+    run(sim, 60);
+    const bay = sim.robot.bay!, entry = new THREE.Vector3(0, .3, 0);
+    const first = bay.takeForFeed(entry)!;
+    expect(first).not.toBeNull();
+    const idx = [...sim.pool.drawnElsewhere][0];
+    const before = local(sim, idx);
+    expect(first.position.distanceTo(new THREE.Vector3(before.x, before.y, before.z))).toBeLessThan(.00001);
+    expect(sim.pool.bodies[idx].isEnabled()).toBe(false);
+    expect(bay.pickForLaunch(entry)).toBe(idx);
+    const second = bay.takeForFeed(entry)!;
+    expect(sim.pool.drawnElsewhere.size).toBe(2);
+    expect(bay.pickForLaunch(entry)).toBe(idx); // Stable identity even as more balls queue.
+    run(sim, 25);
+    expect(sim.robot.held.length).toBe(20);
+    expect(sim.pool.bodies[idx].isEnabled()).toBe(false);
+    first.release(entry);
+    expect(sim.pool.bodies[idx].isEnabled()).toBe(true);
+    expect(sim.pool.drawnElsewhere.has(idx)).toBe(false);
+    const after = local(sim, idx);
+    expect(new THREE.Vector3(after.x, after.y, after.z).distanceTo(entry)).toBeLessThan(.00001);
+    second.release(entry);
+  } finally { sim.dispose(); }
+});
+
+it('a claimed indexer ball launches as the same pool body and clears its hidden instance', async () => {
+  await RAPIER.init();
+  const sim = make(undefined, 12);
+  try {
+    run(sim, 60);
+    const bay = sim.robot.bay!, entry = new THREE.Vector3(0, .3, 0);
+    const source = bay.takeForFeed(entry)!;
+    const idx = bay.pickForLaunch(entry);
+    sim.step({ ...IDLE_COMMAND, shoot: true });
+    expect(sim.robot.held.includes(idx)).toBe(false);
+    expect(sim.pool.state[idx]).toBe('field');
+    expect(sim.pool.bodies[idx].isEnabled()).toBe(true);
+    expect(sim.pool.drawnElsewhere.has(idx)).toBe(false);
+    source.release(entry); // A late visual drain must not put a shot back in storage.
+    expect(sim.pool.state[idx]).toBe('field');
+  } finally { sim.dispose(); }
+});
+
 it('held FUEL are the pool\'s own live bodies, resting inside the hopper walls', async () => {
   await RAPIER.init();
   const sim = make(undefined, 20);

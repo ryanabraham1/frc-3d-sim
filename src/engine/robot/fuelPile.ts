@@ -86,6 +86,25 @@ export class FuelPile {
     if (this.arrivals.length < 14) this.arrivals.push({ p: position.clone(), t: this.clock });
   }
 
+  /** Withdraw the ball nearest the conveyor mouth, preserving the rest of the settled pile. */
+  take(entry: THREE.Vector3): THREE.Vector3 | null {
+    if (!this.count) return null;
+    let best = 0, distance = Infinity;
+    for (let i = 0; i < this.count; i++) {
+      const j = i * 3;
+      const d = (this.positions[j] - entry.x) ** 2 + (this.positions[j + 1] - entry.y) ** 2 + (this.positions[j + 2] - entry.z) ** 2;
+      if (d < distance) { best = i; distance = d; }
+    }
+    const j = best * 3, last = (--this.count) * 3;
+    const position = new THREE.Vector3().fromArray(this.positions, j);
+    for (let k = 0; k < 3; k++) {
+      this.positions[j + k] = this.positions[last + k];
+      this.velocity[j + k] = this.velocity[last + k];
+    }
+    this.wake();
+    return position;
+  }
+
   setCount(n: number): void {
     if (n === this.count) return;
     for (let i = this.count; i < n; i++) {

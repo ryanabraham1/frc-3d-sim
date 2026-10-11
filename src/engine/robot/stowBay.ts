@@ -150,6 +150,8 @@ export class StowBay {
   }
 
   forget(i: number): void {
+    this.staging.delete(i);
+    this.pool.drawnElsewhere.delete(i);
     this.stowed.delete(i);
     this.feeding.delete(i);
     if (this.buried.delete(i) && !this.buried.size) this.floorLift = 0;
@@ -157,7 +159,7 @@ export class StowBay {
 
   /** Stop simulating the hopper: every ball stays held (just a count again) and its body is switched off. */
   park(): void {
-    this.stageNearest(0, this.w);
+    this.clearStaging();
     for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.parkHeld(i);
     this.stowed.clear();
     this.buried.clear();
@@ -171,7 +173,7 @@ export class StowBay {
 
   /** Release every held ball back to the reserve (robot reset). */
   clear(): void {
-    this.stageNearest(0, this.w);
+    this.clearStaging();
     for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.reserve(i);
     this.stowed.clear();
     this.buried.clear();
@@ -187,8 +189,9 @@ export class StowBay {
     const r = this.radius * this.ballScale;
     this.frame();
     if (this.stowed.size > StowBay.ACTIVE_MAX + 6) {
-      const rows = [...this.stowed].map(i => ({ i, y: this.toLocal(this.pool.bodies[i].translation(), this.v).y })).sort((a, b) => a.y - b.y);
-      const need = this.stowed.size - StowBay.ACTIVE_MAX;
+      const rows = [...this.stowed].filter(i => !this.staging.has(i)).map(i => ({ i, y: this.toLocal(this.pool.bodies[i].translation(), this.v).y })).sort((a, b) => a.y - b.y);
+      const need = rows.length - StowBay.ACTIVE_MAX;
+      if (need <= 0) return;
       // Cut at a layer boundary: everything within half a ball of the n-th lowest goes, so no half-buried layer is left.
       const cut = rows[need - 1].y + r * 0.5;
       const gone = rows.filter(row => row.y <= cut);
@@ -249,31 +252,51 @@ export class StowBay {
     this.frame();
     const p = new THREE.Vector3();
     for (const i of this.stowed) {
+      if (this.staging.has(i)) continue;
       this.toLocal(this.pool.bodies[i].translation(), p);
       cb(p.x, p.y, p.z);
     }
   }
 
-  /** The ball nearest the launcher exit (robot frame): the one that gets shot. -1 when none is inside. */
-  /** Balls currently drawn by the robot's indexer lanes instead of by the pool (see stageNearest). */
+  /** Stable ball identities currently drawn by the indexer instead of by the pool. */
   private readonly staging = new Set<number>();
 
-  /**
-   * Visual only: the `k` stowed balls nearest the shooter are the ones the indexer animation draws lined up in its lanes,
-   * so hide their own instances (they keep simulating, and `pickForLaunch` takes them first). Call once per frame.
-   */
-  stageNearest(k: number, exit: THREE.Vector3): void {
-    for (const i of this.staging) this.pool.drawnElsewhere.delete(i);
-    this.staging.clear();
-    if (k <= 0 || !this.stowed.size) return;
+  /** Move one conserved ball into the conveyor, keeping the handoff at its actual settled position. */
+  takeForFeed(entry: THREE.Vector3): { position: THREE.Vector3; release(position: THREE.Vector3): void } | null {
+    if (this.stowed.size <= this.staging.size && this.buried.size) this.wakeLayer();
     this.frame();
-    const p = this.w;
-    const near = [...this.stowed].map(i => ({ i, d: this.toLocal(this.pool.bodies[i].translation(), p).distanceToSquared(exit) }));
-    near.sort((a, b) => a.d - b.d);
-    for (const { i } of near.slice(0, k)) { this.staging.add(i); this.pool.drawnElsewhere.add(i); }
+    let best = -1, distance = Infinity;
+    const position = new THREE.Vector3(), p = new THREE.Vector3();
+    for (const i of this.stowed) {
+      if (this.staging.has(i)) continue;
+      this.toLocal(this.pool.bodies[i].translation(), p);
+      const d = p.distanceToSquared(entry);
+      if (d < distance) { best = i; distance = d; position.copy(p); }
+    }
+    if (best < 0) return null;
+    const idx = best;
+    this.staging.add(idx);
+    this.pool.drawnElsewhere.add(idx);
+    // Conveyor motion is bounded animation; the hidden duplicate does not need ball-to-ball physics.
+    this.pool.bodies[idx].setEnabled(false);
+    return { position, release: local => {
+      if (!this.staging.delete(idx)) return; // Already launched or released by the pool.
+      this.pool.drawnElsewhere.delete(idx);
+      this.pool.bodies[idx].setEnabled(true);
+      this.place(idx, local);
+    } };
   }
 
+  private clearStaging(): void {
+    for (const i of this.staging) this.pool.drawnElsewhere.delete(i);
+    this.staging.clear();
+  }
+
+  /** Use the lead conveyor ball, otherwise the nearest stored ball; -1 when none is inside. */
   pickForLaunch(exit: THREE.Vector3): number {
+    // Claimed balls are already in conveyor order. Consume the lead rather than reselecting the hidden pile.
+    const staged = this.staging.values().next().value;
+    if (staged !== undefined) return staged;
     if (!this.stowed.size && this.buried.size) this.wakeLayer(true);
     this.frame();
     let best = -1, d = Infinity;
@@ -371,6 +394,7 @@ export class StowBay {
     const rs = r * this.ballScale; // the whole ball stays inside the side walls
     const hx = (cav.max.x - cav.min.x) / 2 - rs, hz = (cav.max.z - cav.min.z) / 2 - rs;
     for (const i of [...this.stowed]) {
+      if (this.staging.has(i)) continue;
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
       const outX = Math.abs(p.x - cx) > hx + 0.01, outZ = Math.abs(p.z - cz) > hz + 0.01;

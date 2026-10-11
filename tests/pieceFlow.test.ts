@@ -15,6 +15,29 @@ function setup(feed = true) {
 }
 
 describe('PieceFlow', () => {
+  it('starts the indexer at the claimed ball and keeps advancing while the intake has no new ball ready', () => {
+    const visual = new THREE.Group(), start = new THREE.Vector3(-.4, .4, 0), mouth = new THREE.Vector3(0, .2, 0), end = new THREE.Vector3(.5, .5, 0);
+    const returned: THREE.Vector3[] = [];
+    let available = true;
+    const flow = new PieceFlow(visual, () => new THREE.Object3D(), {
+      intake: () => [mouth], feed: () => [mouth, end],
+      take: () => {
+        if (!available) return null;
+        available = false;
+        return { position: start.clone(), release: p => returned.push(p.clone()) };
+      },
+    }, true);
+    flow.update(0, 2, .1, false, true);
+    const ball = visual.children.find(o => o.visible)!;
+    expect(ball.position.distanceTo(start)).toBeLessThan(1e-6);
+    for (let i = 0; i < 120; i++) flow.update(1/60, 2, .1, false, true);
+    expect(flow.staged).toBe(1);
+    expect(ball.position.distanceTo(end)).toBeLessThan(1e-6);
+    for (let i = 0; i < 240; i++) flow.update(1/60, 2, .1);
+    expect(flow.staged).toBe(0);
+    expect(returned).toHaveLength(1);
+    expect(returned[0].distanceTo(start)).toBeLessThan(1e-6);
+  });
   it('starts a captured piece where it was picked up and delivers it to the stow point', () => {
     const { visual, flow, stow } = setup();
     flow.update(0, 0, 0.1);

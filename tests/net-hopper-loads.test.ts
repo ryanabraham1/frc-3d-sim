@@ -22,6 +22,26 @@ function make(team:number){
   const sim=new HeadlessSim(season,RAPIER,{robot:c,alliance:'blue',pose:{x:2,y:2,yaw:0}});
   sims.push(sim);return sim;
 }
+it('4414 net follows local ball pressure instead of inflating empty pockets from the held count', () => {
+  const sim = make(4414), r = sim.robot, c = r.config;
+  sim.load(c.hopperCapacity);
+  const contact = {x: -.12, y: c.height + .14, z: 0};
+  r.bay!.forEachLocal = cb => cb(contact.x, contact.y, contact.z);
+  for (let i = 0; i < 120; i++) r.syncVisual(1/60);
+  const net = r.visual.getObjectByName('stretching-hopper-net') as THREE.LineSegments;
+  const p = net.geometry.getAttribute('position');
+  let near = 0, far = 0;
+  for (let i = 0; i < p.count; i++) {
+    const distance = Math.hypot(p.getX(i)-contact.x, p.getZ(i)-contact.z);
+    if (distance < .07) near = Math.max(near, p.getY(i));
+    if (distance > .4) far = Math.max(far, p.getY(i));
+  }
+  expect(near).toBeGreaterThan(c.height + .08);
+  expect(far).toBeLessThanOrEqual(c.height + .001);
+  r.bay!.forEachLocal = () => {};
+  for (let i = 0; i < 120; i++) r.syncVisual(1/60);
+  for (let i = 0; i < p.count; i++) expect(p.getY(i)).toBeLessThanOrEqual(c.height + .001);
+});
 for(const team of [254,581,6800,9470,1323,4414])it(`${team}: a full physical load pushes its net above the rim and conserves the balls`,()=>{
   const sim=make(team),r=sim.robot,c=r.config;
   r.syncVisual(.05);sim.load(c.hopperExpansion!.startCount);

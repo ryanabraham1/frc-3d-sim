@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { box, bar, mat, fillBlock, drivebase, roller, hoodShell } from './models';
 import type { ModelKit, RobotModel } from './models';
 import { hopperNetCeiling } from './config';
+import { articulateRollers } from './rollerArticulation';
 
 // Source: user-supplied 9470 MAIN, Valor VR26A and 971 Championship assemblies.
 // Dimensions/pivots below are in meters, measured from the exported shafts/rings.
@@ -181,6 +182,11 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   const intake=p('intake',[-.27305,.1698625,0]);
   const hood=p('hood',[.282575,.4699,0]);
   const flywheel=p('flywheel',[.2651125,.3726602,-.3309938]);
+  // Parallel feeder shafts measured from the supplied CAD, in its normalized robot frame.
+  const feederRollers=articulateRollers(root,root.getObjectByName('feeder'),[
+    [-.2556,.1955],[-.1939,.179],[-.1322,.1623],[-.0707,.146],[-.009,.1293],
+    [.0528,.1127],[.1611,.1127],[.2506,.1737],[.289,.261],[.2784,.3563],
+  ]);
   const tip=new THREE.Object3D();tip.position.set(-.610318,.160655,0);
   root.add(tip);root.updateMatrixWorld(true);intake.attach(tip);
   const hopper=root.getObjectByName('hopper');
@@ -210,7 +216,7 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],
       stow:pile.stow,feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;
-        return [new THREE.Vector3(-.20,.27,z),new THREE.Vector3(.05,.29,z),new THREE.Vector3(.24,.36,z),new THREE.Vector3(.32,.44,z)];}},
+        return [new THREE.Vector3(-.20,.27,z),new THREE.Vector3(.05,.29,z),new THREE.Vector3(.24,.36,z),point(k,hood,.037,-.028,z)];}},
     update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return;
       // Source pickup is deployed. Fold upward and inward about its real bearing.
@@ -220,5 +226,6 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       angle=scoringEase(angle,s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-1.05:0,s.dt);
       hood.rotation.z=angle;
       flywheel.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?70:0)*s.dt;
+      for(const shaft of feederRollers)shaft.rotation.z=(shaft.rotation.z+(s.enabled&&(s.intaking||s.aiming||s.firing>0)?-35:0)*s.dt)%(Math.PI*2);
     }};
 }

@@ -406,8 +406,11 @@ export class Robot {
     const segments = 16, positions: number[] = [];
     for (let axis = 0; axis < 2; axis++) for (let line = 0; line <= segments; line++) for (let step = 0; step < segments; step++) {
       for (const endpoint of [step, step + 1]) {
-        const a = line / segments * 2 - 1, b = endpoint / segments * 2 - 1;
-        positions.push(axis ? b : a, 0, axis ? a : b);
+        // Clip two diagonal strand families to the rim: diamond openings stay open around protruding FUEL.
+        const offset = line / segments * 4 - 2;
+        const start = Math.max(-1, -1 - offset), end = Math.min(1, 1 - offset);
+        const x = lerp(start, end, endpoint / segments), z = x + offset;
+        positions.push(x, 0, axis ? -z : z);
       }
     }
     const geometry = new THREE.BufferGeometry();
@@ -418,7 +421,7 @@ export class Robot {
     // Sewn reinforcement cords give the flexible roof a readable silhouette against dark CAD and yellow FUEL.
     // Two soft seams follow the same contact surface; they never lift into a separate cage above the balls.
     const cords = new THREE.InstancedMesh(new THREE.CylinderGeometry(.002, .002, 1, 5),
-      new THREE.MeshStandardMaterial({ color: 0x737779, roughness: .9 }), 2 * segments);
+      new THREE.MeshStandardMaterial({ color: 0x25282d, roughness: .9 }), 2 * segments);
     cords.name = 'stretching-hopper-cords';
     cords.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     cords.frustumCulled = false;
@@ -473,14 +476,18 @@ export class Robot {
     // No decorative balls or preset net load points.
     this.visual.updateMatrixWorld(true);
     const point = new THREE.Vector3();
-    this.bay?.forEachLocal((x, y, z) => tops.push({ x, z, y: y + Robot.NET_FUEL_R }));
+    // Buried layers cannot contact the roof. Avoid checking them against every strand sample.
+    const addTop = (x: number, y: number, z: number) => {
+      if (y >= c.height - .06) tops.push({ x, z, y });
+    };
+    this.bay?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
     for (const mesh of this.bay ? [] : this.fuelPiles) {
       const surface = mesh.userData.fuelSurface?.();
       if (!surface || !mesh.visible) continue;
       for (let i = 0; i < surface.count; i++) {
         point.fromArray(surface.positions, i * 3);
         this.visual.worldToLocal(mesh.localToWorld(point));
-        tops.push({ x: point.x, z: point.z, y: point.y + surface.radius });
+        addTop(point.x, point.y + surface.radius, point.z);
       }
     }
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
@@ -506,10 +513,8 @@ export class Robot {
         const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
-      // Near full load the fabric is drawn taut across the whole pocket: a full, high dome rather than a loose drape.
-      const span = Math.max(1e-3, (c.hopperExpansion?.fullHeight ?? c.height) - c.height);
-      const load = Math.min(1, extra / span) * Math.min(1, tops.length / 30); // only with real FUEL under it, never an empty dome
-      y = Math.max(y, c.height + extra * bow ** 0.35 * load * load);
+      // Even a full net follows individual ball contacts. A count-driven dome erases the pockets and makes the
+      // load look like a rigid bubble; tension above already carries each real contact into neighbouring strands.
       const maximum = Math.min(c.hopperExpansion?.fullHeight ?? c.height, c.height + extra);
       // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
       y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
@@ -2305,6 +2310,27 @@ export class Robot {
     this.flow = new PieceFlow(this.visual, make, {
       intake: (from) => this.intakePath(from ?? null),
       arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
+      take: roll && this.fuelPiles.length ? entry => {
+        if (this.bay) return this.bay.takeForFeed(entry);
+        const bins = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0 && (p as THREE.InstancedMesh).count > 0);
+        let best: THREE.Object3D | undefined, distance = Infinity;
+        const local = new THREE.Vector3();
+        for (const bin of bins) {
+          local.copy(entry).applyMatrix4(this.relativeMatrix(bin).invert());
+          const surface = bin.userData.fuelSurface();
+          for (let i = 0; i < surface.count; i++) {
+            const d = local.distanceToSquared(new THREE.Vector3().fromArray(surface.positions, i * 3));
+            if (d < distance) { distance = d; best = bin; }
+          }
+        }
+        if (!best) return null;
+        const bin = best as THREE.InstancedMesh, matrix = this.relativeMatrix(bin);
+        const position = bin.userData.takeFuel(entry.clone().applyMatrix4(matrix.clone().invert())) as THREE.Vector3;
+        position.applyMatrix4(matrix);
+        return { position, release: point => {
+          this.receiveFuel(point);
+        } };
+      } : undefined,
       // One indexer lane per shooter exit (dumper lanes, twin turrets), re-read from the model as it moves.
       feed: c.launcher.enabled && c.hopperCapacity > 1 ? (lane: number) => {
         const custom = model?.flow?.feed?.(lane);
@@ -2391,7 +2417,6 @@ export class Robot {
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
   private readonly prevPos = new THREE.Vector3();
-  private readonly stageExit = new THREE.Vector3();
   private readonly prevQuat = new THREE.Quaternion();
   private hasPrevPose = false;
 
@@ -2437,11 +2462,6 @@ export class Robot {
       this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
     }
     this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
-    if (this.bay) {
-      // Real hopper bodies: the balls nearest the shooter are the ones the indexer lanes draw.
-      const ex = this.launcherExit(0);
-      this.bay.stageNearest(this.flow?.staged ?? 0, this.stageExit.set(ex.forward, ex.up, -ex.side));
-    }
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
     this.roundHopper?.set(frac);

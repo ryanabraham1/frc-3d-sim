@@ -90,7 +90,7 @@ export function adaptedRotorColumn(parent: THREE.Object3D, o: { x: number; y0: n
   const infeed = hinge(root,'infeed',new THREE.Vector3(.115097,.235538,.09127).sub(base));
   const upfeed = hinge(root,'upfeed',new THREE.Vector3(.115925,.315912,-.00402).sub(base));
   return {root,update(s: RobotAnimState) {
-    const speed = s.enabled ? s.firing>0 ? 8 : 1.2 : 0;
+    const speed = s.enabled ? s.aiming || s.firing>0 ? 8 : 1.2 : 0;
     rotor.rotation.y += speed*s.dt;
     infeed.rotation.y += speed*4*s.dt;
     upfeed.rotation.z += speed*4*s.dt;
