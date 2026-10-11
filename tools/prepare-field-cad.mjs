@@ -23,7 +23,7 @@ const LIGHT = /^Diffuser$/;
 const SKIP = /AprilTag/; // the game draws textured tags at the welded positions
 /** [part name, colour, metalness, roughness, opacity] — the export only carries grey shades, so parts are coloured by role. */
 const LOOKS = [
-  [/Side Panel Vinyl/, 0x17191c, 0, 0.7, 1], // printed black; the game adds the teal REBUILT banner
+  [/Side Panel Vinyl/, 0x17191c, 0, 0.7, 1], // drawn plain black (the printed artwork is not in the CAD)
   [/Hub (Side|Front|Rear) Panel/, 0x17191c, 0.2, 0.6, 1],
   [/Funnel Side|Funnel Base/, 0xdfe6ea, 0.05, 0.25, 0.42],
   [/Hub (Front|Rear|Side) Diffuser/, 0xf2f4f5, 0, 0.5, 0.75],
