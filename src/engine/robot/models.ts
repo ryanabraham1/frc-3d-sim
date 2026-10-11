@@ -1028,7 +1028,8 @@ export function overBumperIntake(k: ModelKit, tip: THREE.Object3D, r: number): (
 export function columnFeed(k: ModelKit, colX: number, wheel: THREE.Object3D, rotorR: number, r: number): () => THREE.Vector3[] {
   const c = k.config;
   return () => {
-    const a = Math.random() * Math.PI * 2;
+    // A fixed lane (the indexer stages FUEL nose to tail along it): from the far rim of the rotor round to the column.
+    const a = Math.PI;
     const y0 = c.bumperTop + 0.04 + r;
     return [new THREE.Vector3(colX + Math.cos(a) * rotorR, y0, Math.sin(a) * rotorR), new THREE.Vector3(colX + Math.cos(a + 1.2) * 0.1, y0, Math.sin(a + 1.2) * 0.1),
       new THREE.Vector3(colX, c.height - 0.14, 0), flowAt(k, wheel, -0.06, 0, 0), flowAt(k, wheel, 0.03, 0.03, 0)];
@@ -1169,8 +1170,9 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
     rollers,
     feed(r) {
       const pts: THREE.Vector3[] = [];
-      // Picked up anywhere on the outer pocket ring, carried round to the start of the spiral, then along its inner face.
-      const start = Math.random() * Math.PI * 1.4 - Math.PI * 0.9 + a0;
+      // Picked up on the outer pocket ring, carried round to the start of the spiral, then along its inner face. One fixed
+      // lane: the indexer stages FUEL nose to tail along it.
+      const start = a0 - Math.PI * 0.2;
       pts.push(pt(start, rStart - r - 0.02, r + 0.006), pt((start + a0) / 2, rStart - r - 0.02, r + 0.006));
       for (let i = 0; i <= 6; i++) {
         const u = i / 6;

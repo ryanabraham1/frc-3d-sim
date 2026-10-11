@@ -29,6 +29,20 @@ export const TIMELINE: MatchPeriod[] = [
  */
 export const REBUILT_ACCURACY_RANGE = 3.0; // m from the HUB center [EST: mid-ALLIANCE ZONE]
 export const REBUILT_DEFAULT_ACCURACY = 83;
+
+/**
+ * SHOT MAP. Hooded REBUILT shooters run a distance table: a steep lob close to the HUB and a flatter, faster shot from
+ * deep, with the hood moving monotonically between them (e.g. 2412's REBUILT2026 launcher table, hood 1.5 -> 6.6 rot
+ * from 1 -> 5.8 m; 581's hood has 35 deg of travel, CD "581 Blazing Bulldogs 2026 CAD and Code Release"). Preferred
+ * launch elevation (rad) at `distance` m from the HUB center: anchored at 60 deg at REBUILT_ACCURACY_RANGE so the
+ * accuracy table keeps its calibration, steepening 7 deg per m closer in and flattening 3 deg per m farther out [EST
+ * slopes]. A steeper far slope cost hit rate here (83% -> 67% at 4 m: shallow entries clip the HUB rim). The solver still
+ * steepens any shot that would clip the rim, and fixed-hood robots (minAngle = maxAngle) ignore it.
+ */
+export function hubShotAngle(distance: number): number {
+  const deg = Math.PI / 180, d = REBUILT_ACCURACY_RANGE - distance;
+  return Math.min(80 * deg, Math.max(45 * deg, (60 + (d > 0 ? 7 : 3) * d) * deg));
+}
 const SPEED_ERROR_RATIO = 1.25;
 /** [accuracy %, 1-sigma launch angle (rad)], measured at REBUILT_ACCURACY_RANGE; ordered by falling accuracy. */
 const ACCURACY_TABLE: [number, number][] = [

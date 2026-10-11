@@ -97,6 +97,8 @@ export class GamePiecePool {
   private readonly changed = new Set<number>();
   /** Per piece: 1 = instance matrix shows its current field pose, 2 = shows it hidden, 0 = stale. */
   private shown = new Uint8Array(0);
+  /** Held pieces another visual draws for now (a robot's indexer animation): their own instance stays hidden. */
+  readonly drawnElsewhere = new Set<number>();
   /** Multiplayer client: poses come from snapshots, so only pieces touched since the last draw are redrawn. */
   private replica = false;
   readonly mesh: THREE.InstancedMesh;
@@ -469,7 +471,7 @@ export class GamePiecePool {
     let dirty = false;
     for (let i = 0; i < this.bodies.length; i++) {
       const mesh = this.meshes[this.meshIndex[i]];
-      if (this.state[i] !== 'field' && !this.stowed[i]) {
+      if ((this.state[i] !== 'field' && !this.stowed[i]) || (this.state[i] === 'held' && this.drawnElsewhere.has(i))) {
         if (this.shown[i] !== 2) {
           mesh.setMatrixAt(i, HIDDEN);
           this.shown[i] = 2;

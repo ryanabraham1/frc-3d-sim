@@ -65,7 +65,8 @@ export function build1987Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       rotorRate = dyeRotorRate(rotorRate, s, 8);
       rotor.rotation.y -= rotorRate * s.dt; // 1987's rotor turns the opposite way to the other dye rotors
       // Floating hood: steeper (closer to the wheel) for short shots, flatter for long ones.
-      lift = ease(lift, s.enabled && s.aiming ? THREE.MathUtils.clamp((s.hood - .6) / .6, 0, 1) : 0, s.dt);
+      // Full travel across the shot map: ~82 deg up close, ~55 deg from deep in the zone.
+      lift = ease(lift, s.enabled && s.aiming ? THREE.MathUtils.clamp((s.hood - .9) / .5, 0, 1) : 0, s.dt);
       hood.rotation.z = .35 * lift;
     },
   };

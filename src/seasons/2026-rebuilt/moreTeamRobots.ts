@@ -203,7 +203,8 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,
       // Round the drum rim, up the ramp and into the turret's wheel.
-      feed: () => { const a = Math.random() * Math.PI * 2; return [new THREE.Vector3(cx + Math.cos(a) * R * 0.8, bt + 0.04 + FUEL_R, Math.sin(a) * R * 0.8), new THREE.Vector3(tx - 0.12, bt + 0.08 + FUEL_R, 0), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)]; },
+      // The spindexer carries FUEL from the far side of the bowl round to the tower.
+      feed: () => { const a = Math.atan2(0, cx - tx); return [new THREE.Vector3(cx + Math.cos(a) * R * 0.8, bt + 0.04 + FUEL_R, Math.sin(a) * R * 0.8), new THREE.Vector3(tx - 0.12, bt + 0.08 + FUEL_R, 0), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)]; },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
@@ -372,7 +373,8 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, rollerMaterial: mat(0x1d2025, { rough: 0.95 }) });
   const slide = slidingHopper(k);
   const d = { v: 0 };
-  let hoodAng = 0;
+  // Static hood (no actuator): fixed at the configured launch angle; range comes from wheel speed.
+  hood.rotation.z = 0.15 + hoodFor(c.launcher.angle) * 0.8;
   const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.88, height: sh0.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -380,15 +382,13 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
     flow: {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,
-      feed: () => { const lane = [-W * 0.3, 0, W * 0.3][Math.floor(Math.random() * 3)]; return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, lane), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, lane), new THREE.Vector3(sx - 0.03, H - 0.14, lane), new THREE.Vector3(sx + 0.03, H - 0.09, lane)]; },
+      feed: (shot = 0) => { const lane = [-W * 0.3, 0, W * 0.3][shot % 3]; return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, lane), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, lane), new THREE.Vector3(sx - 0.03, H - 0.14, lane), new THREE.Vector3(sx + 0.03, H - 0.09, lane)]; },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const r of rolls) spin(r, -fs, s.dt);
-      hoodAng = scoringApproach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
-      hood.rotation.z = hoodAng;
     },
   };
 });
@@ -453,7 +453,8 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
       for (const r of passive) spin(r, side * speed * .3, s.dt);
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);
-      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .14 : -side * -.35, 6, s.dt);
+      // Hood follows the shot map through its full travel [EST: 1114's travel is unpublished; matches 581's 35 deg].
+      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -509,7 +510,8 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       for (const r of [...feeding, ...intakeRolls]) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);
       for (const r of hoodRolls) spin(r, -side * speed, s.dt);
-      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .6 : -side * -.35, 6, s.dt);
+      // 35 deg of hood travel (581's 2026 CAD and code release): hoodFor spans about that across the shot map.
+      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -604,7 +606,7 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. 45 FUEL total following user tuning, including its intake-side hopper extension; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
-      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; setRebuiltAccuracy(c, 82); }) },
+      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; /* static hood: range comes from wheel speed */ c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 82); }) },
     { id: 'toploader-604', team: 604, name: 'Toploader',
       description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Holds 80–90 FUEL (user-reported; simulator uses 85) in its tall box and sliding hopper. Speed is a simulator estimate.',
       source: 'Chief Delphi "Team 604 Quixilver - 2026 Robot CAD and Code Release" (Toploader); The Blue Alliance 2026 photos',

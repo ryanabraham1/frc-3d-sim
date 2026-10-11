@@ -75,7 +75,8 @@ export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
       if(!isAnimated())return;
       intake.position.x=-.36*deploy;
       for(const rail of rails){rail.scale.x=.025+.36*deploy;rail.position.x=-.147-.18*deploy;}
-      angle=scoringEase(angle,s.aiming||s.firing>0 ? (s.hood-.9)*.8 : -.2,s.dt);hood.rotation.z=angle;
+      // Hood turns with the launch angle across the shot map [EST travel].
+      angle=scoringEase(angle,s.aiming||s.firing>0 ? s.hood-.9 : -.2,s.dt);hood.rotation.z=angle;
       drum.rotation.z+=(s.enabled&&(s.aiming||s.firing>0)?45:0)*s.dt;
       for(const r of feeds)r.rotation.z+=(s.enabled&&(s.intaking||s.firing>0)?32:0)*s.dt;
     }};

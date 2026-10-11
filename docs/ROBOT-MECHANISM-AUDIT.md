@@ -31,3 +31,23 @@ Generic custom robots retain their previous separate storage by default and offe
 Held ALGAE now eases into a visual compression shape in the gripper’s local axes. 111’s roller spacing and squash profile match one another; vacuum-held WHISPER stays nearly spherical. Released/field balls retain their normal geometry and collision radius.
 
 111’s shared arm pivots about a fore/aft axle and swings sideways, with its sweep offset in front of the elevator rails. Both independent holders reach either side of the robot; match alignment uses side scoring. Clearance checks cover the full arm sweep and the compressed held ALGAE envelope, along with both holders' scoring targets and stowed carpet clearance.
+
+## 2026 hood travel and indexer staging
+
+**Shot map.** The HUB aim target used to prefer one 60 degree launch at every range, so past about 3 m every hooded robot launched at 63-64 degrees and its hood sat still. REBUILT shooters run a distance table instead: a steep lob close in and a flatter, faster shot from deep, with the hood moving monotonically between them (2412's [REBUILT2026 launcher table](https://mintlify.wiki/robototes/REBUILT2026/configuration/launcher-constants): hood 1.5 to 6.6 rot from 1 to 5.8 m; 581's hood has 35 degrees of travel, [CD 521762](https://www.chiefdelphi.com/t/521762)). `hubShotAngle` (2026 `config.ts`) prefers 60 degrees at the 3 m accuracy-calibration range, 7 degrees per metre steeper closer in and 3 degrees per metre flatter farther out [EST slopes], clamped to 45-80 degrees. The solver still steepens any shot that would clip the rim. Settled launch angles now run from about 82 degrees at 1.2 m through 64 degrees at 3 m to about 58 degrees at 5.5 m, so the hoods sweep about 25 degrees across the ALLIANCE ZONE. A steeper far slope (7 degrees per metre) dropped the default robot's hit rate at 4 m from 83% to 67%, because shallow entries clip the HUB rim, so the far side stays gentle. Fixed-hood robots (`minAngle = maxAngle`: ROMAN, CHUNK, Matterhorn and now Triple Threat, whose documented hood is static) ignore the map and vary wheel speed. Because the 3 m angle is unchanged, the accuracy table keeps its calibration.
+
+Hoods that only used part of that sweep now use their full travel: Simbot Tim (procedural and CAD), Rubble (581's 35 degrees) and Cyclone's floating hood. Simbot Tim's travel is unpublished [EST].
+
+**Indexer staging.** While the shooter is spun up (shoot or pass held, or a shot just left), `PieceFlow` lines FUEL up nose to tail along each feed lane, one lane per shooter exit or turret, the way hopper floors, dye rotors and feed columns stage FUEL against the flywheel. Each launch takes the lead piece of the lane it left from (the host knows the exit; multiplayer clients alternate) and the rest step up one piece, at a conveyor speed matched to the fire rate. A lane holds as many pieces as fit along its path (up to 8). It never shows more pieces than the robot holds, and it backs them into the stow 1.2 s after the shooter is released. Staged pieces count toward `piecesInTransit`, so the hopper visual holds the rest. On a real-body hopper (`StowBay`), the stowed balls nearest the shooter are hidden while the lanes draw them (`GamePiecePool.drawnElsewhere`). They keep simulating, and `pickForLaunch` launches them first. Random per-shot feed paths (254, 1690, 3476, 9128, 1778, dye rotors, center columns) became fixed lanes so staged pieces don't jump between frames. All of this is render-only: launches, scoring and multiplayer state are unchanged.
+
+**Intake retraction while shooting** stays as it was (254, 3476, 1678, 2910 and 971 pull their intakes in once FUEL is leaving). Making it follow the load down was tried: the moving hopper extension is part of the real hopper cavity, and it spilled FUEL out of 971's open hopper in AI matches (hit rate about 0.41 to about 0.30 over three matches each), so it was left out.
+
+Tests: `tests/rebuilt-shot-animation.test.ts` (shot-map sweep for 4414 / 254 / 581, fixed hoods, dumper lanes staging over real hopper bodies and draining) and `tests/pieceFlow.test.ts` (lane staging, per-exit lanes, never staging more than held).
+
+### Intaken FUEL lands on the pile
+
+A ball the intake hands to the particle pile (other robots, multiplayer replicas) now ends its intake path on the pile
+surface beside the intake (`FuelPile.entry`), instead of at the height of the intake lane: an empty hopper used to show
+each new ball one ball-height up, then drop. Hand-over points expire after 0.5 s so a stale one (from a full hopper) never
+places a later ball, and FUEL the indexer backs down out of its lanes rejoins the pile at the lane's start.
+`tests/rebuilt-shot-animation.test.ts` checks the empty-hopper case.

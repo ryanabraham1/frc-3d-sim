@@ -2023,7 +2023,6 @@ export class Robot {
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
-  private flowFeedIndex = 0;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;
@@ -2219,7 +2218,6 @@ export class Robot {
     this.scoringSimulated = false;
     this.fireCooldown = 0;
     this.exitIndex = 0;
-    this.flowFeedIndex = 0;
     this.bay?.clear();
     this.held.length = 0;
     this.flow?.clear(0);
@@ -2235,7 +2233,6 @@ export class Robot {
    */
   enablePieceFlow(make: () => THREE.Object3D, roll: boolean): void {
     this.flow?.dispose();
-    this.flowFeedIndex = 0;
     const c = this.config;
     const model = this.model;
     const pieceR = this._projectile.halfHeight ?? this._projectile.radius;
@@ -2243,15 +2240,18 @@ export class Robot {
     this.flow = new PieceFlow(this.visual, make, {
       intake: (from) => this.intakePath(from ?? null),
       arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
-      feed: c.launcher.enabled && c.hopperCapacity > 1 ? () => {
-        // Host follows the actual exit; replicas/gallery alternate their visual feed stream.
-        const shot = this.exitIndex > 0 ? this.exitIndex - 1 : this.flowFeedIndex++;
-        const custom = model?.flow?.feed?.(shot);
+      // One indexer lane per shooter exit (dumper lanes, twin turrets), re-read from the model as it moves.
+      feed: c.launcher.enabled && c.hopperCapacity > 1 ? (lane: number) => {
+        const custom = model?.flow?.feed?.(lane);
         if (custom) return custom;
-        const ex = this.launcherExit(0);
+        const offsets = launcherExitOffsets(c);
+        const ex = this.launcherExit(offsets[lane % offsets.length]);
         const top = ex.up - pieceR - 0.04;
-        return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, 0), v(ex.forward - 0.1, (c.bumperTop + top) / 2, 0), v(ex.forward, top, -ex.side)];
+        return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, -ex.side), v(ex.forward - 0.1, (c.bumperTop + top) / 2, -ex.side), v(ex.forward, top, -ex.side)];
       } : undefined,
+      lanes: launcherExitOffsets(c).length,
+      // Host: the exit the last shot actually left from. Replicas don't know it and alternate.
+      shotLane: () => this.netAct === null && this.exitIndex > 0 ? this.exitIndex - 1 : null,
     }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
@@ -2309,7 +2309,7 @@ export class Robot {
 
   /** Held pieces still animating into the robot (not yet drawn in the hopper / held position). */
   get piecesInTransit(): number {
-    return this.flow?.inTransit ?? 0;
+    return (this.flow?.inTransit ?? 0) + (this.flow?.staged ?? 0);
   }
   get fuelTransportAudit(): { arrivals: number; blocked: number } | undefined { return this.flow?.transportAudit; }
 
@@ -2326,6 +2326,7 @@ export class Robot {
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
   private readonly prevPos = new THREE.Vector3();
+  private readonly stageExit = new THREE.Vector3();
   private readonly prevQuat = new THREE.Quaternion();
   private hasPrevPose = false;
 
@@ -2361,7 +2362,12 @@ export class Robot {
       this.visual.position.lerpVectors(this.prevPos, this.visual.position, alpha);
       this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
     }
-    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null);
+    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
+    if (this.bay) {
+      // Real hopper bodies: the balls nearest the shooter are the ones the indexer lanes draw.
+      const ex = this.launcherExit(0);
+      this.bay.stageNearest(this.flow?.staged ?? 0, this.stageExit.set(ex.forward, ex.up, -ex.side));
+    }
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
     this.roundHopper?.set(frac);
