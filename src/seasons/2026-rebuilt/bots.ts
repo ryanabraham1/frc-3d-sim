@@ -393,10 +393,16 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     return cmd;
   };
 
+  // A raised shooter hood blocks the robot at a TRENCH arm: drivers stow it (stop shooting) before rolling through.
+  const stowNearTrench = (cmd: RobotCommand): RobotCommand => {
+    // Only while rolling: a robot planted at a stance beside an arm keeps shooting.
+    if (!(r.config.launcher.hoodRise! > 0) || r.speed < 0.8 || !rules.nearTrenchArm(r, 1.2)) return cmd;
+    return { ...cmd, shoot: false, pass: false, aim: false };
+  };
   const bot: CycleBot = new CycleBot(ctx, r, {
     batch: Infinity,
     // Every decision is made by `think`; the generic collector is only the fallback.
-    tactics: (dt) => think(dt),
+    tactics: (dt) => stowNearTrench(think(dt)),
     accepts: (_i, p) => fromWall(p.x) < C.CENTER_X,
     supply: () => ({ ...side(r.alliance, 1.1, C.OUTPOST_AREA_WIDTH / 2), yaw: r.alliance === 'blue' ? 0 : Math.PI }),
     onStuck: () => { if (chase) blocked.push({ p: chase.p, until: ctx.clock.elapsed + 8 }); chase = null; },
@@ -405,7 +411,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       const via = routeThroughBands(myPose(), goal, openBands(), half, r.clearanceHeight, bot.hard);
       return via === goal ? aroundCircles(myPose(), goal, [tower]) : via;
     },
-    score: () => shootingCommand(rules.hubActive(r.alliance)),
+    score: () => stowNearTrench(shootingCommand(rules.hubActive(r.alliance))),
   });
   return bot;
 }

@@ -92,6 +92,9 @@ export const REBUILT_ROBOT_MASS = lb(150);
 /** FUEL/s a stock robot's floor intake can swallow [EST]; real teams override it (INTAKE_RATE in teamRobots.ts). */
 export const DEFAULT_INTAKE_RATE = 20;
 
+/** How far an open shooter hood sticks up above a stock robot's frame (m): 6 in at full travel [EST]. */
+export const HOOD_RISE = inch(6);
+
 /** Boost applied to every real team robot's INTAKE_RATE (user decision 2026-10-05: intakes felt too weak). */
 export const INTAKE_RATE_BOOST = 1.7;
 
@@ -101,6 +104,7 @@ export function rebuiltRobotDefaults(): RobotConfig {
   c.mass = REBUILT_ROBOT_MASS;
   c.height = inch(21);
   c.launcher.height = inch(19);
+  c.launcher.hoodRise = HOOD_RISE;
   c.hopperCapacity = 40;
   c.preload = C.FUEL_MAX_PRELOAD;
   c.climber.maxLevel = 0;
@@ -146,6 +150,9 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
+  // An adjustable hood sticks up above the frame when it opens for a shot (6 in at full travel [EST]); the TRENCH arm then
+  // blocks the robot until the hood is parked. A fixed hood never moves, so it adds nothing.
+  c.launcher.hoodRise = c.launcher.maxAngle > c.launcher.minAngle ? c.launcher.hoodRise ?? HOOD_RISE : 0;
   // Saved picks of the former turret ROMAN I preset (47 FUEL, 14/s, turret) become the imported Roman II drum robot.
   if (c.model === 'roman-6329' && c.launcher.turret && c.hopperCapacity === 47 && c.launcher.rate === 14) {
     c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 20;

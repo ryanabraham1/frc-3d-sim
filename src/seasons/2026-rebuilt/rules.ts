@@ -170,7 +170,8 @@ export class RebuiltRules implements SeasonRules {
    */
   overheadClearance(robot: Robot): number {
     const blocker = robot.config.shotBlocker;
-    if (!robot.config.hopperExpansion && !blocker) return Infinity;
+    // An open shooter hood sticks up above the frame, so it needs the arm known too (the hood is held down under it).
+    if (!robot.config.hopperExpansion && !blocker && !((robot.config.launcher.hoodRise ?? 0) > 0)) return Infinity;
     // Self-expanding net hoppers stop growing ~1.2 m before the arm (they can't shrink back in time once a FUEL is
     // taken). A shot blocker that is up or being raised turns the intake off, and a driver-raised telescoping hopper
     // (1678) only grows on command, so for those only the arm actually overhead counts.
@@ -188,6 +189,21 @@ export class RebuiltRules implements SeasonRules {
       if (minY < reach + margin || maxY > C.FIELD_WIDTH - reach - margin) return C.TRENCH_SAFE_HEIGHT;
     }
     return Infinity;
+  }
+
+  /** Is the robot within `margin` m (plan view) of a TRENCH arm it could roll under? Bots stow a raised hood before this. */
+  nearTrenchArm(robot: Robot, margin: number): boolean {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of robot.corners()) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }
+    const reach = Math.min(C.TRENCH_WIDTH, C.HUB_CENTER.y - C.HUB_SIZE / 2 - C.BUMP_WIDTH);
+    for (const hubX of [C.HUB_CENTER.x, C.FIELD_LENGTH - C.HUB_CENTER.x]) {
+      if (maxX < hubX - C.TRENCH_ARM_DEPTH / 2 - margin || minX > hubX + C.TRENCH_ARM_DEPTH / 2 + margin) continue;
+      if (minY < reach + margin || maxY > C.FIELD_WIDTH - reach - margin) return true;
+    }
+    return false;
   }
 
   chuteCount(a: Alliance): number {

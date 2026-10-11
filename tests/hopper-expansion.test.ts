@@ -101,7 +101,8 @@ it('a net robot under the trench may keep intaking below the trench-safe load, a
   r.overheadLimit = sim.rules.overheadClearance!(r);
   expect(r.overheadLimit).toBe(C.TRENCH_SAFE_HEIGHT);
   expect(r.intakeRoom).toBe(3);
-  const plain = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
+  const fixed = cloneConfig(season.robotDefaults); fixed.launcher.hoodRise = 0; // a hood that never rises above the frame adds no height
+  const plain = new HeadlessSim(season, RAPIER, { robot: fixed, alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
   expect(plain.rules.overheadClearance!(plain.robot)).toBe(Infinity);
 });
 

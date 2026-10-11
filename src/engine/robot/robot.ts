@@ -1,5 +1,5 @@
 import { captureFields, restoreFields, type RecoveryFields } from '../net/recovery';
-import { collectScoringReadiness } from './scoringReadiness';
+import { collectScoringReadiness, HOOD_SHOT_MAX } from './scoringReadiness';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type RAPIER from '@dimforge/rapier3d-compat';
@@ -108,6 +108,8 @@ export const ALLIANCE_COLORS: Record<Alliance, number> = { red: 0xd32f2f, blue: 
 
 const G = 9.81;
 /** A firing burst stays "locked on" this long after each shot (longer than the slowest launcher's shot interval). */
+const HOOD_FLAT = 0.5; // launch elevation (rad) at which the hood lies flat
+const HOOD_OPEN_RATE = 4; // hood opening per second (about 0.25 s to open)
 const BURST_HOLD_S = 0.6;
 
 export class Robot {
@@ -146,6 +148,7 @@ export class Robot {
   private readonly fp: { length: number; width: number };
   private expansionCollider?: RAPIER.Collider;
   private payloadCollider!: RAPIER.Collider;
+  private hoodCollider: RAPIER.Collider | null = null;
   /**
    * Mass of one held game piece (kg), set by the sim from the season's piece. A robot's rated `mass` is its empty playing
    * weight; what it carries rides on top (`payloadMass`), so a full hopper accelerates, brakes and turns slower.
@@ -300,6 +303,13 @@ export class Robot {
     // Carried game pieces: a contact-free mass in the hopper / carriage, sized each step from what the robot holds.
     this.payloadCollider = this.physics.world.createCollider(R.ColliderDesc.ball(0.05)
       .setTranslation(0, (c.bumperTop + c.height) / 2, 0).setMass(0).setCollisionGroups(0), this.body);
+    if (c.launcher.hoodRise && c.launcher.hoodRise > 0 && c.launcher.enabled) {
+      // Raised shooter hood: a box over the shooter (scoring end, about half the width, most of it for a robot-wide
+      // dumper) whose top follows the hood (updateHoodCollider). Only field structure sees it, like the shot blocker.
+      this.hoodCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(c.frameLength * 0.2, 0.02, c.frameWidth * 0.22)
+        .setTranslation(-groundSideSign(c) * c.frameLength * 0.15, c.height, 0).setMass(0).setFriction(0.2).setCollisionGroups(collisionGroups(Group.ROBOT, Group.FIELD)), this.body);
+      this.hoodCollider.setEnabled(false);
+    }
     if (c.hopperExpansion) {
       this.expansionCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(c.frameLength * 0.32, 0.001, c.frameWidth * 0.42)
         .setTranslation(-c.frameLength * 0.1, c.height, 0).setMass(0).setFriction(0.2).setCollisionGroups(GROUPS.robot), this.body);
@@ -1794,9 +1804,30 @@ export class Robot {
     if (!this.lastCommand.shoot && !this.lastCommand.pass) this.aimSolveIn = 0;
     this.turretAxis.pos = this.turretYaw;
     this.turretYaw = this.turretAxis.step(desired, dt);
-    const goal = aiming ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle;
     this.pitchAxis.pos = this.shooterPitch;
-    this.shooterPitch = this.pitchAxis.step(goal, dt);
+    this.shooterPitch = this.pitchAxis.step(aiming ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle, dt);
+    // The open hood sticks up above the frame: it opens (further for a lob) while shooting and parks flat otherwise. It
+    // can't open while the robot is under a low overhead (the TRENCH arm), like the shot blocker. An already open hood stays
+    // open (and stops the robot at the arm) until the driver stops shooting.
+    const open = aiming && !(this.hoodPinned && this.hoodOpen < 0.05) ? clamp((this.shooterPitch - HOOD_FLAT) / (HOOD_SHOT_MAX - HOOD_FLAT), 0.35, 1) : 0;
+    this.hoodOpen += clamp(open - this.hoodOpen, -dt * HOOD_OPEN_RATE, dt * HOOD_OPEN_RATE);
+    this.updateHoodCollider();
+  }
+  /** Hood opening, 0 = parked flat, 1 = fully open for the steepest lob. Simulation state (drives the hood collider). */
+  hoodOpen = 0;
+  /** Hood is held down by something overhead (only robots whose open hood rises above the frame). */
+  get hoodPinned(): boolean { return (this.config.launcher.hoodRise ?? 0) > 0 && this.overheadLimit < Infinity; }
+  /** Height (m) the open hood sticks up above the frame top right now. */
+  get hoodHeightAboveFrame(): number { return (this.config.launcher.hoodRise ?? 0) * this.hoodOpen; }
+  private updateHoodCollider(): void {
+    const col = this.hoodCollider;
+    if (!col) return;
+    const h = this.hoodHeightAboveFrame;
+    col.setEnabled(h > 0.01);
+    if (h <= 0.01) return;
+    const c = this.config, half = (h + 0.04) / 2;
+    col.setShape(new this.physics.R.Cuboid(c.frameLength * 0.2, half, c.frameWidth * 0.22));
+    col.setTranslationWrtParent({ x: -groundSideSign(c) * c.frameLength * 0.15, y: c.height - 0.04 + half, z: 0 });
   }
   /** Turret and hood under motion profiles (speed and acceleration limited, like a motion-controlled motor). */
   private turretAxisState: ProfiledAxis | null = null;
@@ -2229,9 +2260,9 @@ export class Robot {
     return 0;
   }
 
-  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
+  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodOpen overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
   restoreRecovery(state: RecoveryFields): void {
-    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
+    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodOpen overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
     this.replicaClimbProgress = null;
     this.netAct = null;
     this.lastCommand = { ...IDLE_COMMAND };
