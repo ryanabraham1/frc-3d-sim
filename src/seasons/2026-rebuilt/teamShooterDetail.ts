@@ -12,6 +12,28 @@ export function pocketPlate(parent: THREE.Object3D, outline: [number,number][], 
   const geo = new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:false}); geo.translate(0,0,-thickness/2);
   const plate = new THREE.Mesh(geo,material); plate.position.z=z; parent.add(plate); return plate;
 }
+/**
+ * Laser-cut X truss plate (RIPCURRENT's teal corner columns, Kepler's silver tower plates): `cols` × `rows` square-ish cells, each with four
+ * triangular pockets so the rails and diagonals are one extruded sheet (one draw call, not a bar per member).
+ */
+export function xTruss(parent: THREE.Object3D, w: number, h: number, cols: number, rows: number, m: THREE.Material, x = 0, z = 0, t = .005): THREE.Mesh {
+  const rail = .009, web = .0065;
+  const outline: [number, number][] = [[-w / 2, 0], [w / 2, 0], [w / 2, h], [-w / 2, h]];
+  const holes: [number, number][][] = [];
+  const cw = (w - 2 * rail) / cols, ch = (h - 2 * rail) / rows;
+  for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+    const l = -w / 2 + rail + i * cw + web / 2, r = l + cw - web, b = rail + j * ch + web / 2, tp = b + ch - web;
+    const mx = (l + r) / 2, my = (b + tp) / 2, dx = web * .9, dy = web * .9;
+    holes.push([[l, b], [r, b], [mx, my - dy]]);
+    holes.push([[l, tp], [mx, my + dy], [r, tp]]);
+    holes.push([[l, b + dy], [l, tp - dy], [mx - dx, my]]);
+    holes.push([[r, b + dy], [mx + dx, my], [r, tp - dy]]);
+  }
+  const plate = pocketPlate(parent, outline, holes, m, z, t);
+  plate.position.x = x;
+  return plate;
+}
+
 function bearing(parent:THREE.Object3D,r:number,y:number,material:THREE.Material) {
   for (const [inner,outer,dy] of [[r-.015,r,-.007],[r-.008,r+.008,0],[r-.015,r,.007]]) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(inner,outer,48),material);
@@ -90,7 +112,7 @@ export function keplerShooter(t:THREE.Object3D) {
   for(const z of [-.102,.102]) {
     pocketPlate(root,[[-.125,-.112],[.091,-.112],[.057,-.026],[-.036,.015],[-.125,-.018]],[
       [[-.101,-.083],[.049,-.083],[-.023,-.013]],
-    ],black,z);
+    ],alloy,z); // raw aluminium cheeks (match photos), black hood guides
     fasteners(root,[[-.112,-.098],[.075,-.098],[-.067,-.048]],z*1.04);
     motor(root,-.067,-.048,z*1.18);
   }

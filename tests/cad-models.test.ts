@@ -32,7 +32,8 @@ describe('photo-fitted CAD mechanisms', () => {
       }
       const walls = new THREE.Box3().setFromObject(visual.getObjectByName('kepler-upper-hopper')!);
       expect(walls.max.y).toBeCloseTo(config.height-.07+.009);
-      expect(walls.max.z).toBeGreaterThan(config.frameWidth*.45);
+      // The tall wall with the triangular windows is the one opposite the turret corner (match photos).
+      expect(walls.min.z).toBeLessThan(-config.frameWidth*.45);
     }
     if (id === 'madtown-2026-1323') {
       expect(turret.position.x).toBe(0);
