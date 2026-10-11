@@ -157,6 +157,7 @@ export class StowBay {
 
   /** Stop simulating the hopper: every ball stays held (just a count again) and its body is switched off. */
   park(): void {
+    this.stageNearest(0, this.w);
     for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.parkHeld(i);
     this.stowed.clear();
     this.buried.clear();
@@ -170,6 +171,7 @@ export class StowBay {
 
   /** Release every held ball back to the reserve (robot reset). */
   clear(): void {
+    this.stageNearest(0, this.w);
     for (const i of [...this.stowed, ...this.buried.keys(), ...this.feeding.keys()]) this.pool.reserve(i);
     this.stowed.clear();
     this.buried.clear();
@@ -253,6 +255,24 @@ export class StowBay {
   }
 
   /** The ball nearest the launcher exit (robot frame): the one that gets shot. -1 when none is inside. */
+  /** Balls currently drawn by the robot's indexer lanes instead of by the pool (see stageNearest). */
+  private readonly staging = new Set<number>();
+
+  /**
+   * Visual only: the `k` stowed balls nearest the shooter are the ones the indexer animation draws lined up in its lanes,
+   * so hide their own instances (they keep simulating, and `pickForLaunch` takes them first). Call once per frame.
+   */
+  stageNearest(k: number, exit: THREE.Vector3): void {
+    for (const i of this.staging) this.pool.drawnElsewhere.delete(i);
+    this.staging.clear();
+    if (k <= 0 || !this.stowed.size) return;
+    this.frame();
+    const p = this.w;
+    const near = [...this.stowed].map(i => ({ i, d: this.toLocal(this.pool.bodies[i].translation(), p).distanceToSquared(exit) }));
+    near.sort((a, b) => a.d - b.d);
+    for (const { i } of near.slice(0, k)) { this.staging.add(i); this.pool.drawnElsewhere.add(i); }
+  }
+
   pickForLaunch(exit: THREE.Vector3): number {
     if (!this.stowed.size && this.buried.size) this.wakeLayer(true);
     this.frame();
