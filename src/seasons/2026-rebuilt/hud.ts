@@ -1,22 +1,13 @@
 import { Alliance, ALLIANCES } from '@engine/coords';
 import type { HudSlots, SeasonContext, SeasonHud } from '@engine/core/season';
 import type { Hud } from '@engine/hud/hud';
-import { RP_THRESHOLDS } from './scoring';
 import type { RebuiltRules } from './rules';
 import { loadedRobotHeight } from '@engine/robot/config';
 import { TRENCH_SAFE_HEIGHT } from './constants';
 
 const LIGHT_TEXT = { off: 'INACTIVE', active: 'ACTIVE', warning: 'ENDING', chase: 'ACTIVE · OFF NEXT', post: 'SCORING' } as const;
 
-/** A labelled progress meter for the scoreboard: count / goal, with the ranking point it earns underneath. */
-function meter(label: string, value: number, goal: number, rp: string): string {
-  const pct = goal > 0 ? Math.min(100, Math.round((value / goal) * 100)) : 0;
-  const done = value >= goal ? ' done' : '';
-  return `<div class="sb-meter${done}"><div class="sb-meter-top"><span>${label}</span><b>${value}<i>/${goal}</i></b></div>` +
-    `<div class="sb-meter-bar"><div style="width:${pct}%"></div></div><div class="sb-meter-rp">${rp}</div></div>`;
-}
-
-/** REBUILT HUD widgets: hub status per alliance, RP progress, shift info, hopper / climb / chute. */
+/** REBUILT HUD widgets: hub status per alliance, shift info, hopper / climb / chute. */
 export class RebuiltHud implements SeasonHud {
   private hud: Hud;
   constructor(
@@ -29,18 +20,11 @@ export class RebuiltHud implements SeasonHud {
 
   update(): void {
     const { rules, ctx } = this;
-    const th = RP_THRESHOLDS.regional;
     for (const a of ALLIANCES) {
       const light = rules.light(a);
-      const fuel = rules.fuelActive(a);
-      const goal = fuel >= th.energized ? th.supercharged : th.energized;
-      const rpName = fuel >= th.energized ? 'SUPERCHARGED' : 'ENERGIZED';
-      const tower = rules.towerPoints(a);
       this.hud.setHtml(
         this.slots[a],
         `<div class="chip hub-${light}">HUB ${LIGHT_TEXT[light]}</div>` +
-          meter('FUEL', fuel, goal, rpName) +
-          meter('TOWER', tower, th.traversal, 'TRAVERSAL') +
           `<div class="mini dim">Chute ${rules.chuteCount(a)}${rules.chuteOpen[a] ? ' · OPEN' : ''}</div>`,
       );
     }

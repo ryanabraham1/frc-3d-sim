@@ -1301,56 +1301,6 @@ body.touch-ui .stage {
   }
 }
 
-/* ---- Scoreboard progress meters (2026 REBUILT) ---- */
-.sb-meter {
-  display: grid;
-  gap: 2px;
-  margin-top: 3px;
-}
-.sb-meter-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  color: #e6e7f0;
-}
-.sb-meter-top b {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.sb-meter-top i {
-  font-style: normal;
-  color: #8d8fa0;
-  font-weight: 400;
-}
-.sb-meter-bar {
-  height: 4px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
-.sb-meter-bar div {
-  height: 100%;
-  border-radius: 99px;
-  background: var(--blue);
-  transition: width 0.25s;
-}
-.hud-sub.red .sb-meter-bar div {
-  background: var(--red);
-}
-.sb-meter.done .sb-meter-bar div {
-  background: #3fcf7a;
-}
-.sb-meter-rp {
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
-  color: #8d8fa0;
-}
-.sb-meter.done .sb-meter-rp {
-  color: #3fcf7a;
-}
 .hud-top .hud-sub.blue,
 .hud-top .hud-sub.red {
   min-width: 150px;
