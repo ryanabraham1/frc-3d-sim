@@ -27,10 +27,14 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['tests/**/*.test.ts'],
     environment: 'node',
     // Physics suites fire hundreds of real shots per test; the 5 s default times out on slower machines.
     testTimeout: 120_000,
     setupFiles: ['tests/setup.ts'],
+    // `npm test` runs the fast project; whole-match benchmarks in tests/slow/ are opt-in (`npm run test:slow`).
+    projects: [
+      { extends: true, test: { name: 'fast', include: ['tests/**/*.test.ts'], exclude: ['tests/slow/**'] } },
+      { extends: true, test: { name: 'slow', include: ['tests/slow/**/*.test.ts'] } },
+    ],
   },
 });
