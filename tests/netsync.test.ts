@@ -206,6 +206,32 @@ describe('ClientSync', () => {
     } finally { p.dispose(); }
   });
 
+  it('a recovery keyframe preserves a piece hand-back instead of teleporting it to authority', () => {
+    const p = pair('2026-rebuilt');
+    try {
+      p.h.hs.sendSnapshot(1);
+      p.cs.onBinary(p.h.frames[0], 1000);
+      p.cs.interpolate(1000);
+      const i = p.clientSim.pool.indices('field')[0];
+      const initial = p.clientSim.pool.position(i);
+      const from = { x: initial.x + 2, y: initial.y, z: initial.z };
+      p.clientSim.pool.setReplicaPosition(i, from.x, from.y, from.z);
+      p.cs.handBack(i, from);
+      p.cs.interpolate(1100);
+      const before = { ...p.clientSim.pool.position(i) };
+      p.h.deliver({ t: 'resync' });
+      p.h.hs.sendSnapshot(1.1);
+      p.cs.onBinary(p.h.frames[p.h.frames.length - 1], 1100);
+      p.cs.interpolate(1100);
+      const after = p.clientSim.pool.position(i);
+      expect(Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z)).toBeLessThan(0.01);
+      p.cs.interpolate(3100);
+      expect(p.clientSim.pool.position(i).x).toBeCloseTo(initial.x, 2);
+    } finally {
+      p.dispose();
+    }
+  });
+
   it('asks for a keyframe (at most once a second) when snapshots go missing', () => {
     const p = pair('2026-rebuilt');
     const { h, cs, c } = p;

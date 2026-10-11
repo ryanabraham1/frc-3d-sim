@@ -17,8 +17,12 @@ export const MAX_INTERP_DELAY = 0.35;
 const SNAP_DT = 1 / 30;
 /** When snapshots run late, keep robots moving on their last velocity for at most this long (s). */
 const MAX_EXTRAPOLATE = 0.1;
-/** A piece the client simulated locally fades back onto the host's pose over this much render time (s). */
+/** Minimum render time for a locally simulated piece to blend back onto the host's pose (s). */
 const HAND_BACK_S = 0.3;
+/** Hand-back offset correction speed (m/s), except for distant errors limited by MAX_HAND_BACK_S. */
+const HAND_BACK_SPEED = 1.5;
+/** Distant divergent pieces must still finish returning to authority in bounded time (s). */
+const MAX_HAND_BACK_S = 2;
 /** Minimum spacing between keyframe requests after missed snapshots (ms). */
 const RESYNC_EVERY_MS = 1000;
 /** Host-clock estimate: largest step one snapshot may move it (s), so a burst of late packets can't drag
@@ -96,6 +100,7 @@ export class ClientSync {
   /** Hand-back offsets (see handBack): drawn pose minus host pose, and the render time they start fading. */
   private readonly backOff: Float32Array;
   private readonly backAt: Float64Array;
+  private readonly backDuration: Float32Array;
   /** Newest host orientation of each piece that has one on the wire (tubes). */
   private readonly rot: Float32Array;
   private readonly hasRot: Uint8Array;
@@ -117,6 +122,7 @@ export class ClientSync {
     this.settled = new Uint8Array(n);
     this.backOff = new Float32Array(n * 3);
     this.backAt = new Float64Array(n).fill(-Infinity);
+    this.backDuration = new Float32Array(n);
     this.rot = new Float32Array(n * 4);
     this.hasRot = new Uint8Array(n);
     for (const r of target.robots) this.robotsById.set(r.id, r);
@@ -191,6 +197,7 @@ export class ClientSync {
     this.results = m.results ?? (m.st === 'results' ? this.results : null);
 
     const fresh = new Set<number>();
+    const reentered = new Set<number>();
     if (m.key) {
       this.gotKeyframe = true;
       for (let i = 0; i < pool.count; i++) fresh.add(i);
@@ -198,6 +205,7 @@ export class ClientSync {
     for (const [i, code, owner, tag] of m.pieces ?? []) {
       if (i < 0 || i >= pool.count) continue;
       const st = STATES[code] ?? 'reserve';
+      if (st === 'field' && pool.state[i] !== 'field') reentered.add(i);
       // After a gap the piece may have left the field and come back in between: place it, don't slide it.
       if (st === 'field' && (gap || pool.state[i] !== 'field')) fresh.add(i);
       this.settled[i] = 0;
@@ -209,9 +217,13 @@ export class ClientSync {
       const j = i * 3;
       this.settled[i] = 0;
       if (fresh.has(i)) {
-        this.backAt[i] = -Infinity;
+        const blending = this.backAt[i] > -Infinity && !reentered.has(i);
+        const from = blending ? pool.position(i) : null;
         this.pt0[i] = this.pt1[i] = s.time;
         for (let d = 0; d < 3; d++) this.pp0[j + d] = this.pp1[j + d] = s.piecePos[k * 3 + d];
+        // Recovery keyframes refresh authority, but must not cancel an in-progress hand-back and teleport it.
+        if (from) this.handBack(i, from);
+        else this.backAt[i] = -Infinity;
         continue;
       }
       const stale = s.time - this.pt1[i] > 3 * SNAP_DT;
@@ -303,7 +315,7 @@ export class ClientSync {
       const k = t1 > t0 ? Math.min(1, Math.max(0, (rt - t0) / (t1 - t0))) : 1;
       const p = this.piecePosAt(i, rt);
       // Fading hand-back offset (a piece the client simulated until now).
-      const w = this.backAt[i] > -Infinity ? Math.min(1, 1 - (rt - this.backAt[i]) / HAND_BACK_S) : 0;
+      const w = this.backAt[i] > -Infinity ? Math.min(1, 1 - (rt - this.backAt[i]) / this.backDuration[i]) : 0;
       if (w > 0) {
         const j3 = i * 3;
         pool.setReplicaPosition(i, p[0] + this.backOff[j3] * w, p[1] + this.backOff[j3 + 1] * w, p[2] + this.backOff[j3 + 2] * w);
@@ -341,7 +353,7 @@ export class ClientSync {
 
   /**
    * A locally simulated piece goes back to snapshot posing. It is drawn from where it is now and the difference to
-   * the host's pose fades out over HAND_BACK_S of render time, so it glides instead of jumping.
+   * the host's pose fades out over 0.3–2 seconds of render time, so it glides instead of jumping.
    */
   handBack(i: number, from: { x: number; y: number; z: number }): void {
     const rt = Number.isFinite(this.lastRt) ? this.lastRt : this.latestTime;
@@ -350,6 +362,7 @@ export class ClientSync {
     this.backOff[j] = from.x - p[0];
     this.backOff[j + 1] = from.y - p[1];
     this.backOff[j + 2] = from.z - p[2];
+    this.backDuration[i] = Math.min(MAX_HAND_BACK_S, Math.max(HAND_BACK_S, Math.hypot(this.backOff[j], this.backOff[j + 1], this.backOff[j + 2]) / HAND_BACK_SPEED));
     this.backAt[i] = rt;
     this.settled[i] = 0;
     if (this.hasRot[i]) {

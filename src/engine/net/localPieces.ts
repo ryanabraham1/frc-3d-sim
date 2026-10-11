@@ -4,6 +4,8 @@ import { collisionGroups, Group } from '../physics/world';
 import { footprint } from '../robot/config';
 import type { Robot } from '../robot/robot';
 import type { ClientSync, HostPieceSample } from './clientSync';
+import type { RobotNetState } from './protocol';
+import { yawFromQuat } from '../coords';
 
 /**
  * Pieces closer than this to the predicted robot's bumpers are simulated locally (m): far enough ahead that a robot at
@@ -19,16 +21,6 @@ const CONTEST_RELEASE = 0.6;
 const FLOOR_BAND = 0.12;
 /** Only pieces moving slower than this on the host are taken over (m/s). */
 const MAX_ADOPT_SPEED = 3;
-/** A piece counts as at rest below this speed (m/s): FUEL pressed against a bumper creeps a few cm/s for seconds. */
-const REST_SPEED = 0.15;
-/** Corrections: a resting local piece is eased toward the host's resting pose with this time constant (s). */
-const EASE_TAU = 0.15;
-/** Smaller differences are left alone (m). */
-const EASE_DEADZONE = 0.02;
-/** A local piece this far from the host's pose is moved there at once (m). */
-const SNAP_DIST = 1.0;
-/** ...and while both are still moving, only past this (m). */
-const SNAP_DIST_MOVING = 1.5;
 /** Robot colliders only (for the overlap test against our own chassis). */
 const ROBOT_ONLY_FILTER = collisionGroups(Group.PIECE, Group.ROBOT);
 const NO_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
@@ -51,8 +43,8 @@ export interface LocalPiecesTarget {
  * traction and pushes them exactly as in single player. The host stays authoritative:
  *
  * - Pieces near another robot are contested and stay (or go back) on the host's snapshots, as do airborne and fast pieces.
- * - A local piece at rest is eased to the host's resting pose once the host has had a round trip to catch up; a large
- *   difference (the host moved it, a reset) snaps.
+ * - Pushed pieces remain local until both poses clear the moving robot and the host has had time to receive the push.
+ *   When the robot is idle, pieces return to snapshots and chassis support height/tilt comes from the host.
  * - The host's piece state wins: a piece it marks held or out of play leaves local simulation at once.
  * - Pieces in the mouth of the running floor intake are the host's to take (captures aren't predicted: the host's intake
  *   rate, capacity and pile differ enough that a predicted capture was wrong about a third of the time, and a ball that
@@ -70,7 +62,8 @@ export class LocalPieces {
   /** Times the host had the robot beached and we didn't, and we lifted it onto the pieces there. */
   lifted = 0;
   private readonly list: number[] = [];
-  private readonly still: Float32Array;
+  /** Local time when a piece was last within the prediction bubble (seconds). */
+  private readonly nearAt: Float64Array;
   private readonly sample: HostPieceSample = { x: 0, y: 0, z: 0, t: 0, vx: 0, vy: 0, vz: 0 };
   private readonly radius: number;
   private readonly fp: { length: number; width: number };
@@ -79,13 +72,15 @@ export class LocalPieces {
   private readonly overlapShapes = new Map<number, RAPIER.Ball>();
   /** How long our robot has been standing still (s). */
   private restFor = 0;
+  /** Once idle, support height/tilt comes from authority instead of a second independently settling pile. */
+  private restPose: RobotNetState | null = null;
   private lastMs = 0;
 
   constructor(
     private readonly target: LocalPiecesTarget,
     private readonly robot: Robot,
   ) {
-    this.still = new Float32Array(target.pool.count);
+    this.nearAt = new Float64Array(target.pool.count);
     this.radius = target.pool.radius;
     this.fp = footprint(robot.config);
   }
@@ -97,12 +92,13 @@ export class LocalPieces {
 
   /**
    * Once per client tick, before the predicted physics steps: take over pieces that came near, hand back the ones
-   * that left or became contested, and correct resting ones toward the host.
+   * that left or became contested. Idle support and released pieces follow the host.
    * `active` = the robot is being predicted (otherwise everything goes back to snapshots). `rtt` in seconds.
    */
   update(localMs: number, active: boolean, rtt: number): void {
     const dt = this.lastMs ? Math.min(0.1, Math.max(0, (localMs - this.lastMs) / 1000)) : 0;
     this.lastMs = localMs;
+    this.restPose = null;
     const { pool, clientSync } = this.target;
     if (!active || !this.enabled) {
       this.releaseAll();
@@ -128,6 +124,13 @@ export class LocalPieces {
     // had a round trip to beach us too and hasn't, let go of the pieces under the chassis so the robot drops back
     // onto the carpet where the host has it, instead of staying stuck until the pose correction drags it off.
     const hostSelf = clientSync.latest.get(this.robot.id);
+    // An idle chassis needs no speculative contacts. Two independently settled support piles can disagree forever;
+    // release the pieces and hold the host's support height/tilt after each step, rather than falling and lifting.
+    if (resting && hostSelf) {
+      this.restPose = hostSelf;
+      this.releaseAll();
+      return;
+    }
     this.strandedFor = hostSelf && own.y > BEACHED_Y && hostSelf.y < FLAT_Y ? this.strandedFor + dt : 0;
     const stranded = this.strandedFor > rtt + 0.1;
     if (stranded) {
@@ -159,7 +162,8 @@ export class LocalPieces {
       b.setLinvel({ x: lv.x, y: 0, z: lv.z }, true);
     }
 
-    // Hand back / correct the local ones.
+    // Hand back pieces that have cleared the robot. Never pose a still-local body toward delayed authority:
+    // it may lie behind the moving bumper and pull the ball back through the chassis.
     for (let k = this.list.length - 1; k >= 0; k--) {
       const i = this.list[k];
       if (pool.state[i] !== 'field' || !pool.isLocal(i)) {
@@ -167,44 +171,19 @@ export class LocalPieces {
         continue;
       }
       const p = pool.position(i);
-      if (this.gap(p) > RELEASE_GAP || contested(others, p, CONTEST_RELEASE) || (stranded && this.under(p)) || this.inMouth(p)) {
-        this.drop(k, true);
-        continue;
-      }
       clientSync.hostPiece(i, s);
-      const pv = pool.velocity(i);
-      const speed = Math.hypot(pv.x, pv.y, pv.z);
-      this.still[i] = speed < REST_SPEED ? this.still[i] + dt : 0;
-      const ex = s.x - p.x, ey = s.y - p.y, ez = s.z - p.z;
-      const err = Math.hypot(ex, ey, ez);
-      // Both at rest for longer than a round trip: the host has seen our pushes, so its resting pose is the truth.
-      // Until then the host lags us by a round trip, and so may the piece (a ball we pushed ahead of the robot).
-      const settledFor = rtt + 0.25;
-      const hostMoving = Math.hypot(s.vx, s.vy, s.vz) > REST_SPEED;
-      const settled = !hostMoving && this.still[i] >= settledFor;
-      if (err > (settled ? SNAP_DIST : Math.max(SNAP_DIST_MOVING, 1 + 5 * rtt))) {
-        this.place(i, s);
-        this.snaps++;
-        continue;
-      }
-      if (settled && resting && !this.touchesOwn(p, -0.03)) {
+      const gap = this.gap(p);
+      if (gap <= RELEASE_GAP) this.nearAt[i] = localMs / 1000;
+      // The host receives our input a one-way trip later and its rendered pieces trail by another trip plus
+      // interpolation delay. Releasing as soon as a pushed ball leaves the bubble pulls it back to its pre-push pose.
+      const caughtUp = localMs / 1000 - this.nearAt[i] > rtt + clientSync.delay + 0.1;
+      const hostGap = this.gap(s);
+      if ((gap > RELEASE_GAP && caughtUp && hostGap > RELEASE_GAP) || contested(others, p, CONTEST_RELEASE) || (stranded && this.under(p)) || this.inMouth(p)) {
         this.drop(k, true);
         continue;
       }
-      if (!settled || err < EASE_DEADZONE) continue;
-      // The host has it inside our chassis (our pose differs from the host's by a few cm): easing it there would shove
-      // it back out of the robot. Show the host's pose instead (it stays a replica until we drive clear of it).
-      if (this.overlapsOwn(s, 0.03)) {
-        this.drop(k, true);
-        continue;
-      }
-      // Eased even while touching our robot: it may sit beached on it for a while.
-      const f = 1 - Math.exp(-dt / EASE_TAU);
-      pool.bodies[i].setTranslation({ x: p.x + ex * f, y: p.y + ey * f, z: p.z + ez * f }, false);
-      this.corrections++;
     }
 
-    // Take over pieces that came within reach (none while we stand still).
     if (resting) return;
     for (let i = 0; i < pool.count; i++) {
       if (pool.state[i] !== 'field' || pool.isLocal(i)) continue;
@@ -212,7 +191,7 @@ export class LocalPieces {
       if (Math.hypot(s.x - own.x, s.z - own.z) > reach) continue;
       if (s.y > pool.restHeight(i) + FLOOR_BAND || Math.hypot(s.vx, s.vy, s.vz) > MAX_ADOPT_SPEED) continue;
       if (contested(others, s, CONTEST_ADOPT)) continue;
-      // Start from where it is drawn (the snapshot interpolation), so taking it over doesn't move it.
+      // Start where drawn, so taking a piece over does not move it.
       const p = pool.position(i);
       if (this.gap(p) > ADOPT_GAP) continue;
       // Already inside our chassis, here or on the host (we drove into it before it was ours, a correction moved us,
@@ -221,7 +200,7 @@ export class LocalPieces {
       if (this.overlapsOwn(p, 0.005) || this.overlapsOwn(s, 0.03) || this.inMouth(p)) continue;
       pool.adoptLocal(i, { x: p.x, y: p.y, z: p.z }, { x: s.vx, y: s.vy, z: s.vz });
       this.list.push(i);
-      this.still[i] = 0;
+      this.nearAt[i] = localMs / 1000;
       this.adoptions++;
     }
   }
@@ -236,6 +215,21 @@ export class LocalPieces {
   afterStep(): void {
     const pool = this.target.pool;
     for (const i of this.list) pool.updateDampingOf(i);
+    const pose = this.restPose;
+    if (pose) {
+      const b = this.robot.body;
+      const p = b.translation();
+      b.setTranslation({ x: p.x, y: pose.y, z: p.z }, true);
+      if (pose.rot) {
+        const [hx, hy, hz, hw] = pose.rot;
+        const dYaw = yawFromQuat(b.rotation()) - yawFromQuat({ x: hx, y: hy, z: hz, w: hw });
+        const sy = Math.sin(dYaw / 2), cy = Math.cos(dYaw / 2);
+        b.setRotation({ x: cy * hx + sy * hz, y: cy * hy + sy * hw, z: cy * hz - sy * hx, w: cy * hw - sy * hy }, true);
+      }
+      const v = b.linvel(), w = b.angvel();
+      b.setLinvel({ x: v.x, y: 0, z: v.z }, true);
+      b.setAngvel({ x: 0, y: w.y, z: 0 }, true);
+    }
   }
 
   /** Everything back to the host's snapshots (prediction stopped or snapped). */
@@ -253,16 +247,9 @@ export class LocalPieces {
     if (glide) {
       const p = pool.position(i);
       clientSync.handBack(i, { x: p.x, y: p.y, z: p.z });
+      this.corrections++;
     }
     pool.releaseLocal(i);
-  }
-
-  /** Move a local piece onto the host's sample (a correction too large to ease). */
-  private place(i: number, s: HostPieceSample): void {
-    const b = this.target.pool.bodies[i];
-    b.setTranslation({ x: s.x, y: s.y, z: s.z }, true);
-    b.setLinvel({ x: s.vx, y: s.vy, z: s.vz }, true);
-    this.still[i] = 0;
   }
 
   /** Plan-view distance from a piece's surface to the predicted robot's bumpers (0 when touching or inside). */
@@ -314,15 +301,6 @@ export class LocalPieces {
     }
     const body = this.robot.body;
     return pool.physics.world.intersectionWithShape(p, NO_ROTATION, shape, undefined, ROBOT_ONLY_FILTER, undefined, undefined, (c) => c.parent() === body) !== null;
-  }
-
-  /** Is a piece at this point touching the predicted robot's chassis box (or overlapping it by more than `slack`)? */
-  private touchesOwn(p: { x: number; y: number; z: number }, slack = -0.02): boolean {
-    const r = this.robot;
-    const fp = this.fp;
-    const { f, l, h } = r.toLocal(p);
-    const m = this.radius - slack;
-    return Math.abs(f) < fp.length / 2 + m && Math.abs(l) < fp.width / 2 + m && h < r.config.height + m && h > -m;
   }
 
   private readonly others: { x: number; z: number; reach: number }[] = [];

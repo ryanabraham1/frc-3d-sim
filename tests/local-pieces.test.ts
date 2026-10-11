@@ -176,6 +176,69 @@ describe('client-side game pieces near the predicted robot', () => {
     }
   });
 
+  it.each([40, 100, 150])('does not drag pushed FUEL back toward a moving guest at %i ms one-way latency', (latencyMs) => {
+    const p = netPair({ latencyMs, local: true, pose: { x: 6.3, y: 4.0, yaw: 0.3 } });
+    try {
+      p.hostSim.rules.stage();
+      p.run(1.5);
+      const pool = p.clientSim.pool;
+      const previous = pool.bodies.map((b) => ({ ...b.translation() }));
+      const lastLocal = new Int32Array(pool.count).fill(-1000);
+      const pushed = new Uint8Array(pool.count);
+      let backwardSteps = 0;
+      let worstBackward = 0;
+      for (let k = 0; k < 160; k++) {
+        p.step(drive(3, 1.5));
+        for (let i = 0; i < pool.count; i++) {
+          if (pool.state[i] !== 'field') continue;
+          const q = pool.position(i);
+          const along = ((q.x - previous[i].x) * 3 + (q.z - previous[i].z) * 1.5) / Math.hypot(3, 1.5);
+          if (pool.isLocal(i)) {
+            lastLocal[i] = k;
+            if (along > 0.01) pushed[i] = 1;
+          }
+          // Track both physics and the hand-back animation for pieces this guest recently pushed.
+          if (pushed[i] && k - lastLocal[i] < 60 && along < -0.025) {
+            backwardSteps++;
+            worstBackward = Math.min(worstBackward, along);
+          }
+          previous[i] = { ...q };
+        }
+      }
+      expect(p.lp.adoptions).toBeGreaterThan(50);
+      expect(backwardSteps).toBeLessThan(5);
+      expect(worstBackward).toBeGreaterThan(-0.05);
+      p.run(4);
+      expect(worstPieceError(p)).toBeLessThan(0.05);
+    } finally {
+      p.dispose();
+    }
+  });
+
+  it.each([40, 100, 150])('restores support after prediction releases pieces under a stopped robot at %i ms latency', (latencyMs) => {
+    const p = netPair({ latencyMs, local: true, ...beachingRobot });
+    try {
+      p.hostSim.rules.stage();
+      p.run(1.5);
+      for (let k = 0; k < 130; k++) p.step(drive(2.5, 0.6));
+      p.run(2);
+      expect(p.hostSim.robot.body.translation().y).toBeGreaterThan(0.03);
+      // A prediction snap or reconnect releases every local piece, including the chassis supports.
+      p.lp.releaseAll();
+      p.run(1);
+      const lifts = p.lp.lifted;
+      const start = p.samples.length;
+      p.run(3);
+      const heights = p.samples.slice(start).map((s) => s.client.y);
+      expect(p.lp.lifted - lifts).toBeLessThanOrEqual(1);
+      expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.01);
+      expect(Math.min(...heights)).toBeGreaterThan(0.03);
+      expect(Math.abs(heights[heights.length - 1] - p.hostSim.robot.body.translation().y)).toBeLessThan(0.01);
+    } finally {
+      p.dispose();
+    }
+  });
+
   it('leaves intake captures to the host and settles with it after intaking', () => {
     const run = scenario({ latencyMs: 60, local: true, pose: { x: 10.2, y: 4.0, yaw: 0 } }, 220, (k) => drive(k < 150 ? -2 : 0, 0.4 * Math.sin(k / 20), { intake: true }));
     const p = run.p;

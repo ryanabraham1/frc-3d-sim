@@ -200,9 +200,11 @@ Debug: append `?perf&fps` for the CPU/network panel, or inspect `game.netStats()
   Ranked rooms keep their existing disconnect adjudication. A future server authority would remove the
   remaining dependence on a player's simulation performance.
 - Clients simulate only the game pieces next to their own predicted robot (`LocalPieces`); the host stays
-  authoritative. A local piece at rest is eased to the host's resting pose once the host has had a round trip to catch
-  up (snapped past 1 m), a piece the host takes leaves local simulation at once, and pieces left behind glide back onto
-  the host's pose (`ClientSync.handBack`, 0.3 s). When the host has the robot up on pieces and the client doesn't (or
+  authoritative. While driving, pieces keep local contacts until both poses are clear of the robot and a round trip plus render
+  delay has passed. Large errors are handed back rather than snapped through the robot; released pieces blend onto
+  the host's pose over 0.3–2 s, with recovery keyframes preserving that blend. A piece the host captures leaves local
+  simulation immediately. Once a robot is idle, its support height/tilt follows the host and its pieces return to
+  snapshots, avoiding independently settling piles that repeatedly drop and lift the chassis. When driving, if the host has the robot up on pieces and the client doesn't (or
   the reverse) for longer than a round trip, the client lifts the robot onto them (or lets go of the pieces under it).
   Contact between two robots and the pieces between them stays fully host-side, so a pushing match in a pile still
   shows the old round-trip lag. Intake captures aren't predicted: they were wrong about a third of the time (intake
