@@ -38,12 +38,15 @@ function solo(sid: string, id: string, seconds: number) {
 describe('AI plays each robot archetype the way it is built', () => {
   // Chassis-aimed dumpers take a stance ~1.8 m from the HUB, stop and unload (they hit ~40% while chasing FUEL).
   it.each(['overload-254', 'limestone-1678', 'big-hopper'])('2026 %s scores from a planted stance', (id) => {
-    const res = solo('2026-rebuilt', id, 120);
+    // 60 s of TELEOP (scored 100-133 when measured): the stance-and-dump loop repeats every few seconds, so a longer run
+    // only multiplies the same check.
+    const res = solo('2026-rebuilt', id, 60);
     // `shots` counts every FUEL that leaves the hopper, including extras that spill over an open-top rim while it keeps
     // intaking full (big-hopper loses ~100 a match), so the floor is loose; the scored count below is the real check.
     expect(res.scored / Math.max(1, res.shots)).toBeGreaterThan(0.5);
-    // Open-top hoppers keep intaking when full and lose the extras over the rim (real physics), so a little below 200.
-    expect(res.scored).toBeGreaterThan(175);
+    // Open-top hoppers keep intaking when full and lose the extras over the rim (real physics), so the floor is the old
+    // 175-in-120 s rate.
+    expect(res.scored).toBeGreaterThan(85);
   }, 300_000);
 
   // Floor-pickup robots (no station intake) take the human player's CORAL off the carpet instead of waiting forever.

@@ -3,7 +3,7 @@
 Engine in `src/engine`, one module per season in `src/seasons/<year>-<name>`. Adding a game from a Game
 Manual? **Read [INSTRUCTIONS.md](INSTRUCTIONS.md) first** (lessons from building 2024 CRESCENDO), then
 `docs/FRAMEWORK.md` (reuse map + kickoff checklist). `npm test`, `npm run typecheck` and
-`npm run build` must pass.
+`npm run build` must pass. Whole-match benchmarks live in `tests/slow/` (`npm run test:slow`, ~25 min); run them when you change AI strategy or match flow.
 
 ## Model the field as it behaves in real life
 

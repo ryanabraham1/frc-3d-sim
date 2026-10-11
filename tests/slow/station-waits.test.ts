@@ -1,12 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { defaultSettings } from '../src/app/menu';
-import { runMatch } from '../src/engine/testing/match';
-import { loadRapier, type RapierModule } from '../src/engine/physics/world';
-import { SEASONS } from '../src/seasons';
-import * as C25 from '../src/seasons/2025-reefscape/constants';
-import * as C24 from '../src/seasons/2024-crescendo/constants';
+import { defaultSettings } from '../../src/app/menu';
+import { runMatch } from '../../src/engine/testing/match';
+import { loadRapier, type RapierModule } from '../../src/engine/physics/world';
+import { SEASONS } from '../../src/seasons';
+import * as C25 from '../../src/seasons/2025-reefscape/constants';
+import * as C24 from '../../src/seasons/2024-crescendo/constants';
 
-// Split out of archetype-play.test.ts so these two full matches run in parallel with it.
+// Opt-in (`npm run test:slow`): two whole matches watching for bots parked at a station (~70 s). Split out of archetype-play.test.ts.
 let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
 const season = (id: string) => SEASONS.find((s) => s.id === id)!;
