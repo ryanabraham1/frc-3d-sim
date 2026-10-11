@@ -773,8 +773,8 @@ export class Game {
     });
   }
 
+  /** Period cue and banner (the sim has already told the rules). */
   private onPeriodChange(ch: PeriodChange): void {
-    this.rules.onPeriodChange(ch);
     const cue = cueFor(ch.from, ch.to);
     if (cue) this.sfx.play(cue);
     if (ch.to) this.hud.showBanner(ch.to.label, 2);
