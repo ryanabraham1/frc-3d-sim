@@ -29,6 +29,16 @@ const MAX_REWIND = 0.3;
 const LATE_RESET = 0.5;
 const LATE_RESET_RUN = 15;
 
+export interface HostPieceSample {
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+  vx: number;
+  vy: number;
+  vz: number;
+}
+
 interface RobotSnap {
   t: number;
   robots: Map<number, RobotNetState>;
@@ -71,6 +81,7 @@ export class ClientSync {
   private lateRun = 0;
   private lastSeq = -1;
   private lastResyncAt = -Infinity;
+  private lastReadyAt = -Infinity;
   private needsKeyframe = true;
   /** Last full rules state (rules patches are merged into it). */
   private rulesState: Record<string, unknown> | null = null;
@@ -103,6 +114,14 @@ export class ClientSync {
   /** Sequence number of the last command sent. */
   get commandSeq(): number {
     return this.seq;
+  }
+
+  /** Loading and reconnects can lose the first ready message. Retry until authority confirms startup. */
+  maintainReady(localMs: number): void {
+    if (!this.client.connected || (this.gotKeyframe && this.netState !== 'waiting')) return;
+    if (localMs - this.lastReadyAt < RESYNC_EVERY_MS) return;
+    this.lastReadyAt = localMs;
+    this.client.send({ t: 'ready' });
   }
 
   /** Estimated current host sim time. */
@@ -157,10 +176,10 @@ export class ClientSync {
       }
     }
     for (const [i, x, y, z, w] of m.rotations ?? []) {
-      if (i >= 0 && i < pool.count) {
-        pool.setReplicaRotation(i, x, y, z, w);
-        this.settled[i] = 0;
-      }
+      if (i < 0 || i >= pool.count) continue;
+      // Rendering always follows authority, even while a separate collision proxy is local.
+      pool.setReplicaRotation(i, x, y, z, w);
+      this.settled[i] = 0;
     }
     this.results = m.results ?? (m.st === 'results' ? this.results : null);
 
@@ -274,16 +293,44 @@ export class ClientSync {
       const t0 = this.pt0[i];
       const t1 = this.pt1[i];
       const k = t1 > t0 ? Math.min(1, Math.max(0, (rt - t0) / (t1 - t0))) : 1;
-      const j3 = i * 3;
-      pool.setReplicaPosition(
-        i,
-        this.pp0[j3] + (this.pp1[j3] - this.pp0[j3]) * k,
-        this.pp0[j3 + 1] + (this.pp1[j3 + 1] - this.pp0[j3 + 1]) * k,
-        this.pp0[j3 + 2] + (this.pp1[j3 + 2] - this.pp0[j3 + 2]) * k,
-      );
+      const p = this.piecePosAt(i, rt);
+      pool.setReplicaPosition(i, p[0], p[1], p[2]);
       // At rest on its newest sample: nothing more to do until the next update for this piece.
       if (k >= 1) settled[i] = 1;
     }
+  }
+
+  /** Render time of the last `interpolate` (host seconds). */
+  get renderTime(): number {
+    return this.lastRt;
+  }
+
+  /**
+   * The host's newest sample of piece i: position, host time, and velocity from the last two samples (zero when it
+   * has been at rest since).
+   */
+  hostPiece(i: number, out: HostPieceSample): HostPieceSample {
+    const j = i * 3;
+    out.x = this.pp1[j];
+    out.y = this.pp1[j + 1];
+    out.z = this.pp1[j + 2];
+    out.t = this.pt1[i];
+    const dt = this.pt1[i] - this.pt0[i];
+    const live = dt > 1e-6 && this.latestTime - this.pt1[i] < 2 * SNAP_DT;
+    out.vx = live ? (this.pp1[j] - this.pp0[j]) / dt : 0;
+    out.vy = live ? (this.pp1[j + 1] - this.pp0[j + 1]) / dt : 0;
+    out.vz = live ? (this.pp1[j + 2] - this.pp0[j + 2]) / dt : 0;
+    return out;
+  }
+
+  private readonly tmpPos: [number, number, number] = [0, 0, 0];
+  private piecePosAt(i: number, rt: number): [number, number, number] {
+    const t0 = this.pt0[i];
+    const t1 = this.pt1[i];
+    const k = t1 > t0 ? Math.min(1, Math.max(0, (rt - t0) / (t1 - t0))) : 1;
+    const j = i * 3;
+    for (let d = 0; d < 3; d++) this.tmpPos[d] = this.pp0[j + d] + (this.pp1[j + d] - this.pp0[j + d]) * k;
+    return this.tmpPos;
   }
 
   private requestResync(localMs: number): void {
