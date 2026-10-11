@@ -168,10 +168,11 @@ export class RebuiltRules implements SeasonRules {
   overheadClearance(robot: Robot): number {
     const blocker = robot.config.shotBlocker;
     if (!robot.config.hopperExpansion && !blocker) return Infinity;
-    // Expanding hoppers stop growing ~1.2 m before the arm (they can't shrink back in time once a FUEL is taken). A
-    // shot blocker that is up or being raised turns the intake off, so then only the arm actually overhead counts.
+    // Self-expanding net hoppers stop growing ~1.2 m before the arm (they can't shrink back in time once a FUEL is
+    // taken). A shot blocker that is up or being raised turns the intake off, and a driver-raised telescoping hopper
+    // (1678) only grows on command, so for those only the arm actually overhead counts.
     const blocking = !!blocker && (robot.blockerDeploy > 0 || !!robot.lastCommand.block);
-    const margin = robot.config.hopperExpansion && !blocking ? 0.6 + (C.TRENCH_DEPTH - C.TRENCH_ARM_DEPTH) / 2 : 0;
+    const margin = robot.config.hopperExpansion && !robot.manualHopper && !blocking ? 0.6 + (C.TRENCH_DEPTH - C.TRENCH_ARM_DEPTH) / 2 : 0;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of robot.corners()) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);

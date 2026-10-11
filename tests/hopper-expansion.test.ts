@@ -226,3 +226,21 @@ it('254 Overload stays trench-safe up to 50 FUEL, then swells past the TRENCH', 
   expect(loadedRobotHeight(c, 51)).toBeGreaterThan(C.TRENCH_SAFE_HEIGHT);
   expect(loadedRobotHeight(c, c.hopperCapacity)).toBeCloseTo(c.hopperExpansion!.fullHeight, 5);
 });
+
+it('1678: the telescoping hopper is only refused while the TRENCH arm is actually overhead', () => {
+  const c = cloneConfig(season.teamRobots!.find(t => t.team === 1678)!.config);
+  const at = (x: number, y: number) => { const sim = new HeadlessSim(season, RAPIER, { robot: cloneConfig(c), alliance: 'blue', pose: { x, y, yaw: 0 } }); sims.push(sim); return sim; };
+  const probe = at(2, 4), half = probe.robot.footprint.length / 2, halfW = probe.robot.footprint.width / 2;
+  // Bumper 0.3 m short of the arm in the trench lane, and in the open beside the trench: it can raise.
+  const near = at(C.HUB_CENTER.x - C.TRENCH_ARM_DEPTH / 2 - half - 0.3, C.TRENCH_OPENING_CENTER_Y);
+  expect(near.rules.overheadClearance!(near.robot)).toBe(Infinity);
+  near.step({ ...IDLE_COMMAND, block: true });
+  expect(near.robot.hopperRaised).toBe(true);
+  const beside = at(C.HUB_CENTER.x, C.TRENCH_WIDTH + halfW + 0.3);
+  expect(beside.rules.overheadClearance!(beside.robot)).toBe(Infinity);
+  // Under the arm it can't.
+  const under = at(C.HUB_CENTER.x, C.TRENCH_OPENING_CENTER_Y);
+  expect(under.rules.overheadClearance!(under.robot)).toBe(C.TRENCH_SAFE_HEIGHT);
+  under.step({ ...IDLE_COMMAND, block: true });
+  expect(under.robot.hopperRaised).toBe(false);
+});
