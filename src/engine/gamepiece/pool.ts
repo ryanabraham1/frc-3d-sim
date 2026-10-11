@@ -291,7 +291,8 @@ export class GamePiecePool {
   static readonly STOWED_SCALE = 0.93;
   /**
    * Held balls weigh a tenth of a field ball to the chassis: a full hopper of real-mass balls sits high on the robot and
-   * its sloshing would tip it over when it hits a pile or a wall (the rated robot mass already includes its load).
+   * its sloshing would tip it over when it hits a pile or a wall. The rest of their weight rides on the chassis as a
+   * rigid load (`Robot.payloadMass`).
    */
   static readonly STOWED_MASS = 0.1;
   private setColliderMass(i: number, mass: number): void {

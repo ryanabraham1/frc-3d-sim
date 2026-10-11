@@ -276,6 +276,7 @@ export class Game {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.pieceMass = season.gamePiece.mass;
       robot.shootWhileTracking = season.id === '2026-rebuilt';
       robot.controller = rs.bot ? 'bot' : 'player';
       season.configureRobot?.(robot);

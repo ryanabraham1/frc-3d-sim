@@ -104,7 +104,7 @@ export const GUARDRAIL_HEIGHT = inch(20);
 
 // ─── FUEL [M 5.10.1] / staging [M 6.3.4] ────────────────────────────────────
 export const FUEL_DIAMETER = inch(5.91);
-export const FUEL_MASS = 0.215; // 0.203-0.227 kg
+export const FUEL_MASS = 0.215; // 0.448-0.5 lb (0.203-0.227 kg) [AndyMark am-5801 Official REBUILT FUEL]
 export const FUEL_TOTAL = 504;
 export const FUEL_PER_DEPOT = 24;
 export const FUEL_PER_CHUTE = 24;

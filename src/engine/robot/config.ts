@@ -1,4 +1,5 @@
 import { inch, lb } from '../units';
+import type { DriveSpec } from './drivetrainSpec';
 
 export type IntakeSide = 'front' | 'back';
 
@@ -51,6 +52,7 @@ export function hopperNetCeiling(c: RobotConfig, rim = c.height): NetCeiling {
   return Object.assign(ceiling, { setStretch(f: number) { stretch = Math.min(1, Math.max(0, f)); } });
 }
 
+
 export type AimAssist = 'full' | 'speed' | 'off';
 
 /** Everything that defines a simulated robot. All values SI. */
@@ -70,6 +72,8 @@ export interface RobotConfig {
   maxAccel: number;
   maxOmega: number;
   drive: 'swerve' | 'tank';
+  /** Real drive hardware `maxSpeed` / `maxAccel` were derived from (drivetrainSpec.ts). Informational. */
+  drivetrain?: DriveSpec;
   /**
    * Static friction coefficient of the drive tread on carpet — with `mass` it caps how hard the robot can push or
    * resist a push (μ·m·g). Default DEFAULT_WHEEL_COF. [EST: blue nitrile ≈ 1.1–1.2, Colson ≈ 1.0, worn ≈ 0.9]
