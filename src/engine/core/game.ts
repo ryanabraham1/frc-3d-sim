@@ -1,17 +1,12 @@
-import { bodyState, restoreBody, captureFields, restoreFields, capturePilot, restorePilot } from '../net/recovery';
-import { spawnClearance } from '../robot/spawnClearance';
-import { Mesh, Quaternion, Vector3 } from 'three';
+import { Quaternion, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
-import { FieldBuilder } from '../field/builder';
-import { GamePiecePool } from '../gamepiece/pool';
 import { Hud } from '../hud/hud';
 import { cueFor, Sfx } from '../audio/sfx';
 import { TouchControls, isTouchDevice } from '../input/touchControls';
 import { DEFAULT_CONTROLS_HELP, DriverInput, InputManager } from '../input/input';
-import { MatchClock, PeriodChange } from '../match/clock';
-import { buildPlayerResults } from '../match/playerResults';
-import { Scoreboard } from '../match/scoreboard';
+import type { MatchClock, PeriodChange } from '../match/clock';
+import type { Scoreboard } from '../match/scoreboard';
 import { ClientSync } from '../net/clientSync';
 import { HostSync } from '../net/hostSync';
 import { Predictor } from '../net/prediction';
@@ -20,24 +15,25 @@ import type { NetClient } from '../net/netClient';
 import type { ClientMsg, HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
 import { slotId } from '../net/protocol';
 import { Ticker } from '../net/ticker';
-import { describeArchetype } from '../telemetry/archetype';
-import { MatchLogger, SRC } from '../telemetry/matchLogger';
 import { downloadText, installConsoleHelpers, logFileName, saveLog } from '../telemetry/store';
-import { PhysicsWorld, RapierModule } from '../physics/world';
-import { Rng } from '../random';
+import type { PhysicsWorld, RapierModule } from '../physics/world';
+import type { Rng } from '../random';
 import { OcclusionFader } from '../render/occlusionFader';
 import { Renderer } from '../render/renderer';
-import { footprint, sanitizeConfig } from '../robot/config';
+import { footprint } from '../robot/config';
 import { StowBay } from '../robot/stowBay';
 import { QUALITY, QualityGovernor, resolveTier, type QualityProfile } from './quality';
-import { IDLE_COMMAND, intakeZoneContains, Robot, RobotCommand, type IntakeZone } from '../robot/robot';
+import { IDLE_COMMAND, Robot, RobotCommand } from '../robot/robot';
 import { resolveStartPose } from '../startPose';
 import { clamp, formatClock } from '../units';
 import { turnToward } from '../ai/steering';
-import { aiOrders, radioFor } from '../ai/team';
+import { radioFor } from '../ai/team';
 import { fillBotStations } from '../ai/matchSetup';
-import { drainSpilled } from '../robot/spill';
-import type { AutoPilot, GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
+import type { GameSettings, MatchResults, SeasonContext, SeasonDefinition, SeasonHud, SeasonRules, ToastKind } from './season';
+import type { FieldBuilder } from '../field/builder';
+import type { GamePiecePool as Pool } from '../gamepiece/pool';
+import { MatchWorld } from './matchWorld';
+import { MatchSim, PRE_MATCH_COUNTDOWN, botSettings, type SimRecovery } from './matchSim';
 
 type GameState = NetGameState;
 
@@ -70,7 +66,6 @@ export interface GameCallbacks {
   onResults?: (res: MatchResults, scores: Record<Alliance, number>) => void;
 }
 
-const PRE_MATCH_COUNTDOWN = 3;
 export { AI_SPEED, AI_AIM } from '../ai/matchSetup';
 /** Minimum ms between rendered frames (~60 fps; the 2 ms slack keeps a 60 Hz display drawing every refresh). */
 const MIN_FRAME_MS = 1000 / 60 - 2;
@@ -125,52 +120,30 @@ const TOUCH_CHASE_RANGE = 4;
 export class Game {
   readonly role: GameRole;
   readonly setup: MatchSetup;
-  readonly frame: FieldFrame;
   readonly renderer: Renderer;
-  readonly physics: PhysicsWorld;
-  readonly builder: FieldBuilder;
-  readonly pool: GamePiecePool;
-  readonly robots: Robot[] = [];
-  readonly clock: MatchClock;
-  readonly score: Scoreboard;
-  readonly rng: Rng;
+  readonly world: MatchWorld;
+  /** The match authority (single player and multiplayer host); null on a multiplayer client. */
+  readonly sim: MatchSim | null = null;
   readonly hud: Hud;
-  readonly rules: SeasonRules;
-  readonly ctx: SeasonContext;
+  get frame(): FieldFrame { return this.world.frame; }
+  get physics(): PhysicsWorld { return this.world.physics; }
+  get builder(): FieldBuilder { return this.world.builder; }
+  get pool(): Pool { return this.world.pool; }
+  get robots(): Robot[] { return this.world.robots; }
+  get clock(): MatchClock { return this.world.clock; }
+  get score(): Scoreboard { return this.world.score; }
+  get rng(): Rng { return this.world.rng; }
+  get rules(): SeasonRules { return this.world.rules; }
+  get ctx(): SeasonContext { return this.world.ctx; }
+  private get robotSetups(): Map<number, RobotSetup> { return this.world.robotSetups; }
   readonly camera: CameraRig;
   /** Fades field elements that hide the player's robot from the camera. */
   private fader!: OcclusionFader;
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
-  private boostOn = false;
-  private boostBase: { cap: number; rate: number; spread: number; speedError: number; intake: number | undefined } | null = null;
   private applyBoost(): void {
-    const c = this.player?.config;
-    if (!c || this.season.id !== '2026-rebuilt') return;
-    if (this.input.justPressed('Period')) this.boostOn = !this.boostOn;
-    const on = this.boostOn;
-    if (on && !this.boostBase) {
-      this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate, spread: c.launcher.spread, speedError: c.launcher.speedError, intake: c.intake.rate };
-      c.hopperCapacity = this.boostBase.cap * 3;
-      c.launcher.rate = this.boostBase.rate * 3;
-      c.launcher.spread = 0;
-      c.launcher.speedError = 0;
-      this.player!.packLimit = true;
-      if (this.boostBase.intake !== undefined) c.intake.rate = this.boostBase.intake * 3;
-    } else if (!on && this.boostBase) {
-      c.hopperCapacity = this.boostBase.cap;
-      c.launcher.rate = this.boostBase.rate;
-      c.launcher.spread = this.boostBase.spread;
-      c.launcher.speedError = this.boostBase.speedError;
-      this.player!.packLimit = false;
-      c.intake.rate = this.boostBase.intake;
-      this.boostBase = null;
-    }
+    if (this.sim && this.input.justPressed('Period')) this.sim.setBoost(this.player, !this.sim.boost);
   }
-  /** AUTO-period drivers per robot id (drivers can't control robots in AUTO). */
-  private readonly autoPilots = new Map<number, AutoPilot>();
-  private readonly botPilots = new Map<number, AutoPilot>();
-  private readonly robotSetups = new Map<number, RobotSetup>();
   private readonly seasonHud: SeasonHud;
   /** The robot driven from this screen (null = multiplayer spectator). */
   readonly player: Robot | null;
@@ -186,8 +159,13 @@ export class Game {
   private ticker: Ticker | null = null;
   private touch: TouchControls | null = null;
 
-  private state: GameState = 'countdown';
-  private countdown = PRE_MATCH_COUNTDOWN;
+  /** Client mirror of the host's state (local / host read the sim's). */
+  private clientState: GameState = 'waiting';
+  private clientCountdown = 0;
+  private get state(): GameState { return this.sim?.state ?? this.clientState; }
+  private set state(v: GameState) { if (this.sim) this.sim.state = v; else this.clientState = v; }
+  private get countdown(): number { return this.sim?.countdown ?? this.clientCountdown; }
+  private set countdown(v: number) { if (this.sim) this.sim.countdown = v; else this.clientCountdown = v; }
   private raf = 0;
   private last = 0;
   private lastDraw = 0;
@@ -198,11 +176,7 @@ export class Game {
    */
   simSpeed = 1;
   private time = 0;
-  /** Records the humans' commands and the world for imitation learning (host / solo only). `?log=0` turns it off. */
-  private matchLog: MatchLogger | null = null;
   private savedLog: { name: string; text: string } | null = null;
-  /** Host sim time (s) — advances only while stepping. */
-  private simTime = 0;
   private stepsSinceSnap = 0;
   private lastIdleSnap = 0;
   private lastCheckpoint = -Infinity;
@@ -222,8 +196,7 @@ export class Game {
   scoringLevel = 4;
   /** Driver-selected shot target (season `aimTargets` id), -1 = automatic. */
   aimChoice = -1;
-  private results: MatchResults | null = null;
-  private pausedFrom: GameState = 'countdown';
+  private clientResults: MatchResults | null = null;
   /** Client-side modal currently shown. */
   private clientModal: 'none' | 'local' | 'host-pause' | 'results' | 'closed' = 'none';
   private lastClockKey = '';
@@ -232,12 +205,6 @@ export class Game {
   private readonly perfPanel = new URLSearchParams(location.search).has('perf') ? document.createElement('pre') : null;
   private readonly timings = { tickMs: 0, drawMs: 0, faderMs: 0, renderMs: 0 };
   private lastPerfUpdate = 0;
-
-  /** Settings the AI reads: a multiplayer lobby's bot difficulty applies to both alliances. */
-  private botSettings(settings: GameSettings): GameSettings {
-    const skill = this.setup.botDifficulty;
-    return skill ? { ...settings, aiDifficulty: skill, aiAlly: { skill }, aiOpponent: { skill } } : settings;
-  }
 
   constructor(
     container: HTMLElement,
@@ -251,7 +218,6 @@ export class Game {
     this.role = net?.role ?? 'local';
     if (this.role === 'local') this.simSpeed = clamp(Number(new URLSearchParams(location.search).get('speed')) || 1, 0.25, 3);
     this.setup = net?.setup ?? localSetup(settings, season);
-    this.frame = new FieldFrame(season.fieldLength, season.fieldWidth);
     this.quality = QUALITY[resolveTier()];
     StowBay.ACTIVE_MAX = this.quality.activeMax;
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, {
@@ -259,13 +225,7 @@ export class Game {
       pixelRatioCap: this.quality.pixelRatioCap,
       minPixelRatio: this.quality.minPixelRatio,
     });
-    this.physics = new PhysicsWorld(R, 1 / 90);
-    this.builder = new FieldBuilder(this.physics, this.renderer.scene, this.frame);
-    this.rng = new Rng(this.setup.seed);
-    this.clock = new MatchClock(season.timeline);
-    this.score = new Scoreboard(season.foulValues);
     this.hud = new Hud(container, season.controlsHelp ?? DEFAULT_CONTROLS_HELP);
-    this.pool = new GamePiecePool(this.physics, this.renderer.scene, this.frame, season.gamePiece);
     this.autoIntake = settings.autoIntake;
     if (isTouchDevice()) {
       this.touch = new TouchControls(container, this.input, {
@@ -278,75 +238,28 @@ export class Game {
     }
 
     // Local AI fills the other stations; network matches retain their human drivers.
-    for (const rs of this.setup.robots) {
-      const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
-      const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
-      robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
-      robot.pieceMass = season.gamePiece.mass;
-      robot.shootWhileTracking = season.id === '2026-rebuilt';
-      robot.controller = rs.bot ? 'bot' : 'player';
-      season.configureRobot?.(robot);
-      // Held FUEL becomes real physics bodies only where it is worth the step time (see QualityProfile); everyone else
-      // draws the visual particle pile, which is also what every multiplayer client sees.
-      if (this.wantsRealHopper(rs, net)) robot.attachPool(this.pool);
-      if (season.pieceFlow !== false) {
-        const piece = this.pool.mesh;
-        const round = season.gamePiece.shape !== 'ring' && season.gamePiece.shape !== 'tube';
-        robot.enablePieceFlow(() => {
-          const m = new Mesh(piece.geometry, piece.material);
-          m.castShadow = true;
-          return m;
-        }, round);
-      }
-      // Bake each robot's static parts into a few meshes (draw calls dominate the frame cost).
-      robot.optimizeVisual();
-      this.robots.push(robot);
-      this.robotSetups.set(rs.id, rs);
-    }
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
-    this.player = mine ? this.robots.find((r) => r.id === mine.id)! : null;
-    this.player?.showIntakeGuide(true);
-    if (this.role !== 'client' && new URLSearchParams(location.search).get('log') !== '0') {
-      this.matchLog = new MatchLogger(
-        this,
-        (r) => r.controller === 'bot' ? SRC.bot : this.manual(r) ? SRC.human : SRC.autopilot,
-        { describe: (r) => describeArchetype(season, r.config), seasonId: season.id, seed: this.setup.seed, fieldLength: season.fieldLength, fieldWidth: season.fieldWidth, mode: this.role,
-          // Bot difficulty per alliance, so logs show how players do against each level (tools/analyze_match_logs.py).
-          extra: { aiSkill: { blue: aiOrders(this.botSettings(settings), 'blue').skill, red: aiOrders(this.botSettings(settings), 'red').skill } } },
-      );
-      installConsoleHelpers();
-    }
-    this.scoringLevel = Math.min(this.scoringLevel, this.player?.config.placement?.maxLevel ?? this.scoringLevel);
-    this.climbLevel = Math.min(season.maxClimbLevel, this.player?.config.climber.maxLevel ?? season.maxClimbLevel);
-
     const self = this;
-    this.ctx = {
-      physics: this.physics,
+    this.world = new MatchWorld(R, season, this.setup, {
       scene: this.renderer.scene,
-      frame: this.frame,
-      builder: this.builder,
-      pool: this.pool,
-      robots: this.robots,
-      clock: this.clock,
-      score: this.score,
-      rng: this.rng,
+      playerId: mine?.id ?? null,
+      realHopper: (rs) => this.wantsRealHopper(rs, net),
+      pieceFlow: true,
+      optimize: true,
       hud: this.hud,
-      settings: this.botSettings(settings),
-      playerRobot: this.player,
-      toast(msg: string, kind: ToastKind = 'info', alliance?: Alliance, robot?: Robot) {
-        self.toast(msg, kind, alliance, robot);
-      },
-      cue(robot: Robot, text: string, cls?: string) {
-        self.cue(robot, text, cls);
-      },
+      aiSettings: botSettings(this.setup, settings),
+    }, {
+      toast: (msg, kind, alliance, robot) => self.toast(msg, kind, alliance, robot),
+      cue: (robot, text, cls) => self.cue(robot, text, cls),
       humanPlayerIsAuto(a: Alliance) {
         if (self.role === 'local') return !self.player || a !== self.player.alliance || self.settings.autoHumanPlayer;
         return self.setup.autoHumanPlayer || !self.setup.robots.some((r) => r.alliance === a && !r.bot);
       },
-    };
-
-    season.buildField(this.ctx);
-    this.rules = season.createRules(this.ctx);
+    });
+    this.player = this.world.player;
+    this.player?.showIntakeGuide(true);
+    this.scoringLevel = Math.min(this.scoringLevel, this.player?.config.placement?.maxLevel ?? this.scoringLevel);
+    this.climbLevel = Math.min(season.maxClimbLevel, this.player?.config.climber.maxLevel ?? season.maxClimbLevel);
 
     if (this.role === 'client') {
       // Replica: piece/robot state arrives in snapshots; nothing is staged or simulated here.
@@ -378,12 +291,12 @@ export class Game {
         }),
       );
     } else {
-      this.rules.stage();
-      for (const r of this.robots) {
-        const rs = this.robotSetups.get(r.id)!;
-        this.autoPilots.set(r.id, season.createAutoPilot(this.ctx, this.rules, r, rs.autoRoutine));
-        if (r.controller === 'bot' && season.createBotPilot) this.botPilots.set(r.id, season.createBotPilot(this.ctx, this.rules, r));
-      }
+      const log = new URLSearchParams(location.search).get('log') !== '0';
+      this.sim = new MatchSim(this.world, season, settings, {
+        periodChange: (ch) => this.onPeriodChange(ch),
+        results: (res) => this.showResults(res),
+      }, log ? { log: { mode: this.role } } : {});
+      if (log) installConsoleHelpers();
     }
 
     if (this.role === 'host') {
@@ -393,9 +306,10 @@ export class Game {
           if (robot && this.state === 'running' && button <= (this.season.humanPlayerButtons ?? 1)) this.rules.humanPlayerAction(robot.alliance, button);
         },
         allReady: () => {
-          if (this.state === 'paused' && this.pausedFrom === 'waiting') {
-            this.pausedFrom = 'countdown';
-            this.countdown = PRE_MATCH_COUNTDOWN;
+          const sim = this.sim!;
+          if (sim.state === 'paused' && sim.pausedFrom === 'waiting') {
+            sim.pausedFrom = 'countdown';
+            sim.countdown = PRE_MATCH_COUNTDOWN;
             return;
           }
           if (this.state !== 'waiting') return;
@@ -453,41 +367,21 @@ export class Game {
   }
 
   /** Full gameplay state, independent of rendering and the local driver's camera/input. */
-  recoveryState() {
-    if (!this.rules.recoveryState) throw new Error('Season does not support host recovery');
-    return { version: 1 as const, seasonId: this.season.id,
-      fields: captureFields(this, ['state', 'pausedFrom', 'countdown', 'simTime', 'results']),
-      clock: this.clock.snapshot(), score: this.score.snapshot(), rng: this.rng.snapshot(),
-      pool: this.pool.recoveryState(), rules: this.rules.recoveryState(),
-      robots: this.robots.map(r => ({ id: r.id, body: bodyState(r.body), fields: r.recoveryState() })),
-      auto: [...this.autoPilots].map(([id, pilot]) => [id, capturePilot(pilot)] as const),
-      bots: [...this.botPilots].map(([id, pilot]) => [id, capturePilot(pilot)] as const),
-    };
+  recoveryState(): GameRecovery {
+    return this.sim!.recoveryState();
   }
 
   restoreRecovery(state: GameRecovery): void {
-    if (state.version !== 1 || state.seasonId !== this.season.id || !this.rules.restoreRecovery) throw new Error('Incompatible match checkpoint');
-    this.clock.restore(state.clock); this.score.restore(state.score); this.rng.restore(state.rng);
-    for (const robot of this.robots) robot.bay?.clear();
-    this.pool.restoreRecovery(state.pool);
-    this.rules.restoreRecovery(state.rules);
-    for (const saved of state.robots) {
-      const robot = this.robots.find(r => r.id === saved.id);
-      if (!robot) throw new Error('Checkpoint robot missing');
-      restoreBody(robot.body, saved.body); robot.restoreRecovery(saved.fields);
-    }
-    for (const [id, saved] of state.auto) { const pilot = this.autoPilots.get(id); if (pilot) restorePilot(pilot, saved); }
-    for (const [id, saved] of state.bots) { const pilot = this.botPilots.get(id); if (pilot) restorePilot(pilot, saved); }
-    restoreFields(this, ['state', 'pausedFrom', 'countdown', 'simTime', 'results'], state.fields);
+    const sim = this.sim!;
+    sim.restoreRecovery(state);
     this.acc = 0;
     this.hud.hideModal();
     this.hud.showBanner('HOST RECOVERED', 2);
     this.hostSync?.requestKeyframe();
-    if (this.state === 'paused') {
-      const from = this.pausedFrom;
-      this.state = from;
+    if (sim.state === 'paused') {
+      sim.state = sim.pausedFrom;
       this.pause();
-    } else if (this.state === 'results') this.showResults();
+    } else if (sim.state === 'results' && sim.results) this.showResults(sim.results);
   }
 
   // ─────────────────────────── HostSync source ───────────────────────────
@@ -499,7 +393,7 @@ export class Game {
     return this.countdown;
   }
   get lastResults(): MatchResults | null {
-    return this.results;
+    return this.sim?.results ?? this.clientResults;
   }
 
   // ─────────────────────────── loop ───────────────────────────
@@ -607,7 +501,6 @@ export class Game {
         this.step(fixed, inp);
         this.acc -= fixed;
         steps++;
-        this.simTime += fixed;
         this.stepsSinceSnap++;
         // Edge-triggered inputs apply to the first step only.
         inp.humanPlayer = false;
@@ -616,14 +509,14 @@ export class Game {
       // Catch-up steps share one fresh snapshot, avoiding bursts of obsolete intermediate poses after a stall.
       if (this.hostSync && this.stepsSinceSnap >= SNAPSHOT_EVERY_STEPS) {
         this.stepsSinceSnap %= SNAPSHOT_EVERY_STEPS;
-        this.hostSync.sendSnapshot(this.simTime);
+        this.hostSync.sendSnapshot(this.sim!.simTime);
       }
       if (steps === maxSteps) this.acc = 0;
       this.simBusyMs += performance.now() - t0;
     } else if (this.hostSync && now - this.lastIdleSnap > 200) {
       // Waiting / paused / results: keep clients in sync at a low rate.
       this.lastIdleSnap = now;
-      this.hostSync.sendSnapshot(this.simTime);
+      this.hostSync.sendSnapshot(this.sim!.simTime);
     }
     if (this.hostSync && this.net?.onCheckpoint && this.net.client.connected && this.net.client.buffered < 16 * 1024 && now - this.lastCheckpoint >= 2000) {
       this.lastCheckpoint = now;
@@ -866,101 +759,18 @@ export class Game {
 
   /** Is robot `r` under driver control right now (vs. its AUTO routine)? */
   private manual(r: Robot): boolean {
-    return this.clock.mode === 'teleop' || (this.robotSetups.get(r.id)?.manualAuto ?? false);
+    return this.sim ? this.sim.manual(r) : this.clock.mode === 'teleop' || (this.robotSetups.get(r.id)?.manualAuto ?? false);
   }
 
   private step(dt: number, inp: DriverInput): void {
-    if (this.state === 'countdown') {
-      this.countdown -= dt;
-      if (this.countdown <= 0) {
-        this.state = 'running';
-        this.onPeriodChange(this.clock.start());
-      }
-    } else {
-      for (const ch of this.clock.advance(dt)) this.onPeriodChange(ch);
-      if (this.clock.finished && this.state === 'running') {
-        this.showResults();
-      }
-    }
-
-    const mode = this.clock.mode;
-    const enabled = mode !== 'disabled';
-
-    if (inp.humanPlayer && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance, 1);
-    if (inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1) && this.player && this.state === 'running') this.rules.humanPlayerAction(this.player.alliance, inp.humanPlayerAlt);
-
-    for (const r of this.robots) {
-      const on = enabled;
-      r.enabled = on;
-      let cmd: RobotCommand = IDLE_COMMAND;
-      if (on) {
-        if (!this.manual(r)) cmd = this.autoPilots.get(r.id)?.update(dt) ?? IDLE_COMMAND;
-        else if (r === this.player) cmd = this.playerCommand(inp, r);
-        else if (r.controller === 'bot') cmd = this.botPilots.get(r.id)?.update(dt) ?? IDLE_COMMAND;
-        else cmd = this.hostSync?.command(r.id) ?? IDLE_COMMAND;
-      }
-      // Driver-assist layers: season assists (e.g. reef auto-align) then chassis auto-align onto the shot target.
-      if (on && this.rules.adjustCommand) cmd = this.rules.adjustCommand(r, cmd, dt);
-      const target = cmd.pass && !cmd.shoot && this.rules.passTarget ? this.rules.passTarget(r) : this.rules.aimTarget(r);
-      if (on) cmd = r.autoAlign(cmd, target);
-      r.lastCommand = cmd;
-      r.overheadLimit = this.rules.overheadClearance?.(r) ?? Infinity;
-      r.drive(cmd, dt);
-      if (on) {
-        if (cmd.descend && r.isClimbing) this.rules.requestDescend(r);
-        else if (cmd.climb !== null && !r.isClimbing && !r.tippedOver && r.config.climber.maxLevel > 0) this.rules.requestClimb(r, cmd.climb);
-      }
-      r.tick(dt);
-      drainSpilled(r, this.pool);
-      r.aimTurretAt(target, dt);
-      if (!this.rules.handleMechanisms) r.advanceScoringMechanisms(dt);
-      const handled = on && this.rules.handleMechanisms?.(r, cmd, dt);
-      if (on && !handled && (cmd.shoot || cmd.pass)) {
-        const shot = r.launch(target, this.rng);
-        if (shot) {
-          const idx = r.held.pop()!;
-          this.pool.placeWorld(idx, shot.pos, shot.vel);
-          if (r.config.launcher.exitInside) this.pool.releaseGhost(idx, () => spawnClearance(r, this.pool.position(idx), this.pool.colliderRadius, this.pool.colliderHalfHeight) > 0.02);
-          r.noteLaunch(idx);
-          this.rules.onLaunch(r, idx);
-          this.matchLog?.launch(r, idx, shot.vel);
-        }
-      }
-    }
-
-    // Intake: robots swallow pieces inside their capture zone.
-    if (enabled && !this.rules.handlesIntake) {
-      const pool = this.pool;
-      const zones: { r: Robot; z: IntakeZone }[] = [];
-      for (const r of this.robots) {
-        r.tickIntake(dt);
-        const z = r.lastCommand.intake && r.intakeRoom > 0 ? r.intakeZone() : null;
-        if (z) zones.push({ r, z });
-      }
-      for (let i = 0; i < pool.count && zones.length; i++) {
-        if (pool.state[i] !== 'field') continue;
-        const p = pool.position(i);
-        for (let k = 0; k < zones.length; k++) {
-          const { r, z } = zones[k];
-          if (r.justLaunched(i)) continue;
-          // Cheap zone test first; the shield test reads other robots' poses through WASM.
-          if (intakeZoneContains(z, p, pool.radius, 0.4)) {
-            if (this.robots.some(other => other !== r && other.shieldsPiece(p, pool.radius))) continue;
-            r.noteCapture(p);
-            pool.hold(i, r.id);
-            r.held.push(i);
-            if (r.intakeRoom <= 0) zones.splice(k, 1);
-            break;
-          }
-        }
-      }
-    }
-
-    this.rules.beforeStep(dt);
-    this.pool.updateDamping();
-    this.physics.step();
-    this.rules.afterStep(dt);
-    this.matchLog?.step();
+    const humanPlayer: [Alliance, number][] = [];
+    const p = this.player;
+    if (p && inp.humanPlayer) humanPlayer.push([p.alliance, 1]);
+    if (p && inp.humanPlayerAlt && inp.humanPlayerAlt <= (this.season.humanPlayerButtons ?? 1)) humanPlayer.push([p.alliance, inp.humanPlayerAlt]);
+    this.sim!.step(dt, {
+      command: (r) => (r === this.player ? this.playerCommand(inp, r) : this.hostSync?.command(r.id) ?? IDLE_COMMAND),
+      humanPlayer,
+    });
   }
 
   private onPeriodChange(ch: PeriodChange): void {
@@ -1060,7 +870,7 @@ export class Game {
     }
     if (st === 'results' && cs.results && this.clientModal !== 'results' && this.clientModal !== 'closed') {
       this.clientModal = 'results';
-      this.results = cs.results;
+      this.clientResults = cs.results;
       this.callbacks.onResults?.(cs.results, { red: this.score.total('red'), blue: this.score.total('blue') });
       this.hud.showModal('Match Results', Hud.resultsHtml(cs.results, { red: this.score.total('red'), blue: this.score.total('blue') }) + '<p class="dim">Waiting for the host…</p>', [
         { label: 'Leave room', onClick: () => this.callbacks.onExit() },
@@ -1103,7 +913,7 @@ export class Game {
 
   private updateHud(dt: number): void {
     this.hud.update(dt);
-    if (this.role === 'local' && this.botPilots.size) {
+    if (this.role === 'local' && this.sim?.botPilots.size) {
       const show = this.settings.aiRadio ?? 'all';
       for (const m of radioFor(this.ctx).since(this.radioSeq)) {
         this.radioSeq = m.seq;
@@ -1151,10 +961,7 @@ export class Game {
   }
 
   pause(): void {
-    if (this.role === 'client') return;
-    if (this.state !== 'running' && this.state !== 'countdown' && this.state !== 'waiting') return;
-    this.pausedFrom = this.state;
-    this.state = 'paused';
+    if (!this.sim?.pause()) return;
     this.showPauseMenu();
   }
 
@@ -1182,17 +989,12 @@ export class Game {
   }
 
   resume(): void {
-    if (this.state !== 'paused' || this.role === 'client') return;
-    this.state = this.pausedFrom;
+    if (!this.sim?.resume()) return;
     this.last = performance.now();
     this.hud.hideModal();
   }
 
-  private showResults(): void {
-    this.state = 'results';
-    const res = this.rules.results();
-    Object.assign(res, buildPlayerResults(res, this.score, this.setup.robots.map((rs) => ({ id: rs.id, alliance: rs.alliance, name: rs.name, team: rs.config.teamNumber })), this.season.foulValues, 'Game pieces'));
-    this.results = res;
+  private showResults(res: MatchResults): void {
     this.persistLog({ red: this.score.total('red'), blue: this.score.total('blue') });
     const html = Hud.resultsHtml(res, { red: this.score.total('red'), blue: this.score.total('blue') });
     if (this.role === 'host') {
@@ -1216,7 +1018,7 @@ export class Game {
 
   /** Finish the match log and store it (once); also runs when a match is abandoned. */
   private persistLog(totals?: Record<string, number>): void {
-    const log = this.matchLog;
+    const log = this.sim?.matchLog;
     if (!log || this.savedLog) return;
     log.finish(totals);
     const text = log.toJSONL();
@@ -1226,7 +1028,7 @@ export class Game {
   }
 
   private logButton(): { label: string; onClick: () => void }[] {
-    return this.matchLog ? [{ label: 'Download match log', onClick: () => this.savedLog && downloadText(this.savedLog.name, this.savedLog.text) }] : [];
+    return this.sim?.matchLog ? [{ label: 'Download match log', onClick: () => this.savedLog && downloadText(this.savedLog.name, this.savedLog.text) }] : [];
   }
 
   /** Multiplayer stats for debugging (window.game.netStats()). */
@@ -1253,14 +1055,14 @@ export class Game {
       tier: ['low', 'medium', 'high'].indexOf(this.quality.tier),
       realHoppers: this.robots.filter((r) => r.bay).length,
       shadows: Number(this.renderer.shadowsOn),
-      simTime: this.simTime,
+      simTime: this.sim?.simTime ?? 0,
     };
   }
 
   dispose(): void {
     this.disposed = true;
     // Quitting mid-match still keeps the demonstration (skip trivially short ones).
-    if (this.matchLog && (this.matchLog.frameCount > 300)) this.persistLog();
+    if (this.sim?.matchLog && this.sim.matchLog.frameCount > 300) this.persistLog();
     this.perfPanel?.remove();
     cancelAnimationFrame(this.raf);
     this.ticker?.stop();
@@ -1273,9 +1075,9 @@ export class Game {
     this.hud.dispose();
     this.sfx.dispose();
     this.renderer.dispose();
-    this.physics.free();
+    this.world.free();
   }
 }
 
 /** Data transferred once to the new host when authority changes. */
-export type GameRecovery = ReturnType<Game['recoveryState']>;
+export type GameRecovery = SimRecovery;

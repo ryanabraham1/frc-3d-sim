@@ -6,7 +6,7 @@ import { bodyState, capturePilot, restoreBody, restorePilot, compressCheckpoint,
 import { cloneConfig } from '../src/engine/robot/config';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import { MAX_FRAME_BYTES } from '../src/engine/net/relayProtocol';
-import { Game } from '../src/engine/core/game';
+import { MatchSim } from '../src/engine/core/matchSim';
 
 beforeAll(() => RAPIER.init());
 
@@ -18,10 +18,10 @@ function world(id: string) {
   return sim;
 }
 
-// Exercise the same checkpoint implementation as Game without requiring a renderer.
+// Exercise the same checkpoint implementation as the match authority without building a whole match.
 function source(sim: HeadlessSim) {
-  return { season: sim.season, rules: sim.rules, pool: sim.pool, robots: sim.ctx.robots,
-    clock: sim.ctx.clock, score: sim.ctx.score, rng: sim.rng,
+  return { season: sim.season,
+    world: { rules: sim.rules, pool: sim.pool, robots: sim.ctx.robots, clock: sim.ctx.clock, score: sim.ctx.score, rng: sim.rng },
     state: 'running', pausedFrom: 'running', countdown: 0, simTime: 2, results: null,
     autoPilots: new Map(), botPilots: new Map() };
 }
@@ -42,7 +42,7 @@ describe('authority recovery checkpoints', () => {
         host.ctx.score.add('blue', 'test', 7);
         host.ctx.clock.advance(2);
         host.rng.next();
-        const checkpoint = JSON.parse(JSON.stringify(Game.prototype.recoveryState.call(source(host) as unknown as Game)));
+        const checkpoint = JSON.parse(JSON.stringify(MatchSim.prototype.recoveryState.call(source(host) as unknown as MatchSim)));
         const compressed = await compressCheckpoint(JSON.stringify(checkpoint));
         expect(await decompressCheckpoint(compressed)).toEqual(checkpoint);
         expect(JSON.stringify(compressed).length).toBeLessThan(JSON.stringify(checkpoint).length / 2);
