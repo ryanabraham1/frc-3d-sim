@@ -323,15 +323,19 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       }
     }
 
-    // Einstein: while our HUB is off, the robot nearest the human driver hounds them whenever they're loaded and
-    // their HUB is (about to be) live; it breaks off in time to be back for our own shift.
+    // Einstein: while our HUB is off, the robot best placed to (nearest, preferring a full one) hounds the human driver
+    // whenever their HUB is (about to be) live; it breaks off in time to be back for our own shift.
     if (bot.hunter && !active && untilActive > toSpot + 2 && remaining > 25) {
       const human = ctx.robots.find((o) => o.alliance === enemy && (o.controller === 'player' || o.id === 0));
-      if (human && human.held.length > 0 && !human.isClimbing && (rules.hubActive(enemy) || rules.secondsUntilActive(enemy) < 4)) {
-        const hunter = team.members.filter((m) => !m.isClimbing && !m.tippedOver).sort((a, b) => dist(a.pose, human.pose) - dist(b.pose, human.pose))[0];
-        if (hunter === r) {
+      if (human && !human.isClimbing && (rules.hubActive(enemy) || rules.secondsUntilActive(enemy) < 4)) {
+        // A full robot (nothing better to do until our shift) hunts first; two go when the driver carries a big load
+        // and two of us are full. An empty driver is shadowed anyway, to slow their refill.
+        const free = team.members.filter((m) => !m.isClimbing && !m.tippedOver);
+        const cost = (m: Robot) => dist(m.pose, human.pose) - (m.capacityLeft === 0 ? 3 : 0);
+        const hunters = free.sort((a, b) => cost(a) - cost(b)).slice(0, human.held.length > 20 && free.filter((m) => m.capacityLeft === 0).length >= 2 ? 2 : 1);
+        if (hunters.includes(r)) {
           team.say(r, `Hunting ${team.label(human).replace('You', 'the driver')}`, `hunt:${r.id}`, 20);
-          const d = defendCommand(dt, human);
+          const d = human.held.length === 0 ? bot.defend(human, rules.hubCenter(enemy)) : defendCommand(dt, human);
           if (d) { d.intake = r.capacityLeft > 0; return d; }
         }
       }

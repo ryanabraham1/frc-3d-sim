@@ -116,9 +116,10 @@ export const rebuilt2026: SeasonDefinition = {
   botArchetype(difficulty, station, role) {
     const byRole: Record<string, string> = { scorer: 'ripcurrent-4414', feeder: 'limestone-1678', defender: 'kepler-1690' };
     if (role && byRole[role]) return byRole[role];
-    // Real 2026 robots; station 3 (the Hard defender) gets 1690's spiked-tread pusher.
+    // Real 2026 robots; station 3 (the Hard defender) gets 1690's spiked-tread pusher. Einstein fields three high-volume
+    // scorers instead (benchmarked vs Hard, docs/AI-STRATEGY.md): its hunting doesn't need a dedicated pusher.
     // Benchmarked (seeds 5-7): Hard averaged 1040 points, Normal 515.
-    const lineups: Record<string, string[]> = { normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'] };
+    const lineups: Record<string, string[]> = { normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'madtown-2026-1323', 'reblitz-2910'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   botRobotConfig(difficulty) {

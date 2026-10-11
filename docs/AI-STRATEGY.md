@@ -70,6 +70,23 @@ Both are Hard/Einstein only; Normal keeps its old habits. 2024 and 2025 bots dra
 2026-specific. `tools/analyze_match_logs.py` checks the same things against real player matches once logs reach
 Supabase (docs/MATCH-LOGS.md).
 
+### Einstein vs Hard (2026-10)
+
+Red on Einstein or Hard, blue on Hard with its station 1 driven like the player, 8 seeds each (red − blue):
+
+| Red | Red | Blue | Margin |
+|---|---:|---:|---:|
+| Hard | 593 | 505 | +89 ± 30 |
+| Einstein (old: Hard lineup + one hunter on a loaded driver) | 592 | 540 | +52 ± 40 |
+| Einstein, hunting change only | 577 | 532 | +45 ± 27 |
+| Einstein, lineup change only | 641 | 577 | +64 ± 20 |
+| **Einstein, both** (shipped) | 666 | 553 | **+113 ± 24** |
+
+The old Einstein was no harder than Hard: the hunter left the 1690 defender's scoring behind for little effect. Einstein
+now fields three high-volume scorers (4414, 1323, 2910) and hunts with whichever robot is best placed, preferring one
+that is already full, shadowing the driver even when empty and sending two when the driver carries 20+ FUEL and two
+of ours are full.
+
 ## 2024 CRESCENDO
 
 Strategy, blue vs red on Amplify cycles (6 seeds):
