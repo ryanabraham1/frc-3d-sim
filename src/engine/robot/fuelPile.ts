@@ -9,6 +9,9 @@ export interface FuelBin {
 export interface FuelSeed { x: number; y: number; z: number; s: number; sy?: number }
 
 /** Small sleeping, visual-only particle solver. No Rapier bodies, geometry rebuilds or fixed rest targets. */
+/** Seconds a ball's hand-over point stays usable for the pile's next new ball. */
+const ARRIVAL_TTL = 0.5;
+
 export class FuelPile {
   contacts?: { sync(): boolean; resolve(p: Float32Array, v: Float32Array, j: number, radius: number): void };
   wake(): void { this.awake = this.count > 0; this.quiet = 0; }
@@ -17,7 +20,9 @@ export class FuelPile {
   private readonly before: Float32Array;
   private readonly contactRadius: Float32Array;
   private readonly netted: boolean;
-  private readonly arrivals: THREE.Vector3[] = [];
+  /** Where intaken balls were handed over (robot frame), with the pile clock at the time. */
+  private readonly arrivals: { p: THREE.Vector3; t: number }[] = [];
+  private clock = 0;
   private count = 0;
   /** Uncovered hopper: no lid, so FUEL that ends up above the rim leaves the pile (see `step`'s escape callback). */
   open = false;
@@ -72,18 +77,23 @@ export class FuelPile {
       if (d2 < diameter * diameter) y = Math.max(y, this.positions[j + 1] + Math.sqrt(diameter * diameter - d2));
     }
     const roof = Math.min(b.y0 + b.height, b.ceiling?.(x, z) ?? Infinity);
-    return new THREE.Vector3(x, this.open ? Math.max(y + 0.015, hint.y) : Math.min(roof - r, Math.max(y + 0.015, hint.y)), z);
+    // On the pile, not at the height of the intake lane: a ball handed over above the surface would visibly drop in
+    // from over the load instead of rolling in off the intake.
+    return new THREE.Vector3(x, this.open ? y + 0.015 : Math.min(roof - r, y + 0.015), z);
   }
 
   receive(position: THREE.Vector3): void {
-    if (this.arrivals.length < 14) this.arrivals.push(position.clone());
+    if (this.arrivals.length < 14) this.arrivals.push({ p: position.clone(), t: this.clock });
   }
 
   setCount(n: number): void {
     if (n === this.count) return;
     for (let i = this.count; i < n; i++) {
       this.reset(i);
-      const entry = this.arrivals.shift();
+      // A hand-over the count never caught up with (the hopper was full, or a preload refilled it) is stale: using it
+      // later would drop the ball in from wherever the surface was back then.
+      while (this.arrivals.length && this.arrivals[0].t < this.clock - ARRIVAL_TTL) this.arrivals.shift();
+      const entry = this.arrivals.shift()?.p;
       if (entry) {
         const j = i * 3;
         this.positions[j] = entry.x; this.positions[j + 1] = entry.y; this.positions[j + 2] = entry.z;
@@ -104,6 +114,7 @@ export class FuelPile {
    */
   step(s: RobotAnimState, escape?: (x: number, y: number, z: number, vx: number, vy: number, vz: number) => void): boolean {
     const dt = THREE.MathUtils.clamp(s.dt, 0, 0.1);
+    this.clock += dt;
     if (dt <= 0) return false;
     if (this.count > 0 && this.contacts?.sync()) this.wake();
     // Gravity in the chassis frame: a tilted or overturned robot pours its pile toward the low side.

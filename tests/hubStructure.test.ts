@@ -25,6 +25,36 @@ it('both hubs have an open funnel and three valid net collision surfaces', () =>
   }
 });
 
+it('leaves the lower side frames open while retaining the upper rear nets on both alliances', () => {
+  for (const alliance of ['blue', 'red'] as const) {
+    const physics = new PhysicsWorld(RAPIER);
+    const frame = new FieldFrame(C.FIELD_LENGTH, C.FIELD_WIDTH);
+    const b = new FieldBuilder(physics, new THREE.Scene(), frame);
+    buildHubFunnelAndNet(b, alliance, C.HUB_CENTER);
+    physics.step(); // Update the query pipeline after creating the colliders.
+    const forward = alliance === 'blue' ? 1 : -1;
+    const half = C.HUB_SIZE / 2 + 3 * 0.0254;
+    const rearX = C.HUB_CENTER.x + forward * (C.HUB_SIZE / 2 + 0.0254 - 0.1);
+    for (const side of [-1, 1]) {
+      const pole = b.root.getObjectByName(`hub-${alliance}-net-inclined-pole-${side}`) as THREE.Mesh<THREE.CylinderGeometry>;
+      pole.updateWorldMatrix(true, false);
+      const foot = frame.toField(pole.localToWorld(new THREE.Vector3(0, -pole.geometry.parameters.height / 2, 0)));
+      // A front-corner attachment incorrectly stretches the frame over the
+      // entire hub. Both alliances must leave the front quarter exposed.
+      expect((foot.x - C.HUB_CENTER.x) * forward).toBeCloseTo(-C.HUB_SIZE / 4, 5);
+      const hitAt = (height: number) => {
+        const origin = frame.toWorld(rearX, C.HUB_CENTER.y + side * (half + 0.2), height);
+        return physics.world.castRay(new RAPIER.Ray(origin, frame.velToWorld(0, -side, 0)), 0.3, true, undefined, GROUPS.piece);
+      };
+      expect(hitAt(C.HUB_RIM_HEIGHT - 0.1)).toBeNull();
+      expect(hitAt(C.HUB_RIM_HEIGHT + 0.3)).not.toBeNull();
+    }
+    const net = b.root.getObjectByName(`hub-${alliance}-net-mesh`) as THREE.LineSegments;
+    expect(new THREE.Box3().setFromObject(net).min.y).toBeCloseTo(C.HUB_RIM_HEIGHT, 5);
+    physics.free();
+  }
+});
+
 it('leaves rim and panel impacts unscored until the entire FUEL clears the throat', async () => {
   const { fuelInsideHubThroat, HUB_THROAT_Z } = await import('../src/seasons/2026-rebuilt/hubStructure');
   const radius = 0.075;

@@ -58,29 +58,37 @@ export function buildHubFunnelAndNet(b: FieldBuilder, alliance: Alliance, c: { x
 
   const half = C.HUB_SIZE / 2 + inch(3);
   const rear = C.HUB_SIZE / 2 + inch(1);
-  const front = -C.HUB_SIZE / 2;
+  // [EST, Game Manual Fig. 5-7 / field photo] The inclined poles attach
+  // about a quarter of the way along the side, not at the front corners.
+  const front = -C.HUB_SIZE / 4;
   const footZ = baseZ - inch(5);
   const topZ = rimZ + C.HUB_NET_HEIGHT;
+  // Game Manual TU22, Figs. 5-5 and 5-7: the net hangs at the upper
+  // rear of the frame; the lower/front lengths of the support poles are bare.
+  // Approximate its undimensioned lower edge at the opening's rim height.
+  const netBottomZ = rimZ;
+  const slopeX = (z: number) => front + (rear - front) * (z - footZ) / (topZ - footZ);
+  const netFront = slopeX(netBottomZ);
   const netMaterial = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
-  panel(`hub-${alliance}-net-rear-collision`, [point(rear, -half, baseZ), point(rear, half, baseZ), point(rear, half, topZ), point(rear, -half, topZ)], netMaterial, 0.05);
+  panel(`hub-${alliance}-net-rear-collision`, [point(rear, -half, netBottomZ), point(rear, half, netBottomZ), point(rear, half, topZ), point(rear, -half, topZ)], netMaterial, 0.05);
   const cords: THREE.Vector3[] = [];
   const cord = (a: Vec3, d: Vec3) => cords.push(b.frame.toWorld(...a), b.frame.toWorld(...d));
   const spacing = inch(2);
-  for (let y = -half; y <= half; y += spacing) cord(point(rear, y, baseZ), point(rear, y, topZ));
-  for (let z = baseZ; z <= topZ; z += spacing) cord(point(rear, -half, z), point(rear, half, z));
+  for (let y = -half; y <= half; y += spacing) cord(point(rear, y, netBottomZ), point(rear, y, topZ));
+  for (let z = netBottomZ; z <= topZ; z += spacing) cord(point(rear, -half, z), point(rear, half, z));
   const pole = { color: C.COLORS.alu, metalness: 0.65, roughness: 0.35, collide: false as const };
   for (const side of [-1, 1]) {
     const y = side * half;
-    panel(`hub-${alliance}-net-wing-${side}-collision`, [point(front, y, footZ), point(rear, y, footZ), point(rear, y, topZ)], netMaterial, 0.05);
-    for (let x = front; x <= rear; x += spacing) {
+    panel(`hub-${alliance}-net-wing-${side}-collision`, [point(netFront, y, netBottomZ), point(rear, y, netBottomZ), point(rear, y, topZ)], netMaterial, 0.05);
+    for (let x = netFront; x <= rear; x += spacing) {
       const height = footZ + (topZ - footZ) * (x - front) / (rear - front);
-      cord(point(x, y, footZ), point(x, y, height));
+      cord(point(x, y, netBottomZ), point(x, y, height));
     }
-    for (let z = footZ; z <= topZ; z += spacing) {
-      const x = front + (rear - front) * (z - footZ) / (topZ - footZ);
+    for (let z = netBottomZ; z <= topZ; z += spacing) {
+      const x = slopeX(z);
       cord(point(x, y, z), point(rear, y, z));
     }
-    b.cylinder(point(front, y, footZ), point(rear, y, topZ), inch(0.65), pole, 10);
+    b.cylinder(point(front, y, footZ), point(rear, y, topZ), inch(0.65), { ...pole, name: `hub-${alliance}-net-inclined-pole-${side}` }, 10);
     b.cylinder(point(rear, y, footZ), point(rear, y, topZ), inch(0.65), pole, 10);
     b.cylinder(point(front, y, footZ), point(rear, y, footZ), inch(0.5), pole, 10);
   }

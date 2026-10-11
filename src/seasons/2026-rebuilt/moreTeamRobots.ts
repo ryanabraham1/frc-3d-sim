@@ -203,7 +203,8 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,
       // Round the drum rim, up the ramp and into the turret's wheel.
-      feed: () => { const a = Math.random() * Math.PI * 2; return [new THREE.Vector3(cx + Math.cos(a) * R * 0.8, bt + 0.04 + FUEL_R, Math.sin(a) * R * 0.8), new THREE.Vector3(tx - 0.12, bt + 0.08 + FUEL_R, 0), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)]; },
+      // The spindexer carries FUEL from the far side of the bowl round to the tower.
+      feed: () => { const a = Math.atan2(0, cx - tx); return [new THREE.Vector3(cx + Math.cos(a) * R * 0.8, bt + 0.04 + FUEL_R, Math.sin(a) * R * 0.8), new THREE.Vector3(tx - 0.12, bt + 0.08 + FUEL_R, 0), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)]; },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
@@ -372,7 +373,8 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: black, rollerMaterial: mat(0x1d2025, { rough: 0.95 }) });
   const slide = slidingHopper(k);
   const d = { v: 0 };
-  let hoodAng = 0;
+  // Static hood (no actuator): fixed at the configured launch angle; range comes from wheel speed.
+  hood.rotation.z = 0.15 + hoodFor(c.launcher.angle) * 0.8;
   const pile = hopperStow({ x: hx, y0: bt + 0.03, length: hl * 0.9, width: W * 0.88, height: sh0.h * 0.9, r: FUEL_R });
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
@@ -380,15 +382,13 @@ registerRobotModel('triple-threat-9128', (k: ModelKit) => {
     flow: {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,
-      feed: () => { const lane = [-W * 0.3, 0, W * 0.3][Math.floor(Math.random() * 3)]; return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, lane), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, lane), new THREE.Vector3(sx - 0.03, H - 0.14, lane), new THREE.Vector3(sx + 0.03, H - 0.09, lane)]; },
+      feed: (shot = 0) => { const lane = [-W * 0.3, 0, W * 0.3][shot % 3]; return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, lane), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, lane), new THREE.Vector3(sx - 0.03, H - 0.14, lane), new THREE.Vector3(sx + 0.03, H - 0.09, lane)]; },
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       { const dv = latch(d, s); intake.update(s, dv); slide.set(dv, s.fill); }
       const fs = s.enabled ? 45 + 45 * s.firing : 0;
       for (const r of rolls) spin(r, -fs, s.dt);
-      hoodAng = scoringApproach(hoodAng, s.aiming || s.firing > 0 ? 0.15 + hoodFor(s.hood) * 0.8 : -0.25, 5, s.dt);
-      hood.rotation.z = hoodAng;
     },
   };
 });
@@ -453,7 +453,8 @@ registerRobotModel('simbot-tim-1114', (k: ModelKit) => {
       for (const r of passive) spin(r, side * speed * .3, s.dt);
       for (const r of feedRolls) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 45 + s.firing * 30 : 0), s.dt);
-      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .14 : -side * -.35, 6, s.dt);
+      // Hood follows the shot map through its full travel [EST: 1114's travel is unpublished; matches 581's 35 deg].
+      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -509,7 +510,8 @@ registerRobotModel('rubble-581', (k: ModelKit) => {
       for (const r of [...feeding, ...intakeRolls]) spin(r, side * speed, s.dt);
       spin(drum, side * (s.enabled ? 50 + s.firing * 35 : 0), s.dt);
       for (const r of hoodRolls) spin(r, -side * speed, s.dt);
-      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) * .6 : -side * -.35, 6, s.dt);
+      // 35 deg of hood travel (581's 2026 CAD and code release): hoodFor spans about that across the shot map.
+      hood.rotation.z = scoringApproach(hood.rotation.z, s.aiming || s.firing > 0 ? -side * hoodFor(s.hood) : -side * -.35, 6, s.dt);
     },
   };
 });
@@ -580,15 +582,15 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'simbot-tim-1114', team: 1114, name: 'Simbot Tim',
       description: '1114 Simbotics. Simplified supplied CAD intake and tall hopper, with fitted drivetrain and wide drum shooter. Chassis aims; competition climber was removed. Intake travel, capacity, rate, dimensions and speed are simulator estimates.',
       source: 'User supplied S26-A000.glb intake/hopper assembly; Team 1114 Simbot Tim CAD release https://www.chiefdelphi.com/t/522887',
-      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: true, rate: 18, climb: 0 }, c => { c.hopperCovered = true; /* magic-blanket cover */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
+      config: cfg(1114, 'simbot-tim-1114', { intake: 'both', aim: 'align', dumper: true, hopper: 55, tall: true, rate: 22, climb: 0 }, c => { c.hopperCovered = true; /* magic-blanket cover */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 90); }) },
     { id: 'rubble-581', team: 581, name: 'Rubble',
       description: '581 Blazing Bulldogs. Champs rebuild: full-width drum and adjustable roller hood, translating rack intake, rising roller floor and smoked hopper with a net roof: 42 FUEL in the rigid box, 65 with the net stretched (past 42 it bulges above TRENCH height). Capacity, rate and speed are simulator estimates.',
       source: 'Spectrum CAD Collection row 10; Team 581 CAD and code release https://www.chiefdelphi.com/t/521762',
-      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 65, tall: false, rate: 18, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); c.hopperCovered = true; c.hopperExpansion = { startCount: 42, fullHeight: inch(27) }; /* Packed real-size FUEL: 42 rigid + 23 under the stretched net [EST]. */ /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 86); }) },
+      config: cfg(581, 'rubble-581', { intake: 'both', aim: 'align', dumper: true, hopper: 65, tall: false, rate: 22, climb: 0 }, c => { c.frameLength = inch(28); c.frameWidth = inch(26.75); c.hopperCovered = true; c.hopperExpansion = { startCount: 42, fullHeight: inch(27) }; /* Packed real-size FUEL: 42 rigid + 23 under the stretched net [EST]. */ /* Effective rectangular footprint of the chamfered CAD frame. */ c.maxSpeed = 4.7; c.launcher.exitSpan = .6; setRebuiltAccuracy(c, 86); }) },
     { id: 'roman-6329', team: 6329, name: 'ROMAN',
       description: "6329 Bucks' Wrath (Einstein, Curie alliance with 2056), championship ROMAN II rebuild. Fixed full-width cat-tongue drum with two powered hood rollers at the front, fed by a vertical feed column off a sloped roller floor, and a long driven four-bar intake whose two-roller head reaches out over the back bumper. 30 x 24 in frame, black net roof over clear walls. Capacity, rate and speed are simulator estimates.",
       source: 'Onshape public release "6329-2026.2, Roman II - Public Release" https://cad.onshape.com/documents/014716f840fdbd882c1d691f; Chief Delphi "6329 Bucks\' Wrath Robot Reveal 2026: ROMAN"; TBA 2026 photos',
-      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'align', dumper: true, hopper: ROMAN_CAPACITY, tall: false, rate: 16, climb: 0 }, (c) => { romanII(c); stretchNet(c, 22); }) },
+      config: cfg(6329, 'roman-6329', { intake: 'both', aim: 'align', dumper: true, hopper: ROMAN_CAPACITY, tall: false, rate: 20, climb: 0 }, (c) => { romanII(c); stretchNet(c, 22); }) },
     { id: 'hailstorm-1778', team: 1778, name: 'HAILSTORM',
       description: '1778 Chill Out. Compact turret over a spindexer with a grip-taped "bottle rocket" cone (copied from 4180) for a tight, steady stream; simple spindexer chosen over a dye rotor. A reliable, consistent mid-high build. Capacity, rate and speed are simulator estimates.',
       source: 'Chief Delphi "1778 2026 CAD & Code Release" (HAILSTORM Q&A: spindexer, bottle-rocket cone, turret encoders)',
@@ -600,11 +602,11 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
       description: '7769 The CREW (5 blue banners). Wide fixed shooter on 4 in Stealth wheels with a compliant-wheel feeder; the hood swings up around the flywheel shaft to shoot and drops for the TRENCH. Black sponsor-plated polycarb hopper under a net; the intake rides out on independently driven racks and shuffles while firing to prevent jams. Loads the public CAD. Under-trench box, so it holds about 37 FUEL [EST: packed into the modeled box; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Its L1 climb arm is modeled but, like every stock 2026 robot, it starts without a climb. Rate and speed are estimates.',
       source: 'Onshape public "Full Robot" (assembly "Chunk") https://ostcse.onshape.com/documents/692fc43a78732f76f6a7fc01; Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 15, climb: 0 }, (c) => { chunkCad(c); stretchNet(c, 20); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 19, climb: 0 }, (c) => { chunkCad(c); stretchNet(c, 20); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. 45 FUEL total following user tuning, including its intake-side hopper extension; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
-      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 16, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; setRebuiltAccuracy(c, 82); }) },
+      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 20, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; /* static hood: range comes from wheel speed */ c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 82); }) },
     { id: 'toploader-604', team: 604, name: 'Toploader',
       description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Holds 80–90 FUEL (user-reported; simulator uses 85) in its tall box and sliding hopper. Speed is a simulator estimate.',
       source: 'Chief Delphi "Team 604 Quixilver - 2026 Robot CAD and Code Release" (Toploader); The Blue Alliance 2026 photos',

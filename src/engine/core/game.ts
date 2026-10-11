@@ -15,6 +15,7 @@ import { Scoreboard } from '../match/scoreboard';
 import { ClientSync } from '../net/clientSync';
 import { HostSync } from '../net/hostSync';
 import { Predictor } from '../net/prediction';
+import { LocalPieces } from '../net/localPieces';
 import type { NetClient } from '../net/netClient';
 import type { ClientMsg, HostMsg, MatchSetup, NetGameState, RobotSetup } from '../net/protocol';
 import { slotId } from '../net/protocol';
@@ -177,6 +178,9 @@ export class Game {
   readonly clientSync: ClientSync | null = null;
   /** Client-side prediction of this screen's own robot (clients only). */
   readonly predictor: Predictor | null = null;
+  /** Client: game pieces near the predicted robot, simulated here (see net/localPieces.ts). */
+  readonly localPieces: LocalPieces | null = null;
+  private lastPredictorSnaps = 0;
   private readonly net: GameNet | null;
   private readonly offs: (() => void)[] = [];
   private ticker: Ticker | null = null;
@@ -278,6 +282,7 @@ export class Game {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, this.renderer.scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
       robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.pieceMass = season.gamePiece.mass;
       robot.shootWhileTracking = season.id === '2026-rebuilt';
       robot.controller = rs.bot ? 'bot' : 'player';
       season.configureRobot?.(robot);
@@ -350,14 +355,18 @@ export class Game {
         if (r !== this.player) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
       }
       this.clientSync = new ClientSync(net!.client, this);
-      if (this.player) this.predictor = new Predictor(this.player);
+      if (this.player) {
+        this.predictor = new Predictor(this.player);
+        this.localPieces = new LocalPieces({ pool: this.pool, robots: this.robots, clientSync: this.clientSync }, this.player);
+        if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('nolocalfuel')) this.localPieces.enabled = false;
+      }
       this.state = 'waiting';
       this.offs.push(
         net!.client.on('binary', (buf) => {
           const now = performance.now();
           const snap = this.clientSync!.onBinary(buf, now);
           const mine = snap && this.player ? snap.robots.find((r) => r.id === this.player!.id) : undefined;
-          if (mine) this.predictor!.queueSnapshot(mine, now, snap!.meta.st === 'running');
+          if (mine) this.predictor!.queueSnapshot(mine, now, snap!.meta.st === 'running', snap!.time);
         }),
       );
       this.offs.push(
@@ -440,7 +449,7 @@ export class Game {
     else this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
     this.offs.push(this.hud.showIntro(6));
 
-    if (this.role === 'client') net!.client.send({ t: 'ready' });
+    if (this.role === 'client') this.clientSync!.maintainReady(performance.now());
   }
 
   /** Full gameplay state, independent of rendering and the local driver's camera/input. */
@@ -986,6 +995,7 @@ export class Game {
   private clientTick(inp: DriverInput, now: number): void {
     this.predictor?.flush();
     const cs = this.clientSync!;
+    cs.maintainReady(now);
     const p = this.player;
     if (!p || this.clientModal === 'closed') return;
     if (inp.humanPlayer && cs.netState === 'running') this.net!.client.send({ t: 'hp' });
@@ -999,14 +1009,24 @@ export class Game {
 
     // Prediction: drive our own robot locally right away (the host stays authoritative).
     const pr = this.predictor;
+    const lp = this.localPieces;
+    const predicting = !!pr?.active && linked;
+    if (lp && pr) {
+      // A snapped robot may now overlap pieces simulated here: hand them all back and take them over afresh.
+      if (pr.snaps !== this.lastPredictorSnaps) lp.releaseAll();
+      this.lastPredictorSnaps = pr.snaps;
+      lp.update(now, predicting && (cs.netState === 'running' || cs.netState === 'countdown'), pr.rtt);
+    }
     if (pr?.active && linked) {
       const fixed = this.physics.dt;
       this.acc += clamp((now - this.lastPredict) / 1000, 0, 0.1);
       let steps = 0;
       while (this.acc >= fixed && steps < 5) {
         p.capturePrevPose();
+        lp?.beforeStep();
         p.drive(cmd, fixed);
         this.physics.step();
+        lp?.afterStep();
         this.acc -= fixed;
         steps++;
       }
@@ -1216,6 +1236,10 @@ export class Game {
       rttMs: Math.round((this.predictor?.rtt ?? 0) * 1000),
       corrections: this.predictor?.corrections ?? 0,
       snaps: this.predictor?.snaps ?? 0,
+      localPieces: this.localPieces?.count ?? 0,
+      localPieceCorrections: this.localPieces?.corrections ?? 0,
+      localPieceSnaps: this.localPieces?.snaps ?? 0,
+      localPieceUnbeached: this.localPieces?.unbeached ?? 0,
       snapshots: this.clientSync?.snapshots ?? 0,
       missedSnapshots: this.clientSync?.missed ?? 0,
       interpDelayMs: Math.round((this.clientSync?.delay ?? 0) * 1000),

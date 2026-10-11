@@ -66,6 +66,59 @@ function settle(sim: HeadlessSim, seconds = 4) {
 }
 
 describe('HostSync snapshots', () => {
+  it('starts when the guest loaded before the host subscribed to readiness', async () => {
+    const sim = world('2025-reefscape');
+    const transport = fakeNet();
+    const target = { pool: sim.pool, robots: [], clock: sim.ctx.clock, score: sim.ctx.score, rules: sim.rules };
+    const guest = new ClientSync(transport.client, target);
+    // The start broadcast reaches the guest while the host is still loading its world.
+    guest.maintainReady(0);
+    transport.deliver(transport.sent.pop() as ClientMsg); // No HostSync listener yet.
+    const allReady = vi.fn();
+    const src = { ...target, netState: 'waiting' as 'waiting' | 'countdown', countdownLeft: 1, lastResults: null };
+    const hs = new HostSync(transport.client, { seasonId: sim.season.id, seed: 1, autoHumanPlayer: false, robots: [], peers: ['host', 'c1'] }, src,
+      { humanPlayer() {}, allReady() { allReady(); src.netState = 'countdown'; }, peerLeft() {} });
+    try {
+      await Promise.resolve();
+      hs.sendSnapshot(0);
+      guest.onBinary(transport.frames.at(-1)!, 200);
+      expect(guest.netState).toBe('waiting');
+      guest.maintainReady(999);
+      expect(transport.sent).toHaveLength(0);
+      guest.maintainReady(1000);
+      transport.deliver(transport.sent.pop() as ClientMsg);
+      expect(allReady).toHaveBeenCalledTimes(1);
+      hs.sendSnapshot(0.2);
+      guest.onBinary(transport.frames.at(-1)!, 1100);
+      expect(guest.netState).toBe('countdown');
+      guest.maintainReady(2000);
+      guest.maintainReady(3000);
+      expect(transport.sent).toHaveLength(0);
+    } finally {
+      hs.dispose();
+      sim.dispose();
+    }
+  });
+
+  it('retries readiness after reconnect, including spectators without a robot or keyframe', () => {
+    const sim = world('2025-reefscape');
+    const t = fakeNet();
+    const guest = new ClientSync(t.client, { pool: sim.pool, robots: [], clock: sim.ctx.clock, score: sim.ctx.score, rules: sim.rules });
+    try {
+      guest.maintainReady(0);
+      t.net.connected = false;
+      guest.maintainReady(1500);
+      expect(t.sent).toEqual([{ t: 'ready' }]);
+      t.net.connected = true;
+      guest.maintainReady(1600);
+      expect(t.sent).toEqual([{ t: 'ready' }, { t: 'ready' }]);
+      guest.maintainReady(1700);
+      expect(t.sent).toHaveLength(2);
+    } finally {
+      sim.dispose();
+    }
+  });
+
   it('numbers snapshots and sends resting pieces only once', () => {
     const sim = world('2026-rebuilt');
     settle(sim);
@@ -203,6 +256,39 @@ describe('ClientSync', () => {
       expect(p.cs.snapshots).toBe(received);
       expect(p.cs.onBinary(p.h.frames[2], 67)).not.toBeNull();
       expect(p.cs.missed).toBe(0);
+    } finally { p.dispose(); }
+  });
+
+  it('keeps visible pieces authoritative through proxy adoption, recovery and release', () => {
+    const p = pair('2026-rebuilt');
+    try {
+      p.h.hs.sendSnapshot(1);
+      p.cs.onBinary(p.h.frames[0], 1000);
+      p.cs.interpolate(1000);
+      const pool = p.clientSim.pool;
+      const i = pool.indices('field')[0];
+      const initial = { ...pool.position(i) };
+      const matrix = new THREE.Matrix4();
+      const visible = () => {
+        pool.syncVisuals(0.1);
+        pool.mesh.getMatrixAt(i, matrix);
+        return new THREE.Vector3().setFromMatrixPosition(matrix);
+      };
+      const before = visible();
+      pool.adoptLocal(i, { ...initial, x: initial.x + 2 }, { x: 3, y: 0, z: 0 });
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
+      p.h.deliver({ t: 'resync' });
+      p.h.hs.sendSnapshot(1.1);
+      p.cs.onBinary(p.h.frames[p.h.frames.length - 1], 1100);
+      p.cs.interpolate(1100);
+      // Snapshots update the picture without teleporting the physical collision proxy.
+      expect(pool.position(i).x).toBeCloseTo(initial.x + 2, 3);
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
+      pool.releaseLocal(i);
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
+      expect(pool.position(i).x).toBeCloseTo(initial.x, 3);
+      p.cs.interpolate(3100);
+      expect(visible().distanceTo(before)).toBeLessThan(0.00001);
     } finally { p.dispose(); }
   });
 
@@ -423,6 +509,36 @@ describe('pieces are where the host has them (regression: invisible FUEL that "s
 });
 
 describe('GamePiecePool.syncVisuals (replica)', () => {
+  it('updates a local CORAL proxy’s visible orientation and hides host captures immediately', () => {
+    const sim = world('2025-reefscape');
+    try {
+      const pool = sim.pool;
+      const i = pool.indices('field').find((k) => pool.specAt(k).shape === 'tube')!;
+      expect(i).toBeDefined();
+      const initial = { ...pool.position(i) };
+      pool.applyReplicaState(i, 'field', -1, null);
+      pool.setReplicaPosition(i, initial.x, initial.y, initial.z);
+      pool.adoptLocal(i, { ...initial, x: initial.x + 2 }, { x: 0, y: 0, z: 0 });
+      const physical = pool.bodies[i].rotation();
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.8);
+      pool.setReplicaRotation(i, q.x, q.y, q.z, q.w);
+      pool.syncVisuals(0.1);
+      const meshIndex = (pool as unknown as { meshIndex: number[] }).meshIndex[i];
+      const m = new THREE.Matrix4(), pos = new THREE.Vector3(), drawn = new THREE.Quaternion();
+      pool.meshes[meshIndex].getMatrixAt(i, m);
+      m.decompose(pos, drawn, new THREE.Vector3());
+      expect(pos.distanceTo(new THREE.Vector3(initial.x, initial.y, initial.z))).toBeLessThan(0.00001);
+      expect(drawn.angleTo(q)).toBeLessThan(0.0001);
+      expect(pool.bodies[i].rotation()).toEqual(physical);
+      pool.applyReplicaState(i, 'held', 0, null);
+      pool.syncVisuals();
+      pool.meshes[meshIndex].getMatrixAt(i, m);
+      expect(m.elements[0]).toBe(0);
+      expect(pool.isLocal(i)).toBe(false);
+      expect(pool.bodies[i].isEnabled()).toBe(false);
+    } finally { sim.dispose(); }
+  });
+
   it('redraws only pieces whose replica pose changed', () => {
     const sim = world('2026-rebuilt');
     const pool = sim.pool;

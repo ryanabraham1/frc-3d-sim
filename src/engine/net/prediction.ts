@@ -13,9 +13,6 @@ interface PoseSample {
 /** Corrections larger than this snap instead of blending (m / rad). */
 const SNAP_DIST = 1.0;
 const SNAP_YAW = 1.0;
-/** Snap when host and local chassis tilt differ by more than this (cos of ~15°): e.g. the host robot rode up on
- * game pieces, which clients don't simulate. */
-const SNAP_UP = 0.035;
 /** Longest round trip a single ack may report (s); anything slower is a stall, not the link. */
 const MAX_RTT_SAMPLE = 1.0;
 /** Fraction of the measured error removed per snapshot (~30 Hz). */
@@ -27,10 +24,10 @@ const OFFSET_TAU = 0.09;
 
 /**
  * Client-side prediction for the driver's own robot. The client drives its robot immediately with local
- * physics (field colliders only — game pieces aren't simulated on clients) and keeps a pose history.
- * Each snapshot shows where the host had the robot after receiving inputs sent ~1 RTT ago, so it is
- * compared with our predicted pose from 1 RTT ago; a fraction of that error is removed from the current
- * pose (and the whole history, so it isn't counted twice). No input replay needed.
+ * physics (field colliders and nearby piece collision proxies) and keeps a pose history.
+ * Acknowledged inputs anchor host simulation timestamps to local pose history. Packet arrival jitter
+ * cannot shift which pose is compared. A fraction of the error is removed from the current pose and
+ * the whole history, so it is not counted twice. RTT is a fallback until an input is acknowledged.
  */
 export class Predictor {
   /** Toggle for debugging (`game.predictor.enabled = false`). */
@@ -49,19 +46,21 @@ export class Predictor {
   private readonly hist: PoseSample[] = [];
   private readonly sendTimes = new Map<number, number>();
   private lastAck = 0;
-  private pending: { state: RobotNetState; localMs: number; running: boolean } | null = null;
+  private pending: { state: RobotNetState; localMs: number; running: boolean; hostTime?: number } | null = null;
+  /** Host simulation time mapped to the local prediction timeline using acknowledged inputs. */
+  private hostToLocal: number | null = null;
 
   constructor(private readonly robot: Robot) {}
 
   /** TCP can deliver many snapshots together after a stall. Reconcile only the newest before driving. */
-  queueSnapshot(state: RobotNetState, localMs: number, running: boolean): void {
-    this.pending = { state, localMs, running };
+  queueSnapshot(state: RobotNetState, localMs: number, running: boolean, hostTime?: number): void {
+    this.pending = { state, localMs, running, hostTime };
   }
 
   flush(): void {
     const pending = this.pending;
     this.pending = null;
-    if (pending) this.onSnapshot(pending.state, pending.localMs, pending.running);
+    if (pending) this.onSnapshot(pending.state, pending.localMs, pending.running, pending.hostTime);
   }
 
   /** Ease the visual correction offsets toward zero (call once per drawn frame). */
@@ -87,10 +86,16 @@ export class Predictor {
   }
 
   /** A snapshot arrived with the host's view of our robot. */
-  onSnapshot(ss: RobotNetState, localMs: number, running: boolean): void {
+  onSnapshot(ss: RobotNetState, localMs: number, running: boolean, hostTime?: number): void {
     if (ss.cmdSeq > this.lastAck) {
       const sent = this.sendTimes.get(ss.cmdSeq);
       if (sent !== undefined) {
+        if (hostTime !== undefined && Number.isFinite(hostTime)) {
+          // Arrival time includes network stalls. The snapshot's simulation time does not.
+          // An ack anchors the input timeline; ease its small snapshot-phase differences.
+          const offset = sent / 1000 - hostTime;
+          this.hostToLocal = this.hostToLocal === null ? offset : this.hostToLocal + (offset - this.hostToLocal) * 0.1;
+        }
         // One stall (e.g. the host still loading the match when our first commands arrive) must not
         // poison the estimate: samples are capped, and the estimate falls fast but rises slowly. A
         // multi-second RTT would compare the host's pose with where we were seconds ago and drag the
@@ -107,6 +112,7 @@ export class Predictor {
     const can = this.enabled && running && ss.enabled && ss.climbPhase === 0 && !(ss.tipped ?? 0);
     if (!can) {
       this.active = false;
+      this.hostToLocal = null;
       return;
     }
     if (!this.active) {
@@ -114,15 +120,15 @@ export class Predictor {
       this.snap(ss);
       return;
     }
-    const h = this.sampleAt(localMs / 1000 - this.rtt);
+    const at = hostTime !== undefined && this.hostToLocal !== null ? hostTime + this.hostToLocal : localMs / 1000 - this.rtt;
+    const h = this.sampleAt(at);
     if (!h) return;
     const ex = ss.x - h.x;
     const ez = ss.z - h.z;
     const ey = wrapAngle(ss.yaw - h.yaw);
-    const r0 = this.robot.body.rotation();
-    const hostUp = ss.rot ? 1 - 2 * (ss.rot[0] ** 2 + ss.rot[2] ** 2) : 1;
-    const localUp = 1 - 2 * (r0.x * r0.x + r0.z * r0.z);
-    if (Math.hypot(ex, ez) > SNAP_DIST || Math.abs(ey) > SNAP_YAW || Math.abs(hostUp - localUp) > SNAP_UP) {
+    // Current local tilt and delayed host tilt differ naturally on bumps and piece piles.
+    // Real tipped/climbing/disabled states already stop prediction through `can` above.
+    if (Math.hypot(ex, ez) > SNAP_DIST || Math.abs(ey) > SNAP_YAW) {
       this.snap(ss);
       return;
     }
@@ -142,6 +148,9 @@ export class Predictor {
     const cy = Math.cos(dy / 2);
     b.setTranslation({ x: t.x + dx, y: t.y, z: t.z + dz }, true);
     b.setRotation({ x: cy * r.x + sy * r.z, y: cy * r.y + sy * r.w, z: cy * r.z - sy * r.x, w: cy * r.w - sy * r.y }, true);
+    // Shift both interpolation endpoints; otherwise the visual offset only cancels a fraction
+    // of the correction when a snapshot arrives between physics steps.
+    this.robot.shiftPreviousPose(dx, dz, dy);
     for (const p of this.hist) {
       p.x += dx;
       p.z += dz;

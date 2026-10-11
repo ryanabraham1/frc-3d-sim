@@ -9,7 +9,7 @@ import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, hood
 import { adaptedDumper, adaptedRotorColumn, adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
-import { hopperNetCeiling } from '@engine/robot/config';
+import { hopperNetCeiling, launcherExitOffsets } from '@engine/robot/config';
 import { slidingHopper } from '@engine/robot/slidingHopper';
 import { build, INTAKE_RATE_BOOST, normalizeRebuiltConfig, setRebuiltAccuracy } from './config';
 
@@ -276,8 +276,8 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       },
       stow: pile.stow,
       // Full-width shooter: each ball rolls forward along the floor in its lane, up the pocketed plates into the rollers.
-      feed: () => {
-        const z = jitter(W * 0.8);
+      feed: (shot = 0) => {
+        const exits = launcherExitOffsets(c), z = -exits[shot % exits.length];
         return [new THREE.Vector3(hx + hl * 0.2, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx - 0.07, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx - 0.04, H - 0.16, z), new THREE.Vector3(sx + 0.03, H - 0.06, z)];
       },
     },
@@ -384,10 +384,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
         return p;
       },
       // Floor belts carry FUEL diagonally toward the corner bearing, then lift it into the turret.
-      feed: () => {
-        const z = jitter(W * 0.5);
-        return [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, z), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, tz + z * 0.15), new THREE.Vector3(tx, top - 0.06, tz), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)];
-      },
+      feed: () => [new THREE.Vector3(-L * 0.25, bt + 0.03 + FUEL_R, 0), new THREE.Vector3(tx - 0.08, bt + 0.03 + FUEL_R, tz), new THREE.Vector3(tx, top - 0.06, tz), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)],
     },
     update(s) {
       db.update(s);
@@ -647,8 +644,8 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,
       // 20 FUEL/s wide shooter: lanes across the width, up the plates, under the top feeder roller into the flywheels.
-      feed: () => {
-        const z = jitter(W * 0.75);
+      feed: (shot = 0) => {
+        const exits = launcherExitOffsets(c), z = -exits[shot % exits.length];
         return [new THREE.Vector3(hx, bt + 0.04 + FUEL_R, z), new THREE.Vector3(sx + side * 0.12, bt + 0.05 + FUEL_R, z), new THREE.Vector3(sx + side * 0.06, H - 0.2, z), new THREE.Vector3(sx, H - 0.1, z)];
       },
     },
@@ -726,9 +723,9 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'overload-254', team: 254, name: 'Overload',
-      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, fits under the TRENCH up to 50, 62 with the net stretched), 25 FUEL/s, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
+      description: '254 Cheesy Poofs. Fixed multi-wheel shooter aimed by rotating the chassis, net hopper (40 FUEL in the rigid box, fits under the TRENCH up to 50, 62 with the net stretched), 29 FUEL/s in the sim, with a belt floor agitator and a top feeder roller; the intake retracts while shooting to push FUEL into the shooter.',
       source: 'Chief Delphi "Team 254 Presents: Overload"; team254.com/first/2026',
-      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 62, tall: false, rate: 25, climb: 0 }, (c) => {
+      config: teamConfig(254, 'overload-254', { intake: 'both', aim: 'align', dumper: true, hopper: 62, tall: false, rate: 29, climb: 0 }, (c) => {
         c.hopperCovered = true; // net hopper
         // Capacity from packing real-size FUEL into this hopper: 40 under the rigid rim, +22 under the stretched net. [EST]
         c.hopperExpansion = { startCount: 40, fullHeight: inch(27), slack: { count: 50, height: inch(21.7) } }; // slack net: drives under the TRENCH (21.75 in safe) up to 50 FUEL
@@ -767,9 +764,9 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     },
     {
       id: 'sandspit-3476', team: 3476, name: 'Sandspit',
-      description: '3476 Code Orange — a tall closed-hopper BUMP bot: a 20 FUEL/s wide multi-lane shooter fed by a top roller, the intake retracts while shooting to compact FUEL into it, chassis-aimed.',
+      description: '3476 Code Orange — a tall closed-hopper BUMP bot: a wide multi-lane shooter (20 FUEL/s published, 24 in the sim) fed by a top roller, the intake retracts while shooting to compact FUEL into it, chassis-aimed.',
       source: 'Chief Delphi "Team 3476: Code Orange 2026 Sandspit Robot Reveal"; The Blue Alliance 2026 media',
-      config: teamConfig(3476, 'sandspit-3476', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: true, rate: 20, climb: 0 }, (c) => {
+      config: teamConfig(3476, 'sandspit-3476', { intake: 'both', aim: 'align', dumper: true, hopper: 80, tall: true, rate: 24, climb: 0 }, (c) => {
         c.launcher.exits = 3; // [EST] "2/3 lane shooter"
         c.hopperCapacity = 70; // [EST]
       }),

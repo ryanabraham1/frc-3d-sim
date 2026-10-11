@@ -13,7 +13,7 @@ beforeAll(async () => { await RAPIER.init(); });
 afterEach(() => { for (const sim of sims.splice(0)) sim.dispose(); });
 
 it('the requested 2026 dumper rates survive normalization', () => {
-  for (const [team, rate] of [[254,25],[3476,20],[2910,33]]) {
+  for (const [team, rate] of [[254,29],[3476,24],[2910,35]]) {
     const c = season.teamRobots!.find(t => t.team === team)!.config;
     expect(season.normalizeRobotConfig!(cloneConfig(c)).launcher.rate).toBe(rate);
   }
@@ -59,7 +59,7 @@ for (const team of [254,4414]) it(`${team}: expanded net physically blocks a ful
 });
 
 it('net and telescoping expansion do not inflate the requested total capacities', () => {
-  for(const [team,capacity] of [[254,62],[1678,65],[2910,40],[604,85],[9470,62],[9128,45],[971,35],[581,65],[6800,51],[4414,85],[1323,74]]) {
+  for(const [team,capacity] of [[254,62],[1678,70],[2910,50],[604,85],[9470,62],[9128,45],[971,35],[581,65],[6800,51],[4414,85],[1323,74]]) {
     const c=season.teamRobots!.find(t=>t.team===team)!.config;
     expect(c.hopperCapacity).toBe(capacity);
     expect(season.normalizeRobotConfig!(cloneConfig(c)).hopperCapacity).toBe(capacity);
@@ -133,8 +133,8 @@ it('1678 manually toggles capacity and clearance, preserves excess fuel, and can
   expect(r.capacityLeft).toBe(0);
   expect(r.clearanceHeight).toBe(c.height);
   r.drive({ ...IDLE_COMMAND, block: true }, .02);
-  expect(r.hopperCapacity).toBe(65);
-  expect(r.capacityLeft).toBe(15);
+  expect(r.hopperCapacity).toBe(70);
+  expect(r.capacityLeft).toBe(20);
   expect(r.clearanceHeight).toBe(c.hopperExpansion!.fullHeight);
   sim.load(15);
   r.drive(IDLE_COMMAND, .02);

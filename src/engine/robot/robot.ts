@@ -15,7 +15,7 @@ import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, 
 import { PieceFlow } from './pieceFlow';
 import { FuelContacts } from './fuelContacts';
 import { StowBay, type Cavity } from './stowBay';
-import type { GamePiecePool } from '../gamepiece/pool';
+import { GamePiecePool } from '../gamepiece/pool';
 import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 
 /** Field-frame drive request plus mechanism requests. Produced by input or a bot brain. */
@@ -141,6 +141,12 @@ export class Robot {
 
   private readonly fp: { length: number; width: number };
   private expansionCollider?: RAPIER.Collider;
+  private payloadCollider!: RAPIER.Collider;
+  /**
+   * Mass of one held game piece (kg), set by the sim from the season's piece. A robot's rated `mass` is its empty playing
+   * weight; what it carries rides on top (`payloadMass`), so a full hopper accelerates, brakes and turns slower.
+   */
+  pieceMass = 0;
   private blockerCollider?: RAPIER.Collider;
   private blockerSupports: RAPIER.Collider[] = [];
   private blockerWall?: RAPIER.Collider;
@@ -287,6 +293,9 @@ export class Robot {
       .setMass(m * 0.35)
       .setCollisionGroups(GROUPS.robot);
     this.physics.world.createCollider(frameCol, this.body);
+    // Carried game pieces: a contact-free mass in the hopper / carriage, sized each step from what the robot holds.
+    this.payloadCollider = this.physics.world.createCollider(R.ColliderDesc.ball(0.05)
+      .setTranslation(0, (c.bumperTop + c.height) / 2, 0).setMass(0).setCollisionGroups(0), this.body);
     if (c.hopperExpansion) {
       this.expansionCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(c.frameLength * 0.32, 0.001, c.frameWidth * 0.42)
         .setTranslation(-c.frameLength * 0.1, c.height, 0).setMass(0).setFriction(0.2).setCollisionGroups(GROUPS.robot), this.body);
@@ -1368,7 +1377,22 @@ export class Robot {
    * curve and tread friction. Another robot leaning on this one is then resisted only that hard, so defense,
    * pushing matches and spins come out of mass, tread grip, motor limits and where the hit lands.
    */
+  /**
+   * Mass the robot carries (kg). Held FUEL that the hopper keeps as live pool bodies already weighs
+   * GamePiecePool.STOWED_MASS of a ball on the chassis through contacts, so only the rest is added here.
+   */
+  get payloadMass(): number {
+    return this.held.length * this.pieceMass * (this.bay ? 1 - GamePiecePool.STOWED_MASS : 1);
+  }
+
+  /** Put the carried load on the chassis (takes effect from the next physics step). */
+  private updatePayload(): void {
+    const m = this.payloadMass;
+    if (Math.abs(this.payloadCollider.mass() - m) > 1e-6) this.payloadCollider.setMass(m);
+  }
+
   drive(cmd: RobotCommand, dt: number): void {
+    this.updatePayload();
     if (this.manualHopper) {
       if (cmd.block && this.overheadLimit >= this.config.hopperExpansion!.fullHeight) this.hopperRaised = true;
       else if (!cmd.block && this.held.length <= this.config.hopperExpansion!.startCount) this.hopperRaised = false;
@@ -1425,7 +1449,8 @@ export class Robot {
       lever += h.grip * ((h.x - com.x) ** 2 + (h.z - com.z) ** 2);
     }
     const wm = this.wheel;
-    wm.motorLimit = (m * c.maxAccel) / 4;
+    // Motor force is fixed by the drivetrain (sized for the empty robot); carried pieces only add mass to move.
+    wm.motorLimit = (c.mass * c.maxAccel) / 4;
     wm.stall = wm.motorLimit * STALL_RATIO;
     wm.freeSpeed = c.maxSpeed * FREE_SPEED_RATIO;
     wm.disabled = !this.enabled;
@@ -2023,7 +2048,6 @@ export class Robot {
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
-  private flowFeedIndex = 0;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;
@@ -2219,7 +2243,6 @@ export class Robot {
     this.scoringSimulated = false;
     this.fireCooldown = 0;
     this.exitIndex = 0;
-    this.flowFeedIndex = 0;
     this.bay?.clear();
     this.held.length = 0;
     this.flow?.clear(0);
@@ -2235,7 +2258,6 @@ export class Robot {
    */
   enablePieceFlow(make: () => THREE.Object3D, roll: boolean): void {
     this.flow?.dispose();
-    this.flowFeedIndex = 0;
     const c = this.config;
     const model = this.model;
     const pieceR = this._projectile.halfHeight ?? this._projectile.radius;
@@ -2243,15 +2265,18 @@ export class Robot {
     this.flow = new PieceFlow(this.visual, make, {
       intake: (from) => this.intakePath(from ?? null),
       arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
-      feed: c.launcher.enabled && c.hopperCapacity > 1 ? () => {
-        // Host follows the actual exit; replicas/gallery alternate their visual feed stream.
-        const shot = this.exitIndex > 0 ? this.exitIndex - 1 : this.flowFeedIndex++;
-        const custom = model?.flow?.feed?.(shot);
+      // One indexer lane per shooter exit (dumper lanes, twin turrets), re-read from the model as it moves.
+      feed: c.launcher.enabled && c.hopperCapacity > 1 ? (lane: number) => {
+        const custom = model?.flow?.feed?.(lane);
         if (custom) return custom;
-        const ex = this.launcherExit(0);
+        const offsets = launcherExitOffsets(c);
+        const ex = this.launcherExit(offsets[lane % offsets.length]);
         const top = ex.up - pieceR - 0.04;
-        return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, 0), v(ex.forward - 0.1, (c.bumperTop + top) / 2, 0), v(ex.forward, top, -ex.side)];
+        return [v(-c.frameLength * 0.05, c.bumperTop + pieceR + 0.02, -ex.side), v(ex.forward - 0.1, (c.bumperTop + top) / 2, -ex.side), v(ex.forward, top, -ex.side)];
       } : undefined,
+      lanes: launcherExitOffsets(c).length,
+      // Host: the exit the last shot actually left from. Replicas don't know it and alternate.
+      shotLane: () => this.netAct === null && this.exitIndex > 0 ? this.exitIndex - 1 : null,
     }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
@@ -2309,7 +2334,7 @@ export class Robot {
 
   /** Held pieces still animating into the robot (not yet drawn in the hopper / held position). */
   get piecesInTransit(): number {
-    return this.flow?.inTransit ?? 0;
+    return (this.flow?.inTransit ?? 0) + (this.flow?.staged ?? 0);
   }
   get fuelTransportAudit(): { arrivals: number; blocked: number } | undefined { return this.flow?.transportAudit; }
 
@@ -2326,6 +2351,7 @@ export class Robot {
 
   /** Pose the visual from the body. `frameDt` overrides the measured frame time for model animation (tests). */
   private readonly prevPos = new THREE.Vector3();
+  private readonly stageExit = new THREE.Vector3();
   private readonly prevQuat = new THREE.Quaternion();
   private hasPrevPose = false;
 
@@ -2335,6 +2361,15 @@ export class Robot {
     this.prevPos.set(t.x, t.y, t.z);
     this.prevQuat.set(r.x, r.y, r.z, r.w);
     this.hasPrevPose = true;
+  }
+
+  /** Keep render interpolation in the same coordinate frame after a prediction correction. */
+  shiftPreviousPose(dx: number, dz: number, dyaw: number): void {
+    if (!this.hasPrevPose) return;
+    this.prevPos.x += dx;
+    this.prevPos.z += dz;
+    this.q.set(0, Math.sin(dyaw / 2), 0, Math.cos(dyaw / 2));
+    this.prevQuat.premultiply(this.q);
   }
 
   /** Where the robot is drawn this frame (the interpolated pose, not the latest physics step): the camera follows this. */
@@ -2361,7 +2396,12 @@ export class Robot {
       this.visual.position.lerpVectors(this.prevPos, this.visual.position, alpha);
       this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
     }
-    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null);
+    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
+    if (this.bay) {
+      // Real hopper bodies: the balls nearest the shooter are the ones the indexer lanes draw.
+      const ex = this.launcherExit(0);
+      this.bay.stageNearest(this.flow?.staged ?? 0, this.stageExit.set(ex.forward, ex.up, -ex.side));
+    }
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
     this.roundHopper?.set(frac);
