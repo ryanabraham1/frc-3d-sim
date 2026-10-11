@@ -1,6 +1,9 @@
 import type { SeasonDefinition } from '@engine/core/season';
 import type { RobotConfig } from '@engine/robot/config';
-import { applyDriveSpec, applyTypicalDrive, SDS_RATIOS, type DriveSpec } from '@engine/robot/drivetrainSpec';
+import { applyDriveSpec, applyTypicalDrive, ratioForTopSpeed, SDS_RATIOS, type DriveSpec } from '@engine/robot/drivetrainSpec';
+
+/** Slowest empty-robot top speed any stock robot drives (user decision 2026-10-11: 15.4 ft/s). */
+export const MIN_TOP_SPEED = 15.4 * 0.3048;
 
 /**
  * Published drivetrains of real team robots (motor, reduction or quoted free speed). Every other robot keeps its
@@ -42,6 +45,7 @@ export function applyRealDrivetrains(season: SeasonDefinition): void {
     if (spec) applyDriveSpec(t.config, spec);
     else applyTypicalDrive(t.config);
   }
+  for (const c of [season.robotDefaults, ...presets.map((p) => p.config), ...(season.teamRobots ?? []).map((t) => t.config)]) floorSpeed(c);
   const bot = season.botRobotConfig;
   if (bot) {
     season.botRobotConfig = function (...args) {
@@ -49,7 +53,24 @@ export function applyRealDrivetrains(season: SeasonDefinition): void {
       if (c.drivetrain) return c;
       const out = structuredClone(c);
       preset(out);
+      floorSpeed(out);
       return out;
     };
   }
+}
+
+/** Regear a robot slower than MIN_TOP_SPEED (same motor and wheel) to reach it; acceleration follows the new gearing. */
+function floorSpeed(c: RobotConfig): void {
+  const s = c.drivetrain;
+  if (!s || c.maxSpeed >= MIN_TOP_SPEED) return;
+  const scale = c.maxAccel / applyDriveSpecProbe(s, c);
+  const { freeSpeed: _free, ...rest } = s;
+  applyDriveSpec(c, { ...rest, ratio: ratioForTopSpeed(rest, MIN_TOP_SPEED), source: `${s.source}; regeared to the ${(MIN_TOP_SPEED / 0.3048).toFixed(1)} ft/s floor` }, scale);
+}
+
+/** Acceleration a spec gives this robot with no preset scale. */
+function applyDriveSpecProbe(s: DriveSpec, c: RobotConfig): number {
+  const probe = structuredClone(c);
+  applyDriveSpec(probe, s);
+  return probe.maxAccel;
 }

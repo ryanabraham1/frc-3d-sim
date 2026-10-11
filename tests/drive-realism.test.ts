@@ -37,7 +37,7 @@ describe('drivetrain hardware', () => {
       const all = [...(s.robotPresets ?? []).map((p) => [p.id, p.config] as const), ...(s.teamRobots ?? []).map((t) => [t.id, t.config] as const)];
       for (const [id, c] of all) {
         expect(c.drivetrain, id).toBeDefined();
-        expect(c.maxSpeed, id).toBeGreaterThan(3.3); // ≥ 11 ft/s
+        expect(c.maxSpeed / FT, id).toBeGreaterThanOrEqual(15.4 - 1e-9); // empty top speed floor
         expect(c.maxSpeed, id).toBeLessThan(5.5); // ≤ 18 ft/s
         // Launch acceleration: the motors' current-limited force, or the tread's grip when slow gearing has more.
         const launch = Math.min(c.maxAccel, (c.wheelCOF ?? DEFAULT_WHEEL_COF) * 9.81);
@@ -48,8 +48,9 @@ describe('drivetrain hardware', () => {
   });
   it('uses published gearing where a team gives it', () => {
     const reblitz = getSeason('2026-rebuilt').teamRobots!.find((t) => t.team === 2910)!.config;
-    expect(reblitz.maxSpeed / FT).toBeGreaterThan(12.5); // 14.4 ft/s free on MK5n R1
-    expect(reblitz.maxSpeed / FT).toBeLessThan(13.2);
+    expect(reblitz.drivetrain!.source).toContain('MK5n R1');
+    // Published gearing is slower than the 15.4 ft/s floor, so it is regeared to it.
+    expect(reblitz.maxSpeed / FT).toBeCloseTo(15.4, 2);
   });
   it('AI fallback robots get real drivetrains too', () => {
     for (const s of SEASONS) {
