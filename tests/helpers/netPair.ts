@@ -47,6 +47,8 @@ export interface PairOptions {
   seasonId?: string;
   /** One-way latency (ms) in each direction. */
   latencyMs: number;
+  /** Extra downlink delay at this host time; scheduled arrivals preserve TCP order. */
+  snapshotDelayMs?: (hostMs: number) => number;
   /** Simulate pieces near the predicted robot on the client. */
   local: boolean;
   /** Extra robots (driven by the host only, like another player's robot). */
@@ -91,6 +93,7 @@ export function netPair(opts: PairOptions) {
 
   const toHost: { at: number; msg: unknown }[] = [];
   const toClient: { at: number; buf: ArrayBuffer }[] = [];
+  let lastDeliveryAt = 0;
   let sentIdx = 0;
   let frameIdx = 0;
   let n = 0;
@@ -122,14 +125,17 @@ export function netPair(opts: PairOptions) {
     while (toHost.length && toHost[0].at <= now) hn.deliver('c1', toHost.shift()!.msg);
     hostStep(hs.command(0) ?? IDLE_COMMAND);
     if (n % 3 === 0) hs.sendSnapshot(n * dt);
-    while (frameIdx < hn.frames.length) toClient.push({ at: now + opts.latencyMs, buf: hn.frames[frameIdx++] });
+    while (frameIdx < hn.frames.length) {
+      lastDeliveryAt = Math.max(lastDeliveryAt, now + opts.latencyMs + (opts.snapshotDelayMs?.(now) ?? 0));
+      toClient.push({ at: lastDeliveryAt, buf: hn.frames[frameIdx++] });
+    }
 
     // Client (Game.clientTick + Game.draw).
     const clientStart = performance.now();
     while (toClient.length && toClient[0].at <= now) {
       const snap = cs.onBinary(toClient.shift()!.buf, now);
       const mine = snap?.robots.find((r) => r.id === 0);
-      if (mine) predictor.queueSnapshot(mine, now, snap!.meta.st === 'running');
+      if (mine) predictor.queueSnapshot(mine, now, snap!.meta.st === 'running', snap!.time);
     }
     cs.interpolate(now, predictor.active ? 0 : null);
     // Game.draw: the predicted robot takes everything but its pose from the newest snapshot.

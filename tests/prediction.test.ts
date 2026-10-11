@@ -15,7 +15,7 @@ function fakeRobot() {
     setLinvel: () => {},
     setAngvel: () => {},
   };
-  return { robot: { body, resetDriveState() {} } as unknown as Robot, pos };
+  return { robot: { body, resetDriveState() {}, shiftPreviousPose() {} } as unknown as Robot, pos };
 }
 
 const net = (x: number, z: number, seq = 0): RobotNetState => ({
@@ -35,9 +35,9 @@ describe('Predictor', () => {
     p.flush();
     expect(pos.x).toBe(2);
     expect(p.snaps).toBe(1);
-    expect(p.corrections).toBe(1);
+    expect(p.corrections).toBe(0);
     p.flush();
-    expect(p.corrections).toBe(1);
+    expect(p.corrections).toBe(0);
     p.queueSnapshot({ ...net(2, 0), enabled: false }, 1100, true);
     p.flush();
     expect(p.active).toBe(false);
@@ -76,17 +76,47 @@ describe('Predictor', () => {
     expect(p.rtt).toBeLessThan(0.05);
   });
 
-  it('corrects 30% of a small error and shifts history so it is not double-counted', () => {
+  it('corrects a position error progressively and shifts history so it is not double-counted', () => {
     const { robot, pos } = fakeRobot();
     const p = new Predictor(robot);
     p.onSnapshot(net(0, 0), 0, true);
     for (let t = 0; t <= 1000; t += 100) p.record(t);
-    // rtt still 0 → compares against the newest sample (x=0); host says 0.5 → move 0.15.
+    // RTT is zero: the host is 0.5 m ahead of the newest predicted sample.
     p.onSnapshot(net(0.5, 0), 1000, true);
-    expect(pos.x).toBeCloseTo(0.15, 5);
-    // Same host report again: remaining error 0.35 → +0.105.
+    expect(pos.x).toBeCloseTo(0.3, 5);
+    // Repeating the report removes part of the remaining error, not the original error again.
     p.onSnapshot(net(0.5, 0), 1000, true);
-    expect(pos.x).toBeCloseTo(0.255, 5);
+    expect(pos.x).toBeCloseTo(0.41, 5);
+  });
+
+  it('uses simulation timestamps instead of packet arrival time after a network delay', () => {
+    const { robot, pos } = fakeRobot();
+    const p = new Predictor(robot);
+    p.onSnapshot(net(0, 0), 0, true, 4);
+    for (let t = 0; t <= 2000; t += 100) { pos.x = t / 1000; p.record(t); }
+    p.onSent(1, 1000);
+    p.onSnapshot(net(1, 0, 1), 1200, true, 5);
+    // The next host pose is accurate at local t=1300, but the packet arrives 300 ms late.
+    p.onSnapshot(net(1.3, 0, 1), 1800, true, 5.3);
+    expect(pos.x).toBeCloseTo(2, 5);
+    expect(p.corrections).toBe(0);
+    expect(p.offX).toBe(0);
+  });
+
+  it('does not reset an accurately predicted moving robot because a delayed snapshot has different tilt', () => {
+    const { robot, pos } = fakeRobot();
+    let resets = 0;
+    robot.resetDriveState = () => { resets++; };
+    const p = new Predictor(robot);
+    p.onSnapshot(net(0, 0), 0, true);
+    for (let t = 0; t <= 1000; t += 100) { pos.x = t / 1000; p.record(t); }
+    robot.body.setRotation({ x: Math.sin(0.3 / 2), y: 0, z: 0, w: Math.cos(0.3 / 2) }, true);
+    p.onSent(1, 800);
+    p.onSnapshot({ ...net(0.8, 0, 1), rot: [0, 0, 0, 1] }, 1000, true);
+    expect(p.active).toBe(true);
+    expect(pos.x).toBeCloseTo(1, 5);
+    expect(p.snaps).toBe(1);
+    expect(resets).toBe(1);
   });
 
   it('snaps on large errors and stops predicting while climbing or disabled', () => {

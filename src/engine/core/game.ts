@@ -357,7 +357,7 @@ export class Game {
           const now = performance.now();
           const snap = this.clientSync!.onBinary(buf, now);
           const mine = snap && this.player ? snap.robots.find((r) => r.id === this.player!.id) : undefined;
-          if (mine) this.predictor!.queueSnapshot(mine, now, snap!.meta.st === 'running');
+          if (mine) this.predictor!.queueSnapshot(mine, now, snap!.meta.st === 'running', snap!.time);
         }),
       );
       this.offs.push(

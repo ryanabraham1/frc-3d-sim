@@ -2337,6 +2337,15 @@ export class Robot {
     this.hasPrevPose = true;
   }
 
+  /** Keep render interpolation in the same coordinate frame after a prediction correction. */
+  shiftPreviousPose(dx: number, dz: number, dyaw: number): void {
+    if (!this.hasPrevPose) return;
+    this.prevPos.x += dx;
+    this.prevPos.z += dz;
+    this.q.set(0, Math.sin(dyaw / 2), 0, Math.cos(dyaw / 2));
+    this.prevQuat.premultiply(this.q);
+  }
+
   /** Where the robot is drawn this frame (the interpolated pose, not the latest physics step): the camera follows this. */
   get visualPose(): FieldPose {
     const f = this.frame.toField(this.visual.position);
