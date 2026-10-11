@@ -41,6 +41,9 @@ addEventListener('pointerdown', e => { if (focus >= 0 && (e.target as HTMLElemen
 addEventListener('pointerup', () => { dragging = false; });
 addEventListener('pointermove', e => { if (!dragging) return; orbit -= e.movementX * 0.01; tiltView = THREE.MathUtils.clamp(tiltView + e.movementY * 0.01, 0.05, 1.45); });
 (window as unknown as { view(o: number, t: number, z: number): void }).view = (o, t, z) => { orbit = o; tiltView = t; zoom = z; };
+// Optional look-at point (robot frame, m) for close-ups of one mechanism: view(o, t, z, [x, y, z]).
+let lookTarget: THREE.Vector3 | null = null;
+(window as unknown as { look(p?: [number, number, number]): void }).look = p => { lookTarget = p ? new THREE.Vector3(...p) : null; };
 // Scripts (headless checks) reach the built robots through this.
 (window as unknown as { galleryRobots(): Robot[] }).galleryRobots = () => items.map(i => i.robot);
 addEventListener('wheel', e => { if (focus < 0) return; zoom = THREE.MathUtils.clamp(zoom * (1 + e.deltaY * 0.001), 0.25, 2); }, { passive: true });
@@ -222,8 +225,10 @@ function frame(now: number) {
     if (focus >= 0) {
       const d=scale*3.0*zoom, a=Math.atan2(2,1.8)+orbit+(reverse?Math.PI:0);
       i.camera.position.set(Math.cos(a)*Math.cos(tiltView)*d,Math.sin(tiltView)*d+scale*0.3,Math.sin(a)*Math.cos(tiltView)*d);
+      if (lookTarget) { i.camera.position.set(lookTarget.x+Math.cos(a)*Math.cos(tiltView)*d,lookTarget.y+Math.sin(tiltView)*d,lookTarget.z+Math.sin(a)*Math.cos(tiltView)*d); i.camera.lookAt(lookTarget); }
     } else i.camera.position.set((reverse?-1:1)*scale*1.8,scale*1.4,(reverse?-1:1)*scale*2);
-    i.camera.lookAt(0,scale*0.4,0); i.camera.aspect=rect.width/rect.height; i.camera.updateProjectionMatrix();
+    if (focus < 0 || !lookTarget) i.camera.lookAt(0,scale*0.4,0);
+    i.camera.aspect=rect.width/rect.height; i.camera.updateProjectionMatrix();
     renderer.setViewport(rect.left,innerHeight-rect.bottom,rect.width,rect.height);
     renderer.setScissor(rect.left,innerHeight-rect.bottom,rect.width,rect.height);
     renderer.render(i.scene,i.camera);

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { bar, mat, roller, spin, type RobotAnimState } from '@engine/robot/models';
+import { bar, mat, spin, type RobotAnimState } from '@engine/robot/models';
 import { belt, camera, fasteners, motor } from '@engine/robot/mechanicalDetail';
-import { scoringEase } from '@engine/robot/scoringReadiness';
+import { hoodLive, scoringEase } from '@engine/robot/scoringReadiness';
 
 /** Original pocketed sheet geometry, fitted to the teams' public CAD renders. */
 export function pocketPlate(parent: THREE.Object3D, outline: [number,number][], holes: [number,number][][], material: THREE.Material, z: number, thickness=.005) {
@@ -43,112 +43,214 @@ function bearing(parent:THREE.Object3D,r:number,y:number,material:THREE.Material
   for(let i=0;i<16;i++)points.push([Math.cos(i*Math.PI/8)*(r-.009),Math.sin(i*Math.PI/8)*(r-.009)]);
   const bolts=new THREE.Group(); bolts.rotation.x=-Math.PI/2; bolts.position.y=y+.01; parent.add(bolts); fasteners(bolts,points,0);
 }
-/** RIPCURRENT: pancake bearing, quad motor flywheel, tall pocketed cheeks and concentric adjustable hood. */
+/**
+ * Warren-truss pockets for a side plate: bottom chord at `y0`, top chord `top(x)`, `n` panels between x0 and x1.
+ * Up and down triangles alternate and are inset by `web`, leaving the diagonals and chords as plate.
+ */
+export function trussPockets(x0:number,x1:number,y0:number,top:(x:number)=>number,n:number,web:number):[number,number][][] {
+  const holes:[number,number][][]=[];const p=(x1-x0)/n;
+  const inset=(tri:[number,number][]):[number,number][]=>{const cx=(tri[0][0]+tri[1][0]+tri[2][0])/3,cy=(tri[0][1]+tri[1][1]+tri[2][1])/3;
+    return tri.map(([x,y])=>{const d=Math.hypot(x-cx,y-cy);const f=Math.max(0,(d-web*1.5)/d);return [cx+(x-cx)*f,cy+(y-cy)*f] as [number,number];});};
+  for(let i=0;i<n;i++) {
+    const a=x0+i*p,b=a+p,m=a+p/2;
+    if(top(m)-y0>.03)holes.push(inset([[a,y0],[b,y0],[m,top(m)]]));
+    if(i<n-1){const m2=b+p/2;if(Math.min(top(m),top(m2))-y0>.03)holes.push(inset([[m,top(m)],[b,y0],[m2,top(m2)]]));}
+  }
+  return holes;
+}
+
+/**
+ * Pocketed sheet whose pockets fan out from a bearing hub (`hub`) to the outline, leaving a solid ring round the hub and
+ * a web along every spoke and edge, the way teams pocket shooter side plates. Long edges are split so pockets stay
+ * small. Returns the plate mesh (XY profile, extruded along z, centred on `z`).
+ */
+export function webPlate(parent: THREE.Object3D, outline: [number,number][], hub: [number,number], m: THREE.Material, z: number, o: { t?: number; ring?: number; web?: number; maxEdge?: number } = {}) {
+  const ring = o.ring ?? .3, web = o.web ?? .16, maxEdge = o.maxEdge ?? .07;
+  const rim: [number,number][] = [];
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i], b = outline[(i + 1) % outline.length], n = Math.max(1, Math.ceil(Math.hypot(b[0]-a[0], b[1]-a[1]) / maxEdge));
+    for (let j = 0; j < n; j++) rim.push([a[0] + (b[0]-a[0]) * j / n, a[1] + (b[1]-a[1]) * j / n]);
+  }
+  const holes: [number,number][][] = [];
+  const at = (v: [number,number], f: number): [number,number] => [hub[0] + (v[0]-hub[0]) * f, hub[1] + (v[1]-hub[1]) * f];
+  for (let i = 0; i < rim.length; i++) {
+    const p = rim[i], q = rim[(i + 1) % rim.length], mid: [number,number] = [(p[0]+q[0])/2, (p[1]+q[1])/2];
+    const off = (v: [number,number]): [number,number] => { const u = at(v, .84); return [u[0] + (mid[0]-v[0]) * web * 2, u[1] + (mid[1]-v[1]) * web * 2]; };
+    const tip = at(mid, ring);
+    if (Math.hypot(q[0]-p[0], q[1]-p[1]) * .84 < .022 || Math.hypot(mid[0]-hub[0], mid[1]-hub[1]) < .05) continue;
+    holes.push([tip, off(p), off(q)]);
+  }
+  return pocketPlate(parent, outline, holes, m, z, o.t ?? .005);
+}
+
+/** Wheel stack on a dead shaft (axis local z): the group spins, so the treads show rotation. */
+function wheelStack(parent: THREE.Object3D, x: number, y: number, r: number, zs: number[], width: number, tread: THREE.Material, hub: THREE.Material, shaft: number) {
+  const g = new THREE.Group(); g.position.set(x, y, 0); g.userData.flowSpinAxis = 'z'; parent.add(g);
+  const axle = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, shaft, 10), hub); axle.rotation.x = Math.PI / 2; g.add(axle);
+  for (const z of zs) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(r, r, width, 24), tread); w.rotation.x = Math.PI / 2; w.position.z = z; g.add(w);
+    const h = new THREE.Mesh(new THREE.CylinderGeometry(r * .45, r * .45, width + .004, 12), hub); h.rotation.x = Math.PI / 2; h.position.z = z; g.add(h);
+    // Two contrasting tread marks per wheel so rotation reads at speed.
+    for (const a of [0, Math.PI]) { const mk = new THREE.Mesh(new THREE.BoxGeometry(.008, .006, width + .002), hub); mk.position.set(Math.cos(a) * (r - .002), Math.sin(a) * (r - .002), z); mk.rotation.z = a; g.add(mk); }
+  }
+  return g;
+}
+
+/**
+ * RIPCURRENT's pancake turret (binder "pancake turret", Behind the Bumpers "compact pancake turret"; match photos
+ * mYDBhBN / 0DqbRg6; the supplied image reconstruction). A wide, flat, pocketed black turret plate rides on the bearing
+ * flush with the hopper top, with a slot over the dye-rotor throat. Only a low head stands on it (photo: about 3 in):
+ * two black pocketed side plates carrying the quad-Kraken 3 in flywheel BELOW the plate in the slot, and a curved
+ * black hood concentric with the flywheel that pivots on the flywheel axis (a sector gear and a small hood motor on the
+ * +z plate). FUEL comes straight up the throat behind the flywheel, wraps over it under the hood and leaves forward
+ * at the hood angle. Turret local +x is the shot direction.
+ */
 export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number,y:number, width:number) {
-  const black=mat(0x25282c,{metal:.55,rough:.4}),rubber=mat(0x131619,{rough:.85}),alloy=mat(0x90999f,{metal:.8,rough:.35}),brass=mat(0xba9454,{metal:.85,rough:.3});
+  const black=mat(0x202326,{metal:.5,rough:.42}),rubber=mat(0x141618,{rough:.85}),alloy=mat(0x9aa3a9,{metal:.8,rough:.35});
   const root=new THREE.Group(); root.name='hightide-pancake-shooter'; root.userData.fuelStructure=true; t.add(root);
   bearing(root,.164,0,black);
-  // The supplied reconstruction and team render both show a broad pancake deck, not a wire-thin bearing ring.
-  const deckShape=new THREE.Shape();deckShape.absarc(0,0,.162,0,Math.PI*2,false);
-  const aperture=new THREE.Path();aperture.absarc(0,0,.113,0,Math.PI*2,true);deckShape.holes.push(aperture);
-  for(let j=0;j<12;j++) {
-    const a=j*Math.PI/6,points=[[-.10,.129],[-.065,.149],[.065,.149],[.10,.129]].map(([da,r])=>new THREE.Vector2(Math.cos(a+da)*r,Math.sin(a+da)*r));
-    const hole=new THREE.Path(points);hole.closePath();deckShape.holes.push(hole);
+  // Turret plate: Ø13 in pancake with a rounded slot (ball path, flywheel and hood) and pockets round the rim.
+  const deckShape=new THREE.Shape();deckShape.absarc(0,0,.165,0,Math.PI*2,false);
+  const sx=.125,sz=.093,cr=.025,slot=new THREE.Path();
+  slot.moveTo(-sx+cr,-sz);slot.lineTo(sx-cr,-sz);slot.absarc(sx-cr,-sz+cr,cr,-Math.PI/2,0,false);slot.lineTo(sx,sz-cr);
+  slot.absarc(sx-cr,sz-cr,cr,0,Math.PI/2,false);slot.lineTo(-sx+cr,sz);slot.absarc(-sx+cr,sz-cr,cr,Math.PI/2,Math.PI,false);
+  slot.lineTo(-sx,-sz+cr);slot.absarc(-sx+cr,-sz+cr,cr,Math.PI,Math.PI*1.5,false);deckShape.holes.push(slot);
+  for(let j=0;j<16;j++) {
+    const a=j*Math.PI/8,pts=[[-.07,.134],[-.05,.155],[.05,.155],[.07,.134]].map(([da,r])=>[Math.cos(a+da)*r,Math.sin(a+da)*r]);
+    if(pts.some(([px,pz])=>Math.abs(px)<sx+.008&&Math.abs(pz)<sz+.008))continue;
+    const hole=new THREE.Path(pts.map(([px,pz])=>new THREE.Vector2(px,pz)));hole.closePath();deckShape.holes.push(hole);
   }
-  const pancake=new THREE.Mesh(new THREE.ExtrudeGeometry(deckShape,{depth:.007,bevelEnabled:false,curveSegments:48}),black);
-  pancake.rotation.x=-Math.PI/2;pancake.position.y=.007;pancake.name='hightide-pocketed-pancake-deck';root.add(pancake);
-  const race=new THREE.Mesh(new THREE.RingGeometry(.156,.159,64),alloy);race.rotation.x=-Math.PI/2;race.position.y=.011;root.add(race);
+  const pancake=new THREE.Mesh(new THREE.ExtrudeGeometry(deckShape,{depth:.007,bevelEnabled:false,curveSegments:24}),black);
+  pancake.rotation.x=-Math.PI/2;pancake.position.y=.002;pancake.name='hightide-pocketed-pancake-deck';root.add(pancake);
+  const race=new THREE.Mesh(new THREE.RingGeometry(.157,.161,64),alloy);race.rotation.x=-Math.PI/2;race.position.y=.0095;root.add(race);
+  // Stationary deck plate under the bearing, pocketed, spanning the hopper and tied down to the hopper rails.
   const support=new THREE.Group(); support.name='hightide-fixed-bearing-wings'; support.position.set(x,y-.012,0); fixed.add(support);
-  // Stationary wings brace the bearing to the hopper rails, while the head rotates inside them.
   const wing = pocketPlate(support,[[-.12,-width*.43],[.12,-width*.43],[.17,-.12],[.17,.12],[.12,width*.43],[-.12,width*.43],[-.17,.12],[-.17,-.12]],[
     [[-.095,-width*.4],[.095,-width*.4],[0,-.18]], [[-.095,width*.4],[0,.18],[.095,width*.4]],
     Array.from({length:48},(_,i)=>[Math.cos(-i*Math.PI/24)*.145,Math.sin(-i*Math.PI/24)*.145] as [number,number]),
   ],black,0,.008); wing.rotation.x=Math.PI/2;
   for(const z of [-width*.4,width*.4])bar(fixed,[x,y-.02,z],[x,y-.23,z],.018,black);
-  const hood=new THREE.Group(); hood.name='hightide-adjustable-hood';hood.position.set(.05,.046,0);root.add(hood);
-  // Stowed, both shafts sit low in the bearing. The back roller rises with the hood, rather than staying on a tall
-  // fixed A-frame. This is the mechanism's flat datum, not the raised pose shown in the isolated CAD render.
-  for(const z of [-.107,.107]) {
-    pocketPlate(hood,[[.025,-.024],[.025,.041],[-.155,.047],[-.168,-.021]],[
-      [[-.014,-.007],[-.057,.025],[-.115,-.007]],
-    ],black,z);
-    fasteners(hood,[[0,0],[-.14,.012]],z*1.05);
-    belt(hood,[0,0],[-.14,.012],z*1.12,.016);
-    for(const px of [.005,.10])motor(root,px,-.031,z*1.25);
+  // Flywheel axis sits in the slot below the plate; the ball rises at x = F.x - rb, right over the throat.
+  const F:[number,number]=[.07,-.075], wheelR=.038, rb=wheelR+.075-.012, hoodR=.176;
+  const plateZ=.088;
+  // Low A-frame side plates (photo mYDBhBN: sloped truss legs, flat top bar, about 4 in above the turret plate),
+  // Warren-truss pocketed between a bottom chord and the sloped/flat top chord.
+  const topY=.105, xl=-.118, xr=.122, kneeL=-.03, kneeR=.06;
+  const chord=(px:number)=>px<kneeL?(px-xl)/(kneeL-xl)*topY:px>kneeR?topY-(px-kneeR)/(xr-kneeR)*topY:topY;
+  const outline:[number,number][]=[[xl,-.088],[xr,-.088],[xr,0],[kneeR,topY],[kneeL,topY],[xl,0]];
+  const holes=trussPockets(xl+.012,xr-.012,-.07,(px:number)=>Math.max(-.05,chord(px)-.016),4,.007).filter(tri=>tri.every(([px,py])=>Math.hypot(px-F[0],py-F[1])>.03));
+  for(const z of [-plateZ,plateZ]) {
+    pocketPlate(root,outline,holes,black,z,.006).name='hightide-shooter-side-plate';
+    const bore=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.012,16),alloy);bore.rotation.x=Math.PI/2;bore.position.set(F[0],F[1],z);root.add(bore);
+    fasteners(root,[[-.105,-.075],[.11,-.075],[.11,.0],[-.105,-.04]],z+Math.sign(z)*.004);
+    // Quad Krakens: one coaxial per side, one belted from below the plate per side.
+    motor(root,F[0],F[1],z+Math.sign(z)*.04);
+    const m2:[number,number]=[-.07,-.062];
+    motor(root,m2[0],m2[1],z+Math.sign(z)*.04);
+    belt(root,m2,F,z+Math.sign(z)*.009,.018);
   }
-  const flywheel=roller(root,.038,.158,rubber,.05,.046,0); flywheel.name='hightide-quad-flywheel';
-  for(const z of [-.077,.077]) {
-    const disc=new THREE.Mesh(new THREE.CylinderGeometry(.0385,.0385,.007,24),brass); disc.rotation.x=Math.PI/2;disc.position.z=z;flywheel.add(disc);
+  // Standoffs tie the two plates together at the knees and the front foot.
+  for(const [px,py] of [[kneeL+.01,topY-.012],[kneeR-.005,topY-.012],[xr-.012,-.075],[xl+.012,-.075]] as [number,number][]) {
+    const st=new THREE.Mesh(new THREE.CylinderGeometry(.0055,.0055,2*plateZ,8),alloy);st.rotation.x=Math.PI/2;st.position.set(px,py,0);root.add(st);
   }
-  const backspin=roller(hood,.032,.158,rubber,-.14,.012,0); backspin.name='hightide-backspin-roller';
-  // Thin bent guide between the wheels; its whole frame travels on the hood shaft.
-  const guide=new THREE.Shape();guide.moveTo(.015,.043);guide.quadraticCurveTo(-.085,.069,-.163,.044);
-  guide.lineTo(-.164,.036);guide.quadraticCurveTo(-.085,.061,.014,.035);guide.closePath();
-  const guideMesh=new THREE.Mesh(new THREE.ExtrudeGeometry(guide,{depth:.182,bevelEnabled:false,curveSegments:16}),mat(0x60676c,{opacity:.32,rough:.4,metal:0}));
-  guideMesh.geometry.translate(0,0,-.091);hood.add(guideMesh);
-  // Rotating upper feed train leads through the bearing aperture into the hood, never over the hopper rim.
-  const feeds:THREE.Group[]=[];
-  for(const [px,py] of [[-.09,-.20],[-.09,-.12],[-.065,-.035]])feeds.push(roller(root,.029,.153,rubber,px,py,0));
-  for(const z of [-.09,.09]) {
-    pocketPlate(root,[[-.13,-.235],[-.025,-.235],[.025,.02],[-.12,.02]],[
-      [[-.113,-.208],[-.04,-.208],[-.072,-.148]], [[-.106,-.133],[-.039,-.12],[-.074,-.059]],
-    ],black,z);
-    belt(root,[-.09,-.20],[-.065,-.035],z*1.15,.016);
-  }
-  camera(root,.103,.028,.11);
-  let angle=0,speed=0;hood.rotation.z=angle;
-  return {flywheel,hood,update(s:RobotAnimState) {
-    angle=scoringEase(angle,(s.aiming||s.firing>0 ? -(THREE.MathUtils.clamp(s.hood,.5,1.28)-.5):0),s.dt); hood.rotation.z=angle;
-    speed=scoringEase(speed,s.enabled&&(s.aiming||s.firing>0)?70:0,s.dt);
-    spin(flywheel,speed,s.dt);spin(backspin,-speed*.65,s.dt);for(const wheel of feeds)spin(wheel,-speed*.6,s.dt);
-  }};
+  const flywheel=wheelStack(root,F[0],F[1],wheelR,[-.06,-.02,.02,.06],.034,rubber,alloy,2*plateZ+.01); flywheel.name='hightide-quad-flywheel';
+  // Hood: a curved black sheet concentric with the flywheel, pivoting on its axis. Rotating the hood group by the
+  // exit angle puts the hood's lip where the ball leaves (direction = lip angle - 90°).
+  const hood=new THREE.Group(); hood.name='hightide-adjustable-hood'; hood.position.set(F[0],F[1],0); root.add(hood);
+  const span=1.15, shell=new THREE.Shape();
+  shell.absarc(0,0,hoodR+.006,0,span,false);shell.absarc(0,0,hoodR,span,0,true);shell.closePath();
+  const shellMesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shell,{depth:2*plateZ-.012,bevelEnabled:false,curveSegments:20}),black);
+  shellMesh.geometry.translate(0,0,-(plateZ-.006));hood.add(shellMesh);
+  // Sector gear on the +z hood flank and the small hood motor whose pinion drives it.
+  const teeth:[number,number][]=[];
+  for(let i=0;i<=40;i++){const a=-.75+i*1/40;teeth.push([Math.cos(a)*(i%2?.13:.124),Math.sin(a)*(i%2?.13:.124)]);}
+  for(let i=40;i>=0;i--){const a=-.75+i*1/40;teeth.push([Math.cos(a)*.1,Math.sin(a)*.1]);}
+  pocketPlate(hood,teeth,[],black,plateZ-.01,.004);
+  const pinion:[number,number]=[F[0]+.143*Math.cos(2.3),F[1]+.143*Math.sin(2.3)];
+  const hoodMotor=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,.04,14),black);hoodMotor.rotation.x=Math.PI/2;hoodMotor.position.set(pinion[0],pinion[1],plateZ+.024);root.add(hoodMotor);
+  const cap=new THREE.Mesh(new THREE.CylinderGeometry(.019,.019,.005,14),alloy);cap.rotation.x=Math.PI/2;cap.position.set(pinion[0],pinion[1],plateZ+.046);root.add(cap);
+  camera(root,-.13,.02,.12);
+  let exit=Math.PI/2+.5,speed=0;hood.rotation.z=exit;
+  const ballAt=(a:number)=>[F[0]+rb*Math.cos(a),F[1]+rb*Math.sin(a)] as [number,number];
+  return {flywheel,hood,
+    /** Ball centre path through the head in turret-local coordinates: up the throat, round the flywheel, out the lip. */
+    path:()=>[ballAt(Math.PI*1.08),ballAt(Math.PI),ballAt((Math.PI+exit)/2),ballAt(exit)].map(([px,py])=>new THREE.Vector3(px,py,0)),
+    root,
+    update(s:RobotAnimState) {
+      exit=scoringEase(exit,Math.PI/2+(hoodLive(s)?THREE.MathUtils.clamp(s.hood,.5,1.28):.5),s.dt); hood.rotation.z=exit;
+      speed=scoringEase(speed,s.enabled&&hoodLive(s)?70:0,s.dt);
+      // Back of the wheel moves up: the wheel turns clockwise seen from +z.
+      spin(flywheel,-speed,s.dt);
+    }};
 }
-/** Kepler's released CAD uses a hollow side-guided hood and a center stack of compliant wheels. */
+/**
+ * KEPLER's turret head, after the match photos (refs/1690-2026 jJiksKT close-up: tall raw-aluminium side plates with
+ * spider-web pocketing, a black 3D-printed hood, green wheels at the hood lip, Talon FX motors) and the team's CAD
+ * thread (CD 520673): an 8 in turret bearing, a beltless shooter whose hood roller is gear-driven off the flywheel
+ * ("custom gears ... on the swerve wheel directly"), and a "hollow hood" that guides the ball only at its sides
+ * (3D printed PLA). FUEL rises through the bearing behind the 4 in flywheel, wraps over it under the hood rails, and the
+ * green hood roller at the lip adds spin as it leaves. The hood pivots on the flywheel axis, so the gear train
+ * (flywheel gear, two idlers, roller gear) rides on the hood and stays in mesh at every angle. Turret local +x shoots.
+ */
 export function keplerShooter(t:THREE.Object3D) {
-  const black=mat(0x25292c,{metal:.45,rough:.48}),rubber=mat(0x121719,{rough:.92}),alloy=mat(0x929ca2,{metal:.8,rough:.4}),green=mat(0x65a93d,{rough:.8});
+  const black=mat(0x23272a,{metal:.4,rough:.5}),rubber=mat(0x121719,{rough:.92}),alloy=mat(0xa3abb1,{metal:.8,rough:.38}),green=mat(0x5fbf3a,{rough:.75});
   const root=new THREE.Group();root.name='kepler-gear-shooter';root.userData.fuelStructure=true;t.add(root);
   bearing(root,.102,-.11,black);
-  // Low fixed cheeks support the main shaft; the taller guide moves with the hood.
-  for(const z of [-.102,.102]) {
-    pocketPlate(root,[[-.125,-.112],[.091,-.112],[.057,-.026],[-.036,.015],[-.125,-.018]],[
-      [[-.101,-.083],[.049,-.083],[-.023,-.013]],
-    ],alloy,z); // raw aluminium cheeks (match photos), black hood guides
-    fasteners(root,[[-.112,-.098],[.075,-.098],[-.067,-.048]],z*1.04);
-    motor(root,-.067,-.048,z*1.18);
+  // Rotating turret plate on the bearing: silver, pocketed, with the ball opening behind the flywheel.
+  const base=new THREE.Shape();base.absarc(0,0,.118,0,Math.PI*2,false);
+  const hole=new THREE.Path();hole.absarc(-.035,0,.068,0,Math.PI*2,true);base.holes.push(hole);
+  for(let j=0;j<6;j++){const a=Math.PI/6+j*Math.PI/3;if(Math.cos(a)<-.3)continue;const p=new THREE.Path();p.absarc(Math.cos(a)*.092,Math.sin(a)*.092,.014,0,Math.PI*2,true);base.holes.push(p);}
+  const plate=new THREE.Mesh(new THREE.ExtrudeGeometry(base,{depth:.006,bevelEnabled:false,curveSegments:20}),alloy);
+  plate.rotation.x=-Math.PI/2;plate.position.y=-.104;plate.name='kepler-turret-plate';root.add(plate);
+  const F:[number,number]=[.06,-.035], wheelR=.051, rb=wheelR+.075-.015, plateZ=.088;
+  // Tall side plates with spider-web pocketing round the flywheel bearing (photo).
+  const outline:[number,number][]=[[-.112,-.1],[.112,-.1],[.118,-.02],[.03,.128],[-.055,.128],[-.118,.035]];
+  for(const z of [-plateZ,plateZ]) {
+    webPlate(root,outline,F,alloy,z,{t:.006,ring:.34,web:.11,maxEdge:.1}).name='kepler-shooter-side-plate';
+    const bore=new THREE.Mesh(new THREE.CylinderGeometry(.017,.017,.013,16),black);bore.rotation.x=Math.PI/2;bore.position.set(F[0],F[1],z);root.add(bore);
+    fasteners(root,[[-.1,-.088],[.095,-.088],[-.105,.02],[.1,.03]],z+Math.sign(z)*.004);
   }
-  const flywheel=roller(root,.042,.169,rubber,-.067,-.048,0);flywheel.name='kepler-flywheel';
-  const hood=new THREE.Group();hood.position.copy(flywheel.position);hood.name='kepler-adjustable-hood';root.add(hood);
-  // The middle stays open: only curved side rails guide the ball. A solid hood obscured both the ball and wheels.
-  for(const z of [-.096,.096]) {
-    const guide=new THREE.Shape();guide.moveTo(-.058,.012);guide.quadraticCurveTo(-.070,.12,.070,.151);
-    guide.lineTo(.119,.118);guide.lineTo(.116,.099);guide.lineTo(.071,.131);
-    guide.quadraticCurveTo(-.045,.111,-.042,.012);guide.closePath();
-    const mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(guide,{depth:.006,bevelEnabled:false,curveSegments:24}),black);
-    mesh.position.z=z-.003;hood.add(mesh);
-    bar(hood,[-.044,.010,z],[.082,.124,z],.006,alloy);
+  for(const [px,py] of [[-.1,-.088],[.095,-.088],[-.09,.085],[.08,.08]] as [number,number][]) {
+    const st=new THREE.Mesh(new THREE.CylinderGeometry(.0055,.0055,2*plateZ,8),alloy);st.rotation.x=Math.PI/2;st.position.set(px,py,0);root.add(st);
   }
-  const upper=roller(hood,.018,.184,rubber,.071,.137,0);upper.name='kepler-hood-shaft';
-  for(const z of [-.023,0,.023]) {
-    const tire=new THREE.Mesh(new THREE.CylinderGeometry(.029,.029,.021,24),green);tire.rotation.x=Math.PI/2;tire.position.z=z;upper.add(tire);
+  // Flywheel: three 4 in black wheels on the shaft, a Kraken (Talon FX) on the -z plate, its drive gear on +z.
+  const flywheel=wheelStack(root,F[0],F[1],wheelR,[-.05,0,.05],.032,rubber,alloy,2*plateZ+.03);flywheel.name='kepler-flywheel';
+  motor(root,F[0],F[1],-plateZ-.04);
+  const feeder=wheelStack(root,-.04,-.125,.024,[-.045,0,.045],.026,rubber,alloy,2*plateZ);feeder.name='kepler-upfeed';
+  // Hollow hood: two black printed rails concentric with the flywheel (no centre sheet), tied by a rod at the back.
+  const hood=new THREE.Group();hood.name='kepler-adjustable-hood';hood.position.set(F[0],F[1],0);root.add(hood);
+  const hoodR=rb+.075, span=1.1;
+  for(const z of [-.062,.062]) {
+    const rail=new THREE.Shape();rail.absarc(0,0,hoodR+.022,0,span,false);rail.absarc(0,0,hoodR,span,0,true);rail.closePath();
+    const mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(rail,{depth:.02,bevelEnabled:false,curveSegments:18}),black);mesh.position.z=z-.01;hood.add(mesh);
   }
-  // Small black pocketed gears sit outside the side guide, with metallic bores and visible teeth.
+  const tie=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,.145,8),alloy);tie.rotation.x=Math.PI/2;tie.position.set(Math.cos(span-.05)*(hoodR+.012),Math.sin(span-.05)*(hoodR+.012),0);hood.add(tie);
+  // Green hood roller at the lip, and the gear train out to it on the +z side (beltless).
+  const lipA=.13, rollerR=.026, rollerD=rb+.075+rollerR-.012;
+  const lip=wheelStack(hood,Math.cos(lipA)*rollerD,Math.sin(lipA)*rollerD,rollerR,[-.03,0,.03],.024,green,alloy,2*plateZ+.02);lip.name='kepler-hood-shaft';
+  const gearMat=mat(0x5d6368,{metal:.7,rough:.4});
   function gear(parent:THREE.Object3D,x:number,y:number,r:number,z:number) {
     const group=new THREE.Group();group.position.set(x,y,z);parent.add(group);
-    const outline:[number,number][]=[];
-    for(let i=0;i<96;i++){const a=i*Math.PI/48,rr=r*(i%4<2?1:.92);outline.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
+    const pts:[number,number][]=[];const n=Math.round(r*900)*2;
+    for(let i=0;i<n;i++){const a=i*Math.PI*2/n,rr=r*(i%2?1:.9);pts.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
     const holes:[number,number][][]=[];
-    for(let j=0;j<3;j++) {const a=j*Math.PI*2/3;holes.push([.35,.76,.76].map((rr,i)=>{const angle=a+[-.18,-.32,.32][i];return [Math.cos(angle)*r*rr,Math.sin(angle)*r*rr] as [number,number];}));}
-    pocketPlate(group,outline,holes,black,0,.007);
-    const bore=new THREE.Mesh(new THREE.RingGeometry(.004,.008,16),alloy);bore.position.z=.004;group.add(bore);
+    for(let j=0;j<4;j++){const a=j*Math.PI/2+.4;holes.push([[Math.cos(a)*r*.3,Math.sin(a)*r*.3],[Math.cos(a+.6)*r*.72,Math.sin(a+.6)*r*.72],[Math.cos(a-.6)*r*.72,Math.sin(a-.6)*r*.72]]);}
+    pocketPlate(group,pts,holes,gearMat,0,.006);
     return group;
   }
-  const gears=[gear(root,-.067,-.048,.025,.116),gear(hood,.020,.073,.032,.116),gear(hood,.071,.137,.027,.116)];
-  const feeder=roller(root,.029,.16,rubber,-.075,-.164,0);feeder.name='kepler-upfeed';
-  camera(root,.071,-.089,-.11);
-  let angle=0,speed=0;
-  return {flywheel,hood,update(s:RobotAnimState) {
-    angle=scoringEase(angle,(s.aiming||s.firing>0?THREE.MathUtils.clamp(s.hood,.5,1.28):1.28)-1.28,s.dt);hood.rotation.z=angle;
-    speed=scoringEase(speed,s.enabled&&(s.aiming||s.firing>0)?65:0,s.dt);
-    spin(flywheel,speed,s.dt);spin(upper,-speed,s.dt);spin(feeder,-speed*.5,s.dt);gears.forEach((g,i)=>spin(g,speed*(i%2?-1:1),s.dt));
-  }};
+  const gz=plateZ+.014, step=rollerD/3;
+  const gears=[gear(hood,0,0,step*.52,gz)];
+  for(let i=1;i<=3;i++)gears.push(gear(hood,Math.cos(lipA)*step*i,Math.sin(lipA)*step*i,step*.47,gz));
+  camera(root,-.085,.05,-.11);
+  let exit=Math.PI/2+.5,speed=0;hood.rotation.z=exit-lipA;
+  const ballAt=(a:number)=>[F[0]+rb*Math.cos(a),F[1]+rb*Math.sin(a)] as [number,number];
+  return {flywheel,hood,root,
+    path:()=>[ballAt(Math.PI*1.12),ballAt(Math.PI),ballAt((Math.PI+exit)/2),ballAt(exit)].map(([px,py])=>new THREE.Vector3(px,py,0)),
+    update(s:RobotAnimState) {
+      // The hood's lip (where the roller sits) is placed at the solved exit; the ball leaves at lip angle - 90°.
+      exit=scoringEase(exit,Math.PI/2+(hoodLive(s)?THREE.MathUtils.clamp(s.hood,.5,1.28):.5),s.dt);hood.rotation.z=exit-lipA;
+      speed=scoringEase(speed,s.enabled&&hoodLive(s)?65:0,s.dt);
+      spin(flywheel,-speed,s.dt);spin(lip,speed*1.6,s.dt);spin(feeder,-speed*.5,s.dt);
+      gears.forEach((g,i)=>spin(g,(i%2?1:-1)*speed,s.dt));
+    }};
 }

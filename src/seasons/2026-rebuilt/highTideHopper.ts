@@ -65,7 +65,7 @@ export function highTideHopper(parent: THREE.Object3D, L: number, W: number, bot
       truss.name = 'hightide-teal-corner-truss';
     }
     if (fixedEnd) {
-      const colW = .075;
+      const colW = .09;
       for (const s of [-1, 1]) {
         const col = xTruss(edge, colW, h, 1, 5, teal, s * (length / 2 - colW / 2), out * .006);
         col.name = 'hightide-teal-truss-column';

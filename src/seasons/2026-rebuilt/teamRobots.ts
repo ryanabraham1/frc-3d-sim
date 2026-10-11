@@ -123,7 +123,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   return {
     replaces: ['bumpers', 'chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.4, H - 0.01, W * 0.4],
-    flow: { intake: intake.intake, stow: pile.stow, feed: dyeFeed(k, dye, sh.flywheel) },
+    flow: { intake: intake.intake, stow: pile.stow, feed: () => [...dye.feed(FUEL_R), ...sh.path().map(p => flowAt(k, sh.root, p.x, p.y, p.z))] },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
@@ -376,8 +376,6 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const x0 = tx - .17, z0 = tz - .17, deckY = H - .175;
   const tower = new THREE.Group(); tower.name = 'kepler-shooter-tower'; tower.userData.fuelStructure = true; k.visual.add(tower);
   for (const [x, z] of [[x0, z0], [hx, z0], [x0, hz], [hx, hz]] as [number, number][]) bar(tower, [x, bt, z], [x, deckY, z], .02, alu);
-  for (const z of [z0, hz]) bar(tower, [x0, deckY, z], [hx, deckY, z], .016, alu);
-  for (const x of [x0, hx]) bar(tower, [x, deckY, z0], [x, deckY, hz], .016, alu);
   // Pocketed silver X plates across the outer faces, behind clear side panels.
   const band = (deckY - bt) * .42, bandY = bt + (deckY - bt) * .3;
   const nearPlate = xTruss(tower, hx - x0 - .03, band, 2, 1, alu, (x0 + hx) / 2, hz - .006, .004); nearPlate.position.y = bandY;
@@ -393,14 +391,15 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   box(tower, hx - x0, .09, .005, clear, (x0 + hx) / 2, deckY + .045, z0);
   // Blue LED arc round the turret base, on the hopper side (glows in every 2026 photo).
   const ledMat = new THREE.MeshStandardMaterial({ color: 0x5fd0ff, emissive: 0x23a6ff, emissiveIntensity: 1.6, roughness: .4 });
-  const led = new THREE.Mesh(new THREE.TorusGeometry(.128, .006, 8, 40, Math.PI * .9), ledMat);
+  const led = new THREE.Mesh(new THREE.TorusGeometry(.135, .009, 8, 48, Math.PI * 1.05), ledMat);
   led.name = 'kepler-blue-led-arc'; led.userData.noShadow = true;
-  led.rotation.x = -Math.PI / 2; led.rotation.z = Math.PI * .55; led.position.set(tx, deckY + .012, tz); tower.add(led);
+  led.rotation.x = -Math.PI / 2; led.rotation.z = Math.PI * .47; led.position.set(tx, deckY + .012, tz); tower.add(led);
+  // Dark interior of the tower (electronics, Talon FX motors, wiring), seen through the clear sides in every photo.
+  box(tower, hx - tx - .03, deckY - bt - .05, hz - z0 - .04, black, (tx + .01 + hx) / 2, (bt + deckY) / 2 - .01, (z0 + hz) / 2).name = 'kepler-tower-electronics';
   // Hopper walls: clear polycarbonate on silver rails. The wall opposite the turret is the tall one, with triangular
   // windows; the turret side and the front stop at the tower deck height; the intake end is open to the extension.
   const lowTop = deckY;
   box(k.visual, x0 + hx, lowTop - bt, .005, clear, (x0 - hx) / 2, (bt + lowTop) / 2, hz);
-  bar(k.visual, [-hx, lowTop, hz], [x0, lowTop, hz], .014, alu);
   box(k.visual, .005, lowTop - bt, z0 + hz, clear, hx, (bt + lowTop) / 2, (z0 - hz) / 2);
   const upperHopper = new THREE.Group(); upperHopper.name = 'kepler-upper-hopper'; k.visual.add(upperHopper);
   const wallH = top - bt, windows: [number, number][][] = [];
@@ -409,7 +408,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
     windows.push(i % 2 ? [[a, y1], [b, y1], [(a + b) / 2, y0]] : [[a, y0], [b, y0], [(a + b) / 2, y1]]);
   }
   pocketPlate(upperHopper, [[-hx, 0], [hx, 0], [hx, wallH], [-hx, wallH]], windows, clear, -hz, .005).position.y = bt;
-  bar(upperHopper, [-hx, top, -hz], [hx, top, -hz], .018, alu);
+  bar(upperHopper, [-hx, top, -hz], [hx, top, -hz], .018, clear); // polycarbonate edge, no rail on top (photo)
   for (const x of [-hx, hx]) bar(upperHopper, [x, bt, -hz], [x, top, -hz], .016, alu);
   bar(k.visual, [-hx, bt, hz], [-hx, lowTop, hz], .016, alu);
   for (const z of [-hz, hz]) bar(k.visual, [-hx, bt + .012, z], [hx, bt + .012, z], .024, aluTube);
@@ -430,7 +429,8 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const inHopper = (x: number, z: number) => Math.hypot(x - tx, z - tz) > .23 && (x < x0 - .01 || z < z0 - .01);
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: inHopper });
   const t = k.turret;
-  t.position.set(tx, top + 0.01, tz);
+  // The bearing sits inside the tower under its clear lid; only the head stands above (about 4 in over the walls).
+  t.position.set(tx, top - 0.03, tz);
   const sh = keplerShooter(t);
   // Roller floor: long rollers running front to back, rolling FUEL across to the turret-side lane.
   const floorRollers: THREE.Group[] = [];
@@ -445,7 +445,8 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const transfer=new THREE.Group();transfer.name='kepler-corner-transfer';transfer.userData.fuelStructure=true;k.visual.add(transfer);
   for(const z of [tz-.09,tz+.09])bar(transfer,[tx-.16,rollerY,z],[tx,deckY-.025,z],.012,alu);
   const lifts:THREE.Group[]=[];
-  for(let i=0;i<3;i++)lifts.push(roller(transfer,.029,.158,rubber,tx-.12+i*.04,rollerY+.04+i*(deckY-rollerY-.08)/2,tz));
+  const liftGreen=mat(0x5fbf3a,{rough:.75});
+  for(let i=0;i<3;i++)lifts.push(roller(transfer,.029,.158,liftGreen,tx-.12+i*.04,rollerY+.04+i*(deckY-rollerY-.08)/2,tz));
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, width:W*.89 });
   const arms=intake.hinge.children[0],iw=W*.89;
   const armLength=Math.hypot(c.intake.reach+.03,c.bumperTop+.01);
@@ -459,10 +460,20 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   for(const z of [-iw/2-.014,iw/2+.014])pocketPlate(arms,[
     [side*.015,-.018],[side*(armLength+.044),-.057],[side*(armLength+.044),.033],[side*.015,.054],
   ],[[[side*.055,.005],[side*(armLength-.040),-.022],[side*(armLength-.075),.027]]],alu,z,.006);
-  const ramp=box(arms,armLength*.70,.004,iw*.96,black,side*armLength*.43,-.014,0);ramp.name='kepler-intake-support-plate';
+  const ramp=box(arms,armLength*.70,.004,iw*.96,clear,side*armLength*.43,-.014,0);ramp.name='kepler-intake-support-plate';
   const kicker=roller(k.visual,.026,iw*.82,rubber,side*(L*.42),bt-.026,0);kicker.name='kepler-friction-kicker';
   // Clear extension on silver rails that slides out with the intake (the "ramp that moved with the intake").
-  const slide = slidingHopper(k, { wall: clear, frame: alu });
+  // Clear extension that slides out with the intake (the "ramp that moved with the intake"): clear side walls with
+  // riveted silver corner angles on a silver bottom rail, open to the intake (photo jJiksKT, intake deployed).
+  const ext = new THREE.Group(); ext.name = 'sliding-hopper'; k.visual.add(ext);
+  const eLen = .24, eH = (H - bt - .04) * .82, ex = side * (L / 2 - eLen / 2 - .01), ez = W * .45;
+  for (const sz of [-1, 1]) {
+    box(ext, eLen, eH, .005, clear, ex, bt + .02 + eH / 2, sz * ez);
+    bar(ext, [ex - eLen / 2, bt + .02, sz * ez], [ex + eLen / 2, bt + .02, sz * ez], .022, aluTube);
+    bar(ext, [ex + side * eLen / 2, bt + .02, sz * ez], [ex + side * eLen / 2, bt + .02 + eH, sz * ez], .014, alu);
+  }
+  const extPile = fillBlock(ext, { x: ex, y0: bt + .03, length: eLen * .96, width: W * .86, height: eH * .95, color: FUEL, capacity: 12 });
+  const slide = { set(d: number, f: number) { ext.position.x = side * d * .2; extPile.set(d > .35 ? Math.min(1, f * 1.4) : 0); } };
   const deploy = { v: 0 };
   const pile = hopperStow({ x: 0, y0: bt + 0.02, length: L * 0.88, width: W * 0.88, height: lowTop - bt, r: FUEL_R });
   const laneY = rollerY + .017 + FUEL_R;
@@ -477,7 +488,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
         return p;
       },
       // The roller floor rolls FUEL across to the turret-side lane, along it into the tower, then up the lift.
-      feed: () => [new THREE.Vector3(-L*.25,laneY,0), new THREE.Vector3(x0-.12,laneY,tz), new THREE.Vector3(tx,deckY+.04,tz), flowAt(k, sh.flywheel, -0.06, 0, 0), flowAt(k, sh.flywheel, 0.03, 0.03, 0)],
+      feed: () => [new THREE.Vector3(-L*.25,laneY,0), new THREE.Vector3(x0-.12,laneY,tz), new THREE.Vector3(tx,deckY-.04,tz), ...sh.path().map(p => flowAt(k, sh.root, p.x, p.y, p.z))],
     },
     update(s) {
       db.update(s);
