@@ -57,7 +57,8 @@ function mergeCluster(anchor: THREE.Object3D, dynamic: Set<THREE.Object3D>): voi
   const rel = new THREE.Matrix4();
   for (const g of groups.values()) {
     if (g.meshes.length < 2) continue;
-    const needUv = !!(g.mat as THREE.MeshStandardMaterial).map;
+    const textured = g.mat as THREE.MeshStandardMaterial;
+    const needUv = !!(textured.map || textured.normalMap || textured.bumpMap || textured.roughnessMap || textured.metalnessMap || textured.alphaMap || textured.emissiveMap);
     const geos: THREE.BufferGeometry[] = [];
     for (const m of g.meshes) {
       rel.multiplyMatrices(inv, m.matrixWorld);
@@ -118,6 +119,7 @@ function materialKey(m: THREE.Material): string {
   if (!(s.isMeshStandardMaterial || s.isMeshBasicMaterial)) return m.uuid;
   const c = (x?: THREE.Color) => (x ? x.getHexString() : '-');
   return [m.type, c(s.color), c(s.emissive), s.emissiveIntensity, s.metalness, s.roughness, s.map?.uuid, s.envMap?.uuid,
+    (m as THREE.MeshStandardMaterial).roughnessMap?.uuid, (m as THREE.MeshStandardMaterial).bumpMap?.uuid, (m as THREE.MeshStandardMaterial).bumpScale,
     s.envMapIntensity, m.side, s.flatShading, m.polygonOffset, m.polygonOffsetFactor, m.vertexColors, m.depthWrite,
     m.alphaTest, s.wireframe].join(',');
 }

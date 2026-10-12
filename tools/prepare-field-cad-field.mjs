@@ -14,12 +14,13 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { dedup, prune, weld, join, meshopt, flatten, simplify } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
-import { Color, Matrix4 } from 'three';
+import { Matrix4 } from 'three';
+import { fieldCadFinish, finishRgba } from './field-cad-finishes.mjs';
 
 const [src] = process.argv.slice(2);
 const HARDWARE = /PEM S-|Rivet|Hook Tape|Loop Tape|Seaming Tape|Hex Spacer|HEX Spacer|^Spacer$|Screw|[Bb]olt|Nut\b|Washer|Bearing|Connector Pin|Knob|Zip Tie|Hinge, Insert|Gas Spring|BLOCK CAD/;
 // The game draws its own carpet and field-line tape (exact to the manual); the CAD's would z-fight with them.
-const SKIP = /AprilTag|Playing Field Carpet|Gaffer Tape/;
+const SKIP = /AprilTag|Playing Field Carpet|Gaffer Tape|Hub Net \(Aesthetic\)/;
 const HUB_XS = [-3.645, 3.645];
 
 await MeshoptEncoder.ready;
@@ -32,13 +33,11 @@ for (const n of root.listNodes()) for (const c of n.listChildren()) parentOf.set
 const nameOf = (n) => { let k = n; while (k && (!k.getName() || k.getName().startsWith('occurrence'))) k = parentOf.get(k); return k?.getName() ?? ''; };
 
 await doc.transform(flatten());
-const rgb = (hex) => { const c = new Color(hex); return [c.r, c.g, c.b, 1]; };
-// Alliance colours as the game draws them (src/seasons/2026-rebuilt/constants.ts COLORS).
-const blue = doc.createMaterial('alliance-blue').setBaseColorFactor(rgb(0x1e62d0)).setRoughnessFactor(0.6).setMetallicFactor(0.05);
-const red = doc.createMaterial('alliance-red').setBaseColorFactor(rgb(0xd32f2f)).setRoughnessFactor(0.6).setMetallicFactor(0.05);
+const finishes = new Map();
+const roles = {};
 let kept = 0, dropped = 0;
 for (const n of root.listNodes()) {
-  const mesh = n.getMesh();
+  let mesh = n.getMesh();
   if (!mesh) continue;
   const name = nameOf(n);
   const m = new Matrix4().fromArray(n.getWorldMatrix());
@@ -58,9 +57,36 @@ for (const n of root.listNodes()) {
   if (inHub || HARDWARE.test(name) || SKIP.test(name)) { n.setMesh(null); dropped++; continue; }
   // The export's alliance colours are unreliable (both colours on both sides): colour by side, blue at -x.
   const blueSide = (lo[0] + hi[0]) / 2 < 0;
+  // Instances can share a source mesh while needing different alliance paint. Never mutate the source primitives.
+  const copy = doc.createMesh(mesh.getName());
+  for (const p of mesh.listPrimitives()) copy.addPrimitive(p.clone());
+  n.setMesh(copy); mesh = copy;
   for (const p of mesh.listPrimitives()) {
-    const c = p.getMaterial()?.getBaseColorFactor();
-    if (c && ((c[0] > 0.9 && c[1] < 0.1 && c[2] < 0.1) || (c[0] < 0.1 && c[1] < 0.1 && c[2] > 0.9))) p.setMaterial(blueSide ? blue : red);
+    const finish = fieldCadFinish(name, p.getMaterial()?.getBaseColorFactor(), blueSide);
+    const key = `${finish.role}-${finish.color}`;
+    let material = finishes.get(key);
+    if (!material) {
+      material = doc.createMaterial(finish.name ?? `field-${key}`).setBaseColorFactor(finishRgba(finish))
+        .setMetallicFactor(finish.metal).setRoughnessFactor(finish.rough)
+        .setAlphaMode(finish.opacity < 1 ? 'BLEND' : 'OPAQUE').setDoubleSided(finish.opacity < 1)
+        .setExtras({ fieldFinish: finish.role });
+      finishes.set(key, material);
+    }
+    p.setMaterial(material);
+    roles[finish.role] = (roles[finish.role] ?? 0) + 1;
+    // UVs in metres, on the sheet's principal plane, survive joining and spatial batching. No baked lighting.
+    const pos = p.getAttribute('POSITION');
+    const sizes = hi.map((v, k) => v - lo[k]);
+    const thin = sizes.indexOf(Math.min(...sizes));
+    const axes = [0, 1, 2].filter(k => k !== thin);
+    const uv = new Float32Array(pos.getCount() * 2);
+    const xyz = pos.getArray();
+    for (let i = 0; i < pos.getCount(); i++) {
+      const v = [xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]];
+      const world = [0, 1, 2].map(k => v[0] * m.elements[k] + v[1] * m.elements[4+k] + v[2] * m.elements[8+k] + m.elements[12+k]);
+      uv[i*2] = world[axes[0]]; uv[i*2+1] = world[axes[1]];
+    }
+    p.setAttribute('TEXCOORD_0', doc.createAccessor().setType('VEC2').setBuffer(pos.getBuffer()).setArray(uv));
   }
   kept++;
 }
@@ -78,3 +104,4 @@ await fs.mkdir('public/models/field', { recursive: true });
 await io.write('public/models/field/2026-field.glb', doc);
 const size = (await fs.stat('public/models/field/2026-field.glb')).size;
 console.log(`field: kept ${kept} meshes, dropped ${dropped} -> public/models/field/2026-field.glb ${(size / 1024).toFixed(0)} KB`);
+console.log('field finishes:', roles);
