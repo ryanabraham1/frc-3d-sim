@@ -471,7 +471,8 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   for (const z of [hz - .012, -hz + .012]) pocketPlate(k.visual, [[x0 - .2, bt + .01], [x0 - .01, bt + .01], [x0 - .01, lowTop - .02], [x0 - .09, bt + (lowTop - bt) * .55]], webHoles, alu, z, .005).name = 'kepler-spider-gusset';
   k.visual.userData.fuelKeepouts=[{x:tx,z:tz,radius:.145,bottom:bt-.12,top:H+.18}];
   const inHopper = (x: number, z: number) => Math.hypot(x - tx, z - tz) > .23 && (x < x0 - .01 || z < z0 - .01);
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: inHopper });
+  // Bin inside the drawn walls (hx = .46 L, hz = .46 W): a wider bin let FUEL sit through the upper-hopper polycarbonate.
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: hx * 2, width: hz * 2, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: inHopper });
   const t = k.turret;
   // The bearing sits inside the tower under its clear lid; only the head stands above (about 4 in over the walls).
   t.position.set(tx, top - 0.05, tz);
