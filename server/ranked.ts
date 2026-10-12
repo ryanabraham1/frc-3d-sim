@@ -20,6 +20,7 @@ import {
 } from '../src/engine/net/relayProtocol.ts';
 import { Matchmaker, type QueueEntry } from './matchmaker.ts';
 import type { MatchRecord, RankedStore } from './rankedStore.ts';
+import { REPEAT_HISTORY_LIMIT, reduceRepeatGain, repeatGain } from './repeatedOpponents.ts';
 
 /**
  * Ranked matchmaking, results and ratings, layered on the relay. The relay stays game-agnostic: it gives this
@@ -334,7 +335,24 @@ export class RankedService {
     const participants: RankedParticipant[] = [...m.members.values()].map((p) => ({ playerId: p.playerId, team: p.team, rating: p.rating, games: p.games }));
     const ids = [...m.members.keys()];
     const byPlayer = new Map(ids.map((id) => [m.members.get(id)!.playerId, id]));
-    const changes = status === 'void' ? participants.map((p) => ({ playerId: p.playerId, before: p.rating, after: p.rating, delta: 0, result: 'none' as const })) : rateMatch(participants, report!.winner, new Set([...m.abandoned].map((id) => m.members.get(id)!.playerId)));
+    let changes = status === 'void' ? participants.map((p) => ({ playerId: p.playerId, before: p.rating, after: p.rating, delta: 0, result: 'none' as const })) : rateMatch(participants, report!.winner, new Set([...m.abandoned].map((id) => m.members.get(id)!.playerId)));
+    const gainReasons = new Map<string, string>();
+    if (status !== 'void') {
+      changes = await Promise.all(changes.map(async (c) => {
+        if (c.delta <= 0 || c.result !== 'win') return c;
+        try {
+          const history = await this.deps.store.recentMatches(c.playerId, REPEAT_HISTORY_LIMIT);
+          const multiplier = repeatGain(c.playerId, participants, history);
+          if (multiplier < 1) gainReasons.set(c.playerId, `Repeated wins against the same opponent: Elo gain reduced to ${multiplier * 100}% of normal. A loss, draw or different opponent resets the streak.`);
+          return reduceRepeatGain(c, multiplier);
+        } catch (e) {
+          // Never award unchecked gains when persistent history is unavailable.
+          this.log(`match history ${m.code} failed: ${(e as Error).message}`);
+          gainReasons.set(c.playerId, 'Elo gain withheld because opponent history is unavailable.');
+          return reduceRepeatGain(c, 0);
+        }
+      }));
+    }
     const record: MatchRecord = {
       mode: m.mode,
       season: RANKED_SEASON_ID,
@@ -354,7 +372,8 @@ export class RankedService {
     }
     for (const c of changes) {
       const peerId = byPlayer.get(c.playerId)!;
-      this.deps.send(peerId, { op: 'rating', mode: m.mode, status, before: c.before, after: c.after, delta: c.delta, result: c.result, ...(reason ? { reason } : {}) });
+      const ratingReason = gainReasons.get(c.playerId) ?? reason;
+      this.deps.send(peerId, { op: 'rating', mode: m.mode, status, before: c.before, after: c.after, delta: c.delta, result: c.result, ...(ratingReason ? { reason: ratingReason } : {}) });
       // Free the device for its next search.
       if (this.active.get(c.playerId) === peerId) this.active.delete(c.playerId);
     }

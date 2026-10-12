@@ -10,16 +10,18 @@ let server: Server;
 let relay: Relay;
 let store: MemoryStore;
 let url: string;
+let clockOffset = 0;
 const sockets: WebSocket[] = [];
 
 beforeEach(async () => {
   server = createServer();
   store = new MemoryStore();
+  clockOffset = 0;
   relay = attachRelay(server, {
     rejectOtherPaths: true,
     reconnectGraceMs: 400,
     rankedStore: store,
-    ranked: { tickMs: 40, reportWindowMs: 300 },
+    ranked: { tickMs: 40, reportWindowMs: 300, now: () => Date.now() + clockOffset },
     limits: { connections: 0, creates: 0, badJoins: 0, ranked: 0 },
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -67,11 +69,12 @@ async function queue(p: Peer, name: string, mode = '1v1') {
 }
 
 /** Two players matched in 1v1; returns who got host. */
-async function match1v1() {
+async function match1v1(widenWindow = false) {
   const a = await peer('a');
   const b = await peer('b');
   await queue(a, 'Ann');
   await queue(b, 'Bob');
+  if (widenWindow) clockOffset += 60_000;
   const ma = await a.next('matched');
   const mb = await b.next('matched');
   const host = ma.peerId === ma.hostId ? a : b;
@@ -80,6 +83,55 @@ async function match1v1() {
 }
 
 describe('ranked relay', () => {
+  it('allows repeated 1v1s across new connections but cuts persisted Elo gains to zero', async () => {
+    const { rateMatch } = await import('../src/engine/net/ranked');
+    for (const multiplier of [1, 1, 1, 0.5, 0.2, 0.1, 0, 0]) {
+      const { a, b, ma, mb } = await match1v1(true);
+      // Make Ann win regardless of the randomly assigned colours.
+      const normal = rateMatch(ma.roster.map((p) => ({ playerId: p.peerId, team: p.team, rating: p.rating, games: p.games })), ma.team);
+      a.send({ op: 'result', winner: ma.team, red: 80, blue: 60 });
+      b.send({ op: 'result', winner: ma.team, red: 80, blue: 60 });
+      const ra = await a.next('rating');
+      const rb = await b.next('rating');
+      expect(ra.delta).toBe(Math.floor(normal.find((p) => p.playerId === ma.peerId)!.delta * multiplier));
+      expect(rb.delta).toBe(normal.find((p) => p.playerId === mb.peerId)!.delta);
+      if (multiplier < 1) expect(ra.reason).toContain(`${multiplier * 100}%`);
+      expect(store.matches.at(-1)!.players.find((p) => p.name === 'Ann')!.after).toBe(ra.after);
+      a.ws.close(4000, 'leave');
+      b.ws.close(4000, 'leave');
+    }
+    expect(store.matches).toHaveLength(8);
+    const ann = (await store.leaderboard(10, 0)).find((p) => p.name === 'Ann')!;
+    expect(ann).toMatchObject({ games: 8, wins: 8 });
+  });
+
+  it('withholds unchecked gains when history is unavailable and still applies losses', async () => {
+    store.recentMatches = async () => { throw new Error('history offline'); };
+    const { a, b, ma } = await match1v1();
+    a.send({ op: 'result', winner: ma.team, red: 80, blue: 60 });
+    b.send({ op: 'result', winner: ma.team, red: 80, blue: 60 });
+    expect(await a.next('rating')).toMatchObject({ delta: 0, result: 'win', reason: 'Elo gain withheld because opponent history is unavailable.' });
+    expect((await b.next('rating')).delta).toBe(-20);
+  });
+
+  it('awards full Elo when the same players trade wins repeatedly', async () => {
+    const { rateMatch } = await import('../src/engine/net/ranked');
+    for (let i = 0; i < 8; i++) {
+      const { a, b, ma, mb } = await match1v1(true);
+      const winner = i % 2 === 0 ? ma.team : mb.team;
+      const normal = rateMatch(ma.roster.map((p) => ({ playerId: p.peerId, team: p.team, rating: p.rating, games: p.games })), winner);
+      a.send({ op: 'result', winner, red: 80, blue: 60 });
+      b.send({ op: 'result', winner, red: 80, blue: 60 });
+      const ra = await a.next('rating');
+      const rb = await b.next('rating');
+      expect(ra.delta).toBe(normal.find((p) => p.playerId === ma.peerId)!.delta);
+      expect(rb.delta).toBe(normal.find((p) => p.playerId === mb.peerId)!.delta);
+      expect(ra.reason).toBeUndefined();
+      expect(rb.reason).toBeUndefined();
+      a.ws.close(4000, 'leave');
+      b.ws.close(4000, 'leave');
+    }
+  });
   it('registers a profile with starting ratings', async () => {
     const p = await peer('c');
     p.send({ op: 'profile', name: 'Cy', secret: p.secret });

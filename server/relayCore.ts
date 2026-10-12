@@ -94,7 +94,7 @@ export interface RelayOptions {
   /** Ranked rating storage (default: Supabase when configured by env, else in memory). */
   rankedStore?: RankedStore;
   /** Test hooks for the ranked service. */
-  ranked?: { tickMs?: number; reportWindowMs?: number };
+  ranked?: { tickMs?: number; reportWindowMs?: number; now?: () => number };
 }
 
 export interface RelayLimits {
@@ -155,6 +155,7 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
     log,
     tickMs: opts.ranked?.tickMs,
     reportWindowMs: opts.ranked?.reportWindowMs,
+    now: opts.ranked?.now,
     send: (id, ev) => {
       const p = byId.get(id);
       if (p) send(p, ev);

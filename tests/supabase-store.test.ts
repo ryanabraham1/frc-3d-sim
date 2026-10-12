@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { SupabaseStore } from '../server/rankedStore';
 
 describe('supabase store', () => {
+  it('reads bounded, season-scoped player history from persistent match records', async () => {
+    let requested = '';
+    const store = new SupabaseStore('https://example.supabase.co', 'key', (async (url) => {
+      requested = String(url);
+      return new Response('[]');
+    }) as typeof fetch, '2026-rebuilt');
+    expect(await store.recentMatches('abc', 4)).toEqual([]);
+    const query = new URL(requested).searchParams;
+    expect(query.get('players')).toBe('cs.[{"playerId":"abc"}]');
+    expect(query.get('season')).toBe('eq.2026-rebuilt');
+    expect(query.get('status')).toBe('neq.void');
+    expect(query.get('order')).toBe('created_at.desc,id.desc');
+    expect(query.get('limit')).toBe('4');
+  });
   it('calls fetch without binding it to the store (Cloudflare Workers reject that)', async () => {
     // Like a Worker's fetch: throws "Illegal invocation" unless called with no (or the global) `this`.
     const strict = function (this: unknown, _url: unknown, _init?: unknown): Promise<Response> {
