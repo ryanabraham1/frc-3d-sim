@@ -178,7 +178,7 @@ export class FuelPile {
     this.kickX = this.kickZ = this.kickTurn = 0;
     if (this.lift > 0) { for (let i = 0; i < this.count; i++) v[i * 3 + 1] += this.lift; this.lift = 0; }
     this.before.set(p);
-    const steps = Math.min(2, Math.ceil(time * 60)), h = time / steps;
+    const steps = Math.min(2, Math.ceil(time * 60)), h = Math.min(time / steps, 1 / 60); // a slow frame runs slow-motion, never with coarse substeps
     for (let sub = 0; sub < steps; sub++) {
       for (let i = 0; i < this.count; i++) {
         const j = i * 3, oldX = p[j], oldZ = p[j + 2];

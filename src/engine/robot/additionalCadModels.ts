@@ -24,11 +24,11 @@ export function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
   k.visual.updateMatrixWorld(true);
   return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
 }
-export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean) {
+export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean,roofAt?:(x:number,z:number)=>number) {
   const g=new THREE.Group();g.name='cad-hopper-fuel';k.visual.add(g);
   // A stretching net roof lets FUEL rise above the rigid rim into the net's dome.
   const e=k.config.hopperExpansion,netted=!!e&&e.mechanism!=='telescoping',roof=netted?e!.fullHeight:rim;
-  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,allowAboveRim:!netted&&!e&&!k.config.hopperCovered,color:0xf2c200,capacity:k.config.hopperCapacity,inside,keepouts:k.visual.userData.fuelKeepouts,ceiling:netted?hopperNetCeiling(k.config,rim):undefined});
+  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,allowAboveRim:!netted&&!e&&!k.config.hopperCovered,color:0xf2c200,capacity:k.config.hopperCapacity,inside,keepouts:k.visual.userData.fuelKeepouts,ceiling:netted?hopperNetCeiling(k.config,rim):roofAt});
   const mesh=g.getObjectByName('hopper-fuel-pile')!;
   let fill=0,deploy=0;
   return {update(f:number,d:number){fill=f;deploy=d;
@@ -211,7 +211,10 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     o.material=Array.isArray(o.material)?o.material.map(clearPanel):clearPanel(o.material);
     o.castShadow=false;
   });
-  const pile=fuel(k,-.615,.025,.1905,.5461,.67,-.32);
+  // Bin from the clear hopper's own mesh: the roof slopes up from 0.456 at x = -0.59 to 0.546 at x = -0.50 (a ball centre
+  // must keep its top under that slope, 0.075 m of it), and the roller floor/feeder ramp begins at x = -0.2556, so the
+  // pile stops short of it instead of spilling toward the shooter.
+  const pile=fuel(k,-.60,.025,.1905,.5461,.67,-.32,undefined,x=>Math.min(.5461,.456+(x+.52)));
   let deploy=1,angle=0;
   return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],

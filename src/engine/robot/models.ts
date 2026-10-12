@@ -341,7 +341,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
         if (o.inside && !o.inside(o.x + px, pz)) continue;
         const py = restHeight(px, pz), key = py + rand() * r * 0.06;
         if(o.keepouts && clearFuelKeepouts(new THREE.Vector3(o.x+px,o.y0+py,pz),r,o.keepouts))continue;
-        const ceiling = Math.min(o.allowAboveRim?Infinity:o.y0 + o.height, o.ceiling?.(o.x + px,pz) ?? Infinity);
+        const ceiling = Math.min(o.allowAboveRim?(o.ceiling?Infinity:o.y0 + o.height + r * 1.3):o.y0 + o.height, o.ceiling?.(o.x + px,pz) ?? Infinity);
         if (o.y0 + py + r * .95 * k / 1.92 > ceiling) continue;
         if (key < bk) { bk = key; by = py; bx = px; bz = pz; }
       }
