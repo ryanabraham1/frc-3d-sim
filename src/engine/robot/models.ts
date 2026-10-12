@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { FuelPile } from './fuelPile';
 import { FuelContacts } from './fuelContacts';
 import type { Alliance } from '../coords';
-import type { RobotConfig } from './config';
+import { FUEL_PACK_RADIUS, type RobotConfig } from './config';
 import { HEADLESS, makeTextTexture } from '../render/text';
 import { cadRobotModelBuilder } from './cadModels';
 
@@ -363,6 +363,8 @@ export function seededRandom(seed: number): () => number {
 
 /** Height of a hopper floor above the carpet (m): chassis rails + belly pan. */
 const HOPPER_FLOOR = 0.09;
+/** Centre spacing (in ball radii) the starting pose is poured at: the solver's contact distance, 2 x FUEL_PACK_RADIUS. */
+const PACK_K = 2 * FUEL_PACK_RADIUS;
 
 /**
  * Round FUEL inside the hopper, filled from the floor up with `set(fill)` (0–1).
@@ -381,7 +383,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   // comes to rest in the lowest pocket nearby, so the heap fills the whole floor before it builds up, with every ball
   // nested against its neighbors (no gaps) and an uneven, lumpy top. `inside` (robot-frame x/z) trims the footprint
   // for a non-rectangular hopper.
-  const pour = (r: number, n: number, k = 1.92): Slot[] => {
+  const pour = (r: number, n: number, k = PACK_K): Slot[] => {
     const halfX = Math.max(0, o.length / 2 - r), halfZ = Math.max(0, o.width / 2 - r);
     const reach2 = (r * k) ** 2; // foam FUEL squashes a little where it touches (k = 2 would be rigid spheres)
     const out: Slot[] = [];
@@ -406,11 +408,11 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
         const py = restHeight(px, pz), key = py + rand() * r * 0.06;
         if(o.keepouts && clearFuelKeepouts(new THREE.Vector3(o.x+px,o.y0+py,pz),r,o.keepouts))continue;
         const ceiling = Math.min(o.allowAboveRim?(o.ceiling?Infinity:o.y0 + o.height + r * 1.3):o.y0 + o.height, o.ceiling?.(o.x + px,pz) ?? Infinity);
-        if (o.y0 + py + r * .95 * k / 1.92 > ceiling) continue;
+        if (o.y0 + py + r * .95 * (k + 1.92 - PACK_K) / 1.92 > ceiling) continue;
         if (key < bk) { bk = key; by = py; bx = px; bz = pz; }
       }
       if (by === Infinity) break; // Try another pocket before giving up, never fill then discard an entire upper layer.
-      out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4, sy: Math.min(1, 0.95 * k / 1.92) });
+      out.push({ x: o.x + bx, y: o.y0 + by, z: bz, s: 0.97 + rand() * 0.05, key: by + rand() * r * 0.4, sy: Math.min(1, 0.95 * (k + 1.92 - PACK_K) / 1.92) });
     }
     return out;
   };
@@ -419,7 +421,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   // arrangement before silently dropping balls. It is only an initial pose; the sleeping solver still settles it.
   const closePack = (r:number, n:number, k:number): Slot[] => {
     let best:Slot[]=[];
-    const gap=r*k, row=gap*Math.sqrt(3)/2, layer=gap*Math.sqrt(2/3), sy=.95*k/1.92;
+    const gap=r*k, row=gap*Math.sqrt(3)/2, layer=gap*Math.sqrt(2/3), sy=.95*(k+1.92-PACK_K)/1.92;
     for(const swapped of [false,true]) for(const phase of [0,.5]) {
       const out:Slot[]=[];
       const spanX=(swapped?o.width:o.length)-2*r, spanZ=(swapped?o.length:o.width)-2*r;
@@ -440,13 +442,13 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     return best;
   };
   // Balls are always real FUEL size (r = 0.075 m), the same as outside the robot. A hopper too small for `capacity`
-  // balls packs them tighter instead (foam compresses a little, down to k = 1.7) rather than shrinking the balls.
+  // balls packs them tighter instead (foam compresses a little, down to k = 1.6) rather than shrinking the balls.
   const r = o.capacity ? 0.075 : Math.min(0.06, o.length / 6, o.width / 6);
   let slots: Slot[];
   if (o.capacity) {
-    let k = 1.92;
+    let k = PACK_K;
     slots = pour(r, o.capacity, k);
-    while ((slots.length < o.capacity || (!o.allowAboveRim && top(slots, r) > o.height)) && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
+    while ((slots.length < o.capacity || (!o.allowAboveRim && top(slots, r) > o.height)) && k > PACK_K - .2) { k -= 0.02; slots = pour(r, o.capacity, k); }
     if(slots.length<o.capacity) {
       const packed=closePack(r,o.capacity,k);
       if(packed.length>slots.length)slots=packed;
@@ -460,7 +462,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   // Size variation can remove a brim ball after the pour already reached capacity. Retry the same bounded foam
   // compression with uniform-size close packing so the rendered full load does not silently lose that ball.
   if (o.capacity && slots.length < o.capacity) {
-    const packed = closePack(r, o.capacity, 1.7);
+    const packed = closePack(r, o.capacity, PACK_K - .2);
     if (packed.length > slots.length) slots = packed;
   }
   slots.sort((a, b) => a.key - b.key);

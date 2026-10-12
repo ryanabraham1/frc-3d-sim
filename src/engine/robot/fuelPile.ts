@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { RobotAnimState } from './models';
+import { FUEL_PACK_RADIUS } from './config';
 import {clearFuelOutline,clearFuelKeepouts,type FuelKeepout} from './fuelKeepouts';
 
 export interface FuelBin {
@@ -59,8 +60,8 @@ export class FuelPile {
     this.velocity = new Float32Array(seeds.length * 3);
     this.before = new Float32Array(seeds.length * 3);
     this.netted = 'setStretch' in (bin.ceiling ?? {});
-    // Match the visible ball diameter. The former 0.9 radius let full loads overlap and settle visibly too low.
-    this.contactRadius = Float32Array.from(seeds, b => radius * (this.netted ? .99 : .98) * b.s);
+    // Foam FUEL squishes: balls pack at 0.9 of their drawn radius (drawn full size), so a load fits in less room.
+    this.contactRadius = Float32Array.from(seeds, b => radius * FUEL_PACK_RADIUS * b.s);
     for (let i = 0; i < seeds.length; i++) this.reset(i);
   }
 

@@ -128,8 +128,8 @@ it('full 3256, 2910 and 1678 CAD hoppers retain their stated load and occupy the
       expect(surface.count,id).toBe(config.hopperCapacity);
       const tops=Array.from({length:surface.count},(_,i)=>surface.positions[i*3+1]+surface.radius).sort((a,b)=>a-b);
       // A genuine full load has several balls in the upper hopper, not a solitary tall outlier.
-      expect(tops.at(-1)!,id).toBeGreaterThan(brim-.065);
-      expect(tops[Math.floor(tops.length*.8)],id).toBeGreaterThan(brim-.15);
+      expect(tops.at(-1)!,id).toBeGreaterThan(brim-.095); // 0.9 r foam packing sits a little lower
+      expect(tops[Math.floor(tops.length*.8)],id).toBeGreaterThan(brim-.2);
       if(id==='aimbot-3256') {
         const contacts=new FuelContacts(sim.robot.visual,mesh,false,true);contacts.sync();
         const probe=new Float32Array(surface.positions),velocity=new Float32Array(probe.length);
