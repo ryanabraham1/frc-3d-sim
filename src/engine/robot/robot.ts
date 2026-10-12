@@ -16,6 +16,7 @@ import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, 
 import { PieceFlow } from './pieceFlow';
 import { FuelContacts } from './fuelContacts';
 import { StowBay, type Cavity } from './stowBay';
+import { MechHopper } from './mechHopper';
 import { GamePiecePool } from '../gamepiece/pool';
 import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 import { ProfiledAxis } from './profiledAxis';
@@ -185,7 +186,8 @@ export class Robot {
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
       room = Math.min(room, n - this.held.length);
     }
-    if (this.config.intake.rate) room = Math.min(room, Math.floor(this.intakeBudget));
+    // A physical hopper takes what its rollers can pull in: no separate intake-rate budget.
+    if (this.config.intake.rate && !this.mech) room = Math.min(room, Math.floor(this.intakeBudget));
     return Math.max(0, room);
   }
   /** Pieces the intake can swallow right now at `config.intake.rate`: refills with time, spent as pieces are taken. */
@@ -494,7 +496,8 @@ export class Robot {
       if (y >= c.height - .06) tops.push({ x, z, y });
     };
     this.bay?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
-    for (const mesh of this.bay ? [] : this.fuelPiles) {
+    this.mech?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
+    for (const mesh of this.bay || this.mech ? [] : this.fuelPiles) {
       const surface = mesh.userData.fuelSurface?.();
       if (!surface || !mesh.visible) continue;
       for (let i = 0; i < surface.count; i++) {
@@ -856,28 +859,67 @@ export class Robot {
     this.wireFuelPiles();
   }
 
+  /** Hopper fill (0–1) below which shooting starts folding the intake in to squeeze the last FUEL (see animateModel). */
+  static SQUEEZE_BELOW = 0.36;
+
   /** FUEL an uncovered hopper keeps taking after it is brim-full: the rest roll over the rim (see StowBay). */
   private static readonly OVERFLOW_ROOM = 4;
   /** Held FUEL as real physics bodies in the hopper (host / single-player). Null: the visual-only particle pile draws the load. */
   bay: StowBay | null = null;
+  /** Held FUEL simulated in this robot's own frame and moved by its mechanisms (robot/mechHopper.ts). */
+  mech: MechHopper | null = null;
 
-  /** Make held FUEL the pool's own bodies. Skipped on multiplayer replicas and for robots with no FUEL hopper. */
-  attachPool(pool: GamePiecePool): void {
-    if (this.bay || !this.fuelPiles.length) return;
+  /**
+   * Make held FUEL the pool's own bodies. Skipped on multiplayer replicas and for robots with no FUEL hopper.
+   * `mode`: 'mech' = the physical hopper for models with mechanism hooks (`RobotModel.mech`; robots without them keep
+   * the particle pile); 'stowbay' = the older wall-slab hopper (StowBay) for any FUEL robot.
+   */
+  attachPool(pool: GamePiecePool, mode: 'mech' | 'stowbay' = 'stowbay'): void {
+    if (this.bay || this.mech || !this.fuelPiles.length) return;
+    if (mode === 'mech') {
+      if (!this.model?.mech) return;
+      this.mech = new MechHopper(this, pool, this.model.mech);
+      pool.bays.set(this.id, this.mech);
+      return;
+    }
     this.bay = new StowBay(this, pool);
     pool.bays.set(this.id, this.bay);
   }
+
+  /** 0–1: intake folded in to squeeze the last FUEL toward the indexer (see animateModel). */
+  get squeeze(): number { return this.anim.squeeze ?? 0; }
 
   /**
    * Go back to the visual-only particle pile (what multiplayer replicas draw) while keeping every held FUEL held. Used to
    * shed physics on a slow host; the pile is filled from the held count on the next visual sync.
    */
   detachPool(pool: GamePiecePool): void {
+    if (this.mech) {
+      this.mech.park();
+      this.mech.dispose();
+      this.mech = null;
+      pool.bays.delete(this.id);
+      for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
+      return;
+    }
     if (!this.bay) return;
     this.bay.park();
     pool.bays.delete(this.id);
     this.bay = null;
     for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
+  }
+
+  /** A scripted preload belongs below its bin's local roof, including fixed mechanism plates above the hopper. */
+  fuelPlacementFits(position: THREE.Vector3, radius: number): boolean {
+    const local = new THREE.Vector3();
+    return this.fuelPiles.some(pile => {
+      const b = pile.userData.fuelBin;
+      if (!b) return false;
+      local.copy(position).applyMatrix4(this.relativeMatrix(pile).invert());
+      if (Math.abs(local.x - b.x) > b.length / 2 - radius || Math.abs(local.z) > b.width / 2 - radius) return false;
+      const ceiling = Math.min(b.y0 + b.height, pile.userData.fuelCeiling?.(local.x, local.z) ?? Infinity);
+      return local.y + radius <= ceiling && local.y >= b.y0 + radius - .05;
+    });
   }
 
   /** Which end of the robot the intake delivers to (the hopper mouth): -1 back, +1 front. */
@@ -915,7 +957,7 @@ export class Robot {
   /** One conserved load across main and deployed extension bins. */
   private distributeFuel(): void {
     if (!this.fuelPiles.length) return;
-    if (this.bay) {
+    if (this.bay || this.mech) {
       // The pool's own bodies are the load: the particle piles stay empty.
       for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
       return;
@@ -1079,12 +1121,12 @@ export class Robot {
       { vx: 2, omega: 1.5 }, { vz: 2, omega: -1.5 },
       { place: { height: 1.7, forward: 0.6, level: 4, side: 0 } }, { place: { height: 1.2, forward: 0.5, level: 3, side: 1 } },
       { place: { height: 1.2, forward: 0.5, level: 3, side: -1 } }, { place: { height: 1.0, forward: 0.5, level: 2, side: 2 } },
-      { place: { height: 0.45, forward: 0.3, level: 1, handoff: 0.5 } }, { enabled: false },
+      { place: { height: 0.45, forward: 0.3, level: 1, handoff: 0.5 } }, { aiming: true, squeeze: 1 }, { enabled: false },
     ];
     const moved = new Set<THREE.Object3D>();
     for (const p of probes) {
       for (let i = 0; i < 12; i++) {
-        Object.assign(s, { enabled: true, intaking: false, firing: 0, passing: false, aiming: false, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0, fill: 0 }, p);
+        Object.assign(s, { enabled: true, intaking: false, firing: 0, passing: false, aiming: false, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0, fill: 0, squeeze: 0 }, p);
         s.time += s.dt;
         model.update(s);
       }
@@ -1180,6 +1222,11 @@ export class Robot {
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.shooterPitch;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
+    // Shooting a nearly empty hopper, the intake folds in progressively and pushes the last FUEL toward the indexer
+    // (2910's hopper compresses, 4414's tray slides back over the dye rotor). It deploys again to intake.
+    const below = this.model?.mech?.squeezeBelow ?? Robot.SQUEEZE_BELOW;
+    const squeeze = a.aiming && !a.intaking ? clamp((below - a.fill) / 0.25, 0, 1) : 0;
+    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * 0.9) : squeeze;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
@@ -2205,7 +2252,7 @@ export class Robot {
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
     const c0 = this.config;
     const c = c0.launcher;
-    if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none' || this.tippedOver) return null;
+    if (!c.enabled || this.held.length === 0 || (this.fireCooldown > 0 && !this.mech) || this.climbPhase !== 'none' || this.tippedOver) return null;
     // Auto-align robots hold fire until the chassis first points at the target (launcher.alignTolerance, default
     // ~3°). Once a burst is under way they keep firing whatever the heading error: standing still or creeping, the
     // servo keeps every ball on target, but a hard shove or a sudden sprint leaves the chassis behind and the balls
@@ -2246,6 +2293,16 @@ export class Robot {
       }
     }
     if (!this.shootWhileTracking && (Math.abs(theta-this.shooterPitch) > .035 || !this.scoringMechanismReady)) return null;
+    if (this.mech) {
+      // Physical hopper: the indexer runs while the robot is ready to fire, and only a ball that has reached the flywheel
+      // leaves, so the fire rate is what the mechanism delivers (still capped at launcher.rate by the cooldown).
+      this.mech.demandFeed();
+      if (this.fireCooldown > 0) return null;
+      const pick = this.mech.takeShot();
+      if (pick < 0) return null;
+      const k = this.held.lastIndexOf(pick);
+      if (k >= 0) { this.held.splice(k, 1); this.held.push(pick); }
+    }
     // Fire from the current actuator pose; tracking lag remains a physical aiming error.
     if (this.shootWhileTracking) theta = this.shooterPitch;
     this.lastShotAngle = theta;
@@ -2296,6 +2353,7 @@ export class Robot {
     this.updateClimb(dt);
     this.updateTipped(dt);
     this.bay?.update(dt);
+    this.mech?.update(dt);
   }
 
   // ───────────────────────── climbing (simplified, kinematic) ─────────────────────────
@@ -2499,6 +2557,7 @@ export class Robot {
     this.fireCooldown = 0;
     this.exitIndex = 0;
     this.bay?.clear();
+    this.mech?.clear();
     this.held.length = 0;
     this.flow?.clear(0);
     this.blockerDeploy = 0;
@@ -2522,6 +2581,7 @@ export class Robot {
       arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
       take: roll && this.fuelPiles.length ? entry => {
         if (this.bay) return this.bay.takeForFeed(entry);
+        if (this.mech) return null; // the physical hopper's balls travel to the shooter themselves
         const bins = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0 && (p as THREE.InstancedMesh).count > 0);
         let best: THREE.Object3D | undefined, distance = Infinity;
         const local = new THREE.Vector3();
@@ -2605,7 +2665,7 @@ export class Robot {
 
   /** A piece was just captured at this world position (animates it into the robot when piece flow is on). */
   noteCapture(world: { x: number; y: number; z: number }): void {
-    if (!this.bay) this.flow?.noteCapture(world);
+    if (!this.bay && !this.mech) this.flow?.noteCapture(world);
   }
 
   /** Held pieces still animating into the robot (not yet drawn in the hopper / held position). */
@@ -2656,6 +2716,7 @@ export class Robot {
   /** `alpha`: how far the clock is between the previous physics step and the latest (1 = draw the latest). */
   syncVisual(frameDt?: number, alpha = 1): void {
     this.bay?.settle();
+    this.mech?.pose();
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
     const dt = frameDt ?? (this.lastSync < 0 ? 0 : clamp(now - this.lastSync, 0, 0.1));
     this.updateHopperEnvelope();
@@ -2671,7 +2732,7 @@ export class Robot {
       this.visual.position.lerpVectors(this.prevPos, this.visual.position, alpha);
       this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
     }
-    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
+    if (!this.mech) this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
     if (this.bay && this.flow && this.piecesInTransit === 0) this.bay.releaseStaged();
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);

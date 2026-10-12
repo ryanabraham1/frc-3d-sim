@@ -1,7 +1,7 @@
 import { HOOD_SHOT_MAX, scoringEase, hoodLive } from './scoringReadiness';
 import * as THREE from 'three';
 import { box, bar, mat, fillBlock, drivebase, roller, hoodShell } from './models';
-import type { ModelKit, RobotModel } from './models';
+import type { HopperMechanism, ModelKit, RobotModel } from './models';
 import { hopperNetCeiling } from './config';
 import { articulateRollers } from './rollerArticulation';
 
@@ -22,6 +22,11 @@ export function articulation(root: THREE.Group) {
 }
 export function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
   k.visual.updateMatrixWorld(true);
+  // A feeder follows the shaft's articulated hood/turret, not the rubber's cosmetic spin.
+  // Offsets in a spinning flywheel's own frame orbit the shaft and carry staged balls through it.
+  if (/^cad-flywheel(?:-.*)?-pivot$/.test(o.name) && o.parent) {
+    return k.visual.worldToLocal(o.parent.localToWorld(new THREE.Vector3(x,y,z).add(o.position)));
+  }
   return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
 }
 export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean,roofAt?:(x:number,z:number)=>number) {
@@ -216,11 +221,32 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   // pile stops short of it instead of spilling toward the shooter.
   const pile=fuel(k,-.60,.025,.1905,.5461,.67,-.32,undefined,x=>Math.min(.5461,.456+(x+.52)));
   let deploy=1,angle=0;
-  return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,
+  // Physical hopper hooks (robot/mechHopper.ts). Intake rollers measured from the deployed source CAD (side slice at
+  // z = 0.1): A, the outer top drum at (-.611, .160) r 27 mm, then the lower pair C (-.484, .043) and B (-.452, .102)
+  // r 17 mm that lift the ball up the bumper face; positions here are in the intake pivot's frame. A counter-rotates
+  // against C and B to pinch the ball and roll it up over the bumper. Surface speeds [EST]. The ten feeder shafts are the
+  // roller floor (falling toward the front) and the rising front conveyor; the drum flywheel has its own bearing below
+  // the hood hinge.
+  const mech:HopperMechanism={
+    rollers:[
+      {node:intake,at:[-.338,-.0099,0],axis:'z',radius:.027,length:.62,speed:4.5,run:'intake',capture:true},
+      {node:intake,at:[-.211,-.127,0],axis:'z',radius:.017,length:.62,speed:-4.5,run:'intake',capture:true},
+      {node:intake,at:[-.179,-.068,0],axis:'z',radius:.017,length:.62,speed:-4.5,run:'intake',capture:true},
+      // The drawn shafts turn at 35 rad/s below. A ~34 mm tread therefore moves ~1.2 m/s [EST]; the old 4.5 m/s
+      // contact speed flung the final ball back out of the floor instead of conveying it toward the flywheel.
+      ...feederRollers.map((node,i)=>({node,axis:'z' as const,speed:-1.2,run:'feed' as const,grip:i>=feederRollers.length-3})),
+    ],
+    // Contact belongs to the flywheel shaft, not the hood hinge 97 mm above it. The source pivot is its left bearing,
+    // so recenter the contact segment across the drum; rotation about z leaves this axis point unchanged.
+    shooter:[{node:flywheel,at:[0,0,.3309938],axis:'z',length:.62,radius:.142}],
+    // FUEL resting on the bumper and intake behind the roller floor only moves once the hopper compresses.
+    squeezeBelow:.5,
+  };
+  return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,mech,
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],
       stow:pile.stow,feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;
         return [new THREE.Vector3(-.20,.27,z),new THREE.Vector3(.05,.29,z),new THREE.Vector3(.24,.36,z),point(k,hood,.037,-.028,z)];}},
-    update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
+    update(s){deploy=ease(deploy,s.enabled?1-.75*(s.squeeze??0):0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return;
       // Source pickup is deployed. Fold upward and inward about its real bearing.
       intake.rotation.z=-(1-deploy)*2.65;

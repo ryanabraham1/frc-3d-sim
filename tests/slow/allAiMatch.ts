@@ -10,7 +10,8 @@ beforeAll(async () => { R = await loadRapier(); });
 // A whole all-AI match (the player's station driven by a bot too) through the engine's step order.
 export function allAiMatch(seasons: SeasonDefinition[]) {
   describe.each(seasons)('$name all-AI match', (season) => {
-    it('every robot scores, the alliance plan runs and fouls stay rare', () => {
+    // REBUILT skipped (user, 2026-10-11): AI benchmark scores are out of scope while the physical hoppers change.
+    it.skipIf(season.id === '2026-rebuilt')('every robot scores, the alliance plan runs and fouls stay rare', () => {
       const settings = { ...defaultSettings(season), seed: 3, alliance: 'blue' as const, aiDifficulty: 'hard' as const, aiAlly: { skill: 'hard' as const } };
       const res = runMatch(season, R, settings, { playerBot: true });
       console.log(season.id, 'all-AI', res.score, JSON.stringify(res.categories), 'fouls', res.foulList);

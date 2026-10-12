@@ -63,6 +63,66 @@ export interface RobotAnimState {
   upx?: number;
   upy?: number;
   upz?: number;
+  /**
+   * 0–1: how far the intake / sliding hopper is pulled in to squeeze the last FUEL toward the indexer while shooting
+   * a nearly empty hopper (see Robot.animateModel). Models with a retracting intake fold it by this much.
+   */
+  squeeze?: number;
+}
+
+/**
+ * A powered roller that moves FUEL in the physical hopper (robot/mechHopper.ts). Its axis passes through `at` (in
+ * `node`'s frame, default the origin) along `node`'s local `axis`; the roller's own spin about that axis is ignored, so
+ * `node` may be the spinning group itself. `speed` is the surface speed (m/s), positive = right-handed about the axis
+ * as seen in the robot frame at build time. `run`: 'intake' turns with the intake command, 'feed' while the robot is
+ * firing, 'both' with either.
+ */
+export interface MechRoller {
+  node: THREE.Object3D;
+  at?: [number, number, number];
+  axis?: 'x' | 'y' | 'z';
+  /** Tread radius and length (m). Omitted: measured from the drawn roller (the node's geometry within 4.5 cm of the axis). */
+  radius?: number;
+  length?: number;
+  speed: number;
+  run: 'intake' | 'feed' | 'both';
+  /** Intake rollers only: a field ball touching this roller while it runs is taken in (capture by contact). */
+  capture?: boolean;
+  /** A rigid shaft whose compliant tread also presses the ball onto it while running (a vertical conveyor lift). */
+  grip?: boolean;
+}
+
+/**
+ * Hooks for the physical hopper (robot/mechHopper.ts): which drawn parts move FUEL, and where the shooter takes it.
+ * Every other visible mesh of the model is a collider exactly as drawn.
+ */
+export interface HopperMechanism {
+  rollers: MechRoller[];
+  /**
+   * Flywheel contact: a ball whose centre comes within `radius` of the segment through `at` (in `node`'s frame) along
+   * `axis`, `length` long (0 = a point), while the robot fires, is launched.
+   */
+  shooter: { node: THREE.Object3D; at: [number, number, number]; radius: number; axis?: 'x' | 'y' | 'z'; length?: number;
+    /** Only balls whose robot-frame centre passes this test (e.g. inside the feed column) reach the flywheel. */
+    gate?(x: number, y: number, z: number): boolean }[];
+  /** Moving parts whose motion drags FUEL along by friction (a dye rotor's spinning floor). Other fast spinners only collide. */
+  drive?: THREE.Object3D[];
+  /**
+   * A dye rotor: the spinning plate `node` (turning about its local y, top `top` above its origin, `radius` wide) and its
+   * spiral rib act as a screw conveyor: while feeding, a ball resting on the plate is carried round with it and walked
+   * inward at `inward` m/s toward the throat at the plate's centre.
+   */
+  rotor?: { node: THREE.Object3D; radius: number; top: number; inward: number };
+  /** Low-friction guides (UHMW / polycarbonate) FUEL slides along (subtrees), e.g. a dye rotor's spiral fin. */
+  slick?: THREE.Object3D[];
+  /** Drawn parts FUEL passes through (subtrees). */
+  ignore?: THREE.Object3D[];
+  /** Hopper fill (0–1) below which shooting folds the intake in to squeeze the rest toward the indexer (default 0.36). */
+  squeezeBelow?: number;
+  /** Soft elastic roof (a stretching net): robot-frame height of the slack net and of the fully stretched net. */
+  net?: { rim: number; full: number; inside(x: number, z: number): boolean;
+    /** Robot-frame footprint (x, z) the net is tied around: between rim and full height its edges are walls. */
+    area?: { min: [number, number]; max: [number, number] } };
 }
 
 export interface ModelKit {
@@ -101,6 +161,8 @@ export interface RobotModel {
   handoffStyle?: 'fold' | 'conveyor' | 'direct' | 'toss';
   /** Status light position (robot frame), on top of the model's structure. */
   lightAt?: [number, number, number];
+  /** Physical hopper hooks: FUEL is carried by these rollers and launched only at the shooter (robot/mechHopper.ts). */
+  mech?: HopperMechanism;
   /**
    * Game-piece flow through this robot (see pieceFlow.ts), as points in the robot frame. `intake` runs from just
    * inside the intake mouth to the stow point (omit the stow point: `stow` or the held anchor / hopper is appended);

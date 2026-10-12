@@ -22,6 +22,7 @@ export interface WorkerSimInit {
   settings: GameSettings;
   setup: MatchSetup;
   hopper: HopperPhysics;
+  hopperMode?: 'mech' | 'stowbay';
   activeMax: number;
   log: boolean;
   speed: number;

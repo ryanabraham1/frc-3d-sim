@@ -88,5 +88,5 @@ export function highTideHopper(parent: THREE.Object3D, L: number, W: number, bot
   }
   // Corner posts: teal on the fixed half (inside the truss columns), black at the intake end.
   for (const [x, z] of points) bar(root, [x, bottom, z], [x, top, z], .015, x * side < 0 ? teal : black);
-  return { hx, hz, cut, fixedSide: -side, inside: (x: number, z: number) => -side * x + Math.abs(z) <= hx + hz - cut - .075 * Math.SQRT2 };
+  return { hx, hz, cut, points, fixedSide: -side, inside: (x: number, z: number) => -side * x + Math.abs(z) <= hx + hz - cut - .075 * Math.SQRT2 };
 }

@@ -19,6 +19,8 @@ export type ToWorker =
       setup: MatchSetup;
       /** Real-body hoppers: none, the player's robot, or every robot. */
       hopper: HopperPhysics;
+      /** Which real-body hopper (see WorldOptions.hopperMode). */
+      hopperMode?: 'mech' | 'stowbay';
       /** StowBay.ACTIVE_MAX for this device. */
       activeMax: number;
       log: boolean;

@@ -69,6 +69,7 @@ async function init(m: Extract<ToWorker, { t: 'init' }>): Promise<void> {
       scene: new THREE.Scene(),
       playerId,
       realHopper: (rs) => m.hopper === 'all' || (m.hopper === 'player' && rs.id === playerId),
+      hopperMode: m.hopperMode,
       pieceFlow: true,
       optimize: true,
       aiSettings: botSettings(m.setup, settings),
@@ -179,7 +180,7 @@ function sendFrame(stepped: number, now: number): void {
     pieceStates,
     events: events.splice(0),
     boost: s.boost,
-    perf: { stepMs, frameMs, realHoppers: w.robots.filter((r) => r.bay).length },
+    perf: { stepMs, frameMs, realHoppers: w.robots.filter((r) => r.bay || r.mech).length },
   };
   lastScore = scoreKey;
   lastRules = rulesKey;

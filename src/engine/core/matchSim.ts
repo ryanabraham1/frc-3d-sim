@@ -195,7 +195,8 @@ export class MatchSim {
       const zones: { r: Robot; z: IntakeZone }[] = [];
       for (const r of robots) {
         r.tickIntake(dt);
-        const z = r.lastCommand.intake && r.intakeRoom > 0 ? r.intakeZone() : null;
+        // Physical hoppers capture by roller contact (MechHopper); everyone else swallows from the capture zone.
+        const z = r.lastCommand.intake && r.intakeRoom > 0 && !r.mech ? r.intakeZone() : null;
         if (z) zones.push({ r, z });
       }
       for (let i = 0; i < pool.count && zones.length; i++) {
@@ -258,7 +259,7 @@ export class MatchSim {
     const { world } = this;
     if (state.version !== 1 || state.seasonId !== this.season.id || !world.rules.restoreRecovery) throw new Error('Incompatible match checkpoint');
     world.clock.restore(state.clock); world.score.restore(state.score); world.rng.restore(state.rng);
-    for (const robot of world.robots) robot.bay?.clear();
+    for (const robot of world.robots) { robot.bay?.clear(); robot.mech?.clear(); }
     world.pool.restoreRecovery(state.pool);
     world.rules.restoreRecovery(state.rules);
     for (const saved of state.robots) {

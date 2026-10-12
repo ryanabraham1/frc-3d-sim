@@ -27,6 +27,11 @@ export interface WorldOptions {
   playerId: number | null;
   /** Real-body hopper for this robot? */
   realHopper(rs: RobotSetup): boolean;
+  /**
+   * Which real-body hopper: 'mech' (default) = the physical hopper for models with mechanism hooks (robots without
+   * them keep the particle pile); 'stowbay' = the older wall-slab hopper for every FUEL robot (`?hopper=stowbay`).
+   */
+  hopperMode?: 'mech' | 'stowbay';
   /** Draw pieces travelling through the robots (intake → hopper → shooter). */
   pieceFlow: boolean;
   /** Bake static robot parts into a few meshes (only worth it where the robots are drawn — and both sides of a mirror must agree). */
@@ -75,7 +80,7 @@ export class MatchWorld {
       season.configureRobot?.(robot);
       // Held FUEL becomes real physics bodies only where it is worth the step time; everyone else draws the visual
       // particle pile.
-      if (opts.realHopper(rs)) robot.attachPool(this.pool);
+      if (opts.realHopper(rs)) robot.attachPool(this.pool, opts.hopperMode ?? 'mech');
       if (opts.pieceFlow && season.pieceFlow !== false) {
         const piece = this.pool.mesh;
         const round = season.gamePiece.shape !== 'ring' && season.gamePiece.shape !== 'tube';

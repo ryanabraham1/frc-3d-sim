@@ -256,6 +256,7 @@ export class Game {
       scene: this.renderer.scene,
       playerId: mine?.id ?? null,
       realHopper: (rs) => !worker && this.wantsRealHopper(rs, net),
+      hopperMode: this.role === 'local' && new URLSearchParams(location.search).get('hopper') === 'stowbay' ? 'stowbay' : 'mech',
       pieceFlow: true,
       optimize: true,
       hud: this.hud,
@@ -393,11 +394,13 @@ export class Game {
   private startWorker(R: RapierModule): void {
     for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     const piece = this.pool.mesh;
-    // `?hopper=all|player|none` overrides the device tier's choice (testing the real-body hopper).
+    // `?hopper=all|player|none` overrides the device tier's choice (testing the real-body hopper); `?hopper=stowbay`
+    // puts every FUEL robot on the older wall-slab hopper instead of the physical (mechanism) hopper.
     const asked = new URLSearchParams(location.search).get('hopper');
-    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : this.quality.hopperWorker;
+    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'stowbay' ? 'all' : this.quality.hopperWorker;
+    const hopperMode = asked === 'stowbay' ? 'stowbay' as const : 'mech' as const;
     this.remote = new WorkerSim(this.world, {
-      settings: this.settings, setup: this.setup, hopper, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
+      settings: this.settings, setup: this.setup, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
     }, (e) => this.onSimEvent(e), (reason) => {
       if (this.disposed) return;
       console.warn('[sim] worker unavailable, simulating on the page:', reason);
@@ -514,7 +517,7 @@ export class Game {
     if (this.role === 'client' || net?.recovering) return false;
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     const asked = this.role === 'local' ? new URLSearchParams(location.search).get('hopper') : null;
-    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
+    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'stowbay' ? 'all' : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
     if (mode === 'none') return false;
     if (this.role === 'host' && rs.peerId && rs.peerId !== net!.client.peerId) return false;
     return mode === 'all' || rs.id === mine?.id;
@@ -522,7 +525,7 @@ export class Game {
 
   /** The machine can't keep up: turn the farthest-from-the-player real hoppers into particle piles, the player's last. */
   private shedHopperPhysics(): boolean {
-    const live = this.robots.filter((r) => r.bay);
+    const live = this.robots.filter((r) => r.bay || r.mech);
     const victim = live.find((r) => r !== this.player) ?? live[0];
     if (!victim) return false;
     victim.detachPool(this.pool);
@@ -1150,7 +1153,7 @@ export class Game {
       hostSimLoad: Math.round(this.simLoad * 100) / 100,
       pixelRatio: this.renderer.currentPixelRatio,
       tier: ['low', 'medium', 'high'].indexOf(this.quality.tier),
-      realHoppers: this.remote ? this.remote.perf.realHoppers : this.robots.filter((r) => r.bay).length,
+      realHoppers: this.remote ? this.remote.perf.realHoppers : this.robots.filter((r) => r.bay || r.mech).length,
       workerStepMs: Math.round((this.remote?.perf.stepMs ?? 0) * 100) / 100,
       workerFrameMs: Math.round((this.remote?.perf.frameMs ?? 0) * 100) / 100,
       workerFrames: this.remote?.frames ?? 0,

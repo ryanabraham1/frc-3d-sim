@@ -337,6 +337,19 @@ export class GamePiecePool {
 
   isStowed(i: number): boolean { return this.stowed[i]; }
 
+  /**
+   * A held piece simulated in its robot's own hopper world (robot/mechHopper.ts): its field body is switched off and
+   * only posed from there, but the pool still draws it (and the simulation worker still ships its pose).
+   */
+  carryHeld(i: number): void {
+    const b = this.bodies[i];
+    b.setLinvel({ x: 0, y: 0, z: 0 }, false);
+    b.setAngvel({ x: 0, y: 0, z: 0 }, false);
+    b.setEnabled(false);
+    this.stowed[i] = true;
+    this.shown[i] = 0;
+  }
+
   /** A piece that rolled out of a hopper becomes an ordinary field piece, exactly where it is and moving as it was. */
   releaseToField(i: number): void {
     this.leaveBay(i);

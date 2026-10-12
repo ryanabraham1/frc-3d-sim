@@ -10,7 +10,7 @@ import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import { moreRebuiltTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_RUBBER, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
+import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_RUBBER, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, type HopperMechanism, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
 import { adaptedDumper, adaptedRotorColumn, adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
@@ -113,28 +113,67 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   tray.name = 'sliding-hopper';
   k.visual.add(tray);
   const trayH = H - .02 - (bt + .02);
-  hopperWalls(tray, { intakeSide: k.groundSide, floorDepth: .12, x: side * (L / 2 - 0.155), y0: bt + 0.02, length: 0.30, width: W * 0.93, height: trayH, m: sponsor, frame: black });
-  for (const sz of [-1, 1]) box(tray, .30, .05, .006, black, side * (L / 2 - 0.155), bt + .045, sz * (W * .465 + .004));
+  // Sides, top rails and an outer end wall above the intake mouth; open toward the main hopper and underneath, where
+  // the intake ramp lifts FUEL in over the bumper (a closed inner end would wall the extension off from the rotor).
+  const trayX = side * (L / 2 - 0.155), mouthTop = bt + .10;
+  for (const sz of [-1, 1]) {
+    box(tray, .30, trayH, .008, sponsor, trayX, bt + .02 + trayH / 2, sz * W * .465);
+    box(tray, .30, .05, .006, black, trayX, bt + .045, sz * (W * .465 + .004));
+    box(tray, .30, .018, .018, black, trayX, bt + .02 + trayH, sz * W * .465);
+    box(tray, .022, trayH, .022, black, trayX + side * .15, bt + .02 + trayH / 2, sz * W * .465);
+  }
+  box(tray, .008, bt + .02 + trayH - mouthTop, W * .93, sponsor, trayX + side * .15, (mouthTop + bt + .02 + trayH) / 2, 0).name = 'hightide-extension-end-wall';
+  box(tray, .018, .018, W * .93, black, trayX + side * .15, bt + .02 + trayH, 0);
+  // Hopper floor around the dye rotor: a funnel falling from the walls to the rotor's lip, so FUEL in the corners rolls
+  // onto the plate. [EST: the binder shows the rotor filling the floor; the corners outside its circle need a floor]
+  const rotorR = Math.min(L, W) * .44 + .012;
+  const floorShape = new THREE.Shape(outline.points.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const hole = new THREE.Path(); hole.absarc(L * .05, 0, rotorR, 0, Math.PI * 2, true); floorShape.holes.push(hole);
+  const floorGeo = new THREE.ShapeGeometry(floorShape, 48).rotateX(-Math.PI / 2);
+  const fp = floorGeo.getAttribute('position') as THREE.BufferAttribute;
+  for (let i = 0; i < fp.count; i++) fp.setY(i, bt + .045 + .09 * Math.min(1, Math.max(0, Math.hypot(fp.getX(i) - L * .05, fp.getZ(i)) - rotorR) / .2));
+  floorGeo.computeVertexNormals();
+  const hopperFloor = new THREE.Mesh(floorGeo, black);
+  hopperFloor.name = 'hightide-hopper-floor';
+  k.visual.add(hopperFloor);
   const trayFill = fillBlock(tray, { x: side*(L/2-.13), y0:bt+.03, length:.25, width:W*.88, height:(c.hopperExpansion?.fullHeight ?? H)-bt-.04, color:FUEL, capacity:30 });
   const intake = highTideIntake(k);
   const deploy = { v: 0 };
   let rotorRate = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
+  // Physical hopper hooks (robot/mechHopper.ts): the intake drums carry FUEL up the ramp over the bumper (their tops run
+  // inward), the spinning rotor floor and its fin sweep it into the open throat, the three lift wheels push it up the
+  // column, and the turret's flywheel takes it at the top. Surface speeds [EST].
+  const full = c.hopperExpansion?.fullHeight ?? H;
+  const mech: HopperMechanism = {
+    rollers: [
+      ...intake.rollers.map((node, i) => ({ node, axis: 'z' as const, speed: side * 4, run: 'intake' as const, capture: i < 2, grip: true })),
+      ...dye.lift.map(node => ({ node, axis: 'z' as const, speed: 4, run: 'feed' as const, grip: true })),
+    ],
+    drive: [dye.floor],
+    rotor: { node: dye.floor, radius: dye.radius + .01, top: .004, inward: 1.5 },
+    // The turret's flywheel stands in the top of the throat: a ball the lift wheels bring up to it is pinched against
+    // the hood. Only a ball inside the column gets there (a ball on top of the pile beside it does not).
+    shooter: [{ node: sh.flywheel, at: [0, 0, 0], axis: 'z', length: .12, radius: .13, gate: (x, _y, z) => Math.hypot(x - dye.tower.position.x, z) < .11 }],
+    net: { rim: H - .01, full, inside: () => true, area: { min: [side < 0 ? -L / 2 - .25 : -outline.hx, -W * .485], max: [side < 0 ? outline.hx : L / 2 + .25, W * .485] } },
+  };
   return {
     replaces: ['bumpers', 'chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.4, H - 0.01, W * 0.4],
+    mech,
     flow: { intake: intake.intake, stow: pile.stow, feed: () => [...dye.feed(FUEL_R), ...sh.path().map(p => flowAt(k, sh.root, p.x, p.y, p.z))] },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      const d = latchDeploy(deploy, s);
+      // Shooting the hopper low, intake and extension slide back in and push the FUEL on them onto the rotor.
+      const d = latchDeploy(deploy, s) * (1 - .75 * (s.squeeze ?? 0));
       intake.update(s, d);
       tray.position.x = side * d * 0.2;
       k.visual.userData.netIntakeExtension={side,length:d*.2};
       trayFill.set(d > .35 ? s.fill : 0);
       fill.set(s.fill);
-      // Slowly counter-rotates to agitate; spins hard to feed while firing.
-      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.aiming || s.firing > 0 ? 9 : -1.2, 6, s.dt);
+      // Slowly turns back to agitate; spins hard to feed while firing, the way that screws the fin's spiral inward.
+      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.aiming || s.firing > 0 ? -3 : 0, 6, s.dt);
       dye.update(rotorRate, s.dt);
       sh.update(s);
     },
