@@ -28,7 +28,10 @@ export class OcclusionFader {
   private readonly dir = new THREE.Vector3();
   private readonly box = new THREE.Box3();
 
-  constructor(private readonly root: THREE.Object3D) {}
+  constructor(private readonly root: THREE.Object3D) {
+    // Only the nearest triangle of each mesh matters, not every triangle behind it.
+    this.raycaster.firstHitOnly = true;
+  }
 
   /** Fade whatever blocks the view from `eye` to any of `targets`; pass no targets to fade everything back in. */
   update(dt: number, eye: THREE.Vector3, targets: readonly THREE.Vector3[]): void {

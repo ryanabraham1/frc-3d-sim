@@ -14,7 +14,7 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { dedup, prune, weld, join, meshopt, flatten, simplify } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
-import { Matrix4 } from 'three';
+import { Color, Matrix4 } from 'three';
 
 const [src] = process.argv.slice(2);
 const HARDWARE = /PEM S-|Rivet|Hook Tape|Loop Tape|Seaming Tape|Hex Spacer|HEX Spacer|^Spacer$|Screw|[Bb]olt|Nut\b|Washer|Bearing|Connector Pin|Knob|Zip Tie|Hinge, Insert|Gas Spring|BLOCK CAD/;
@@ -32,7 +32,7 @@ for (const n of root.listNodes()) for (const c of n.listChildren()) parentOf.set
 const nameOf = (n) => { let k = n; while (k && (!k.getName() || k.getName().startsWith('occurrence'))) k = parentOf.get(k); return k?.getName() ?? ''; };
 
 await doc.transform(flatten());
-const rgb = (hex) => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255, 1];
+const rgb = (hex) => { const c = new Color(hex); return [c.r, c.g, c.b, 1]; };
 // Alliance colours as the game draws them (src/seasons/2026-rebuilt/constants.ts COLORS).
 const blue = doc.createMaterial('alliance-blue').setBaseColorFactor(rgb(0x1e62d0)).setRoughnessFactor(0.6).setMetallicFactor(0.05);
 const red = doc.createMaterial('alliance-red').setBaseColorFactor(rgb(0xd32f2f)).setRoughnessFactor(0.6).setMetallicFactor(0.05);
