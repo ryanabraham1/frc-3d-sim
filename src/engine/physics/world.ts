@@ -24,6 +24,9 @@ export const Group = {
   /** A game piece held inside a robot's hopper: it only touches other held pieces and that hopper's walls. */
   STOWED: 1 << 5,
   STOW_WALL: 1 << 6,
+  /** The footprint of a raised shooter hood (carried down to the floor) and the walls under low overhead arms it stops at. */
+  HOOD_SKIRT: 1 << 7,
+  HOOD_STOP: 1 << 8,
   ALL: 0xffff,
 } as const;
 
@@ -39,6 +42,8 @@ export const GROUPS = {
   /** Being pulled in by the intake rollers: passes the hopper wall, still bumps other held pieces. */
   feeding: collisionGroups(Group.STOWED, Group.STOWED),
   stowWall: collisionGroups(Group.STOW_WALL, Group.STOWED),
+  /** Invisible wall under an overhead arm that only a raised hood's skirt feels: it stops the robot at the arm's face. */
+  hoodStop: collisionGroups(Group.HOOD_STOP, Group.HOOD_SKIRT),
   robot: collisionGroups(Group.ROBOT, Group.FIELD | Group.ROBOT | Group.PIECE | Group.ROBOT_ONLY),
   // Pieces always collide with each other, including mid-air (real physics — user decision 2026-09-29).
   piece: collisionGroups(Group.PIECE, Group.FIELD | Group.ROBOT | Group.PIECE | Group.PIECE_ONLY),

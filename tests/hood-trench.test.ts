@@ -22,14 +22,19 @@ function sim(config: RobotConfig = season.robotDefaults, x = C.HUB_CENTER.x - 2.
 }
 const team = (n: number) => season.teamRobots!.find((t) => t.team === n)!.config;
 
-/** The hood collider is exactly the drawn hood's bounds (chassis frame). */
+/**
+ * The hood collider (a skirt) has exactly the drawn hood's x/z footprint and top in the chassis frame; it is carried down
+ * to the floor so the arm's push comes at wheel height.
+ */
 function expectColliderMatchesHood(s: HeadlessSim): void {
   const b = s.robot.hoodBounds(true)!, c = s.robot.hoodColliderBox()!;
   expect(c).not.toBeNull();
-  for (const k of ['x', 'y', 'z'] as const) {
+  for (const k of ['x', 'z'] as const) {
     expect(c.min[k]).toBeCloseTo(b.min[k], 2);
     expect(c.max[k]).toBeCloseTo(b.max[k], 2);
   }
+  expect(c.max.y).toBeCloseTo(b.max.y, 2);
+  expect(c.min.y).toBeLessThan(0.1);
 }
 
 /** Shoot with the hood up and drive at the arm until the hood stops the robot. */
@@ -55,9 +60,11 @@ describe('a raised shooter hood blocks at the TRENCH', () => {
     s.run(1.5, { ...IDLE_COMMAND, shoot: true });
     s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 2.5 });
     expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
-    // It stopped because the drawn hood touches the arm.
+    // It stopped because the drawn hood touches the arm, not before and not past it, and it did not tip.
     const hood = s.robot.hoodBounds(true)!;
     expect(s.robot.pose.x + hood.max.x).toBeGreaterThan(ARM_NEAR - 0.03);
+    expect(s.robot.pose.x + hood.max.x).toBeLessThan(ARM_NEAR + 0.05);
+    expect(s.robot.tippedOver).toBe(false);
   });
 
   it('with the hood parked the same robot rolls under the TRENCH', () => {
@@ -127,6 +134,16 @@ describe('every trench-height team robot with a hood', () => {
     driveIntoArm(s);
     expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
     expectColliderMatchesHood(s);
+  });
+
+  it.each([971, 1678, 2910])('%i stops exactly where its drawn hood meets the arm, at full speed', (n) => {
+    const s = sim(team(n));
+    s.run(1.8, { ...IDLE_COMMAND, shoot: true });
+    s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 4.5 });
+    const hood = s.robot.hoodBounds(true)!;
+    expect(s.robot.pose.x + hood.max.x).toBeGreaterThan(ARM_NEAR - 0.02);
+    expect(s.robot.pose.x + hood.max.x).toBeLessThan(ARM_NEAR + 0.02);
+    expect(s.robot.tippedOver).toBe(false);
   });
 
   it.each([254, 971, 4414, 7769])('%i is stopped by the arm with its hood up', (n) => {

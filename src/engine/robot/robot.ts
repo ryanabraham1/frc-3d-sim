@@ -307,7 +307,7 @@ export class Robot {
       // Raised shooter hood: a box that Robot.updateHoodCollider fits to the DRAWN hood every time it moves, so the
       // TRENCH arm stops the robot exactly where the hood on screen touches it. Only field structure sees it.
       this.hoodCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(0.05, 0.02, 0.05)
-        .setMass(0).setFriction(0.2).setCollisionGroups(collisionGroups(Group.ROBOT, Group.FIELD)), this.body);
+        .setMass(0).setFriction(0).setCollisionGroups(collisionGroups(Group.HOOD_SKIRT, Group.HOOD_STOP)), this.body);
       this.hoodCollider.setEnabled(false);
     }
     if (c.hopperExpansion) {
@@ -1986,9 +1986,11 @@ export class Robot {
   get hoodTop(): number { return this.hoodBounds() ? this.hoodTopY : 0; }
 
   /**
-   * Fit the hood collider to the drawn hood. It exists only while the hood sticks up above the frame AND the season reports
-   * a low overhead over the robot (`overheadLimit`: the TRENCH arm). Away from the arm the hood doesn't collide with the
-   * rest of the field, so shooting beside the HUB, the TOWER or a wall plays exactly as before.
+   * Fit the hood collider (a skirt: the drawn hood's x/z footprint and top, carried down to the floor) to the drawn hood.
+   * It exists only while the hood reaches the overhead clearance AND the season reports a low overhead over the robot
+   * (`overheadLimit`: the TRENCH arm). It collides only with the wall under that arm (HOOD_STOP), so shooting beside the
+   * HUB, the TOWER or a wall plays as before, a hood that stays below the arm never blocks, and a robot stops with a low
+   * push exactly where the drawn hood meets the arm's face.
    */
   private updateHoodCollider(): void {
     const col = this.hoodCollider;
@@ -1996,11 +1998,18 @@ export class Robot {
     const b = this.hoodBounds();
     if (!b) { if (col.isEnabled()) col.setEnabled(false); return; }
     const frameTop = this.config.height;
-    const on = this.overheadLimit < Infinity && b.max.y > frameTop + 0.01;
-    if (!on) { if (col.isEnabled()) col.setEnabled(false); return; }
-    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - b.min.y) / 2), hz = Math.max(0.01, (b.max.z - b.min.z) / 2);
+    const on = this.overheadLimit < Infinity && b.max.y > Math.max(frameTop + 0.01, this.overheadLimit);
+    if (!on) { if (col.isEnabled()) { col.setEnabled(false); this.body.setSoftCcdPrediction(0); } return; }
+    // Speculative contacts (soft CCD) while the hood can hit the arm, so a robot driven at it at full speed stops where
+    // the drawn hood touches instead of sinking a step's travel into it.
+    this.body.setSoftCcdPrediction(0.12);
+    // The skirt has the hood's drawn x/z footprint and top, carried down to just above the floor: it meets the wall under
+    // the arm (field.ts) at the same face the drawn hood touches, and the push comes at wheel height, not hood height
+    // (a hood-height push tipped the robot onto its tail).
+    const bottom = 0.04;
+    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - bottom) / 2), hz = Math.max(0.01, (b.max.z - b.min.z) / 2);
     col.setShape(new this.physics.R.Cuboid(hx, hy, hz));
-    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + b.min.y) / 2, z: (b.max.z + b.min.z) / 2 });
+    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + bottom) / 2, z: (b.max.z + b.min.z) / 2 });
     col.setEnabled(true);
   }
 
