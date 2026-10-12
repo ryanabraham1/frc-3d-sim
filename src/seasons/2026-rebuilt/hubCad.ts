@@ -6,6 +6,17 @@ import type { FieldBuilder, Vec3 } from '../../engine/field/builder';
 import { HUB_CAD_NET, HUB_CAD_PARTS } from './hubCad.generated';
 import { cloneSpatialField, prepareSpatialField } from '../../engine/render/spatialField';
 import { COLORS } from './constants';
+import { mergeStatic } from '../../engine/render/mergeStatic';
+
+/** Batch the rigid HUB hardware by material; keep the addressable light group and hidden aesthetic net intact. */
+export function prepareHubVisual(root: THREE.Group): void {
+  root.traverse((o) => {
+    if (/Net \(Aesthetic\)/.test(o.name)) o.visible = false;
+  });
+  const lights = root.getObjectByName('hub-diffusers');
+  mergeStatic(root, lights ? new Set([lights]) : new Set());
+  prepareSpatialField(root);
+}
 
 /** glTF factors are linear; the field exporter wrote sRGB hex channels directly, washing out the alliance paint.
  * Set the cached materials through Three's sRGB-aware hex conversion to match the procedural field. */
@@ -65,7 +76,7 @@ export function prepareHubCad(): Promise<void> {
   if (typeof document === 'undefined' || typeof window === 'undefined') return Promise.resolve();
   const load = (file: string) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/field/${file}`);
   return (loading ??= Promise.all([
-    load('2026-hub.glb').then((g) => { prepareSpatialField(g.scene); asset = g.scene; }).catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }),
+    load('2026-hub.glb').then((g) => { prepareHubVisual(g.scene); asset = g.scene; }).catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }),
     load('2026-field.glb').then((g) => { restoreAllianceColors(g.scene); prepareSpatialField(g.scene); fieldAsset = g.scene; }).catch((e) => { console.warn('[field] field CAD unavailable, drawing the stand-in', e); }),
   ]).then(() => undefined));
 }

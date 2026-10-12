@@ -7,7 +7,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { acceleratedRaycast } from 'three-mesh-bvh';
 import { cloneSpatialField, prepareSpatialField } from '../src/engine/render/spatialField';
 import { OcclusionFader } from '../src/engine/render/occlusionFader';
-import { restoreAllianceColors } from '../src/seasons/2026-rebuilt/hubCad';
+import { prepareHubVisual, restoreAllianceColors } from '../src/seasons/2026-rebuilt/hubCad';
 import { COLORS } from '../src/seasons/2026-rebuilt/constants';
 
 function field() {
@@ -27,6 +27,48 @@ const meshes = (root: THREE.Object3D) => {
 const triangles = (root: THREE.Object3D) => meshes(root).reduce((n, m) => n + (m.geometry.index?.count ?? m.geometry.getAttribute('position').count) / 3, 0);
 
 describe('spatial field camera occlusion', () => {
+  it('batches the real HUB while preserving its independently colored lights', async () => {
+    const bytes = readFileSync('public/models/field/2026-hub.glb');
+    const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '');
+    const root = gltf.scene;
+    const before = meshes(root).filter(m => m.visible).length;
+    const bounds = new THREE.Box3().setFromObject(root, true);
+    prepareHubVisual(root);
+    expect(meshes(root).filter(m => m.visible).length).toBeLessThan(before / 2);
+    expect(new THREE.Box3().setFromObject(root, true).min.distanceTo(bounds.min)).toBeLessThan(1e-5);
+    expect(new THREE.Box3().setFromObject(root, true).max.distanceTo(bounds.max)).toBeLessThan(1e-5);
+    const clone = cloneSpatialField(root);
+    const lights = clone.getObjectByName('hub-diffusers')!;
+    expect(lights).toBeDefined();
+    const paint = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    meshes(lights).forEach(m => m.material = paint);
+    expect(meshes(clone).filter(m => m.material === paint).length).toBe(meshes(lights).length);
+    expect(meshes(root).every(m => m.material !== paint)).toBe(true);
+  });
+
+  it('skips off-ray triangles and hidden subtrees, and invalidates static bounds after a parent moves', () => {
+    const root = new THREE.Group();
+    const visible = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    visible.position.set(0, 3, 0);
+    const remote = visible.clone(); remote.position.set(50, 3, 0);
+    let remoteRaycasts = 0;
+    remote.raycast = () => { remoteRaycasts++; };
+    const hidden = new THREE.Group(); hidden.visible = false;
+    const hiddenMesh = visible.clone(); hiddenMesh.position.set(0, 2, 0); hidden.add(hiddenMesh);
+    visible.userData.staticField = true;
+    root.add(visible, remote, hidden); root.updateMatrixWorld(true);
+    const fader = new OcclusionFader(root);
+    const eye = new THREE.Vector3(0, 0, 0), target = new THREE.Vector3(0, 5, 0);
+    fader.update(1, eye, [target]);
+    expect((visible.material as THREE.Material).transparent).toBe(true);
+    expect(remoteRaycasts).toBe(0);
+    expect((hiddenMesh.material as THREE.Material).transparent).toBe(false);
+    root.position.x = 10; root.updateMatrixWorld(true);
+    fader.update(1, eye, [target]);
+    expect((visible.material as THREE.Material).transparent).toBe(false);
+    fader.clear();
+  });
   it('keeps the real compressed field CAD intact and gives every match mesh a shared acceleration tree', async () => {
     const bytes = readFileSync('public/models/field/2026-field.glb');
     const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(

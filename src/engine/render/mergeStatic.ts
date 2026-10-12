@@ -66,6 +66,17 @@ function mergeCluster(anchor: THREE.Object3D, dynamic: Set<THREE.Object3D>): voi
         if (name !== 'position' && name !== 'normal' && !(needUv && name === 'uv')) geo.deleteAttribute(name);
       }
       if (!geo.attributes.normal) geo.computeVertexNormals();
+      // glTF meshopt assets can store positions/normals in normalized integer attributes. Baking a metre-space
+      // transform into those buffers wraps/clamps values outside their encoded range. Expand before transforming.
+      for (const name of ['position', 'normal']) {
+        const attr = geo.getAttribute(name);
+        if (!attr || (!attr.normalized && attr.array instanceof Float32Array)) continue;
+        const values = new Float32Array(attr.count * attr.itemSize);
+        for (let i = 0; i < attr.count; i++) {
+          for (let k = 0; k < attr.itemSize; k++) values[i * attr.itemSize + k] = attr.getComponent(i, k);
+        }
+        geo.setAttribute(name, new THREE.BufferAttribute(values, attr.itemSize));
+      }
       if (needUv && !geo.attributes.uv) {
         geos.length = 0;
         break;

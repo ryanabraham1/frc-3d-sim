@@ -72,4 +72,7 @@ export function prepareSpatialField(root: THREE.Object3D, cellSize = 3): void {
 function accelerate(mesh: THREE.Mesh): void {
   mesh.geometry.boundsTree ??= new MeshBVH(mesh.geometry, { indirect: true });
   mesh.raycast = acceleratedRaycast;
+  mesh.userData.staticField = true;
+  mesh.updateMatrix();
+  mesh.matrixAutoUpdate = false;
 }
