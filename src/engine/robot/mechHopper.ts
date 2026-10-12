@@ -5,6 +5,7 @@ import type { GamePiecePool } from '../gamepiece/pool';
 import type { Robot } from './robot';
 import type { HopperMechanism, MechRoller } from './models';
 import { spawnClearance } from './spawnClearance';
+import { FUEL_PACK_RADIUS } from './config';
 import { clearFuelKeepouts, clearFuelOutline, clearHopperChamfer } from './fuelKeepouts';
 
 /**
@@ -39,7 +40,7 @@ const GRIP = 0.012;          // compliant roller tread: contact reach beyond the
 const TRACTION = 0.45;       // fraction of the slip removed per step while touching a running roller
 const WAKE_G = 0.6;          // change in apparent gravity (m/s²) that wakes a resting load
 const MAX_ACCEL = 45;        // a single-step velocity jump beyond this (m/s²) is a teleport or a solver spike: ignored
-const STOWED_SCALE = 0.95;   // foam FUEL compresses a little in a packed hopper
+const STOWED_SCALE = FUEL_PACK_RADIUS; // foam FUEL squashes in a packed hopper (shared with the drawn pile)
 
 interface Part {
   node: THREE.Object3D;
@@ -115,7 +116,7 @@ export class MechHopper {
     this.world = new this.R.World({ x: 0, y: -9.81, z: 0 });
     this.world.timestep = robot.physics.dt;
     this.world.integrationParameters.normalizedPredictionDistance = 0.01;
-    this.radius = pool.colliderRadius * STOWED_SCALE;
+    this.radius = pool.colliderRadius * (mech.packRadius ?? STOWED_SCALE);
     for (const o of mech.ignore ?? []) this.ignore.add(o);
     const c = robot.config, reach = Math.max(0.1, c.intake.reach ?? 0.3) + 0.2;
     this.envelope.set(
@@ -647,9 +648,12 @@ export class MechHopper {
         vt.lerp(s, r.on ? TRACTION : 0.25);
         // Normal: a spring out of the tread past its rest squash; a running roller also draws the ball onto it.
         const pen = rest - dist;
+        // A stopped tread is a firm, damped support: it cancels the approach, pushes out only real penetration, and
+        // otherwise leaves a resting ball alone so it can fall asleep.
+        if (!r.on && pen <= 0.0015 && vn >= -0.02 && vt.lengthSq() < 0.0025) continue;
         const vnTarget = pen > 0 ? Math.min(r.on ? 2.5 : 4, pen * (r.on ? 60 : 150)) : r.on ? Math.max(-0.8, pen * 20) : Math.max(vn, 0);
         vt.addScaledVector(n, vn + (vnTarget - vn) * (r.on ? 0.6 : 0.9));
-        b.setLinvel({ x: vt.x, y: vt.y, z: vt.z }, true);
+        b.setLinvel({ x: vt.x, y: vt.y, z: vt.z }, r.on);
       }
     }
   }
@@ -727,6 +731,11 @@ export class MechHopper {
     const shooters = this.shooterSegments();
     const near: { i: number; d: number }[] = [];
     for (const [i, b] of this.balls) {
+      // Foam rolling resistance: a ball creeping across a floor stops (and can fall asleep) instead of rolling for ever.
+      if (!b.isSleeping()) {
+        const lv = b.linvel();
+        if (lv.x * lv.x + lv.y * lv.y + lv.z * lv.z < 0.0025) { const w = b.angvel(); b.setAngvel({ x: w.x * .85, y: w.y * .85, z: w.z * .85 }, false); }
+      }
       const t = b.translation();
       p.set(t.x, t.y, t.z);
       if (!this.envelope.containsPoint(p)) { out.push(i); continue; }

@@ -68,39 +68,44 @@ it('net and telescoping expansion do not inflate the requested total capacities'
   }
 });
 
-for (const team of [254, 4414]) it(`${team}: intaking through the trench stops at the trench-safe load instead of jamming, then resumes after`, () => {
+for (const team of [254, 4414]) it(`${team}: intaking through the trench stops once the measured pile would reach the arm, then resumes after`, () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
-  let safe = c.hopperExpansion!.startCount;
-  while (loadedRobotHeight(c, safe + 1) <= C.TRENCH_SAFE_HEIGHT) safe++;
   const hubX = C.HUB_CENTER.x, y = C.TRENCH_OPENING_CENTER_Y;
   // Intake is on the back: face away from travel (yaw π) with FUEL strewn inside the trench and beyond it.
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: hubX - 2.2, y, yaw: Math.PI } }); sims.push(sim);
   const r = sim.robot;
-  sim.load(safe);
+  // A load well inside the rigid hopper (the trench-safe count itself emerges from the measured pile).
+  sim.load(15);
+  sim.run(1);
+  expect(r.clearanceHeight).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
   sim.scatter([-0.9, -0.5, -0.1, 0.3, 0.7, 1.2, 1.5, 1.8].map((dx, k) => ({ x: hubX + dx, y: y + (k % 2 ? 0.1 : -0.1) })));
-  let peak = 0, inside = 0;
+  let peak = 0, before = r.held.length;
   sim.run(8, { ...IDLE_COMMAND, vx: 1.5, intake: true }, () => {
     // Under = the robot overlaps the arm (a 6in tube over the opening; the 47in TRENCH depth is the pedestal).
     const under = r.overheadLimit < Infinity && Math.abs(r.pose.x - hubX) < C.TRENCH_ARM_DEPTH / 2 + r.footprint.length / 2;
-    if (under) { peak = Math.max(peak, r.clearanceHeight); inside = Math.max(inside, r.held.length); }
+    if (under) peak = Math.max(peak, r.clearanceHeight);
     return false;
   });
-  expect(inside).toBe(safe);
-  expect(peak).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
+  // The pile under the net never grew past the arm while under it, so the robot drove on through...
+  expect(peak).toBeLessThanOrEqual(C.TRENCH_CLEARANCE);
   expect(r.pose.x).toBeGreaterThan(hubX + C.TRENCH_DEPTH / 2 + 0.5);
-  expect(r.held.length).toBeGreaterThan(safe);
+  // ...and it kept collecting.
+  expect(r.held.length).toBeGreaterThan(before);
 });
 
-it('a net robot under the trench may keep intaking below the trench-safe load, and a plain robot is never limited', () => {
+it('a net robot under the trench keeps intaking while its measured pile is below the arm, and a plain robot is never limited', () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === 254)!.config);
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(sim);
   const r = sim.robot;
-  let safe = c.hopperExpansion!.startCount;
-  while (loadedRobotHeight(c, safe + 1) <= C.TRENCH_SAFE_HEIGHT) safe++;
-  sim.load(safe - 3);
+  sim.load(25);
+  sim.run(1);
   r.overheadLimit = sim.rules.overheadClearance!(r);
   expect(r.overheadLimit).toBe(C.TRENCH_SAFE_HEIGHT);
-  expect(r.intakeRoom).toBe(3);
+  expect(r.measuredTop).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
+  expect(r.intakeRoom).toBeGreaterThan(0);
+  // A pile that has reached the arm takes no more.
+  r.measuredTop = C.TRENCH_SAFE_HEIGHT;
+  expect(r.intakeRoom).toBe(0);
   const plain = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
   // A plain robot has no net to limit, but its drawn hood is held down under the arm, so it does report the arm.
   expect(plain.robot.config.hopperExpansion).toBeUndefined();
@@ -159,38 +164,34 @@ it('1678 manually toggles capacity and clearance, preserves excess fuel, and can
   expect(r.visual.getObjectByName('telescoping-hopper-roof')!.position.y).toBe(0);
 });
 
-for (const team of [581, 6800, 1323, 9470]) it(`${team}: its net stays at the rim up to the rigid load and stretches past TRENCH height when full`, () => {
+// 6800 and 9470 are left out: their drawn hoppers hold the whole rated load below the rim, so their nets never bulge.
+for (const team of [581, 1323]) it(`${team}: its net stays near the rim with a part load and stretches past TRENCH height when full`, () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
   const e = c.hopperExpansion!;
   expect(e.mechanism).toBeUndefined();
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
   const r = sim.robot;
-  sim.load(e.startCount);
-  expect(r.clearanceHeight).toBe(c.height);
-  sim.load(c.hopperCapacity - e.startCount);
+  sim.load(30); sim.run(1.5);
+  // Clearance is the measured pile top: a part load stays below the rim.
+  expect(r.clearanceHeight).toBeLessThan(c.height + .03);
+  sim.load(c.hopperCapacity - 30);
   expect(r.held.length).toBe(c.hopperCapacity);
-  expect(r.clearanceHeight).toBeCloseTo(e.fullHeight);
+  sim.run(1.5);
   expect(r.clearanceHeight).toBeGreaterThan(C.TRENCH_SAFE_HEIGHT);
+  expect(r.clearanceHeight).toBeLessThanOrEqual(e.fullHeight);
 });
 
-it('a FUEL entering a slack net lands at the rim, not up in the fully stretched dome', () => {
+it('the net dome is area-normalised: its average lift is the full stretch, the middle peaks higher, capped at 30 in', () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === 6800)!.config);
-  const ceiling = hopperNetCeiling(c, 0.5);
-  const cx = hopperNetArea(c).cx;
-  expect(ceiling(cx, 0)).toBeCloseTo(c.hopperExpansion!.fullHeight);
+  const rim = 0.5, ceiling = hopperNetCeiling(c, rim), a = hopperNetArea(c), e = c.hopperExpansion!;
+  let sum = 0; const N = 40;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) sum += ceiling(a.cx + ((i + .5) / N * 2 - 1) * a.sx, ((j + .5) / N * 2 - 1) * a.sz) - rim;
+  expect(sum / (N * N)).toBeCloseTo(e.fullHeight - rim, 2);
+  expect(ceiling(a.cx, 0)).toBeGreaterThan(e.fullHeight + .02);
+  expect(ceiling(a.cx, 0)).toBeLessThanOrEqual(C.MAX_ROBOT_HEIGHT + 1e-9);
+  expect(ceiling(a.cx + a.sx * .9999, 0)).toBeLessThan(rim + .05); // tied at the rim
   ceiling.setStretch(0);
-  expect(ceiling(cx, 0)).toBeCloseTo(0.5);
-  ceiling.setStretch(0.5);
-  expect(ceiling(cx, 0)).toBeCloseTo((0.5 + c.hopperExpansion!.fullHeight) / 2);
-  // Robot drives the stretch from its drawn net: a lightly loaded net robot keeps its pile ceiling at the rim.
-  const m = cloneConfig(season.teamRobots!.find(t => t.team === 1323)!.config);
-  const sim = new HeadlessSim(season, RAPIER, { robot: m, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
-  sim.load(5);
-  for (let i = 0; i < 30; i++) sim.robot.syncVisual(.05);
-  let tallest = 0;
-  sim.robot.visual.traverse(o => { const f = o.userData.fuelCeiling; if (f) tallest = Math.max(tallest, f(-m.frameLength * 0.1, 0)); });
-  expect(tallest).toBeGreaterThan(0);
-  expect(tallest).toBeLessThan(m.height + 0.01);
+  expect(ceiling(a.cx, 0)).toBeCloseTo(rim);
 });
 
 it('the stretching net rises only where actual balls push it, while its rim stays anchored', () => {

@@ -241,6 +241,9 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     shooter:[{node:flywheel,at:[0,0,.3309938],axis:'z',length:.62,radius:.142}],
     // FUEL resting on the bumper and intake behind the roller floor only moves once the hopper compresses.
     squeezeBelow:.5,
+    // A ball squashed to 0.9 r slips between the 17-18 mm feeder shafts and the intake drums; held FUEL in this roller
+    // hopper is only lightly loaded, so it keeps more of its size.
+    packRadius:.95,
   };
   return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,mech,
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],

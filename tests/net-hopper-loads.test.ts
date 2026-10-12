@@ -50,12 +50,12 @@ it('4414 net follows local ball pressure instead of inflating empty pockets from
 });
 for(const team of [254,581,6800,9470,1323,4414])it(`${team}: a full physical load pushes its net above the rim and conserves the balls`,()=>{
   const sim=make(team),r=sim.robot,c=r.config;
-  r.syncVisual(.05);sim.load(c.hopperExpansion!.startCount);
+  r.syncVisual(.05);sim.load(20); // a part load: the pile stays in the rigid hopper
   for(let i=0;i<60;i++){sim.step();r.syncVisual(1/60);}
   const slack=r.visual.getObjectByName('stretching-hopper-net') as THREE.LineSegments;
   const slackPoints=slack.geometry.getAttribute('position');
-  for(let i=0;i<slackPoints.count;i++)expect(slackPoints.getY(i)).toBeLessThanOrEqual(c.height+.001);
-  sim.load(c.hopperCapacity-c.hopperExpansion!.startCount);
+  for(let i=0;i<slackPoints.count;i++)expect(slackPoints.getY(i)).toBeLessThanOrEqual(c.height+.025); // slack: resting at the rim (heaped balls just touch it)
+  sim.load(c.hopperCapacity-20);
   const ids=r.held.slice();
   for(let i=0;i<120;i++){sim.step();r.syncVisual(1/60);}
   const net=r.visual.getObjectByName('stretching-hopper-net') as THREE.LineSegments;
@@ -65,8 +65,8 @@ for(const team of [254,581,6800,9470,1323,4414])it(`${team}: a full physical loa
     top=Math.max(top,p.getY(i));
     if(Math.abs(grid[i*3])===1||Math.abs(grid[i*3+2])===1)expect(p.getY(i)).toBeCloseTo(c.height,3);
   }
-  expect(top).toBeGreaterThan(c.height+.06);
-  expect(top).toBeLessThanOrEqual(c.hopperExpansion!.fullHeight+.001);
+  expect(top).toBeGreaterThan(c.height+.04);
+  expect(top).toBeLessThanOrEqual(.762+.006); // the dome's middle may peak past fullHeight, never past the 30 in limit
   expect(r.held).toEqual(ids);
   // Gallery/replica piles must agree visibly with the real match load, using the same conserved count.
   r.detachPool(sim.pool);

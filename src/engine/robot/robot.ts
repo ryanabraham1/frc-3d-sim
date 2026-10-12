@@ -7,7 +7,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
@@ -162,14 +162,22 @@ export class Robot {
   private hopperNet?: THREE.LineSegments;
   private netFuel: THREE.Mesh[] = [];
   /** Net bulge actually drawn (m above `height`) and its rate: a soft spring chasing the load-based envelope. */
-  private netShown = 0;
-  private netVel = 0;
   private lastSync = -1;
   /** Actual envelope used for obstacle routing and flexible-roof collisions. */
   get manualHopper(): boolean { return this.config.hopperExpansion?.mechanism === 'telescoping'; }
   hopperRaised = false;
   get hopperCapacity(): number { return this.manualHopper && !this.hopperRaised ? this.config.hopperExpansion!.startCount : this.config.hopperCapacity; }
-  get clearanceHeight(): number { return this.manualHopper ? (this.hopperRaised ? this.config.hopperExpansion!.fullHeight : this.config.height) : loadedRobotHeight(this.config, this.held.length); }
+  /**
+   * Top of the robot including its hopper load. A stretching net is as tall as the FUEL under it pushes it (the
+   * measured pile top, clamped to [height, fullHeight]); the count estimate (loadedRobotHeight) only stands in until a
+   * pile has been measured (headless runs that never draw).
+   */
+  get clearanceHeight(): number {
+    const c = this.config, e = c.hopperExpansion;
+    if (this.manualHopper) return this.hopperRaised ? e!.fullHeight : c.height;
+    if (e && this.measuredTop >= 0) return clamp(this.measuredTop, c.height, e.fullHeight);
+    return loadedRobotHeight(c, this.held.length);
+  }
   /** Lowest overhead obstacle above the robot this tick (set by the sim from the season; Infinity = none). */
   overheadLimit = Infinity;
   /**
@@ -181,7 +189,10 @@ export class Robot {
     if (this.blockerDeploy > 0) return 0;
     // An open-top hopper lets one FUEL ride on top: at most capacity + 1 held, never an extra one per capture.
     let room = Math.max(0, this.hopperCapacity + (this.openHopper && this.fuelPiles.length ? (this.bay ? Robot.OVERFLOW_ROOM : 1) : 0) - this.held.length);
-    if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
+    if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity && this.measuredTop >= 0) {
+      // Under a low overhead (the TRENCH arm), stop taking FUEL once the measured pile top would reach it.
+      if (this.measuredTop + 0.01 > this.overheadLimit) room = 0;
+    } else if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
       let n = this.held.length;
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
       room = Math.min(room, n - this.held.length);
@@ -446,53 +457,51 @@ export class Robot {
 
   private static readonly NET_FUEL_R = 0.075; // real FUEL radius: balls under the net are full size
 
+  /** Lift of the fully stretched net above the rim at normalised (u, v) (config netDomeLift), built on first use. */
+  private netLift: ((u: number, v: number) => number) | null = null;
   /**
-   * Ease the drawn bulge toward the load-based envelope: an under-damped spring (ω ≈ 7 rad/s, ζ ≈ 0.7), so the net
-   * creeps up as FUEL comes in, settles with a little give, and sags back as the hopper empties. Visual only:
-   * collisions and routing use `clearanceHeight`.
+   * Robot-frame height of the highest FUEL top under a stretching net, measured from the balls actually held (real
+   * bodies each step, the drawn pile each frame); -1 until something has been measured. The net, its collider and the
+   * TRENCH clearance follow this, not a count.
    */
-  private stepNetBulge(dt: number): void {
-    const target = this.clearanceHeight - this.config.height;
-    if (dt <= 0) {
-      if (this.lastSync < 0) this.netShown = target;
-      return;
-    }
-    const w = 7, zeta = 0.7;
-    for (let left = dt; left > 1e-6; left -= 0.02) {
-      const h = Math.min(0.02, left);
-      this.netVel += (-(2 * zeta * w) * this.netVel - w * w * (this.netShown - target)) * h;
-      this.netShown = Math.max(0, this.netShown + this.netVel * h);
-    }
-    if (Math.abs(this.netShown - target) < 1e-4 && Math.abs(this.netVel) < 1e-3) { this.netShown = target; this.netVel = 0; }
+  measuredTop = -1;
+
+  /**
+   * Highest held ball top (robot frame) of a physical hopper, or the rim when nothing is above it. (The legacy StowBay
+   * is not measured: its wall-slab cavity is not the drawn hopper, so its heaps say nothing about the real net.)
+   */
+  private measureRealHopper(): void {
+    if (!this.config.hopperExpansion || this.manualHopper || !this.mech) return;
+    let top = this.config.height;
+    this.mech.forEachLocal((_x, y) => { top = Math.max(top, y + Robot.NET_FUEL_R); });
+    this.measuredTop = top;
   }
 
   private updateHopperNet(dt: number): void {
     const net = this.hopperNet;
     if (!net) return;
-    this.stepNetBulge(dt);
-    const c = this.config, extra = this.netShown;
-    // FUEL can only rise as far as the net has actually stretched.
-    const stretch = extra / Math.max(1e-3, (c.hopperExpansion?.fullHeight ?? c.height) - c.height);
+    const c = this.config;
+    this.netLift ??= netDomeLift(c, c.height);
+    // The pile may rise into the whole dome: how far the net actually bulges is decided by the balls under it.
     for (const mesh of this.fuelPiles) {
       const ceiling = mesh.userData.fuelCeiling;
-      if (!ceiling?.setStretch) continue;
-      ceiling.setStretch(stretch);
-      // Opening a roof must wake a pile compressed beneath its earlier, lower ceiling.
-      if (Math.abs(stretch - (mesh.userData.netStretch ?? 1)) > 1e-4) mesh.userData.wakeFuel?.();
-      mesh.userData.netStretch = stretch;
+      if (!ceiling?.setStretch || mesh.userData.netStretch === 1) continue;
+      ceiling.setStretch(1);
+      mesh.userData.wakeFuel?.();
+      mesh.userData.netStretch = 1;
     }
     const area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
     // Imported sliding hoppers carry the roof anchors with the moving wall, including when stowed.
     const extension=this.visual.userData.netIntakeExtension;
     const cx = bin ? bin.x : area.cx+(extension?.side??0)*(extension?.length??0)/2, sx = bin ? bin.length / 2 : area.sx+(extension?.length??0)/2, sz = bin ? bin.width / 2 : area.sz;
-    // Uncovered FUEL rides up under the net; its tops are where the strands drape.
+    // The net drapes over the balls actually in the hopper: their tops are where the strands rest.
     const tops: { x: number; z: number; y: number }[] = [];
-    // Drape over the current simulated pile, including articulated extension bins.
-    // No decorative balls or preset net load points.
     this.visual.updateMatrixWorld(true);
     const point = new THREE.Vector3();
-    // Buried layers cannot contact the roof. Avoid checking them against every strand sample.
+    let highest = c.height;
+    // Buried layers cannot touch the net; only balls near the rim are draped over.
     const addTop = (x: number, y: number, z: number) => {
+      highest = Math.max(highest, y);
       if (y >= c.height - .06) tops.push({ x, z, y });
     };
     this.bay?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
@@ -506,38 +515,31 @@ export class Robot {
         addTop(point.x, point.y + surface.radius, point.z);
       }
     }
+    if (!this.mech) this.measuredTop = this.manualHopper || this.bay ? -1 : highest;
+    // Tight over each ball top, sagging between neighbours by about 3.5 % of the hopper's smaller side, tied at the rim
+    // (it can only rise so steeply from the tie line) and never past the fully stretched dome.
+    // Beyond a ball's own top the fabric falls away as a taut tent (slope continuous with the sag) until it meets the
+    // fabric spanning from its ties or a neighbouring ball.
+    const sag = .035 * Math.min(2 * sx, 2 * sz), R = Robot.NET_FUEL_R, slope = Math.max(.8, 2 * sag / R);
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const x = grid[i * 3], z = grid[i * 3 + 2];
-      const bow = Math.max(0, 1 - x ** 4) * Math.max(0, 1 - z ** 4);
       let px = cx + x * sx, pz = z * sz;
       const chamfer=this.visual.userData.hopperChamfer;
       const clipped=chamfer && chamfer.fixedSide*px+Math.abs(pz)>chamfer.hx+chamfer.hz-chamfer.cut;
       if(clipped)px=chamfer.fixedSide*(chamfer.hx+chamfer.hz-chamfer.cut-Math.abs(pz));
-      // A slack net hangs lower than the balls it covers: it rests on their tops and drapes over each ball's curve
-      // (smoothly blended, like cloth), sagging in the gaps between them.
-      // Load count sets the allowed expansion, but only actual ball contacts lift the fabric. Between contacts the
-      // taut strands descend toward the fixed rim; an empty pocket must not inflate into a preset dome.
-      let y = c.height - 0.018 * bow;
-      const R = Robot.NET_FUEL_R + 0.008;
+      // Slack, the fabric dips a little below the rim between its ties.
+      let y = c.height - 0.012 * netDomeShape(x, z);
       for (const t of tops) {
-        const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2;
-        const reach = R + Math.max(0, t.y - c.height) / .8;
+        const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2, reach = R + (t.y - y + sag) / slope;
         if (d2 >= reach * reach) continue;
-        // Spherical contact over the ball, then tension carries the lift to nearby strands with a sloping falloff.
-        const distance = Math.sqrt(d2);
-        const surface = d2 < R * R ? t.y + .006 - R + Math.sqrt(R * R - d2) : -Infinity;
-        const tension = t.y + .006 - .8 * distance;
-        const cap = Math.max(surface, tension);
-        const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
+        const d = Math.sqrt(d2), cap = d < R ? t.y - sag * d2 / (R * R) : t.y - sag - slope * (d - R);
+        const k = 0.02, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
-      // Even a full net follows individual ball contacts. A count-driven dome erases the pockets and makes the
-      // load look like a rigid bubble; tension above already carries each real contact into neighbouring strands.
-      const maximum = Math.min(c.hopperExpansion?.fullHeight ?? c.height, c.height + extra);
-      // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
+      const edge = Math.max(0, Math.min((1 - Math.abs(x)) * sx, (1 - Math.abs(z)) * sz));
+      y = Math.min(y, c.height + this.netLift(x, z), c.height + 1.6 * edge);
       if(clipped)y=c.height;
-      y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
       // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
       const heights=net.userData.heights as Float32Array;
       const previous = heights[i];
@@ -876,6 +878,7 @@ export class Robot {
    */
   attachPool(pool: GamePiecePool, mode: 'mech' | 'stowbay' = 'stowbay'): void {
     if (this.bay || this.mech || !this.fuelPiles.length) return;
+    this.measuredTop = -1; // a drawn-pile measurement no longer describes the load
     if (mode === 'mech') {
       if (!this.model?.mech) return;
       this.mech = new MechHopper(this, pool, this.model.mech);
@@ -950,7 +953,8 @@ export class Robot {
       }
     }
     // Covered net loads use the same count-dependent roof as their drawn net and clearance collider.
-    if (this.hopperNet) max.y = Math.min(max.y, this.clearanceHeight - .006);
+    // A stretching net lets the load rise to the net's full stretch; the balls decide how far it actually bulges.
+    if (this.hopperNet) max.y = Math.min(max.y, (this.config.hopperExpansion?.fullHeight ?? max.y) - .006);
     return Number.isFinite(min.x) ? { min, max, open: this.openHopper, keepouts: this.visual.userData.fuelKeepouts, chamfer:this.visual.userData.hopperChamfer, outline:this.visual.userData.fuelOutline } : null;
   }
 
@@ -2363,6 +2367,7 @@ export class Robot {
     this.updateTipped(dt);
     this.bay?.update(dt);
     this.mech?.update(dt);
+    this.measureRealHopper();
   }
 
   // ───────────────────────── climbing (simplified, kinematic) ─────────────────────────

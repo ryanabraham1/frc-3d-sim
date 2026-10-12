@@ -34,20 +34,55 @@ export function hopperNetArea(c: RobotConfig): { cx: number; sx: number; sz: num
 export type NetCeiling = ((x: number, z: number) => number) & { setStretch(f: number): void };
 
 /**
- * Highest a FUEL top can reach under the net, rising from the rigid `rim` toward `fullHeight` as it stretches. A net
- * loaded from below goes taut over the pile: flat across the middle and pulled down only near the rim it is tied to
- * ((1 - u⁴)(1 - v⁴)), so the stretch holds about an extra layer of FUEL rather than a pointed tent. Starts fully
- * stretched so the hopper can lay out its whole load; `Robot` then drives `setStretch` from the drawn net, so a FUEL
- * entering a slack net lands on the pile instead of up in the dome.
+ * Foam FUEL packs tighter than hard spheres: a ball in a loaded hopper takes the room of a sphere this fraction of its
+ * radius (the drawn pile and the physical hopper both pack at it). [EST: 5.91 in foam ball, ~0.6 in squash under load]
+ */
+export const FUEL_PACK_RADIUS = 0.9;
+
+/** Robot height limit the dome may not pass (30 in, the REBUILT R104 limit; also a sane cap for other seasons). */
+export const NET_HEIGHT_LIMIT = 0.762;
+
+/** Shape of an elastic net over a hopper: m(u, v) = sqrt(sqrt(1 - u²) · sqrt(1 - v²)) on the normalised net area. */
+export function netDomeShape(u: number, v: number): number {
+  return Math.sqrt(Math.sqrt(Math.max(0, 1 - u * u)) * Math.sqrt(Math.max(0, 1 - v * v)));
+}
+
+/**
+ * The stretched net's dome: lift above the rim at normalised (u, v) ∈ [-1, 1]². Area-normalised: the scale is chosen
+ * so the AVERAGE lift over the net equals `fullHeight - rim` (the net holds that much extra volume), while each point
+ * is capped at the robot height limit. So the middle peaks well above the average and the edges stay tied at the rim,
+ * as a real elastic net loaded from below does (not a flat lid at fullHeight).
+ */
+export function netDomeLift(c: RobotConfig, rim = c.height, limit = NET_HEIGHT_LIMIT): (u: number, v: number) => number {
+  const e = c.hopperExpansion;
+  const target = Math.max(0, (e?.fullHeight ?? rim) - rim), cap = Math.max(0, limit - rim);
+  if (target <= 0) return () => 0;
+  const N = 24, mean = (scale: number) => {
+    let sum = 0;
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) sum += Math.min(cap, scale * netDomeShape((i + .5) / N * 2 - 1, (j + .5) / N * 2 - 1));
+    return sum / (N * N);
+  };
+  let lo = target, hi = target * 8;
+  if (mean(hi) < target) lo = hi; // the cap can't hold the requested average: as full as the limit allows
+  else for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (mean(mid) < target) lo = mid; else hi = mid; }
+  const scale = lo;
+  return (u, v) => Math.min(cap, scale * netDomeShape(u, v));
+}
+
+/**
+ * Highest a FUEL top can reach under the net: the rigid `rim` plus the area-normalised dome (netDomeLift), the same
+ * shape the drawn net takes when full. `setStretch` scales the dome (1 = full stretch, the default); the net itself is
+ * drawn over the balls actually under it, so the pile decides how far it bulges.
  */
 export function hopperNetCeiling(c: RobotConfig, rim = c.height): NetCeiling {
   const e = c.hopperExpansion, a = hopperNetArea(c);
+  const lift = netDomeLift(c, rim);
   let stretch = 1;
   const ceiling = (x: number, z: number): number => {
     if (!e || e.mechanism === 'telescoping') return rim;
     const u = (x - a.cx) / a.sx, v = z / a.sz;
-    const bow = Math.max(0, 1 - u ** 4) * Math.max(0, 1 - v ** 4);
-    return rim + Math.max(0, e.fullHeight - rim) * bow * stretch;
+    if (Math.abs(u) >= 1 || Math.abs(v) >= 1) return rim;
+    return rim + lift(u, v) * stretch;
   };
   return Object.assign(ceiling, { setStretch(f: number) { stretch = Math.min(1, Math.max(0, f)); } });
 }
