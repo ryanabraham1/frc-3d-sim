@@ -39,6 +39,7 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
     net = new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0x222827}));
     net.name = 'telescoping-hopper-net'; k.visual.add(net);
+    net.userData.mirrorGeometry = true;
     // Intake-side retaining net skirts stay tethered to the raised rim.
   }
   for (const z of [-1,1]) bar(k.visual, [-L * 0.46,bt,z * W * 0.46], [-L * 0.46,H - 0.035,z * W * 0.46], 0.024, accent);

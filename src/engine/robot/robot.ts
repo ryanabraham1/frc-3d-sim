@@ -428,6 +428,7 @@ export class Robot {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x141516 }));
     this.hopperNet.name = 'stretching-hopper-net';
+    this.hopperNet.userData.mirrorGeometry = true;
     this.hopperNet.userData.segments = segments;
     this.hopperNet.userData.grid = positions;
     this.hopperNet.userData.heights = new Float32Array(positions.length/3);

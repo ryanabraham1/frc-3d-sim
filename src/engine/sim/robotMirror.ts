@@ -30,6 +30,8 @@ export interface RobotVisualFrame {
   mats: Float32Array;
   inst: InstanceFrame[];
   tokens: Float32Array;
+  /** Deforming fabric cannot be mirrored through Object3D transforms alone. */
+  geometry: { k: number; positions: Float32Array }[];
 }
 
 type LookMaterial = THREE.Material & { color?: THREE.Color; emissive?: THREE.Color; emissiveIntensity?: number };
@@ -42,12 +44,16 @@ export class RobotMirror {
   private readonly instVersion: number[] = [];
   private readonly instCount: number[] = [];
   private readonly tokenPool: THREE.Object3D[] = [];
+  private readonly deforming: THREE.LineSegments[] = [];
+  private readonly geometryAttributes: (THREE.BufferAttribute | undefined)[] = [];
+  private readonly geometryVersions: number[] = [];
 
   constructor(readonly robot: Robot, private readonly makeToken?: () => THREE.Object3D) {
     const seen = new Set<THREE.Material>();
     robot.visual.traverse((o) => {
       if (o.userData.flowToken) return;
       this.nodes.push(o);
+      if (o.userData.mirrorGeometry) this.deforming.push(o as THREE.LineSegments);
       const mesh = o as THREE.Mesh;
       if ((mesh as unknown as THREE.InstancedMesh).isInstancedMesh) {
         this.instanced.push(mesh as unknown as THREE.InstancedMesh);
@@ -65,7 +71,7 @@ export class RobotMirror {
 
   /** Structure fingerprint: both sides must agree before frames are applied. */
   get shape(): string {
-    return `${this.nodes.length}:${this.materials.length}:${this.instanced.length}:${this.nodes.map((o) => o.type[0]).join('')}`;
+    return `${this.nodes.length}:${this.materials.length}:${this.instanced.length}:${this.deforming.length}:${this.nodes.map((o) => o.type[0]).join('')}`;
   }
 
   // ─────────────────────────── worker side ───────────────────────────
@@ -106,13 +112,32 @@ export class RobotMirror {
       tokens[j + 3] = o.quaternion.x; tokens[j + 4] = o.quaternion.y; tokens[j + 5] = o.quaternion.z; tokens[j + 6] = o.quaternion.w;
       tokens[j + 7] = o.scale.x;
     }
-    return { nodes, mats, inst, tokens };
+    const geometry: RobotVisualFrame['geometry'] = [];
+    for (let k = 0; k < this.deforming.length; k++) {
+      const p = this.deforming[k].geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!p || (!force && p === this.geometryAttributes[k] && p.version === this.geometryVersions[k])) continue;
+      this.geometryAttributes[k] = p;
+      this.geometryVersions[k] = p.version;
+      geometry.push({ k, positions: new Float32Array(p.array) });
+    }
+    return { nodes, mats, inst, tokens, geometry };
   }
 
   // ─────────────────────────── screen side ───────────────────────────
 
   /** Copy instanced meshes and materials from the newest frame (no blending: they change in steps). */
   applyDiscrete(f: RobotVisualFrame): void {
+    for (const { k, positions } of f.geometry) {
+      const mesh = this.deforming[k];
+      if (!mesh) continue;
+      let p = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!p || p.array.length !== positions.length) {
+        p = new THREE.BufferAttribute(positions.slice(), 3);
+        mesh.geometry.setAttribute('position', p);
+      } else p.array.set(positions);
+      p.needsUpdate = true;
+      mesh.geometry.computeBoundingSphere();
+    }
     for (const { k, count, matrices } of f.inst) {
       const m = this.instanced[k];
       if (!m) continue;

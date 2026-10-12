@@ -25,6 +25,7 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
   const netGeometry = new THREE.BufferGeometry();
   const net = new THREE.LineSegments(netGeometry, new THREE.LineBasicMaterial({color:0x24292b, transparent:true,opacity:.8}));
   net.name = 'cad-hopper-net';
+  net.userData.mirrorGeometry = true;
   if (limestone) extension.add(net);
   let fraction = 0, horizontal = 0, vertical = 0;
   const settle = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;

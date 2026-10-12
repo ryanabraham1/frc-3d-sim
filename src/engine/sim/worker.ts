@@ -141,6 +141,7 @@ function sendFrame(stepped: number, now: number): void {
     const v = mirrors[i].capture(firstFrame);
     transfer.push(v.nodes.buffer, v.mats.buffer, v.tokens.buffer);
     for (const inst of v.inst) transfer.push(inst.matrices.buffer);
+    for (const geometry of v.geometry) transfer.push(geometry.positions.buffer);
     return v;
   });
   const pool = w.pool;
