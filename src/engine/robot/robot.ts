@@ -1938,14 +1938,18 @@ export class Robot {
   /** Highest point (m above the floor) of the drawn hood, 0 when there is none. */
   get hoodTop(): number { return this.hoodBounds() ? this.hoodTopY : 0; }
 
-  /** Fit the hood collider to the drawn hood; it exists only while the hood sticks up above the frame. */
+  /**
+   * Fit the hood collider to the drawn hood. It exists only while the hood sticks up above the frame AND the season reports
+   * a low overhead over the robot (`overheadLimit`: the TRENCH arm). Away from the arm the hood doesn't collide with the
+   * rest of the field, so shooting beside the HUB, the TOWER or a wall plays exactly as before.
+   */
   private updateHoodCollider(): void {
     const col = this.hoodCollider;
     if (!col) return;
     const b = this.hoodBounds();
     if (!b) { if (col.isEnabled()) col.setEnabled(false); return; }
     const frameTop = this.config.height;
-    const on = b.max.y > frameTop + 0.01;
+    const on = this.overheadLimit < Infinity && b.max.y > frameTop + 0.01;
     if (!on) { if (col.isEnabled()) col.setEnabled(false); return; }
     const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - b.min.y) / 2), hz = Math.max(0.01, (b.max.z - b.min.z) / 2);
     col.setShape(new this.physics.R.Cuboid(hx, hy, hz));

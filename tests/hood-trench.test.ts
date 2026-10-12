@@ -32,6 +32,12 @@ function expectColliderMatchesHood(s: HeadlessSim): void {
   }
 }
 
+/** Shoot with the hood up and drive at the arm until the hood stops the robot. */
+function driveIntoArm(s: HeadlessSim): void {
+  s.run(1.8, { ...IDLE_COMMAND, shoot: true });
+  s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 2.5 });
+}
+
 describe('a raised shooter hood blocks at the TRENCH', () => {
   it('the drawn hood is parked below the arm and opens above it while shooting', () => {
     const s = sim();
@@ -39,7 +45,9 @@ describe('a raised shooter hood blocks at the TRENCH', () => {
     expect(s.robot.hoodTop).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
     s.run(1.5, { ...IDLE_COMMAND, shoot: true });
     expect(s.robot.hoodTop).toBeGreaterThan(C.TRENCH_CLEARANCE + 0.03);
-    expectColliderMatchesHood(s);
+    expect(s.robot.hoodColliderBox()).toBeNull(); // away from the arm the hood collides with nothing
+    s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 2.5 });
+    expectColliderMatchesHood(s); // at the arm it is exactly the drawn hood
   });
 
   it('a robot with its hood raised cannot drive under the TRENCH', () => {
@@ -116,13 +124,14 @@ describe('every trench-height team robot with a hood', () => {
     expect(s.robot.hoodTop).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
     s.run(1.8, { ...IDLE_COMMAND, shoot: true });
     expect(s.robot.hoodTop).toBeGreaterThan(C.TRENCH_CLEARANCE + 0.02);
+    driveIntoArm(s);
+    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
     expectColliderMatchesHood(s);
   });
 
   it.each([254, 971, 4414, 7769])('%i is stopped by the arm with its hood up', (n) => {
     const s = sim(team(n));
-    s.run(1.8, { ...IDLE_COMMAND, shoot: true });
-    s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 2.5 });
+    driveIntoArm(s);
     expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
   });
 });
