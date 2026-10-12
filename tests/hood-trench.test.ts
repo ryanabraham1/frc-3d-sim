@@ -14,8 +14,8 @@ afterEach(() => { for (const sim of sims.splice(0)) sim.dispose(); });
 
 const ARM_NEAR = C.HUB_CENTER.x - C.TRENCH_ARM_DEPTH / 2;
 
-function sim(config: RobotConfig = season.robotDefaults, x = C.HUB_CENTER.x - 2.2): HeadlessSim {
-  const s = new HeadlessSim(season, RAPIER, { robot: cloneConfig(config), alliance: 'blue', pose: { x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } });
+function sim(config: RobotConfig = season.robotDefaults, x = C.HUB_CENTER.x - 2.2, mechHopper = false): HeadlessSim {
+  const s = new HeadlessSim(season, RAPIER, { robot: cloneConfig(config), alliance: 'blue', pose: { x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 }, mechHopper });
   sims.push(s);
   s.robot.held.length = 0;
   return s;
@@ -121,9 +121,60 @@ describe('a raised shooter hood blocks at the TRENCH', () => {
 });
 
 describe('every trench-height team robot with a hood', () => {
+  it.each([1690, 4414])('%i escapes a beam contact with the live physical hopper', (n) => {
+    const s = sim(team(n), undefined, true);
+    driveIntoArm(s);
+    s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
+    expect(s.robot.held).toHaveLength(0);
+    expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
+  });
+  it.each([1690, 4414])('%i crosses empty with its hood parked', (n) => {
+    const s = sim(team(n));
+    s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
+    expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
+  });
+  it.each([1690, 4414])('%i lowers its hood and escapes without backing away from the arm', (n) => {
+    const s = sim(team(n));
+    driveIntoArm(s);
+    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
+    s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
+    expect(s.robot.held).toHaveLength(0);
+    expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
+  });
+
+  it.each([1690, 4414].flatMap(n => [-1, 1].flatMap(direction => [0, 10].map(load => [n, direction, load] as const))))
+  ('%i escapes toward %i with %i FUEL after stowing at the beam', (n, direction, load) => {
+    const s = sim(team(n), C.HUB_CENTER.x - direction * 2.2);
+    if (direction < 0) s.robot.body.setRotation({ x: 0, y: 1, z: 0, w: 0 }, true);
+    s.run(1.8, { ...IDLE_COMMAND, shoot: true });
+    s.run(4, { ...IDLE_COMMAND, shoot: true, vx: direction * 2.5 });
+    s.load(load);
+    s.run(4, { ...IDLE_COMMAND, vx: direction * 2.5 });
+    expect(direction * (s.robot.pose.x - C.HUB_CENTER.x)).toBeGreaterThan(0.5);
+  });
+
   // Hood lift is tuned in HOOD_LIFT (config.ts): parked <= 0.535 m, open ~0.61 m.
   const withHood = season.teamRobots!.filter((t) => t.config.height <= C.TRENCH_SAFE_HEIGHT && t.config.launcher.hoodLift);
   it('is listed', () => expect(withHood.length).toBeGreaterThanOrEqual(10));
+
+  it.each(withHood.map((t) => [t.team, t.config] as const))('%i releases a raised hood and crosses while holding forward', (_n, config) => {
+    const s = sim(config);
+    driveIntoArm(s);
+    s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
+    expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
+  });
+
+  it.each([1690, 4414])('%i keeps a lowered hood parked when shoot is pressed again under the arm', (n) => {
+    const s = sim(team(n));
+    driveIntoArm(s);
+    s.run(4, { ...IDLE_COMMAND, vx: 1 }, () => s.robot.pose.x >= C.HUB_CENTER.x);
+    expect(s.robot.pose.x).toBeGreaterThanOrEqual(C.HUB_CENTER.x);
+    s.run(0.4, IDLE_COMMAND);
+    expect(s.robot.overheadLimit).toBeLessThan(Infinity);
+    s.run(1, { ...IDLE_COMMAND, shoot: true });
+    expect(s.robot.hoodTop).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
+  });
+
 
   it.each(withHood.map((t) => [t.team, t.config] as const))('%i parks under the arm, opens above it, and the collider is the drawn hood', (_n, config) => {
     const s = sim(config);

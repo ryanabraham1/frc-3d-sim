@@ -147,6 +147,7 @@ export class Robot {
   private readonly fp: { length: number; width: number };
   private expansionCollider?: RAPIER.Collider;
   private payloadCollider!: RAPIER.Collider;
+  private frameCollider!: RAPIER.Collider;
   private hoodCollider: RAPIER.Collider | null = null;
   /**
    * Mass of one held game piece (kg), set by the sim from the season's piece. A robot's rated `mass` is its empty playing
@@ -310,7 +311,7 @@ export class Robot {
       .setFriction(0.3)
       .setMass(m * 0.35)
       .setCollisionGroups(GROUPS.robot);
-    this.physics.world.createCollider(frameCol, this.body);
+    this.frameCollider = this.physics.world.createCollider(frameCol, this.body);
     // Carried game pieces: a contact-free mass in the hopper / carriage, sized each step from what the robot holds.
     this.payloadCollider = this.physics.world.createCollider(R.ColliderDesc.ball(0.05)
       .setTranslation(0, (c.bumperTop + c.height) / 2, 0).setMass(0).setCollisionGroups(0), this.body);
@@ -1552,6 +1553,22 @@ export class Robot {
     const wm = this.wheel;
     // Motor force is fixed by the drivetrain (sized for the empty robot); carried pieces only add mass to move.
     wm.motorLimit = (c.mass * c.maxAccel) / 4;
+    // Once the mechanisms are stowed, a compact robot can still be nose-up against a low beam. Full wheel force
+    // keeps its frame pinched there even with an empty hopper. Ease the motors while the tilted frame exceeds
+    // the overhead clearance so gravity can settle it onto its wheels; normal drive returns as soon as it fits.
+    if (this.overheadLimit < Infinity && this.clearanceHeight <= this.overheadLimit && this.hoodTop < this.overheadLimit) {
+      let touchingBeam = false;
+      this.physics.world.contactPairsWith(this.frameCollider, other => {
+        if (((other.collisionGroups() >>> 16) & Group.FIELD) === 0) return;
+        this.physics.world.contactPair(this.frameCollider, other, manifold => {
+          for (let i = 0; i < manifold.numSolverContacts(); i++) {
+            const point = manifold.solverContactPoint(i);
+            if (point && point.y >= this.overheadLimit) touchingBeam = true;
+          }
+        });
+      });
+      if (touchingBeam) wm.motorLimit = Math.min(wm.motorLimit, c.mass / 4); // 1 m/s² settling limit [EST]
+    }
     wm.stall = wm.motorLimit * STALL_RATIO;
     wm.freeSpeed = c.maxSpeed * FREE_SPEED_RATIO;
     wm.disabled = !this.enabled;
@@ -2023,6 +2040,9 @@ export class Robot {
    */
   private hoodHeldDown(): boolean {
     if (this.overheadLimit === Infinity || !this.hasHood) { this.hoodLatched = null; return false; }
+    // Lowering is always allowed. Once stowed, discard the raised entry latch even if the robot has never
+    // left the overhead region; pressing shoot again under the beam must not drive the hood up into it.
+    if (this.hoodLatched && this.hoodTop < this.overheadLimit - 0.01) this.hoodLatched = false;
     if (this.hoodLatched === null) {
       this.hoodBounds(true);
       this.hoodLatched = this.hoodTopY >= this.overheadLimit - 0.01;
