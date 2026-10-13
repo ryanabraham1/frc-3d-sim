@@ -17,7 +17,7 @@ match, including remote drivers, who count as humans). Clients and spectators ne
    anon key can't touch them).
 3. **No Supabase env vars** (dev, tests): the relay writes plain JSONL to `data/demos/` (gitignored).
 4. If the upload fails (offline, relay asleep, tab closed) the log stays queued and is retried the next time the game
-   starts (up to 6 tries). The relay rejects non-logs, caps uploads at 8 MB gzipped and 30 per IP per hour.
+   starts, including logs that failed repeatedly during a storage outage. The relay rejects non-logs, caps uploads at 8 MB gzipped and 30 per IP per hour.
 - Results screen: **Download match log**. Console: `await matchLogs.list()` (shows `uploaded`), `matchLogs.flush()`,
   `matchLogs.downloadAll()`.
 - Training data: download from the bucket (Supabase dashboard, or `storage/v1/object/match-logs/<path>` with the

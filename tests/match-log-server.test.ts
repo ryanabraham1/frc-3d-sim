@@ -73,6 +73,17 @@ describe('POST /api/match-logs', () => {
 });
 
 describe('SupabaseLogStore', () => {
+  it('calls native fetch with the global receiver required by Workers', async () => {
+    let calls = 0;
+    const nativeFetch = (async function (this: unknown) {
+      if (this !== globalThis) throw new TypeError('Illegal invocation');
+      calls++;
+      return new Response(null, { status: 200 });
+    }) as typeof fetch;
+    await new SupabaseLogStore('https://proj.supabase.co', 'key', nativeFetch).save('m.jsonl.gz', Buffer.from('gz'),
+      { season: '2026-rebuilt', mode: 'solo', seed: 1, frames: 10, humanRobots: 1, archetypes: [], totals: null });
+    expect(calls).toBe(2);
+  });
   it('uploads to the private bucket then upserts the metadata row', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fake = (async (url: string, init: RequestInit) => { calls.push({ url, init }); return new Response(null, { status: 200 }); }) as unknown as typeof fetch;
