@@ -169,15 +169,13 @@ export class Robot {
   hopperRaised = false;
   get hopperCapacity(): number { return this.manualHopper && !this.hopperRaised ? this.config.hopperExpansion!.startCount : this.config.hopperCapacity; }
   /**
-   * Top of the robot including its hopper load. A stretching net is as tall as the FUEL under it pushes it (the
-   * measured pile top, clamped to [height, fullHeight]); the count estimate (loadedRobotHeight) only stands in until a
-   * pile has been measured (headless runs that never draw).
+   * Travel envelope of the hopper load. The configured expansion curve defines how much FUEL fits below the rim
+   * (including slack net capacity). Particle heaps and transient slosh deform the flexible net; treating their
+   * highest ball as a rigid, full-footprint box falsely blocks trench-safe loads and depends on visual updates.
    */
   get clearanceHeight(): number {
-    const c = this.config, e = c.hopperExpansion;
-    if (this.manualHopper) return this.hopperRaised ? e!.fullHeight : c.height;
-    if (e && this.measuredTop >= 0) return clamp(this.measuredTop, c.height, e.fullHeight);
-    return loadedRobotHeight(c, this.held.length);
+    if (this.manualHopper) return this.hopperRaised ? this.config.hopperExpansion!.fullHeight : this.config.height;
+    return loadedRobotHeight(this.config, this.held.length);
   }
   /** Lowest overhead obstacle above the robot this tick (set by the sim from the season; Infinity = none). */
   overheadLimit = Infinity;
@@ -190,10 +188,7 @@ export class Robot {
     if (this.blockerDeploy > 0) return 0;
     // An open-top hopper lets one FUEL ride on top: at most capacity + 1 held, never an extra one per capture.
     let room = Math.max(0, this.hopperCapacity + (this.openHopper && this.fuelPiles.length ? (this.bay ? Robot.OVERFLOW_ROOM : 1) : 0) - this.held.length);
-    if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity && this.measuredTop >= 0) {
-      // Under a low overhead (the TRENCH arm), stop taking FUEL once the measured pile top would reach it.
-      if (this.measuredTop + 0.01 > this.overheadLimit) room = 0;
-    } else if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
+    if (this.config.hopperExpansion && !this.manualHopper && this.overheadLimit < Infinity) {
       let n = this.held.length;
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
       room = Math.min(room, n - this.held.length);
@@ -462,8 +457,8 @@ export class Robot {
   private netLift: ((u: number, v: number) => number) | null = null;
   /**
    * Robot-frame height of the highest FUEL top under a stretching net, measured from the balls actually held (real
-   * bodies each step, the drawn pile each frame); -1 until something has been measured. The net, its collider and the
-   * TRENCH clearance follow this, not a count.
+   * bodies each step, the drawn pile each frame); -1 until something has been measured. The
+   * fabric drape follows this; the travel envelope and intake limit use the configured load curve.
    */
   measuredTop = -1;
 

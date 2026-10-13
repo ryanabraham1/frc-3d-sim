@@ -203,3 +203,57 @@ describe('every trench-height team robot with a hood', () => {
     expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
   });
 });
+
+
+const trenchApproaches = [C.HUB_CENTER.x, C.FIELD_LENGTH - C.HUB_CENTER.x].flatMap(hubX =>
+  [C.TRENCH_OPENING_CENTER_Y, C.FIELD_WIDTH - C.TRENCH_OPENING_CENTER_Y].flatMap(y =>
+    [-1, 1].map(direction => ({ hubX, y, direction }))));
+
+function loadedTrenchSim(approach: typeof trenchApproaches[number], physical: boolean): HeadlessSim {
+  const { hubX, y, direction } = approach;
+  const s = sim(team(4414), hubX - direction * 2.2, physical);
+  s.robot.resetTo({ x: hubX - direction * 2.2, y, yaw: direction > 0 ? 0 : Math.PI });
+  // The browser uses either the rendered particle pile or the optional mechanism hopper, never StowBay for 4414.
+  if (!physical) s.robot.detachPool(s.pool);
+  return s;
+}
+
+function driveWithVisuals(s: HeadlessSim, seconds: number, direction: number): void {
+  for (let i = 0; i < seconds / s.physics.dt; i++) {
+    s.step({ ...IDLE_COMMAND, vx: direction * 2.5 });
+    s.robot.syncVisual(s.physics.dt);
+  }
+}
+
+describe.each([false, true])('4414 loaded passage (physical hopper: %s)', physical => {
+  it.each(trenchApproaches.flatMap(a => [42, 57, 70].map(load => ({ ...a, load }))))
+  ('row $hubX lane $y toward $direction with $load FUEL', ({ hubX, y, direction, load }) => {
+    const s = loadedTrenchSim({ hubX, y, direction }, physical);
+    s.load(load);
+    driveWithVisuals(s, 4, direction);
+    expect(s.robot.held).toHaveLength(load);
+    if (load <= 57) expect(direction * (s.robot.pose.x - hubX)).toBeGreaterThan(0.5);
+    else expect(direction * (s.robot.pose.x - hubX)).toBeLessThan(0);
+  });
+
+  it.each(trenchApproaches)('row $hubX lane $y toward $direction recovers after unloading at the beam', approach => {
+    const s = loadedTrenchSim(approach, physical);
+    s.load(70);
+    driveWithVisuals(s, 3, approach.direction);
+    expect(approach.direction * (s.robot.pose.x - approach.hubX)).toBeLessThan(0);
+    for (const i of s.robot.held.splice(42)) s.pool.reserve(i);
+    driveWithVisuals(s, 5, approach.direction);
+    expect(s.robot.held).toHaveLength(42);
+    expect(approach.direction * (s.robot.pose.x - approach.hubX)).toBeGreaterThan(0.5);
+  });
+});
+
+it.each(trenchApproaches)('4414 recovers from hood contact at row $hubX lane $y toward $direction with 42 FUEL', approach => {
+  const s = loadedTrenchSim(approach, true);
+  s.run(1.8, { ...IDLE_COMMAND, shoot: true });
+  s.run(4, { ...IDLE_COMMAND, shoot: true, vx: approach.direction * 4.4 });
+  s.load(42);
+  s.run(5, { ...IDLE_COMMAND, vx: approach.direction * 4.4 });
+  expect(s.robot.held).toHaveLength(42);
+  expect(approach.direction * (s.robot.pose.x - approach.hubX)).toBeGreaterThan(0.5);
+});

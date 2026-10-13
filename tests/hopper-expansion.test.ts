@@ -68,13 +68,13 @@ it('net and telescoping expansion do not inflate the requested total capacities'
   }
 });
 
-for (const team of [254, 4414]) it(`${team}: intaking through the trench stops once the measured pile would reach the arm, then resumes after`, () => {
+for (const team of [254, 4414]) it(`${team}: intaking through the trench stops once the configured load would reach the arm, then resumes after`, () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === team)!.config);
   const hubX = C.HUB_CENTER.x, y = C.TRENCH_OPENING_CENTER_Y;
   // Intake is on the back: face away from travel (yaw π) with FUEL strewn inside the trench and beyond it.
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: hubX - 2.2, y, yaw: Math.PI } }); sims.push(sim);
   const r = sim.robot;
-  // A load well inside the rigid hopper (the trench-safe count itself emerges from the measured pile).
+  // A load well inside the rigid hopper.
   sim.load(15);
   sim.run(1);
   expect(r.clearanceHeight).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
@@ -93,7 +93,7 @@ for (const team of [254, 4414]) it(`${team}: intaking through the trench stops o
   expect(r.held.length).toBeGreaterThan(before);
 });
 
-it('a net robot under the trench keeps intaking while its measured pile is below the arm, and a plain robot is never limited', () => {
+it('a net robot under the trench limits intake by its load even when the measured pile disagrees', () => {
   const c = cloneConfig(season.teamRobots!.find(t => t.team === 254)!.config);
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(sim);
   const r = sim.robot;
@@ -103,8 +103,15 @@ it('a net robot under the trench keeps intaking while its measured pile is below
   expect(r.overheadLimit).toBe(C.TRENCH_SAFE_HEIGHT);
   expect(r.measuredTop).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
   expect(r.intakeRoom).toBeGreaterThan(0);
-  // A pile that has reached the arm takes no more.
-  r.measuredTop = C.TRENCH_SAFE_HEIGHT;
+  // Slosh or a tall particle heap must not change a safe load's clearance or intake room.
+  r.measuredTop = c.hopperExpansion!.fullHeight;
+  expect(r.clearanceHeight).toBe(c.height);
+  expect(r.intakeRoom).toBeGreaterThan(0);
+  sim.load(50 - r.held.length);
+  expect(r.clearanceHeight).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
+  expect(r.intakeRoom).toBe(0);
+  // A compact measured heap must not allow another ball beyond the safe count either.
+  r.measuredTop = c.height;
   expect(r.intakeRoom).toBe(0);
   const plain = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
   // A plain robot has no net to limit, but its drawn hood is held down under the arm, so it does report the arm.
@@ -172,7 +179,7 @@ for (const team of [581, 1323]) it(`${team}: its net stays near the rim with a p
   const sim = new HeadlessSim(season, RAPIER, { robot: c, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } }); sims.push(sim);
   const r = sim.robot;
   sim.load(30); sim.run(1.5);
-  // Clearance is the measured pile top: a part load stays below the rim.
+  // A part load stays within the configured rigid capacity.
   expect(r.clearanceHeight).toBeLessThan(c.height + .03);
   sim.load(c.hopperCapacity - 30);
   expect(r.held.length).toBe(c.hopperCapacity);
