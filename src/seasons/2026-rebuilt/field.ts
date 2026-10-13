@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildHubStandIn, HUB_THROAT_Z } from './hubStructure';
 import { addFieldCadVisual, addHubCadColliders, addHubCadVisual, hubCadNet, HUB_CAD } from './hubCad';
+import { addHubBannerVisual } from './hubBanner';
 import { NetSheet } from '../../engine/field/netSheet';
 import type { Alliance, FieldPoint } from '@engine/coords';
 import { FieldBuilder, Vec3 } from '@engine/field/builder';
@@ -187,6 +188,7 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   // [M Table 5-3] The DMX lights shine through the diffusers that cap the body: white plastic glowing in alliance colour.
   const lights = new THREE.MeshStandardMaterial({ color: 0xe9eef1, emissive: col, emissiveIntensity: 0.1, roughness: 0.5, transparent: true, opacity: 0.9 });
   if (!addHubCadVisual(b, a, c, lights)) drawHubStandIn(b, a, c, lights);
+  addHubBannerVisual(b, a, c);
   // [CAD GE-26318] The net behind the opening, flexible (NetSheet) on the CAD net's own rectangle.
   const nets = [new NetSheet(b.frame, b.root, { ...hubCadNet(a, c), nu: 15, nv: 15, cordSpacing: inch(2), name: `hub-${a}-net` })];
   return { center: c, lights, nets };
@@ -209,8 +211,6 @@ function drawHubStandIn(b: FieldBuilder, a: Alliance, c: { x: number; y: number 
     const y = c.y + sy * hs;
     b.box([c.x, y, (BODY_TOP + inch(3)) / 2], [C.HUB_SIZE, skin, BODY_TOP - inch(3)], { ...black, collide: false });
     b.box([c.x, y, inch(1.5)], [C.HUB_SIZE, skin, inch(3)], { ...capGray, name: `hub-${a}-base-strip-${sy}` });
-    b.box([c.x, y + sy * .004, inch(22)], [C.HUB_SIZE * .84, .004, inch(26)], { color: 0x4f8a99, roughness: .7, collide: false, name: `hub-${a}-banner-${sy}` });
-    b.label([c.x, y + sy * .008, inch(23)], 'REBUILT', inch(5.5), sy > 0 ? Math.PI / 2 : -Math.PI / 2, '#ffffff');
   }
   const portW = inch(8), portH = inch(7), pitch = C.HUB_SIZE / C.HUB_EXIT_COUNT, portBottom = C.HUB_EXIT_HEIGHT - portH / 2, portTop = C.HUB_EXIT_HEIGHT + portH / 2;
   const exitStrip = portTop + inch(2), tagBand = inch(12);

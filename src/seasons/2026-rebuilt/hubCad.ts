@@ -9,6 +9,7 @@ import { COLORS } from './constants';
 import { mergeStatic } from '../../engine/render/mergeStatic';
 import { applyCadFinishes } from '../../engine/field/cadFinishes';
 import { getRobotEnvironment } from '../../engine/robot/models';
+import { prepareHubBanner } from './hubBanner';
 
 /** Batch the rigid HUB hardware by material; keep the addressable light group and hidden aesthetic net intact. */
 export function prepareHubVisual(root: THREE.Group): void {
@@ -79,6 +80,7 @@ export function prepareHubCad(): Promise<void> {
   if (typeof document === 'undefined' || typeof window === 'undefined') return Promise.resolve();
   const load = (file: string) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/field/${file}`);
   return (loading ??= Promise.all([
+    prepareHubBanner(),
     load('2026-hub.glb').then((g) => { prepareHubVisual(g.scene); asset = g.scene; }).catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }),
     load('2026-field.glb').then((g) => { restoreAllianceColors(g.scene); applyCadFinishes(g.scene); prepareSpatialField(g.scene); fieldAsset = g.scene; }).catch((e) => { console.warn('[field] field CAD unavailable, drawing the stand-in', e); }),
   ]).then(() => undefined));
