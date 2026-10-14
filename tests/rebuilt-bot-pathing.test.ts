@@ -16,7 +16,7 @@ it('routes around its own driver before reaching the bumper', () => {
     extraRobots: [{ config, alliance: 'blue', station: 1, id: 1, pose: { x: 1.5, y: 4.5, yaw: 0 } }] });
   try {
     const mate = sim.ctx.robots[1];
-    const bot = new CycleBot(sim.ctx, mate, { score: () => ({ ...IDLE_COMMAND }), supply: () => ({ x: 1, y: 1, yaw: 0 }), accepts: () => true });
+    const bot = new CycleBot(sim.ctx, mate, { yieldToDriver: true, score: () => ({ ...IDLE_COMMAND }), supply: () => ({ x: 1, y: 1, yaw: 0 }), accepts: () => true });
     sim.robot.lastCommand = { ...IDLE_COMMAND, shoot: true };
     const command = bot.driveTo({ x: 6, y: 4.5 });
     expect(Math.abs(command.vy)).toBeGreaterThan(0.5);

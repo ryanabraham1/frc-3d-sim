@@ -39,7 +39,7 @@ Strategy, blue vs red on Shift control (4 seeds):
 Robots that are already full during their own inactive shift have nothing to do but wait; sending them to contest
 the opponents' shooters (and coming home in time for their own shift) is worth about 200 points a match, far more
 than a full-time defender or feeder. A conveyor-feeding variant ("pass while full") also lost to simply waiting.
-**Adaptive** therefore always runs Press, and aims the pressure at the opponents' top scorer. Press stops itself
+**Adaptive** on Normal/Hard runs Press and aims the pressure at the opponents' top scorer. Einstein uses the scoring-first revision below. Press stops itself
 in the last 30 s so every robot dumps and climbs.
 
 (These strategy runs predate the archetype rebalance below, when every Hard bot had an 80-ball hopper firing
@@ -171,3 +171,35 @@ AI lineups (station 1, 2, 3) per opponent difficulty:
 
 A role you order for a teammate picks a fitting build (e.g. 2024 *Amp* → AMP + TRAP specialist), and the menu lets you
 choose each teammate's robot directly.
+
+
+### Einstein scoring and congested crossings (2026-10-14)
+
+Einstein now prioritizes refill, staging and active scoring windows. It carries a useful load before crossing back,
+avoids small cross-field raids, uses closer shooting stances, and can creep through nearby fuel with a fixed shooter
+only while aligned and level. Loaded hunters compete for the defense assignment; an empty nearer teammate cannot
+claim it and then decline. Only human-controlled opponents qualify for this hunting behavior.
+
+AUTO reserves travel, alignment and unloading time, uses loaded clearance height, and recovers when it stops making
+progress. Stationary robots close single-file bump/trench lanes: take another compatible crossing, back out before
+changing lanes if already blocked, or wait clear when every compatible lane is occupied. The physical regression
+places a stationary teammate at 4414's preferred bump entrance and requires an alternate crossing within 12 seconds.
+
+Friendly driver routing is a per-season opt-in (`yieldToDriver`), enabled for REBUILT. It predicts the driver's short
+motion path and avoids fuel beneath teammates. Rescue shoves require a human who is trying to drive and has stopped
+shooting/feeding.
+
+Final isolated production-simulator benchmark, identical 4414/1323/2910 lineups on both alliances, three seeds,
+all robots AI-controlled, ordinary hardware and moving-shot actuator lag:
+
+| Seed | Blue FUEL | Red FUEL | Blue AUTO | Red AUTO |
+|---|---:|---:|---:|---:|
+| 1 | 593 | 589 | 86 | 120 |
+| 2 | 652 | 546 | 139 | 85 |
+| 3 | 595 | 597 | 132 | 127 |
+
+This is a small deterministic all-AI benchmark, not a promised score against a human. The production regression
+requires more than 3,000 combined FUEL and 450 AUTO FUEL across these seeds, and every robot must score over 50.
+Run `tests/slow/rebuilt-einstein-flow.test.ts`; `REBUILT_BENCH_OUT=/tmp/results.json` exports per-seed measurements.
+The old headless match harness holds turret fire while tracking, so its totals are not interchangeable with this
+production-loop test.

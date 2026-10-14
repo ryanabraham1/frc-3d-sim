@@ -1,10 +1,12 @@
 import type { FieldPoint } from '@engine/coords';
+import { aiOrders } from '@engine/ai/team';
 import type { AutoPilot, SeasonContext } from '@engine/core/season';
-import { arrive, BarrierBand, dist, routeThroughBands, turnToward } from '@engine/ai/steering';
+import { arrive, avoid, BarrierBand, dist, routeThroughBands, turnToward } from '@engine/ai/steering';
 import { IDLE_COMMAND, Robot, RobotCommand } from '@engine/robot/robot';
 import * as C from './constants';
 import { dir, side } from './field';
 import type { RebuiltRules } from './rules';
+import { routeRebuiltTraffic } from './traffic';
 
 export const AUTO_ROUTINES = [
   { id: 'shoot-collect', label: 'Shoot preload + collect neutral', description: 'Score the preload, gather FUEL on our side of the NEUTRAL ZONE, return and score.' },
@@ -39,27 +41,44 @@ export class RebuiltAutoPilot implements AutoPilot {
   private targetPiece = -1;
   private retarget = 0;
   private readonly shootSpot: FieldPoint;
+  private readonly routine: string;
+  private previous: FieldPoint;
+  private stalled = 0;
+  private progressGoal: FieldPoint | null = null;
+  private bestDistance = Infinity;
+  private progressAt = 0;
+  private escapes = 0;
+  private escapeUntil = 0;
+  private escape = { vx: 0, vy: 0 };
+  private readonly blocked = new Map<number, number>();
 
   constructor(
     private readonly ctx: SeasonContext,
     private readonly rules: RebuiltRules,
     private readonly robot: Robot,
-    private readonly routine: string,
+    routine: string,
   ) {
+    // Einstein scorers take the large neutral supply rather than spending AUTO parked at a depleted depot.
+    // The player's explicitly selected routine remains unchanged.
+    this.routine = routine === 'shoot-depot' && robot.controller === 'bot' && aiOrders(ctx.settings, robot.alliance).skill === 'einstein'
+      ? 'shoot-collect' : routine;
     const p = robot.pose;
-    this.shootSpot = { x: p.x, y: p.y };
+    this.previous = { x: p.x, y: p.y };
+    // Starting stations at the sidelines are poor shooting stances and can sit beside a trench arm.
+    this.shootSpot = routine === 'shoot-only' || routine === 'none'
+      ? { x: p.x, y: p.y } : side(robot.alliance, 2.7, C.HUB_CENTER.y + (robot.station - 2) * 1.1);
     if (routine === 'none') this.phase = 'idle';
   }
 
   update(dt: number): RobotCommand {
     const r = this.robot;
     const cmd: RobotCommand = { ...IDLE_COMMAND, intake: r.capacityLeft > 0 };
-    if (r.isClimbing || this.phase === 'idle') return cmd;
+    if (r.isClimbing || this.phase === 'idle') return { ...IDLE_COMMAND };
     const tLeft = this.ctx.clock.current.id === 'auto' ? this.ctx.clock.periodRemaining : 0;
     this.retarget -= dt;
 
     if (this.phase === 'shoot-preload') {
-      cmd.shoot = this.rules.inAllianceZone(r);
+      this.shoot(cmd);
       if (r.held.length === 0) {
         this.phase =
           this.routine === 'shoot-collect' || this.routine === 'shoot-depot' || this.routine === 'depot-climb' ? 'collect' : this.routine === 'shoot-climb' ? 'climb' : 'idle';
@@ -69,9 +88,14 @@ export class RebuiltAutoPilot implements AutoPilot {
 
     if (this.routine === 'depot-climb' && this.phase !== 'climb' && tLeft < 7) this.phase = 'climb';
     if (this.phase === 'collect') {
-      const back = dist(r.pose, this.shootSpot) / (r.config.maxSpeed * 0.6) + 1.2;
-      if (r.held.length >= Math.min(20, r.config.hopperCapacity) || (tLeft < back + 1.5 && r.held.length > 0)) this.phase = 'return';
+      const back = this.returnTime();
+      const unload = r.held.length / Math.max(1, r.config.launcher.rate);
+      if (r.held.length >= Math.min(64, r.config.hopperCapacity * 0.8) || tLeft < back + unload + 1.5) {
+        this.phase = 'return';
+        return this.update(0);
+      }
       const p = this.pickPiece();
+      if (!p && r.held.length > 0) { this.phase = 'return'; return this.update(0); }
       if (p) {
         const face = dist(r.pose, p) < 2.5 ? Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.intakeYawOffset : null; // intake face leads
         this.steer(cmd, p, face);
@@ -80,11 +104,10 @@ export class RebuiltAutoPilot implements AutoPilot {
     }
 
     if (this.phase === 'return') {
-      if (this.rules.inAllianceZone(r)) cmd.shoot = true;
-      if (!(this.rules.inAllianceZone(r) && dist(r.pose, this.shootSpot) < 1.2)) this.steer(cmd, this.shootSpot, null);
-      // Emptied with time to spare → go get more (or climb).
+      this.shoot(cmd);
+      // Finish unloading before setting off; a second trip must also fit the return and alignment.
       if (r.held.length === 0 && this.routine === 'depot-climb') this.phase = 'climb';
-      else if (r.held.length === 0 && tLeft > 6) this.phase = 'collect';
+      else if (r.held.length === 0 && tLeft > this.returnTime() + 7) this.phase = 'collect';
       return cmd;
     }
 
@@ -116,7 +139,7 @@ export class RebuiltAutoPilot implements AutoPilot {
     const { pool, frame } = this.ctx;
     if (this.targetPiece >= 0 && pool.state[this.targetPiece] === 'field' && this.retarget > 0) {
       const f = frame.toField(pool.position(this.targetPiece));
-      if (f.z < 0.3) return f;
+      if (f.z < 0.25 && this.allowed(f) && (this.blocked.get(this.targetPiece) ?? 0) <= this.ctx.clock.elapsed) return f;
     }
     this.retarget = 0.6;
     const me = this.robot.pose;
@@ -124,11 +147,11 @@ export class RebuiltAutoPilot implements AutoPilot {
     let bestCost = Infinity;
     this.targetPiece = -1;
     for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field') continue;
+      if (pool.state[i] !== 'field' || (this.blocked.get(i) ?? 0) > this.ctx.clock.elapsed) continue;
       const f = frame.toField(pool.position(i));
-      if (f.z > 0.25 || f.x < 0.2 || f.x > C.FIELD_LENGTH - 0.2 || !this.allowed(f)) continue;
+      if (f.z > 0.25 || f.x < 0.2 || f.x > C.FIELD_LENGTH - 0.2 || f.y < 0.5 || f.y > C.FIELD_WIDTH - 0.5 || !this.allowed(f)) continue;
       let cost = Math.hypot(f.x - me.x, f.y - me.y);
-      if (routeThroughBands(me, f, BANDS, this.robot.footprint.width / 2, this.robot.config.height) !== f) cost += 1.2;
+      if (routeThroughBands(me, f, BANDS, this.robot.footprint.width / 2, this.robot.clearanceHeight) !== f) cost += 1.2;
       if (cost < bestCost) {
         bestCost = cost;
         best = f;
@@ -138,13 +161,64 @@ export class RebuiltAutoPilot implements AutoPilot {
     return best;
   }
 
+  private returnTime(): number {
+    const r = this.robot;
+    const crosses = routeThroughBands(r.pose, this.shootSpot, BANDS, Math.max(r.footprint.length, r.footprint.width) / 2, r.clearanceHeight) !== this.shootSpot;
+    return dist(r.pose, this.shootSpot) / Math.max(1, r.config.maxSpeed * 0.6) + (crosses ? 3 : 1);
+  }
+
+  private shoot(cmd: RobotCommand): void {
+    const r = this.robot, p = r.pose, hub = side(r.alliance, C.HUB_CENTER.x, C.HUB_CENTER.y);
+    const face = Math.atan2(hub.y - p.y, hub.x - p.x) + r.shotYawOffset;
+    if (dist(p, this.shootSpot) > 0.3) this.steer(cmd, this.shootSpot, face);
+    else cmd.omega = turnToward(p.yaw, face, r.config.maxOmega * 0.8);
+    cmd.intake = false; // Don't prolong preload/return forever by collecting the HUB's discharge.
+    cmd.shoot = this.rules.inAllianceZone(r) && r.held.length > 0 &&
+      (r.config.launcher.turret || r.speed < 0.5 && r.uprightness >= 0.995);
+    if (r.hasHood && r.speed > 0.5 && this.rules.nearTrenchArm(r, 1.2)) cmd.shoot = false;
+  }
+
   private steer(cmd: RobotCommand, goal: FieldPoint, face: number | null): void {
     const r = this.robot;
     const me = r.pose;
-    const wp = routeThroughBands(me, goal, BANDS, r.footprint.width / 2, r.config.height);
+    const wp = routeRebuiltTraffic(me, goal, BANDS, Math.max(r.footprint.width, r.footprint.length) / 2, r.clearanceHeight,
+      this.ctx.robots.filter(other => other !== r).map(other => ({ ...other.pose,
+        halfWidth: Math.max(other.footprint.length, other.footprint.width) / 2, speed: other.speed })));
     const v = arrive(me, wp, r.config.maxSpeed * 0.85, wp === goal ? 0.8 : 0.3);
     cmd.vx = v.vx;
     cmd.vy = v.vy;
+    const obstacles = this.ctx.robots.filter((o) => o !== r).map((o) => ({ ...o.pose,
+      r: (Math.hypot(o.footprint.length, o.footprint.width) + Math.hypot(r.footprint.length, r.footprint.width)) / 2 + 0.08 }));
+    const repulsion = avoid(me, obstacles, 0.4, r.config.maxSpeed * 0.5);
+    cmd.vx += repulsion.vx;
+    cmd.vy += repulsion.vy;
+    const now = this.ctx.clock.elapsed;
+    if (dist(me, this.previous) < 0.003 && v.dist > 0.3) this.stalled += this.ctx.physics.dt;
+    else this.stalled = Math.max(0, this.stalled - this.ctx.physics.dt * 2);
+    this.previous = { x: me.x, y: me.y };
+    const distance = dist(me, goal);
+    if (!this.progressGoal || dist(goal, this.progressGoal) > 0.6 || distance < this.bestDistance - 0.2) {
+      this.progressGoal = { x: goal.x, y: goal.y };
+      this.bestDistance = distance;
+      this.progressAt = now;
+    }
+    const noProgress = distance > 0.5 && now - this.progressAt > 1.4;
+    if (this.stalled > 0.9 || noProgress && now >= this.escapeUntil) {
+      const turn = [Math.PI, Math.PI / 2, -Math.PI / 2][this.escapes++ % 3];
+      const heading = Math.atan2(v.vy, v.vx) + turn;
+      this.escape = { vx: Math.cos(heading) * r.config.maxSpeed * 0.6, vy: Math.sin(heading) * r.config.maxSpeed * 0.6 };
+      this.escapeUntil = now + 0.8;
+      this.progressAt = now + 0.8;
+      this.bestDistance = distance;
+      this.stalled = 0;
+      if (this.targetPiece >= 0) this.blocked.set(this.targetPiece, now + 5);
+      this.targetPiece = -1;
+    }
+    if (now < this.escapeUntil) { cmd.vx = this.escape.vx; cmd.vy = this.escape.vy; }
+    const half = Math.max(r.footprint.length, r.footprint.width) / 2 + 0.05;
+    if (me.x < half && cmd.vx < 0 || me.x > C.FIELD_LENGTH - half && cmd.vx > 0) cmd.vx = 0;
+    if (me.y < half && cmd.vy < 0 || me.y > C.FIELD_WIDTH - half && cmd.vy > 0) cmd.vy = 0;
+    if (r.hasHood && this.rules.nearTrenchArm(r, 1.2)) { cmd.shoot = false; cmd.pass = false; cmd.aim = false; }
     // G403: brake so the robot can always stop with its bumpers short of the CENTER LINE.
     const room = dir(r.alliance) * (C.CENTER_X - me.x) - Math.max(r.footprint.length, r.footprint.width) / 2 - 0.1;
     const vIn = dir(r.alliance) * cmd.vx, vMax = Math.sqrt(2 * r.config.maxAccel * 0.35 * Math.max(0, room));
