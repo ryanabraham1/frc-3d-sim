@@ -19,6 +19,7 @@ import './menu.css';
 /** Newtons per pound-force. */
 const LBF = 4.4482216;
 const STORAGE_KEY = 'frc-sim-settings-v1';
+const ROBOT_STORAGE_KEY = 'frc-sim-season-robots-v1';
 const FT = 0.3048;
 
 type Page = 'home' | 'solo' | 'garage' | 'controls' | 'rules' | 'settings' | 'multiplayer' | 'ranked';
@@ -47,6 +48,20 @@ function save(s: GameSettings): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
   } catch {
     /* storage unavailable (private mode) — fine */
+  }
+}
+
+/** Robot choices belong to their season: a 2026 build must not overwrite the saved 2025 build. */
+function loadSeasonRobots(): Record<string, RobotConfig> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROBOT_STORAGE_KEY) ?? '{}');
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    return Object.fromEntries(SEASONS.flatMap(season => {
+      const robot = saved[season.id];
+      return robot?.launcher && robot?.intake && robot?.climber ? [[season.id, robot]] : [];
+    }));
+  } catch {
+    return {};
   }
 }
 
@@ -203,6 +218,22 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       intake: { ...d.intake, ...stored.robot.intake, groundSide: d.intake.groundSide, stationSide: d.intake.stationSide },
     };
   }
+  const seasonRobots = loadSeasonRobots();
+  if (seasonRobots[season.id]) s.robot = cloneConfig(seasonRobots[season.id]);
+  const rememberRobot = () => {
+    seasonRobots[season.id] = cloneConfig(s.robot);
+    save(s);
+    try { localStorage.setItem(ROBOT_STORAGE_KEY, JSON.stringify(seasonRobots)); } catch { /* session memory still works */ }
+  };
+  const switchSeason = (id: string) => {
+    rememberRobot();
+    const teamNumber = s.robot.teamNumber;
+    season = getSeason(id);
+    s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
+    const remembered = seasonRobots[season.id];
+    if (remembered) s.robot = cloneConfig(remembered);
+    else s.robot.teamNumber = teamNumber;
+  };
   let page: Page = opts.page ?? 'home';
   /** Where Garage / Controls / Rules return to. */
   let backTo: Page = 'home';
@@ -638,13 +669,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   const render = () => {
     if (lobby?.lobby && lobby.lobby.seasonId !== s.seasonId) {
-      season = getSeason(lobby.lobby.seasonId);
-      const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
-      s.robot.teamNumber = teamNumber;
+      switchSeason(lobby.lobby.seasonId);
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
     sanitizeSpot();
+    rememberRobot();
     if (lobby) lobby.settings = s;
     // A relay wake/status update can arrive while the user is typing. Keep the form draft and focus.
     const online = page === 'multiplayer' || page === 'ranked';
@@ -780,10 +809,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-modal="confirm"]').forEach((b) => (b.onclick = launch));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
-      season = getSeason(seasonSel.value);
-      const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
-      s.robot.teamNumber = teamNumber;
+      switchSeason(seasonSel.value);
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
     };
