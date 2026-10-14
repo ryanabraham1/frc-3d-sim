@@ -99,7 +99,8 @@ function wheelStack(parent: THREE.Object3D, x: number, y: number, r: number, zs:
 /**
  * RIPCURRENT's pancake turret (binder "pancake turret", Behind the Bumpers "compact pancake turret"; match photos
  * mYDBhBN / 0DqbRg6; the supplied image reconstruction). A wide, flat, pocketed black turret plate rides on the bearing
- * flush with the hopper top, with a slot over the dye-rotor throat. Only a low head stands on it (photo: about 3 in):
+ * below the hopper top, with a slot over the dye-rotor throat. The supplied Oct 13 match close-up shows the parked
+ * head flush with the net: its fixed cheeks stay below the rim and only the adjustable hood rises for a shot:
  * two black pocketed side plates carrying the quad-Kraken 3 in flywheel BELOW the plate in the slot, and a curved
  * black hood concentric with the flywheel that pivots on the flywheel axis (a sector gear and a small hood motor on the
  * +z plate). FUEL comes straight up the throat behind the flywheel, wraps over it under the hood and leaves forward
@@ -133,9 +134,9 @@ export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number
   // Flywheel axis sits in the slot below the plate; the ball rises at x = F.x - rb, right over the throat.
   const F:[number,number]=[.07,-.075], wheelR=.038, rb=wheelR+.075-.012, hoodR=.176;
   const plateZ=.088;
-  // Low A-frame side plates (photo mYDBhBN: sloped truss legs, flat top bar, about 4 in above the turret plate),
-  // Warren-truss pocketed between a bottom chord and the sloped/flat top chord.
-  const topY=.105, xl=-.118, xr=.122, kneeL=-.03, kneeR=.06;
+  // The fixed A-frame cheeks are mostly buried in the hopper. The supplied match close-up has a flat roof
+  // when parked; tall fixed cheeks cannot fold away with the hood. Keep their top below the net rim.
+  const topY=.055, xl=-.118, xr=.122, kneeL=-.03, kneeR=.06;
   const chord=(px:number)=>px<kneeL?(px-xl)/(kneeL-xl)*topY:px>kneeR?topY-(px-kneeR)/(xr-kneeR)*topY:topY;
   const outline:[number,number][]=[[xl,-.088],[xr,-.088],[xr,0],[kneeR,topY],[kneeL,topY],[xl,0]];
   const holes=trussPockets(xl+.012,xr-.012,-.07,(px:number)=>Math.max(-.05,chord(px)-.016),4,.007).filter(tri=>tri.every(([px,py])=>Math.hypot(px-F[0],py-F[1])>.03));

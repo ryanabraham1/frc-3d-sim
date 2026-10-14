@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
+import * as THREE from 'three';
 import { SEASONS } from '../src/seasons';
 import { cloneConfig, type RobotConfig } from '../src/engine/robot/config';
 import { HeadlessSim } from '../src/engine/testing/headless';
@@ -256,4 +257,25 @@ it.each(trenchApproaches)('4414 recovers from hood contact at row $hubX lane $y 
   s.run(5, { ...IDLE_COMMAND, vx: approach.direction * 4.4 });
   expect(s.robot.held).toHaveLength(42);
   expect(approach.direction * (s.robot.pose.x - approach.hubX)).toBeGreaterThan(0.5);
+});
+
+
+it('4414 parks its entire shooter flush with the net, including the fixed side plates', () => {
+  const s = sim(team(4414));
+  s.run(0.5, IDLE_COMMAND);
+  const head = s.robot.visual.getObjectByName('hightide-pancake-shooter')!;
+  expect(head).toBeDefined();
+  // Measure every mesh in the chassis frame, including fixed cheeks that the hood-only checks do not cover.
+  s.robot.visual.updateMatrixWorld(true);
+  const inverse = s.robot.visual.matrixWorld.clone().invert();
+  const bounds = new THREE.Box3();
+  head.traverse(node => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.geometry) return;
+    mesh.geometry.computeBoundingBox();
+    bounds.union(mesh.geometry.boundingBox!.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, mesh.matrixWorld)));
+  });
+  expect(bounds.max.y).toBeLessThanOrEqual(s.robot.config.height + 0.005);
+  s.run(1.8, { ...IDLE_COMMAND, shoot: true });
+  expect(s.robot.hoodTop).toBeGreaterThan(C.TRENCH_CLEARANCE + 0.02);
 });
