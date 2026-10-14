@@ -136,7 +136,7 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const hopperFloor = new THREE.Mesh(floorGeo, black);
   hopperFloor.name = 'hightide-hopper-floor';
   k.visual.add(hopperFloor);
-  const trayFill = fillBlock(tray, { x: side*(L/2-.13), y0:bt+.03, length:.25, width:W*.88, height:(c.hopperExpansion?.fullHeight ?? H)-bt-.04, color:FUEL, capacity:30 });
+  const trayFill = fillBlock(tray, { x: side*(L/2-.13), y0:bt+.03, length:.25, width:W*.88, height:(c.hopperExpansion?.fullHeight ?? H)-bt-.04, color:FUEL, capacity:c.hopperCapacity, ceiling:hopperNetCeiling(c) });
   const intake = highTideIntake(k);
   const deploy = { v: 0 };
   let rotorRate = 0;
@@ -847,15 +847,15 @@ export function rebuiltTeamRobots(): TeamRobot[] {
     ...cadBatchRebuiltTeamRobots(),
     {
       id: 'ripcurrent-4414', team: 4414, name: 'RIPCURRENT',
-      description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake, under a very stretchy net roof: 57 FUEL fit the rigid box and the net stretches over 28 more for the binder’s 85, bulging up to about 29.5 in (just under the 30 in limit) and losing TRENCH clearance past 57. No climber.',
+      description: '4414 HighTide (2026 World Champions, captain). Pancake turret with a 3 in quad-Kraken flywheel and adjustable hood (shoots on the move), "dolphin fin" dye rotor feeding a single high-BPS stream, structural-bumper hopper that extends with the intake, under a very stretchy net roof: 57 FUEL fit the rigid box, about 85 (the binder’s figure) still pass under the TRENCH with the net slack over them, and stretched to about 29.5 in (just under the 30 in limit) it holds 105 (the user’s figure, above the binder’s 85). No climber.',
       source: '4414 2026 Technical Binder (2026.team4414.com); Chief Delphi "Team 4414 HighTide 2026 Tech Binder - RIPCURRENT"',
-      config: teamConfig(4414, 'ripcurrent-4414', { intake: 'both', aim: 'turret', hopper: 85, tall: false, rate: 15, climb: 0 }, (c) => {
+      config: teamConfig(4414, 'ripcurrent-4414', { intake: 'both', aim: 'turret', hopper: 105, tall: false, rate: 15, climb: 0 }, (c) => {
         // 25 × 32 in frame with chamfered back corners, inside the 110 in perimeter: modeled as an equal-perimeter box.
         c.frameLength = inch(24);
         c.frameWidth = inch(31);
-        // Packing real-size FUEL into this hopper: 57 under the rigid rim; the binder's 85 needs the net stretched to
-        // about 29.5 in (+28), which this very elastic net does. [EST]
-        c.hopperExpansion = { startCount: 57, fullHeight: inch(29.5) };
+        // FUEL under this very elastic net: 57 below the rigid rim; the slack net drapes over the binder's 85 while the
+        // load still clears the TRENCH (21.7 in); stretched to about 29.5 in it holds 105 (user's figure). [EST]
+        c.hopperExpansion = { startCount: 57, slack: { count: 85, height: inch(21.7) }, fullHeight: inch(29.5) };
         setRebuiltAccuracy(c, 90); // [EST] precomputed robust shot map
         c.maxSpeed = 4.4; // [EST] geared 7.67:1 for low current draw
       }),

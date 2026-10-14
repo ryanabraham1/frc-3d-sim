@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { SEASONS } from '../src/seasons';
-import { cloneConfig, type RobotConfig } from '../src/engine/robot/config';
+import { cloneConfig, loadedRobotHeight, type RobotConfig } from '../src/engine/robot/config';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import * as C from '../src/seasons/2026-rebuilt/constants';
@@ -235,24 +235,25 @@ function driveWithVisuals(s: HeadlessSim, seconds: number, direction: number): v
 }
 
 describe.each([false, true])('4414 loaded passage (physical hopper: %s)', physical => {
-  it.each(trenchApproaches.flatMap(a => [42, 57, 70].map(load => ({ ...a, load }))))
+  // About 85 FUEL still pass under the slack net; a near-full stretched load (100) is stopped by the arm.
+  it.each(trenchApproaches.flatMap(a => [42, 57, 80, 100].map(load => ({ ...a, load }))))
   ('row $hubX lane $y toward $direction with $load FUEL', ({ hubX, y, direction, load }) => {
     const s = loadedTrenchSim({ hubX, y, direction }, physical);
     s.load(load);
     driveWithVisuals(s, 4, direction);
     expect(s.robot.held).toHaveLength(load);
-    if (load <= 57) expect(direction * (s.robot.pose.x - hubX)).toBeGreaterThan(0.5);
+    if (load <= 80) expect(direction * (s.robot.pose.x - hubX)).toBeGreaterThan(0.5);
     else expect(direction * (s.robot.pose.x - hubX)).toBeLessThan(0);
   });
 
   it.each(trenchApproaches)('row $hubX lane $y toward $direction recovers after unloading at the beam', approach => {
     const s = loadedTrenchSim(approach, physical);
-    s.load(70);
+    s.load(100);
     driveWithVisuals(s, 3, approach.direction);
     expect(approach.direction * (s.robot.pose.x - approach.hubX)).toBeLessThan(0);
-    for (const i of s.robot.held.splice(42)) s.pool.reserve(i);
+    for (const i of s.robot.held.splice(57)) s.pool.reserve(i);
     driveWithVisuals(s, 5, approach.direction);
-    expect(s.robot.held).toHaveLength(42);
+    expect(s.robot.held).toHaveLength(57);
     expect(approach.direction * (s.robot.pose.x - approach.hubX)).toBeGreaterThan(0.5);
   });
 });
@@ -286,4 +287,13 @@ it('4414 parks its entire shooter flush with the net, including the fixed side p
   expect(bounds.max.y).toBeLessThanOrEqual(s.robot.config.height + 0.005);
   s.run(1.8, { ...IDLE_COMMAND, shoot: true });
   expect(s.robot.hoodTop).toBeGreaterThan(C.TRENCH_CLEARANCE + 0.02);
+});
+
+it('4414: the load at which the TRENCH starts to block lies around 85 (80-92), not at the rigid 57', () => {
+  const c = team(4414);
+  let firstBlocked = -1;
+  for (let n = 57; n <= c.hopperCapacity && firstBlocked < 0; n++) if (loadedRobotHeight(c, n) > C.TRENCH_SAFE_HEIGHT) firstBlocked = n;
+  expect(firstBlocked).toBeGreaterThanOrEqual(80);
+  expect(firstBlocked).toBeLessThanOrEqual(92);
+  expect(c.hopperCapacity).toBeGreaterThanOrEqual(105);
 });
