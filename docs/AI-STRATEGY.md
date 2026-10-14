@@ -203,3 +203,9 @@ requires more than 3,000 combined FUEL and 450 AUTO FUEL across these seeds, and
 Run `tests/slow/rebuilt-einstein-flow.test.ts`; `REBUILT_BENCH_OUT=/tmp/results.json` exports per-seed measurements.
 The old headless match harness holds turret fire while tracking, so its totals are not interchangeable with this
 production-loop test.
+
+### Fixed shooter recovery comparison (2026-10-14)
+
+Full production simulator traces found fixed shooters holding fuel in an active scoring zone without requesting a shot for 31–52 seconds per match. A planted stance returned zero turning command even after heading displacement; the previous Einstein creep collector could also keep postponing unloading. Fixed shooters now retain an available stance, aim from their actual position, and explicitly turn toward the HUB while planted. They unload before chasing more nearby fuel.
+
+With unchanged hardware and seeds 1–3, combined credited fuel changed from 1,152 / 1,174 / 1,236 to 1,317 / 1,320 / 1,203: 3,562 to 3,840 (+7.8%). These are all-AI matches, not evidence of human-level competition. One seed regressed. A separate collection-target hysteresis experiment halved goal switching but scored only 3,651 total; it was rejected rather than shipping smoother movement as a scoring improvement. Trace launch counts distinguish requests from credited points and must not be called scoring accuracy.

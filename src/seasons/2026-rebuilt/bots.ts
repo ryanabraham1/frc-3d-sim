@@ -1,5 +1,5 @@
 import { aroundCircles, clusterCounts, CycleBot } from '@engine/ai/cycleBot';
-import { dist, routeThroughBands } from '@engine/ai/steering';
+import { dist, routeThroughBands, turnToward } from '@engine/ai/steering';
 import { TeamBrain } from '@engine/ai/team';
 import type { FieldPoint, FieldPose } from '@engine/coords';
 import type { AiChoice, SeasonContext } from '@engine/core/season';
@@ -220,10 +220,10 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     for (let k = 0; k < 3; k++) {
       const p = spotAt(a);
       const taken = team.members.some((o) => o !== r && dist(o.pose, p) < Math.max(o.footprint.length, o.footprint.width) + 0.15);
-      if (!taken) return p;
+      if (!taken) return levelStance = p;
       a = towardWall + clamp(off(a) + (off(a) >= 0 ? -0.55 : 0.55) * (k + 1) * (k % 2 ? -1 : 1), -0.8, 0.8);
     }
-    return spotAt(a);
+    return levelStance = spotAt(a);
   };
   // G408: don't run the intake while FUEL the HUB just released is rolling at us (a catch is a foul).
   const hubFuelNear = (radius = bot.hunter ? CATCH_RADIUS : 2.6): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < radius);
@@ -238,9 +238,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       const d = Math.hypot(spot.x - hubP.x, spot.y - hubP.y);
       levelStance = spot = { x: hubP.x + Math.cos(next) * d, y: hubP.y + Math.sin(next) * d };
     }
-    const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x) + r.shotYawOffset;
+    const face = Math.atan2(hubP.y - myPose().y, hubP.x - myPose().x) + r.shotYawOffset;
     const there = dist(myPose(), spot) < 0.3;
-    const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
+    const cmd = there ? { ...IDLE_COMMAND, omega: turnToward(myPose().yaw, face, r.config.maxOmega * 0.8) } : bot.driveTo(spot, face, undefined, 0.5);
     cmd.intake = r.capacityLeft > 0 && !hubFuelNear();
     // Fire once planted (auto-align squares the chassis and holds the first shot until aligned). Once a burst is going
     // the robot keeps firing wherever it points, so a driver lets off the trigger while the robot is being shoved or
@@ -252,21 +252,6 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
 
   const shootingCommand = (active: boolean): RobotCommand => {
     if (chassisAim && r.held.length > 0) {
-      // Einstein can creep intake-first through nearby fuel while keeping the fixed shooter on the HUB.
-      // Preserve the planted stance for long drives, sharp turns and tilted robots.
-      const me = myPose();
-      const nearby = bot.hunter && r.capacityLeft > 0 && inZone() ? nearestFuel((p) =>
-        fromWall(p.x) < fromWall(me.x) - 0.2 && dist(me, p) < 1.5 && dist(p, hubP) < 3.2) : null;
-      if (nearby) {
-        const face = Math.atan2(hubP.y - me.y, hubP.x - me.x) + r.shotYawOffset;
-        const cmd = bot.driveTo(nearby, face, undefined, 0.4);
-        const speed = Math.hypot(cmd.vx, cmd.vy);
-        if (speed > 1) { cmd.vx /= speed; cmd.vy /= speed; }
-        cmd.intake = !hubFuelNear();
-        const error = Math.atan2(Math.sin(face - me.yaw), Math.cos(face - me.yaw));
-        cmd.shoot = active && r.uprightness >= 0.995 && r.speed < 1.2 && Math.abs(error) < 0.08 && Math.abs(r.body.angvel().y) < 0.8;
-        return cmd;
-      }
       return stanceCommand(active);
     }
     // In the zone with FUEL: shoot, and keep scooping up FUEL lying in the zone (fed stockpile, misses).
