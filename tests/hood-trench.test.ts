@@ -24,16 +24,16 @@ function sim(config: RobotConfig = season.robotDefaults, x = C.HUB_CENTER.x - 2.
 const team = (n: number) => season.teamRobots!.find((t) => t.team === n)!.config;
 
 /**
- * The hood collider (a skirt) has exactly the drawn hood's x/z footprint and top in the chassis frame; it is carried down
- * to the floor so the arm's push comes at wheel height.
+ * The hood collider (a skirt) has exactly the drawn hood's x reach and top in the chassis frame, as a strip on the robot's
+ * centreline carried down to the floor, so the arm's push comes at wheel height with no yaw torque.
  */
 function expectColliderMatchesHood(s: HeadlessSim): void {
   const b = s.robot.hoodBounds(true)!, c = s.robot.hoodColliderBox()!;
   expect(c).not.toBeNull();
-  for (const k of ['x', 'z'] as const) {
-    expect(c.min[k]).toBeCloseTo(b.min[k], 2);
-    expect(c.max[k]).toBeCloseTo(b.max[k], 2);
-  }
+  expect(c.min.x).toBeCloseTo(b.min.x, 2);
+  expect(c.max.x).toBeCloseTo(b.max.x, 2);
+  expect(c.min.z + c.max.z).toBeCloseTo(0, 3); // centred on the robot, so the arm's push makes no yaw torque
+  expect(c.max.z - c.min.z).toBeLessThanOrEqual(b.max.z - b.min.z + 1e-6);
   expect(c.max.y).toBeCloseTo(b.max.y, 2);
   expect(c.min.y).toBeLessThan(0.1);
 }
@@ -196,6 +196,14 @@ describe('every trench-height team robot with a hood', () => {
     expect(s.robot.pose.x + hood.max.x).toBeGreaterThan(ARM_NEAR - 0.02);
     expect(s.robot.pose.x + hood.max.x).toBeLessThan(ARM_NEAR + 0.02);
     expect(s.robot.tippedOver).toBe(false);
+  });
+
+  it.each([971, 1690, 2910, 4414])('%i just stops at the arm: no yaw spin, still facing the way it was going', (n) => {
+    const s = sim(team(n));
+    s.run(1.8, { ...IDLE_COMMAND, shoot: true });
+    s.run(5, { ...IDLE_COMMAND, shoot: true, vx: 3 });
+    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
+    expect(Math.abs(s.robot.pose.yaw)).toBeLessThan(0.08);
   });
 
   it.each([254, 971, 4414, 7769])('%i is stopped by the arm with its hood up', (n) => {

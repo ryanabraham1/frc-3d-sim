@@ -2009,7 +2009,7 @@ export class Robot {
   get hoodTop(): number { return this.hoodBounds() ? this.hoodTopY : 0; }
 
   /**
-   * Fit the hood collider (a skirt: the drawn hood's x/z footprint and top, carried down to the floor) to the drawn hood.
+   * Fit the hood collider (a skirt: the drawn hood's x reach and top on the centreline, carried down to the floor) to the drawn hood.
    * It exists only while the hood reaches the overhead clearance AND the season reports a low overhead over the robot
    * (`overheadLimit`: the TRENCH arm). It collides only with the wall under that arm (HOOD_STOP), so shooting beside the
    * HUB, the TOWER or a wall plays as before, a hood that stays below the arm never blocks, and a robot stops with a low
@@ -2030,9 +2030,13 @@ export class Robot {
     // the arm (field.ts) at the same face the drawn hood touches, and the push comes at wheel height, not hood height
     // (a hood-height push tipped the robot onto its tail).
     const bottom = 0.04;
-    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - bottom) / 2), hz = Math.max(0.01, (b.max.z - b.min.z) / 2);
+    // Only the hood's x reach and top matter for where the robot stops (the wall under the arm spans every y), so the skirt is
+    // a strip on the robot's centreline: a hood sitting off to one side (a turret aimed sideways, 1690's offset head) would
+    // otherwise push on the arm off-centre and spin the robot round the contact.
+    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - bottom) / 2);
+    const hz = Math.max(0.01, Math.min(0.06, (b.max.z - b.min.z) / 2));
     col.setShape(new this.physics.R.Cuboid(hx, hy, hz));
-    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + bottom) / 2, z: (b.max.z + b.min.z) / 2 });
+    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + bottom) / 2, z: 0 });
     col.setEnabled(true);
   }
 
