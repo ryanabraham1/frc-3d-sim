@@ -188,10 +188,12 @@ export interface RobotConfig {
     turret: boolean;
     /**
      * Number of side-by-side exits across the front of the robot (default 1). A "dumper" has a shooter as wide as the
-     * robot with several exits (e.g. 4): shots cycle through them, so FUEL leaves in parallel streams. `rate` is the
+     * robot with several exits (e.g. 4). `unevenFeed` varies their order and cadence. `rate` is the
      * total shots/s across all exits, so throughput is unchanged. Incompatible with a turret.
      */
     exits?: number;
+    /** Loose hopper feed: uneven shot spacing and exit order, with the same mean feed interval. */
+    unevenFeed?: boolean;
     /** Separate turret centers (meters, chassis frame; side positive left). Share aim, alternate shots. */
     mounts?: { forward: number; side: number }[];
     /** Throat offset ahead of each turret center; rotates with turret yaw. */

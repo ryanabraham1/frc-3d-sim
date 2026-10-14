@@ -2305,7 +2305,7 @@ export class Robot {
     }
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
-    // A multi-exit dumper alternates between its exits, so shots leave as several parallel streams.
+    // Wide dumpers feed whichever lane fills next; separate turrets still alternate.
     const offsets = launcherExitOffsets(c0);
     const ex = this.launcherExit(offsets[this.exitIndex % offsets.length]);
     // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
@@ -2341,14 +2341,20 @@ export class Robot {
     // Fire from the current actuator pose; tracking lag remains a physical aiming error.
     if (this.shootWhileTracking) theta = this.shooterPitch;
     this.lastShotAngle = theta;
-    this.exitIndex++;
+    this.lastShotExit = this.exitIndex % offsets.length;
+    this.exitIndex += c.unevenFeed && !c.turret && offsets.length > 1 ? rng.int(1, offsets.length) : 1;
     this.burstTime = BURST_HOLD_S;
     this.anim.firing = 1;
     const yawN = aimYaw + rng.gauss(0, c.spread);
     const pitchN = theta + rng.gauss(0, c.spread);
     const sN = speed * (1 + rng.gauss(0, c.speedError));
     const horiz = sN * Math.cos(pitchN);
-    this.fireCooldown = this.packLimit ? Math.max(1 / c.rate, 2.1 * this._projectile.radius / Math.max(.5, horiz)) : 1 / c.rate;
+    // Loose fuel arrives in clumps, with gaps as the hopper settles. The bounded interval has mean 1/rate;
+    // aim/spread stays independent, and the physical hopper can still delay a shot until a ball arrives.
+    const interval = (c.unevenFeed ? rng.range(.45, 1.55) : 1) / c.rate;
+    const feedDelay = this.packLimit ? Math.max(interval, 2.1 * this._projectile.radius / Math.max(.5, horiz)) : interval;
+    // Carry at most one frame of overshoot into the next interval so uneven timing does not reduce average BPS.
+    this.fireCooldown = feedDelay + (c.unevenFeed ? Math.min(0, this.fireCooldown) : 0);
     const vel = new THREE.Vector3(horiz * Math.cos(yawN), sN * Math.sin(pitchN), -horiz * Math.sin(yawN));
     const r = this.body.rotation();
     const tilt = this.q.set(r.x, r.y, r.z, r.w).multiply(new THREE.Quaternion(0, -Math.sin(heading / 2), 0, Math.cos(heading / 2)));
@@ -2363,6 +2369,7 @@ export class Robot {
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
+  private lastShotExit: number | null = null;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;
@@ -2379,7 +2386,9 @@ export class Robot {
   }
 
   tick(dt: number): void {
-    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    const launcher = this.config.launcher;
+    const uneven = launcher.unevenFeed;
+    this.fireCooldown = Math.max(uneven ? -dt : 0, this.fireCooldown - dt);
     this.burstTime = Math.max(0, this.burstTime - dt);
     for (const [i, t] of this.launchedRecently) {
       if (t <= dt) this.launchedRecently.delete(i);
@@ -2494,9 +2503,9 @@ export class Robot {
     return 0;
   }
 
-  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
+  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
   restoreRecovery(state: RecoveryFields): void {
-    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
+    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
     this.replicaClimbProgress = null;
     this.netAct = null;
     this.lastCommand = { ...IDLE_COMMAND };
@@ -2592,6 +2601,7 @@ export class Robot {
     this.scoringSimulated = false;
     this.fireCooldown = 0;
     this.exitIndex = 0;
+    this.lastShotExit = null;
     this.bay?.clear();
     this.mech?.clear();
     this.held.length = 0;
@@ -2648,7 +2658,7 @@ export class Robot {
       } : undefined,
       lanes: launcherExitOffsets(c).length,
       // Host: the exit the last shot actually left from. Replicas don't know it and alternate.
-      shotLane: () => this.netAct === null && this.exitIndex > 0 ? this.exitIndex - 1 : null,
+      shotLane: () => this.netAct === null ? this.lastShotExit : null,
     }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
