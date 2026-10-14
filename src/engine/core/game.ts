@@ -753,7 +753,7 @@ export class Game {
     const sp = robot.config.maxSpeed * scale;
     let vx = (f * Math.cos(ref) - l * Math.sin(ref)) * sp;
     let vy = (f * Math.sin(ref) + l * Math.cos(ref)) * sp;
-    let omega = inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : 0.75);
+    let omega = inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : robot.config.drive === 'tank' ? 0.75 : 1);
     // Touch screens: holding INTAKE with hands off the stick chases the nearest floor piece, intake side first.
     if (this.touch && inp.intake && !m && !inp.rotate) {
       const chase = this.touchChase(robot);

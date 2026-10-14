@@ -14,6 +14,8 @@ import { SEASONS, getSeason } from '../src/seasons';
 import { FUEL_MASS } from '../src/seasons/2026-rebuilt/constants';
 import { HeadlessSim } from '../src/engine/testing/headless';
 
+import { swerveSpeedScale } from '../src/engine/robot/drivetrain';
+
 const FT = 0.3048;
 
 beforeAll(async () => {
@@ -141,5 +143,43 @@ describe('carried FUEL weighs the robot down', () => {
     for (let i = 0; i < 90; i++) sim.step({ ...IDLE_COMMAND, vy: 3 });
     expect(sim.robot.speed).toBeGreaterThan(2);
     expect(sim.robot.tippedOver).toBe(false);
+  });
+});
+
+describe('swerve kinematics', () => {
+  it('keeps full low-speed rotation and shares module speed at high translation', () => {
+    expect(swerveSpeedScale(0, 0, 7, 0, .3, .3, 5)).toBe(1);
+    expect(swerveSpeedScale(1, 0, 7, 0, .3, .3, 5)).toBe(1);
+    expect(swerveSpeedScale(5, 0, 7, 0, .3, .3, 5)).toBeLessThan(.7);
+  });
+  it('respects every wheel limit at different headings and both turn directions', () => {
+    for (const yaw of [0, .4, 1.8]) for (const omega of [-7, 7]) {
+      const scale = swerveSpeedScale(4, -3, omega, yaw, .35, .25, 5);
+      let peak = 0;
+      for (const a of [-.35, .35]) for (const b of [-.25, .25]) {
+        const rx = a * Math.cos(yaw) + b * Math.sin(yaw);
+        const rz = -a * Math.sin(yaw) + b * Math.cos(yaw);
+        peak = Math.max(peak, Math.hypot(4 + omega * rz, -3 - omega * rx) * scale);
+      }
+      expect(peak).toBeCloseTo(5, 10);
+    }
+  });
+  it('turns faster on carpet at low translation than at full translation', () => {
+    const cfg = getSeason('2026-rebuilt').robotPresets!.find(p => p.id === 'fixed')!.config;
+    const spin = (speed: number) => {
+      const arena = new Arena();
+      const r = arena.robot(cfg, 0, 0);
+      arena.sprint(r, .01);
+      for (let i = 0; i < 180; i++) {
+        r.drive({ ...IDLE_COMMAND, vx: speed, omega: cfg.maxOmega }, arena.physics.dt);
+        r.tick(arena.physics.dt);
+        arena.physics.step();
+      }
+      return Math.abs(r.body.angvel().y);
+    };
+    const slow = spin(.5);
+    const fast = spin(cfg.maxSpeed);
+    expect(slow).toBeGreaterThan(cfg.maxOmega * .85);
+    expect(slow).toBeGreaterThan(fast * 1.3);
   });
 });

@@ -118,3 +118,23 @@ export function limitWheelForce(w: WheelModel, fx: number, fz: number, vx: numbe
   out.z = fz * k;
   return slip;
 }
+
+/**
+ * Inverse swerve kinematics in world x/z coordinates: each module needs
+ * v + omega × r. Uniform desaturation preserves the requested path curvature
+ * when translation plus rotation exceeds a drive wheel's attainable speed.
+ */
+export function swerveSpeedScale(vx: number, vz: number, omega: number, yaw: number,
+  halfLength: number, halfWidth: number, maxSpeed: number): number {
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  let peak = maxSpeed;
+  for (const a of [-halfLength, halfLength]) {
+    for (const b of [-halfWidth, halfWidth]) {
+      const rx = a * cos + b * sin;
+      const rz = -a * sin + b * cos;
+      peak = Math.max(peak, Math.hypot(vx + omega * rz, vz - omega * rx));
+    }
+  }
+  return maxSpeed / peak;
+}

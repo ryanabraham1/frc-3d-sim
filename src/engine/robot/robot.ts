@@ -8,7 +8,7 @@ import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
 import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
-import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
+import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 import type { ClimbGrip } from '../field/climbGrip';
@@ -1520,7 +1520,14 @@ export class Robot {
       tvx = along * Math.cos(yaw);
       tvy = along * Math.sin(yaw);
     }
-    const targetW = this.enabled ? clamp(cmd.omega, -c.maxOmega, c.maxOmega) : 0;
+    let targetW = this.enabled ? clamp(cmd.omega, -c.maxOmega, c.maxOmega) : 0;
+    if (!tank) {
+      const scale = swerveSpeedScale(tvx, -tvy, targetW, yaw,
+        c.frameLength / 2 - .06, c.frameWidth / 2 - .06, c.maxSpeed);
+      tvx *= scale;
+      tvy *= scale;
+      targetW *= scale;
+    }
     if (!this.enabled) tvx = tvy = 0;
     const m = this.body.mass();
     const v = this.body.linvel();
