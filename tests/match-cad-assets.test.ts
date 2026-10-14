@@ -11,11 +11,13 @@ import { cloneConfig } from '../src/engine/robot/config';
 import { RobotMirror } from '../src/engine/sim/robotMirror';
 
 beforeAll(() => RAPIER.init());
-it('match CAD reduces every season and keeps each articulated scene compatible with its original', async () => {
+it('match CAD preserves 2025 detail and keeps each articulated scene compatible with its original', async () => {
   const report = JSON.parse(readFileSync('public/models/robots/match-cad-report.json', 'utf8')) as { id: string; year: string; before: number; after: number }[];
   for (const year of ['2024', '2025', '2026', 'wcp-hero-heist']) {
     const rows = report.filter(r => r.year === year);
-    expect(rows.reduce((n, r) => n + r.after, 0)).toBeLessThan(rows.reduce((n, r) => n + r.before, 0) * .6);
+    const before = rows.reduce((n, r) => n + r.before, 0), after = rows.reduce((n, r) => n + r.after, 0);
+    if (year === '2025') expect(after).toBe(before);
+    else expect(after).toBeLessThan(before * .6);
   }
   for (const id of [...CAD_2024_MODEL_IDS, ...CAD_2025_MODEL_IDS, ...CAD_MODEL_IDS, ...HERO_CAD_MODEL_IDS]) {
     if (id === 'hero-multiclass-5800-gadgeteer') continue;

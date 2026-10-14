@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { expect, it } from 'vitest';
 import { finishReefscapeCad } from '../src/engine/robot/reefscapeCadFinishes';
 
-it('distinguishes pale aluminum from actual white paint, team colors, rubber and clear sheets', () => {
-  const aluminum = new THREE.MeshStandardMaterial({ color: new THREE.Color(.91, .91, .91) });
+it('preserves the previous aluminum finish alongside actual white paint, team colors, rubber and clear sheets', () => {
+  const aluminum = new THREE.MeshStandardMaterial({ color: new THREE.Color(.91, .91, .91), metalness: .55, roughness: .55 });
   finishReefscapeCad(aluminum, 'sublime-1678', 'frame');
-  expect(aluminum.metalness).toBeGreaterThan(.8);
-  expect(aluminum.color.r).toBeLessThan(.7);
+  expect(aluminum.metalness).toBe(.55);
+  expect(aluminum.roughness).toBe(.55);
+  expect(aluminum.color.r).toBe(.91);
   const white = new THREE.MeshStandardMaterial({ color: new THREE.Color(.72, .74, .77) });
   finishReefscapeCad(white, 'firefly-118', 'arm');
   expect(white.color.r).toBe(.72);

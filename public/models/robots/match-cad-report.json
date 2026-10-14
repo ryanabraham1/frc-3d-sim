@@ -93,93 +93,93 @@
   {
     "id": "firefly-118",
     "year": "2025",
-    "before": 469820,
-    "after": 199370,
-    "bytes": 2167296
+    "before": 879665,
+    "after": 879665,
+    "bytes": 11311636
   },
   {
     "id": "quixilver-604-2025",
     "year": "2025",
-    "before": 608135,
-    "after": 266741,
-    "bytes": 2748916
+    "before": 1024359,
+    "after": 1024359,
+    "bytes": 11464740
   },
   {
     "id": "redundancy-190",
     "year": "2025",
-    "before": 448288,
-    "after": 230270,
-    "bytes": 2530412
+    "before": 533957,
+    "after": 533957,
+    "bytes": 8034276
   },
   {
     "id": "relay-3005",
     "year": "2025",
     "before": 763821,
-    "after": 636553,
-    "bytes": 4331352
+    "after": 763821,
+    "bytes": 9526732
   },
   {
     "id": "singularity-1706",
     "year": "2025",
     "before": 617642,
-    "after": 264556,
-    "bytes": 3037116
+    "after": 617642,
+    "bytes": 11093932
   },
   {
     "id": "spectre-2910",
     "year": "2025",
     "before": 538010,
-    "after": 239665,
-    "bytes": 2754364
+    "after": 538010,
+    "bytes": 8808876
   },
   {
     "id": "sublime-1678",
     "year": "2025",
-    "before": 599664,
-    "after": 299573,
-    "bytes": 3239204
+    "before": 764809,
+    "after": 764809,
+    "bytes": 10698008
   },
   {
     "id": "subzero-1778",
     "year": "2025",
     "before": 576417,
-    "after": 244096,
-    "bytes": 2471012
+    "after": 576417,
+    "bytes": 7902000
   },
   {
     "id": "taiyaki-5940",
     "year": "2025",
     "before": 532386,
-    "after": 263849,
-    "bytes": 2829080
+    "after": 532386,
+    "bytes": 9427584
   },
   {
     "id": "whisper-1690",
     "year": "2025",
     "before": 636367,
-    "after": 281231,
-    "bytes": 3044896
+    "after": 636367,
+    "bytes": 11716352
   },
   {
     "id": "wildstang-111",
     "year": "2025",
     "before": 538099,
-    "after": 235762,
-    "bytes": 2635736
+    "after": 538099,
+    "bytes": 8892272
   },
   {
     "id": "wisp-422",
     "year": "2025",
     "before": 526949,
-    "after": 210142,
-    "bytes": 2422388
+    "after": 526949,
+    "bytes": 9159904
   },
   {
     "id": "zuma-581",
     "year": "2025",
-    "before": 868453,
-    "after": 335088,
-    "bytes": 3411080
+    "before": 1044653,
+    "after": 1044653,
+    "bytes": 12628684
   },
   {
     "id": "aimbot-3256",

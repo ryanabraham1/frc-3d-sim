@@ -2,9 +2,9 @@
   "id": "zuma-581",
   "sourceFile": "BB581 2025 TLA.glb",
   "inputBytes": 262686700,
-  "outputBytes": 11226052,
+  "outputBytes": 13554732,
   "inputTriangles": 14176384,
-  "outputTriangles": 868453,
+  "outputTriangles": 1044653,
   "omittedOccurrences": 403,
   "bounds": {
     "min": [
@@ -26,5 +26,10 @@
     "climber",
     "intake",
     "carriage"
-  ]
+  ],
+  "restoredTubes": {
+    "count": 4,
+    "source": "https://github.com/team581/2025-beta/tree/e1fd64a762dad24e16b70b866b2e6bffdb9c2989/ascope_assets/Robot_Zuma"
+  },
+  "repairedNormals": true
 }

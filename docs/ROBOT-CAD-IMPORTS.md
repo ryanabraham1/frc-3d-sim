@@ -121,6 +121,37 @@ Climbers remain stowed during normal play, deploy in the last 30 seconds of tele
 - CORAL uses a tool-local axis for the supplied 2025 rigs, including sideways roller carries on 1778/581. A bounded seating fit preserves the rigid tube and hollow bore; it does not shrink CORAL.
 - Firefly118's separate `03_3000_CAGELATCH` is parented to its moving climber arm and folds inward during normal play. Deployed cage contacts are configured per robot; cage approaches and actual moving contact anchors replace the generic front attachment.
 
+## 2025 structural-tube recovery (2026-10-14)
+
+The earlier permissive CAD reduction damaged drilled tube faces. A shading repair
+cannot recover removed geometry. The following robots now copy the actual tube
+meshes from detailed team releases into the existing articulated groups, replacing
+only triangles contained inside the matching tube bounds. Match assets retain
+these triangles without a further reduction pass.
+
+| Robot | Recovered tubes | Detailed source |
+| --- | ---: | --- |
+| 604 Quixilver | 18 | [Team release](https://github.com/frc604/2025-public/tree/f178f14f165da90f894d02db1130c483b80241e3/FRC-2025/advantagescope_assets/Robot_2025-FRC604) |
+| 1678 SubLime | 4 | [Matching fixed/stage profiles in Citrus's release](https://github.com/frc1678/C2025-Public/tree/413a90e6e4c61083dc9497a07ede19749744192e/src/main/assets/Robot_Beta) |
+| 190 Redundancy | 14 | [Team release](https://github.com/Team-190/2k25-Robot-Code/tree/9ccfa62fdac0f74e0c0cbefce530d5415dcb8ccf/advantagescopeassets/Robot_Redundancy) |
+| 581 Zuma | 4 | [Team release](https://github.com/team581/2025-beta/tree/e1fd64a762dad24e16b70b866b2e6bffdb9c2989/ascope_assets/Robot_Zuma) |
+| 118 Firefly | 15 | [Original STEP release](https://www.118robonauts.org/robots) |
+
+Run `node tools/restore-reefscape-tubes.mjs <model-id> <source-directory>` for
+1678/190/581/118, and `tools/restore-quixilver-tubes.mjs` for 604. Source filenames
+and pinned revisions are recorded in the tools. Firefly's original STEP is first
+converted with `tools/prepare-step-cad.py`; its broad chassis panel is excluded
+from tube replacement. Regenerate the matching asset with
+`node tools/prepare-match-cad.mjs <model-id>`. Gameplay physics and mechanism
+setpoints are unchanged. Tube count, detail, bounds and motion-group parity are
+checked by `node --test tools/reefscape-tube-assets.test.mjs`.
+
+Original geometry has **not** yet been recovered for 111, 422, 1690, 1706, 1778,
+2910, 3005 or 5940. Their earlier normal repairs must not be described as tube
+restorations. The public Onshape export API returned HTTP 401 without an
+authenticated export session; 1778's small code-release visualization files do
+not provide the original drilled CAD detail.
+
 ## 2910 Re•Blitz — supplied Robot 2 assembly (2026)
 
 The user-supplied `12 - Robot 2 Top Level Assembly.glb` replaces the photo-fitted 581 donor shooter for the existing `reblitz-2910` ID. Original CAD remains outside shipped assets. Source coordinates map `(Y,Z,X)` to simulator `(X,Y,Z)` in meters. Frame rails measure 0.6985 m length and 0.6858 m width; the compact roof reaches 0.5461 m, represented by a 0.55 m collision envelope. Only former default saved dimensions migrate; custom dimensions and existing 40-FUEL / 33-FUEL/s tuning remain subject to the normal legal limits.
@@ -358,8 +389,8 @@ Measured (robot m): turret ring centre `(.145, .495, .145)` (so the roster mount
 
 ## Match geometry and 2025 finishes
 
-Matches and menu previews load the `match/` variants of the supplied robot assets. The workshop keeps the original assemblies. Regenerate match variants after changing the original GLBs with `npm run cad:match` (or append a model ID to regenerate that model). `tools/prepare-match-cad.mjs` preserves articulation groups and materials, simplifies with a 1 mm absolute error bound, and keeps floating-point positions. The checked-in report records triangle counts and byte sizes. Current triangle reductions by season are 54% (2024), 52% (2025), 58% (2026), and 61% (Hero Heist). Physics field colliders and robot capability/rate settings are unchanged. Static batches retain indexed vertices instead of expanding each triangle. `?cadDetail=full` selects original CAD for comparisons.
+Matches and menu previews load the `match/` variants of the supplied robot assets. The workshop keeps the original assemblies. Regenerate match variants after changing the original GLBs with `npm run cad:match` (or append a model ID to regenerate that model). `tools/prepare-match-cad.mjs` preserves articulation groups and materials, simplifies with a 1 mm absolute error bound, and keeps floating-point positions. The checked-in report records triangle counts and byte sizes. Current triangle reductions by season are 54% (2024), 0% additional reduction (2025), 58% (2026), and 61% (Hero Heist). Physics field colliders and robot capability/rate settings are unchanged. Static batches retain indexed vertices instead of expanding each triangle. `?cadDetail=full` selects original CAD for comparisons.
 
-`reefscapeCadFinishes.ts` fits pale manufacturing swatches to the local competition-photo references: reflective aluminum, Citrus's dark arm and clear polycarbonate tool, and Robonauts' intentionally white coatings. Colored wheels, black parts and already-transparent sheets retain their source colors. SubLime's Poof arm folds inward; Spectre's parked shoulder uses a 10 degree clearance pose so the wrist housing stays above the carpet.
+`reefscapeCadFinishes.ts` preserves the previous aluminum finish and fits Citrus's dark arm and clear polycarbonate tool and Robonauts' intentionally white coatings to the local competition-photo references. Colored wheels, black parts and already-transparent sheets retain their source colors. SubLime's Poof arm folds inward; Spectre's parked shoulder uses a 10 degree clearance pose so the wrist housing stays above the carpet.
 
 Worker CORAL release uses the hierarchy and visibility from the same interpolated snapshot as its local pose. This prevents a robot-relative eject pose from being interpreted inside a newer raised-gripper parent. Field-piece visibility switches on that same render boundary. Worker views also skip redundant 2025 robot/piece visual calculations while continuing to update field lights and hanging cages.

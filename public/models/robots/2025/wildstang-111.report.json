@@ -2,7 +2,7 @@
   "id": "wildstang-111",
   "sourceFile": "25W - WildStang 2025.glb",
   "inputBytes": 177354492,
-  "outputBytes": 7924164,
+  "outputBytes": 13205316,
   "inputTriangles": 8100436,
   "outputTriangles": 538099,
   "omittedOccurrences": 772,
@@ -27,5 +27,6 @@
     "intake",
     "elevator-stage",
     "carriage"
-  ]
+  ],
+  "repairedNormals": true
 }

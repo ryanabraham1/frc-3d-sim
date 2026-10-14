@@ -2,14 +2,14 @@
   "id": "relay-3005",
   "sourceFile": "2025-3005.glb",
   "inputBytes": 501554192,
-  "outputBytes": 12001848,
+  "outputBytes": 17692984,
   "inputTriangles": 37988496,
   "outputTriangles": 764011,
   "omittedOccurrences": 2169,
   "bounds": {
     "min": [
       -0.5300796627998352,
-      0.00005180751490191371,
+      5.180751490191371e-05,
       -0.3746500015258789
     ],
     "max": [
@@ -26,5 +26,6 @@
     "algae",
     "elevator-stage",
     "elevator-stage-2"
-  ]
+  ],
+  "repairedNormals": true
 }

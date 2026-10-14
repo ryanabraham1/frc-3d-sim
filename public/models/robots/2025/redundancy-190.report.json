@@ -2,9 +2,9 @@
   "id": "redundancy-190",
   "sourceFile": "2025-190.glb",
   "inputBytes": 224474824,
-  "outputBytes": 6886780,
+  "outputBytes": 9243776,
   "inputTriangles": 11685420,
-  "outputTriangles": 448288,
+  "outputTriangles": 587737,
   "omittedOccurrences": 895,
   "bounds": {
     "min": [
@@ -26,5 +26,10 @@
     "elevator-stage",
     "algae",
     "effector"
-  ]
+  ],
+  "restoredTubes": {
+    "count": 14,
+    "source": "https://github.com/Team-190/2k25-Robot-Code/tree/9ccfa62fdac0f74e0c0cbefce530d5415dcb8ccf/advantagescopeassets/Robot_Redundancy"
+  },
+  "repairedNormals": true
 }

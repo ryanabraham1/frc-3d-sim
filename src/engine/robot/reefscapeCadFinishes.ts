@@ -28,9 +28,8 @@ export function finishReefscapeCad(material: THREE.MeshStandardMaterial, id: str
     material.metalness = .08;
     material.roughness = .72;
   } else {
-    // Bright diffuse white washed out the machined aluminum under the field lights.
-    material.color.setRGB(.62, .64, .67);
-    material.metalness = .88;
-    material.roughness = .34;
+    // Preserve the CAD's previous aluminum finish. Highly reflective replacement
+    // swatches amplify triangulation and make pocketed tubes look crumpled.
+    return;
   }
 }

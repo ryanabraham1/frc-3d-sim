@@ -2,9 +2,9 @@
   "id": "sublime-1678",
   "sourceFile": "1678-2025-O-0000.glb",
   "inputBytes": 182965956,
-  "outputBytes": 8879740,
+  "outputBytes": 11537188,
   "inputTriangles": 5572412,
-  "outputTriangles": 599664,
+  "outputTriangles": 766913,
   "omittedOccurrences": 266,
   "bounds": {
     "min": [
@@ -27,5 +27,10 @@
     "intake",
     "effector",
     "climber"
-  ]
+  ],
+  "restoredTubes": {
+    "count": 4,
+    "source": "https://github.com/frc1678/C2025-Public/tree/413a90e6e4c61083dc9497a07ede19749744192e/src/main/assets/Robot_Beta"
+  },
+  "repairedNormals": true
 }
