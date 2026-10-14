@@ -1030,6 +1030,8 @@ export class Robot {
     for (const pile of this.fuelPiles) {
       pile.userData.fuelManagedCount = true;
       pile.userData.setFuelOpen?.(open);
+      pile.userData.bindFuelClearance?.(this.visual);
+      pile.userData.setFuelIntakeSide?.(groundSideSign(this.config));
       if (Robot.CAD_FUEL_CONTACTS || this.config.model==='aimbot-3256') pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
     }

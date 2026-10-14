@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { RobotAnimState } from './models';
 import { FUEL_PACK_RADIUS } from './config';
+import type { FuelClearance } from './fuelClearance';
 import {clearFuelOutline,clearFuelKeepouts,type FuelKeepout} from './fuelKeepouts';
 
 export interface FuelBin {
@@ -18,6 +19,8 @@ const ARRIVAL_TTL = 0.5;
 const JAM_SECONDS = 1.5;
 
 export class FuelPile {
+  /** Drawn mechanisms rasterised into a voxel field (see `FuelClearance`); balls are pushed out of them. */
+  clearance?: FuelClearance;
   contacts?: { sync(): boolean; resolve(p: Float32Array, v: Float32Array, j: number, radius: number): void };
   wake(): void { this.awake = this.count > 0; this.quiet = 0; this.calm = 0; }
   readonly positions: Float32Array;
@@ -39,6 +42,8 @@ export class FuelPile {
   private count = 0;
   /** Uncovered hopper: no lid, so FUEL that ends up above the rim leaves the pile (see `step`'s escape callback). */
   open = false;
+  /** +1 / -1: the bin end the intake feeds (robot-frame x sign); a ball with no hand-over point enters there. */
+  intakeSide = 0;
   private lift = 0;
   private upX = 0;
   private upY = 1;
@@ -91,8 +96,11 @@ export class FuelPile {
       if (d2 < diameter * diameter) y = Math.max(y, this.positions[j + 1] + Math.sqrt(diameter * diameter - d2));
     }
     const roof = Math.min(b.y0 + b.height, b.ceiling?.(x, z) ?? Infinity);
-    // On the pile, not at the height of the intake lane: a ball handed over above the surface would visibly drop in
-    // from over the load instead of rolling in off the intake.
+    // Never above where the intake flow ends (or, with no hint height, the floor): a ball handed over high up would drop
+    // in from over the load. When the pile is taller than that here, the new ball starts inside it and the contact
+    // passes shove its neighbours along. Never above the surface either (a sparse pile is entered from its surface).
+    const lane = Math.max(b.y0 + r, hint.y);
+    y = Math.min(y, lane);
     return new THREE.Vector3(x, this.open ? y + 0.015 : Math.min(roof - r, y + 0.015), z);
   }
 
@@ -126,12 +134,18 @@ export class FuelPile {
       // A hand-over the count never caught up with (the hopper was full, or a preload refilled it) is stale: using it
       // later would drop the ball in from wherever the surface was back then.
       while (this.arrivals.length && this.arrivals[0].t < this.clock - ARRIVAL_TTL) this.arrivals.shift();
-      const entry = this.arrivals.shift()?.p;
+      let entry = this.arrivals.shift()?.p;
+      // A single new ball with no hand-over point (replicas have no flow tokens; a late hand-over expired) still comes in
+      // at the intake end, low, instead of materialising at its seed slot high in the pile.
+      if (!entry && n - this.count === 1 && this.intakeSide) {
+        const b = this.bin;
+        entry = this.entry(new THREE.Vector3(b.x + this.intakeSide * (b.length / 2 - this.radius), b.y0 + this.radius * 1.2, 0));
+      }
       if (entry) {
         const j = i * 3;
         this.positions[j] = entry.x; this.positions[j + 1] = entry.y; this.positions[j + 2] = entry.z;
         // Carry a little roller momentum into the bin, then let collisions and gravity do the settling.
-        this.velocity[j] = Math.sign(this.bin.x - entry.x) * 0.35;
+        this.velocity[j] = (this.intakeSide ? -this.intakeSide : Math.sign(this.bin.x - entry.x)) * 0.35;
         this.velocity[j + 1] = -0.15;
       }
     }
@@ -248,6 +262,8 @@ export class FuelPile {
 
   private confine(i: number, oldX: number, oldZ: number): void {
     const b = this.bin, j = i * 3, p = this.positions, v = this.velocity;
+    // Mechanisms first, so the bin walls, outline, keepouts and roof (applied below) always have the last word.
+    if (this.clearance) this.clearance.push(p, j, this.radius * FUEL_PACK_RADIUS * this.seeds[i].s + 0.006);
     const r = this.radius * this.seeds[i].s, ry = r * (this.seeds[i].sy ?? 0.94);
     const minX = b.x - b.length / 2 + r, maxX = b.x + b.length / 2 - r, minZ = -b.width / 2 + r, maxZ = b.width / 2 - r;
     // Above the lip there is no side wall. Pair contacts can roll the ball across the rim continuously. A ball beside

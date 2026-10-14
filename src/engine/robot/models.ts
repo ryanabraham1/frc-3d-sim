@@ -1,6 +1,7 @@
 import { clearFuelKeepouts,type FuelKeepout } from './fuelKeepouts';
 import * as THREE from 'three';
 import { FuelPile } from './fuelPile';
+import { buildClearance, clearanceSources } from './fuelClearance';
 import { FuelContacts } from './fuelContacts';
 import type { Alliance } from '../coords';
 import { FUEL_PACK_RADIUS, type RobotConfig } from './config';
@@ -363,6 +364,7 @@ export function seededRandom(seed: number): () => number {
 
 /** Height of a hopper floor above the carpet (m): chassis rails + belly pan. */
 const HOPPER_FLOOR = 0.09;
+let lastClearanceBuild = 0;
 /** Centre spacing (in ball radii) the starting pose is poured at: the solver's contact distance, 2 x FUEL_PACK_RADIUS. */
 const PACK_K = 2 * FUEL_PACK_RADIUS;
 
@@ -481,6 +483,9 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   const pile = new FuelPile(o, slots, r);
   mesh.userData.wakeFuel = () => pile.wake();
   mesh.userData.fuelPile = pile;
+  // Drawn mechanisms become a voxel clearance field the first time the pile steps with a load (the model is final by then).
+  let clearanceVisual: THREE.Object3D | undefined;
+  mesh.userData.bindFuelClearance = (visual?: THREE.Object3D) => { clearanceVisual = visual; if (!visual) pile.clearance = undefined; };
   mesh.userData.bindFuelContacts = (visual?: THREE.Object3D, importedOnly = false) => { pile.contacts = visual ? new FuelContacts(visual, mesh, false, importedOnly) : undefined; };
   mesh.userData.resizeFuelBin = (bounds: { x: number; length: number; height: number }) => {
     if (Math.abs(o.x - bounds.x) + Math.abs(o.length - bounds.length) + Math.abs(o.height - bounds.height) < 1e-5) return;
@@ -503,6 +508,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   mesh.count = 0;
   parent.add(mesh);
   mesh.userData.setFuelOpen = (open: boolean) => { pile.open = open; };
+  mesh.userData.setFuelIntakeSide = (sign: number) => { pile.intakeSide = sign; };
   mesh.userData.fuelEntry = (hint: THREE.Vector3) => pile.entry(hint);
   mesh.userData.receiveFuel = (position: THREE.Vector3) => pile.receive(position);
   mesh.userData.takeFuel = (entry: THREE.Vector3) => {
@@ -515,6 +521,14 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     return position;
   };
   mesh.userData.animateFuel = (s: RobotAnimState) => {
+    // One field build (~0.1-0.3 s) per 150 ms across all robots, so a six-robot match start doesn't freeze for a second.
+    if (clearanceVisual && mesh.count > 0 && Date.now() - lastClearanceBuild > 150) {
+      const visual = clearanceVisual; clearanceVisual = undefined; lastClearanceBuild = Date.now();
+      mesh.updateWorldMatrix(true, false);
+      const sources = clearanceSources(visual, mesh);
+      pile.clearance = buildClearance(sources, new THREE.Vector3(o.x - o.length / 2 - .1, o.y0 - .02, -o.width / 2 - .1), new THREE.Vector3(o.x + o.length / 2 + .1, o.y0 + o.height + .1, o.width / 2 + .1), r * FUEL_PACK_RADIUS + .006);
+      pile.wake();
+    }
     const moved = pile.step(s, (x, y, z, vx, vy, vz) => mesh.userData.fuelEscape?.(mesh, x, y, z, vx, vy, vz));
     if (pile.size !== mesh.count) mesh.count = pile.size; // balls that went over the rim
     if (!moved) return;
