@@ -101,9 +101,10 @@ it('a net robot under the trench may keep intaking below the trench-safe load, a
   r.overheadLimit = sim.rules.overheadClearance!(r);
   expect(r.overheadLimit).toBe(C.TRENCH_SAFE_HEIGHT);
   expect(r.intakeRoom).toBe(3);
-  const fixed = cloneConfig(season.robotDefaults); fixed.launcher.hoodRise = 0; // a hood that never rises above the frame adds no height
-  const plain = new HeadlessSim(season, RAPIER, { robot: fixed, alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
-  expect(plain.rules.overheadClearance!(plain.robot)).toBe(Infinity);
+  const plain = new HeadlessSim(season, RAPIER, { robot: cloneConfig(season.robotDefaults), alliance: 'blue', pose: { x: C.HUB_CENTER.x, y: C.TRENCH_OPENING_CENTER_Y, yaw: 0 } }); sims.push(plain);
+  // A plain robot has no net to limit, but its drawn hood is held down under the arm, so it does report the arm.
+  expect(plain.robot.config.hopperExpansion).toBeUndefined();
+  expect(plain.rules.overheadClearance!(plain.robot)).toBe(C.TRENCH_SAFE_HEIGHT);
 });
 
 for (const [team, oldHeight] of [[971, 0.638352], [6800, 0.63]]) it(`${team} migrates its saved raised-hood height without changing custom heights`, () => {

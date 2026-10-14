@@ -19,7 +19,7 @@ Companion docs: [docs/FRAMEWORK.md](docs/FRAMEWORK.md) (engine reuse map + seaso
    and `docs/ROBOT-ARCHETYPES.md`). The simulator exists to compare archetypes at kickoff.
 5. Build: `constants → config → scoring (pure) → field → rules → autopilot → hud → index`, register in
    `src/seasons/index.ts`.
-6. `npm run typecheck`, `npm test` (the physics suite automatically tests every registered season),
+6. `npm run typecheck`, `npm run test:full` (the physics suite automatically tests every registered season),
    browser smoke test (`tools/browser-smoke.mjs`), multiplayer smoke test.
 7. Write `docs/<GAME>.md` (manual page map + approximations), update README/PLAN, commit.
 
@@ -189,7 +189,7 @@ Before adding a *season-specific* branch to engine/app code, grep for existing o
 ## 6. Testing — what "done" means
 
 1. `npm run typecheck` clean, `npm run build` ok.
-2. `npm test` — all seasons. The physics suite (`tests/physics.test.ts`) runs automatically for your season via
+2. `npm run test:full` — all seasons. The physics suite (`tests/physics.test.ts`) runs automatically for your season via
    `testing` (scoring spots, goal count, traversals, piece scatter). Make scoring spots *legal and realistic*
    (a grid in front of the goal), traversals that test real clearances (with `maxRobotHeight`).
 3. A season test file (`tests/<game>.test.ts`) covering: the manual's timing/penalties/limits, the point table

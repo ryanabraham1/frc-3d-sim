@@ -30,6 +30,10 @@ export interface RobotVisualFrame {
   mats: Float32Array;
   inst: InstanceFrame[];
   tokens: Float32Array;
+  /** Deforming fabric cannot be mirrored through Object3D transforms alone. */
+  geometry: { k: number; positions: Float32Array }[];
+  /** Seasonal pieces can move from their tool into a robot-local transfer path. */
+  parents?: [number, number][];
 }
 
 type LookMaterial = THREE.Material & { color?: THREE.Color; emissive?: THREE.Color; emissiveIntensity?: number };
@@ -42,12 +46,18 @@ export class RobotMirror {
   private readonly instVersion: number[] = [];
   private readonly instCount: number[] = [];
   private readonly tokenPool: THREE.Object3D[] = [];
+  private readonly deforming: (THREE.LineSegments | THREE.Mesh)[] = [];
+  private readonly geometryAttributes: (THREE.BufferAttribute | undefined)[] = [];
+  private readonly geometryVersions: number[] = [];
+  private readonly nodeIndices = new Map<THREE.Object3D, number>();
+  private readonly parentState = new Map<number, number>();
 
   constructor(readonly robot: Robot, private readonly makeToken?: () => THREE.Object3D) {
     const seen = new Set<THREE.Material>();
     robot.visual.traverse((o) => {
       if (o.userData.flowToken) return;
       this.nodes.push(o);
+      if (o.userData.mirrorGeometry) this.deforming.push(o as THREE.LineSegments | THREE.Mesh);
       const mesh = o as THREE.Mesh;
       if ((mesh as unknown as THREE.InstancedMesh).isInstancedMesh) {
         this.instanced.push(mesh as unknown as THREE.InstancedMesh);
@@ -61,11 +71,12 @@ export class RobotMirror {
         this.materials.push(m as LookMaterial);
       }
     });
+    this.nodes.forEach((node, i) => this.nodeIndices.set(node, i));
   }
 
   /** Structure fingerprint: both sides must agree before frames are applied. */
   get shape(): string {
-    return `${this.nodes.length}:${this.materials.length}:${this.instanced.length}:${this.nodes.map((o) => o.type[0]).join('')}`;
+    return `${this.nodes.length}:${this.materials.length}:${this.instanced.length}:${this.deforming.length}:${this.nodes.map((o) => o.type[0]).join('')}`;
   }
 
   // ─────────────────────────── worker side ───────────────────────────
@@ -106,13 +117,42 @@ export class RobotMirror {
       tokens[j + 3] = o.quaternion.x; tokens[j + 4] = o.quaternion.y; tokens[j + 5] = o.quaternion.z; tokens[j + 6] = o.quaternion.w;
       tokens[j + 7] = o.scale.x;
     }
-    return { nodes, mats, inst, tokens };
+    const geometry: RobotVisualFrame['geometry'] = [];
+    for (let k = 0; k < this.deforming.length; k++) {
+      const p = this.deforming[k].geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!p || (!force && p === this.geometryAttributes[k] && p.version === this.geometryVersions[k])) continue;
+      this.geometryAttributes[k] = p;
+      this.geometryVersions[k] = p.version;
+      geometry.push({ k, positions: new Float32Array(p.array) });
+    }
+    const parents: [number, number][] = [];
+    for (let i = 0; i < this.nodes.length; i++) {
+      const node = this.nodes[i];
+      if (node.userData.mirrorParent && node.parent) {
+        const parent = this.nodeIndices.get(node.parent);
+        if (parent !== undefined) parents.push([i, parent]);
+      }
+    }
+    return { nodes, mats, inst, tokens, geometry, parents };
   }
 
   // ─────────────────────────── screen side ───────────────────────────
 
   /** Copy instanced meshes and materials from the newest frame (no blending: they change in steps). */
   applyDiscrete(f: RobotVisualFrame): void {
+    for (const [node, parent] of f.parents ?? []) this.parentState.set(node, parent);
+    for (const { k, positions } of f.geometry) {
+      const mesh = this.deforming[k];
+      if (!mesh) continue;
+      let p = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (!p || p.array.length !== positions.length) {
+        p = new THREE.BufferAttribute(positions.slice(), 3);
+        mesh.geometry.setAttribute('position', p);
+      } else p.array.set(positions);
+      p.needsUpdate = true;
+      if (mesh instanceof THREE.Mesh) mesh.geometry.computeVertexNormals();
+      mesh.geometry.computeBoundingSphere();
+    }
     for (const { k, count, matrices } of f.inst) {
       const m = this.instanced[k];
       if (!m) continue;
@@ -136,11 +176,27 @@ export class RobotMirror {
   private readonly qb = new THREE.Quaternion();
 
   /** Pose every node `k` of the way from frame `a` to frame `b`. */
-  applyNodes(a: Float32Array, b: Float32Array, k: number): void {
+  applyNodes(a: Float32Array, b: Float32Array, k: number, aParents?: [number, number][], bParents?: [number, number][]): void {
+    // Reparented held pieces have local coordinates in different frames (gripper vs robot).
+    // Use the hierarchy from the rendered snapshot, never the newest received hierarchy.
+    const previousParents = aParents ? new Map(aParents) : null;
+    const nextParents = bParents ? new Map(bParents) : null;
+    if (previousParents && nextParents) {
+      this.parentState.clear();
+      for (const [node, parent] of k < 1 ? previousParents : nextParents) this.parentState.set(node, parent);
+    }
     const n = Math.min(this.nodes.length, b.length / NODE_STRIDE);
     for (let i = 0; i < n; i++) {
       const o = this.nodes[i], j = i * NODE_STRIDE;
-      if (k >= 1 || a === b) {
+      const parent = this.nodes[this.parentState.get(i) ?? -1];
+      const reparented = parent && o.parent !== parent;
+      if (reparented) parent.add(o);
+      const changingParent = previousParents && nextParents && previousParents.get(i) !== nextParents.get(i);
+      if (changingParent && k < 1) {
+        o.position.set(a[j], a[j + 1], a[j + 2]);
+        o.quaternion.set(a[j + 3], a[j + 4], a[j + 5], a[j + 6]);
+        o.scale.set(a[j + 7], a[j + 8], a[j + 9]);
+      } else if (k >= 1 || a === b || (reparented && !previousParents)) {
         o.position.set(b[j], b[j + 1], b[j + 2]);
         o.quaternion.set(b[j + 3], b[j + 4], b[j + 5], b[j + 6]);
         o.scale.set(b[j + 7], b[j + 8], b[j + 9]);
@@ -154,7 +210,7 @@ export class RobotMirror {
         o.quaternion.slerpQuaternions(this.qa, this.qb, t);
         o.scale.set(a[j + 7] + (b[j + 7] - a[j + 7]) * t, a[j + 8] + (b[j + 8] - a[j + 8]) * t, a[j + 9] + (b[j + 9] - a[j + 9]) * t);
       }
-      o.visible = b[j + 10] > 0.5;
+      o.visible = (k < 1 ? a : b)[j + 10] > 0.5;
     }
   }
 

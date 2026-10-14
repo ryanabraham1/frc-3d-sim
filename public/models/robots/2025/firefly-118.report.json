@@ -2,14 +2,14 @@
   "id": "firefly-118",
   "sourceFile": "firefly-118-source.glb",
   "inputBytes": 134373004,
-  "outputBytes": 7367264,
+  "outputBytes": 12812252,
   "inputTriangles": 9921189,
-  "outputTriangles": 469820,
+  "outputTriangles": 1279471,
   "omittedOccurrences": 120,
   "bounds": {
     "min": [
       -0.6290723882573338,
-      -0.000055278584745854786,
+      -5.5278584745854786e-05,
       -0.3772408061175855
     ],
     "max": [
@@ -28,5 +28,10 @@
     "algae-intake",
     "effector",
     "arm"
-  ]
+  ],
+  "restoredTubes": {
+    "count": 15,
+    "source": "https://www.118robonauts.org/_files/archives/209e0c_4695e2fde9b745009095fa908fe804df.zip?dn=00_0000_2025_firefly.zip"
+  },
+  "repairedNormals": true
 }

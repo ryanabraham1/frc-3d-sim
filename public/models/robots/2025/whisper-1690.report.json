@@ -2,7 +2,7 @@
   "id": "whisper-1690",
   "sourceFile": "1690-25-0000 Post.glb",
   "inputBytes": 576965016,
-  "outputBytes": 9504568,
+  "outputBytes": 17559452,
   "inputTriangles": 23455727,
   "outputTriangles": 636367,
   "omittedOccurrences": 270,
@@ -26,5 +26,6 @@
     "carriage",
     "effector",
     "elevator-stage"
-  ]
+  ],
+  "repairedNormals": true
 }

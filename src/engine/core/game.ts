@@ -34,6 +34,7 @@ import type { FieldBuilder } from '../field/builder';
 import type { GamePiecePool as Pool } from '../gamepiece/pool';
 import { MatchWorld } from './matchWorld';
 import { MatchSim, PRE_MATCH_COUNTDOWN, botSettings, type SimRecovery } from './matchSim';
+import { FrameHealth } from '../render/frameHealth';
 import { WorkerSim } from '../sim/workerSim';
 import type { SimEvent } from '../sim/protocol';
 import { Mesh } from 'three';
@@ -216,6 +217,7 @@ export class Game {
   private readonly perfPanel = new URLSearchParams(location.search).has('perf') ? document.createElement('pre') : null;
   private readonly timings = { tickMs: 0, drawMs: 0, faderMs: 0, renderMs: 0 };
   private lastPerfUpdate = 0;
+  private readonly frameHealth = new FrameHealth();
 
   constructor(
     container: HTMLElement,
@@ -233,6 +235,8 @@ export class Game {
     StowBay.ACTIVE_MAX = this.quality.activeMax;
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, {
       shadows: settings.shadows && this.quality.shadows,
+      lighting: settings.lighting,
+      brightness: settings.brightness,
       pixelRatioCap: this.quality.pixelRatioCap,
       minPixelRatio: this.quality.minPixelRatio,
     });
@@ -256,6 +260,7 @@ export class Game {
       scene: this.renderer.scene,
       playerId: mine?.id ?? null,
       realHopper: (rs) => !worker && this.wantsRealHopper(rs, net),
+      hopperMode: this.role === 'local' && new URLSearchParams(location.search).get('hopper') === 'stowbay' ? 'stowbay' : 'mech',
       pieceFlow: true,
       optimize: true,
       hud: this.hud,
@@ -366,9 +371,6 @@ export class Game {
     this.camera.setMode(this.player ? (settings.camera ?? 'driver') : 'overhead');
     this.fader = new OcclusionFader(this.ctx.builder.root);
     this.seasonHud = season.createHud(this.ctx, this.rules, this.hud.slots);
-    if (this.state === 'waiting') this.hud.showBanner('WAITING FOR PLAYERS…', 60);
-    else this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
-    this.offs.push(this.hud.showIntro(6));
 
     if (this.role === 'client') this.clientSync!.maintainReady(performance.now());
   }
@@ -393,11 +395,14 @@ export class Game {
   private startWorker(R: RapierModule): void {
     for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     const piece = this.pool.mesh;
-    // `?hopper=all|player|none` overrides the device tier's choice (testing the real-body hopper).
+    // `?hopper=all|player|none` overrides the device tier's choice (testing the real-body hopper); `?hopper=stowbay`
+    // puts every FUEL robot on the older wall-slab hopper instead of the physical (mechanism) hopper.
     const asked = new URLSearchParams(location.search).get('hopper');
-    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : this.quality.hopperWorker;
+    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'stowbay' ? 'all' : this.quality.hopperWorker;
+    const hopperMode = asked === 'stowbay' ? 'stowbay' as const : 'mech' as const;
     this.remote = new WorkerSim(this.world, {
-      settings: this.settings, setup: this.setup, hopper, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
+      settings: this.settings, setup: this.setup, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
+      cadDetail: new URLSearchParams(location.search).get('cadDetail') === 'full' ? 'full' : 'match',
     }, (e) => this.onSimEvent(e), (reason) => {
       if (this.disposed) return;
       console.warn('[sim] worker unavailable, simulating on the page:', reason);
@@ -466,8 +471,32 @@ export class Game {
       this.perfPanel.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:1000;pointer-events:none;background:#000c;color:#fff;padding:8px;font:11px monospace';
       this.renderer.container.appendChild(this.perfPanel);
     }
-    // The loop starts once shaders are compiled (during the intro), so the first frames don't freeze.
-    void this.renderer.prewarm().then(() => { if (!this.disposed) this.startLoop(); });
+    const loading = document.createElement('div');
+    loading.className = 'loading';
+    loading.style.cssText = 'position:absolute;inset:0;z-index:1001;background:#080d17';
+    loading.textContent = 'PREPARING MATCH…';
+    this.renderer.container.appendChild(loading);
+    void this.prepareStart().then(() => {
+      loading.remove();
+      if (this.disposed) return;
+      if (this.state === 'waiting') this.hud.showBanner('WAITING FOR PLAYERS…', 60);
+      else this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
+      this.offs.push(this.hud.showIntro(6));
+      this.remote?.start();
+      this.startLoop();
+    });
+  }
+
+  private async prepareStart(): Promise<void> {
+    const began = performance.now();
+    // Worker loads overlap the page's assets. Keep setup outside the visible countdown.
+    await Promise.all([this.renderer.prewarm(), this.remote?.started.catch(() => {})]);
+    if (this.disposed) return;
+    // compileAsync does not upload geometry/textures or warm the shadow pass. Do that behind
+    // the loading screen, then yield so the browser can present it before starting the clock.
+    this.renderer.render();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (new URLSearchParams(location.search).has('perf')) console.info(`[startup] match ready in ${Math.round(performance.now() - began)} ms (${this.remote ? 'worker' : 'page'})`);
   }
 
   private startLoop(): void {
@@ -514,7 +543,7 @@ export class Game {
     if (this.role === 'client' || net?.recovering) return false;
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     const asked = this.role === 'local' ? new URLSearchParams(location.search).get('hopper') : null;
-    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
+    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'stowbay' ? 'all' : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
     if (mode === 'none') return false;
     if (this.role === 'host' && rs.peerId && rs.peerId !== net!.client.peerId) return false;
     return mode === 'all' || rs.id === mine?.id;
@@ -522,7 +551,7 @@ export class Game {
 
   /** The machine can't keep up: turn the farthest-from-the-player real hoppers into particle piles, the player's last. */
   private shedHopperPhysics(): boolean {
-    const live = this.robots.filter((r) => r.bay);
+    const live = this.robots.filter((r) => r.bay || r.mech);
     const victim = live.find((r) => r !== this.player) ?? live[0];
     if (!victim) return false;
     victim.detachPool(this.pool);
@@ -595,6 +624,7 @@ export class Game {
   private draw(now: number): void {
     const started = performance.now();
     const elapsed = Math.max(0, (now - this.lastDraw) / 1000);
+    if (!document.hidden) this.frameHealth.record(elapsed * 1000);
     const dt = Math.min(elapsed, 0.1);
     this.lastDraw = now;
     this.time += dt;
@@ -605,7 +635,7 @@ export class Game {
       if (latest) predicted.applyNetDiscrete(latest);
       this.syncClientState();
     }
-    this.rules.updateVisuals(dt, this.time);
+    this.rules.updateVisuals(dt, this.time, !!this.remote);
     // Host / solo: draw between the last two fixed physics steps (clients draw their own interpolated snapshots).
     // A client's predicted robot steps its own physics, so it needs the same sub-step blending (others are posed from snapshots).
     const predicting = this.role === 'client' && !!this.predictor?.active;
@@ -750,7 +780,7 @@ export class Game {
     const sp = robot.config.maxSpeed * scale;
     let vx = (f * Math.cos(ref) - l * Math.sin(ref)) * sp;
     let vy = (f * Math.sin(ref) + l * Math.cos(ref)) * sp;
-    let omega = inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : 0.75);
+    let omega = inp.rotate * robot.config.maxOmega * (inp.precision ? 0.35 : robot.config.drive === 'tank' ? 0.75 : 1);
     // Touch screens: holding INTAKE with hands off the stick chases the nearest floor piece, intake side first.
     if (this.touch && inp.intake && !m && !inp.rotate) {
       const chase = this.touchChase(robot);
@@ -1131,6 +1161,7 @@ export class Game {
   /** Multiplayer stats for debugging (window.game.netStats()). */
   netStats(): Record<string, number> {
     return {
+      ...this.frameHealth.stats(),
       ...Object.fromEntries(Object.entries(this.timings).map(([key, value]) => [key, Math.round(value * 100) / 100])),
       relayRttMs: this.net?.client.rttMs ?? 0,
       socketQueuedBytes: this.net?.client.buffered ?? 0,
@@ -1149,8 +1180,10 @@ export class Game {
       jitterMs: Math.round((this.clientSync?.jitter ?? 0) * 1000),
       hostSimLoad: Math.round(this.simLoad * 100) / 100,
       pixelRatio: this.renderer.currentPixelRatio,
+      drawCalls: this.renderer.renderer.info.render.calls,
+      triangles: this.renderer.renderer.info.render.triangles,
       tier: ['low', 'medium', 'high'].indexOf(this.quality.tier),
-      realHoppers: this.remote ? this.remote.perf.realHoppers : this.robots.filter((r) => r.bay).length,
+      realHoppers: this.remote ? this.remote.perf.realHoppers : this.robots.filter((r) => r.bay || r.mech).length,
       workerStepMs: Math.round((this.remote?.perf.stepMs ?? 0) * 100) / 100,
       workerFrameMs: Math.round((this.remote?.perf.frameMs ?? 0) * 100) / 100,
       workerFrames: this.remote?.frames ?? 0,

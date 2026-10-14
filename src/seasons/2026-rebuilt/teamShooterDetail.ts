@@ -99,7 +99,8 @@ function wheelStack(parent: THREE.Object3D, x: number, y: number, r: number, zs:
 /**
  * RIPCURRENT's pancake turret (binder "pancake turret", Behind the Bumpers "compact pancake turret"; match photos
  * mYDBhBN / 0DqbRg6; the supplied image reconstruction). A wide, flat, pocketed black turret plate rides on the bearing
- * flush with the hopper top, with a slot over the dye-rotor throat. Only a low head stands on it (photo: about 3 in):
+ * below the hopper top, with a slot over the dye-rotor throat. The supplied Oct 13 match close-up shows the parked
+ * head flush with the net: its fixed cheeks stay below the rim and only the adjustable hood rises for a shot:
  * two black pocketed side plates carrying the quad-Kraken 3 in flywheel BELOW the plate in the slot, and a curved
  * black hood concentric with the flywheel that pivots on the flywheel axis (a sector gear and a small hood motor on the
  * +z plate). FUEL comes straight up the throat behind the flywheel, wraps over it under the hood and leaves forward
@@ -133,9 +134,9 @@ export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number
   // Flywheel axis sits in the slot below the plate; the ball rises at x = F.x - rb, right over the throat.
   const F:[number,number]=[.07,-.075], wheelR=.038, rb=wheelR+.075-.012, hoodR=.176;
   const plateZ=.088;
-  // Low A-frame side plates (photo mYDBhBN: sloped truss legs, flat top bar, about 4 in above the turret plate),
-  // Warren-truss pocketed between a bottom chord and the sloped/flat top chord.
-  const topY=.105, xl=-.118, xr=.122, kneeL=-.03, kneeR=.06;
+  // The fixed A-frame cheeks are mostly buried in the hopper. The supplied match close-up has a flat roof
+  // when parked; tall fixed cheeks cannot fold away with the hood. Keep their top below the net rim.
+  const topY=.055, xl=-.118, xr=.122, kneeL=-.03, kneeR=.06;
   const chord=(px:number)=>px<kneeL?(px-xl)/(kneeL-xl)*topY:px>kneeR?topY-(px-kneeR)/(xr-kneeR)*topY:topY;
   const outline:[number,number][]=[[xl,-.088],[xr,-.088],[xr,0],[kneeR,topY],[kneeL,topY],[xl,0]];
   const holes=trussPockets(xl+.012,xr-.012,-.07,(px:number)=>Math.max(-.05,chord(px)-.016),4,.007).filter(tri=>tri.every(([px,py])=>Math.hypot(px-F[0],py-F[1])>.03));
@@ -156,8 +157,9 @@ export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number
   const flywheel=wheelStack(root,F[0],F[1],wheelR,[-.06,-.02,.02,.06],.034,rubber,alloy,2*plateZ+.01); flywheel.name='hightide-quad-flywheel';
   // Hood: a curved black sheet concentric with the flywheel, pivoting on its axis. Rotating the hood group by the
   // exit angle puts the hood's lip where the ball leaves (direction = lip angle - 90°).
-  const hood=new THREE.Group(); hood.name='hightide-adjustable-hood'; hood.position.set(F[0],F[1],0); root.add(hood);
-  const span=1.15, shell=new THREE.Shape();
+  const hood=new THREE.Group(); hood.name='hightide-adjustable-hood'; hood.userData.hood=true; hood.userData.hoodRotor=hood; hood.position.set(F[0],F[1],0); root.add(hood);
+  // Keep the shell tail out of the feeder throat as the hood rises.
+  const span=.7, shell=new THREE.Shape();
   shell.absarc(0,0,hoodR+.006,0,span,false);shell.absarc(0,0,hoodR,span,0,true);shell.closePath();
   const shellMesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shell,{depth:2*plateZ-.012,bevelEnabled:false,curveSegments:20}),black);
   shellMesh.geometry.translate(0,0,-(plateZ-.006));hood.add(shellMesh);
@@ -184,64 +186,66 @@ export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number
     }};
 }
 /**
- * KEPLER's turret head, after the match photos (refs/1690-2026 jJiksKT close-up: tall raw-aluminium side plates with
- * spider-web pocketing, a black 3D-printed hood, green wheels at the hood lip, Talon FX motors) and the team's CAD
- * thread (CD 520673): an 8 in turret bearing, a beltless shooter whose hood roller is gear-driven off the flywheel
- * ("custom gears ... on the swerve wheel directly"), and a "hollow hood" that guides the ball only at its sides
- * (3D printed PLA). FUEL rises through the bearing behind the 4 in flywheel, wraps over it under the hood rails, and the
- * green hood roller at the lip adds spin as it leaves. The hood pivots on the flywheel axis, so the gear train
- * (flywheel gear, two idlers, roller gear) rides on the hood and stays in mesh at every angle. Turret local +x shoots.
+ * KEPLER's turret head, after the match photos (refs/1690-2026 jJiksKT close-up and nGnBPZM side view) and the team's
+ * CAD thread (CD 520673). The head is COMPACT and DARK: it sits low in the clear tower (the clear shield reaches nearly
+ * to its top), black 3D-printed hood rails, black Talon FX motors and wiring, dark-anodised pocketed side plates with
+ * only their edges catching light, green wheels at the hood lip. Mechanism per the team: 8 in turret bearing, beltless
+ * shooter (the hood roller is gear-driven off the flywheel through a train inside the plate pocket; only the end gears
+ * show), and a "hollow hood" that guides the ball only at its sides (printed PLA). FUEL rises through the bearing behind
+ * the flywheel, wraps over it under the hood rails, and leaves past the green lip roller. The hood pivots on the
+ * flywheel axis. Turret local +x shoots.
  */
 export function keplerShooter(t:THREE.Object3D) {
-  const black=mat(0x23272a,{metal:.4,rough:.5}),rubber=mat(0x121719,{rough:.92}),alloy=mat(0xa3abb1,{metal:.8,rough:.38}),green=mat(0x5fbf3a,{rough:.75});
+  const black=mat(0x1c1f22,{metal:.35,rough:.55}),rubber=mat(0x111416,{rough:.92}),dark=mat(0x363b40,{metal:.55,rough:.45}),
+    alloy=mat(0x9aa2a8,{metal:.8,rough:.38}),green=mat(0x5fbf3a,{rough:.75});
   const root=new THREE.Group();root.name='kepler-gear-shooter';root.userData.fuelStructure=true;t.add(root);
   bearing(root,.102,-.11,black);
-  // Rotating turret plate on the bearing: silver, pocketed, with the ball opening behind the flywheel.
-  const base=new THREE.Shape();base.absarc(0,0,.118,0,Math.PI*2,false);
-  const hole=new THREE.Path();hole.absarc(-.035,0,.068,0,Math.PI*2,true);base.holes.push(hole);
-  for(let j=0;j<6;j++){const a=Math.PI/6+j*Math.PI/3;if(Math.cos(a)<-.3)continue;const p=new THREE.Path();p.absarc(Math.cos(a)*.092,Math.sin(a)*.092,.014,0,Math.PI*2,true);base.holes.push(p);}
-  const plate=new THREE.Mesh(new THREE.ExtrudeGeometry(base,{depth:.006,bevelEnabled:false,curveSegments:20}),alloy);
+  // Rotating turret plate on the bearing (dark), with the ball opening behind the flywheel.
+  const base=new THREE.Shape();base.absarc(0,0,.112,0,Math.PI*2,false);
+  const hole=new THREE.Path();hole.absarc(-.04,0,.066,0,Math.PI*2,true);base.holes.push(hole);
+  const plate=new THREE.Mesh(new THREE.ExtrudeGeometry(base,{depth:.006,bevelEnabled:false,curveSegments:20}),black);
   plate.rotation.x=-Math.PI/2;plate.position.y=-.104;plate.name='kepler-turret-plate';root.add(plate);
-  const F:[number,number]=[.06,-.035], wheelR=.051, rb=wheelR+.075-.015, plateZ=.088;
-  // Tall side plates with spider-web pocketing round the flywheel bearing (photo).
-  const outline:[number,number][]=[[-.112,-.1],[.112,-.1],[.118,-.02],[.03,.128],[-.055,.128],[-.118,.035]];
+  const F:[number,number]=[.04,-.04], wheelR=.045, rb=wheelR+.075-.015, plateZ=.082;
+  // Compact pocketed side plates, about 8 in long and 8 in tall from the turret plate.
+  const outline:[number,number][]=[[-.1,-.1],[.1,-.1],[.105,-.025],[.045,.075],[-.045,.085],[-.105,.025]];
   for(const z of [-plateZ,plateZ]) {
-    webPlate(root,outline,F,alloy,z,{t:.006,ring:.34,web:.11,maxEdge:.1}).name='kepler-shooter-side-plate';
-    const bore=new THREE.Mesh(new THREE.CylinderGeometry(.017,.017,.013,16),black);bore.rotation.x=Math.PI/2;bore.position.set(F[0],F[1],z);root.add(bore);
-    fasteners(root,[[-.1,-.088],[.095,-.088],[-.105,.02],[.1,.03]],z+Math.sign(z)*.004);
+    webPlate(root,outline,F,dark,z,{t:.006,ring:.36,web:.12,maxEdge:.11}).name='kepler-shooter-side-plate';
+    // Bright machined edges: the only silver the photos show on the head.
+    for(let i=0;i<outline.length;i++){const a=outline[i],b=outline[(i+1)%outline.length];bar(root,[a[0],a[1],z+Math.sign(z)*.0035],[b[0],b[1],z+Math.sign(z)*.0035],.004,alloy);}
+    const bore=new THREE.Mesh(new THREE.CylinderGeometry(.015,.015,.013,16),alloy);bore.rotation.x=Math.PI/2;bore.position.set(F[0],F[1],z);root.add(bore);
   }
-  for(const [px,py] of [[-.1,-.088],[.095,-.088],[-.09,.085],[.08,.08]] as [number,number][]) {
-    const st=new THREE.Mesh(new THREE.CylinderGeometry(.0055,.0055,2*plateZ,8),alloy);st.rotation.x=Math.PI/2;st.position.set(px,py,0);root.add(st);
+  for(const [px,py] of [[-.09,-.09],[.09,-.09],[-.085,.03],[.03,.07]] as [number,number][]) {
+    const st=new THREE.Mesh(new THREE.CylinderGeometry(.005,.005,2*plateZ,8),alloy);st.rotation.x=Math.PI/2;st.position.set(px,py,0);root.add(st);
   }
-  // Flywheel: three 4 in black wheels on the shaft, a Kraken (Talon FX) on the -z plate, its drive gear on +z.
-  const flywheel=wheelStack(root,F[0],F[1],wheelR,[-.05,0,.05],.032,rubber,alloy,2*plateZ+.03);flywheel.name='kepler-flywheel';
-  motor(root,F[0],F[1],-plateZ-.04);
-  const feeder=wheelStack(root,-.04,-.125,.024,[-.045,0,.045],.026,rubber,alloy,2*plateZ);feeder.name='kepler-upfeed';
+  const flywheel=wheelStack(root,F[0],F[1],wheelR,[-.045,0,.045],.03,rubber,black,2*plateZ+.02);flywheel.name='kepler-flywheel';
+  // Talon FX (Kraken) on the -z plate, a second on the feeder; black braided leads down into the tower.
+  motor(root,F[0],F[1],-plateZ-.04,0x2d2f31);
+  const feeder=wheelStack(root,-.05,-.12,.022,[-.04,0,.04],.024,rubber,black,2*plateZ);feeder.name='kepler-upfeed';
+  motor(root,-.05,-.12,-plateZ-.04,0x2d2f31);
+  const cable=mat(0x14171a,{rough:.9});
+  for(const sz of [-1,1])bar(root,[F[0]-.02,F[1]-.03,sz*(plateZ+.03)],[-.09,-.105,sz*(plateZ+.02)],.007,cable);
   // Hollow hood: two black printed rails concentric with the flywheel (no centre sheet), tied by a rod at the back.
-  const hood=new THREE.Group();hood.name='kepler-adjustable-hood';hood.position.set(F[0],F[1],0);root.add(hood);
-  const hoodR=rb+.075, span=1.1;
-  for(const z of [-.062,.062]) {
-    const rail=new THREE.Shape();rail.absarc(0,0,hoodR+.022,0,span,false);rail.absarc(0,0,hoodR,span,0,true);rail.closePath();
-    const mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(rail,{depth:.02,bevelEnabled:false,curveSegments:18}),black);mesh.position.z=z-.01;hood.add(mesh);
+  const hood=new THREE.Group();hood.name='kepler-adjustable-hood';hood.userData.hood=true;hood.userData.hoodRotor=hood;hood.position.set(F[0],F[1],0);root.add(hood);
+  const hoodR=rb+.075, span=1.05;
+  for(const z of [-.058,.058]) {
+    const rail=new THREE.Shape();rail.absarc(0,0,hoodR+.024,0,span,false);rail.absarc(0,0,hoodR,span,0,true);rail.closePath();
+    const mesh=new THREE.Mesh(new THREE.ExtrudeGeometry(rail,{depth:.022,bevelEnabled:false,curveSegments:18}),black);mesh.position.z=z-.011;hood.add(mesh);
   }
-  const tie=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,.145,8),alloy);tie.rotation.x=Math.PI/2;tie.position.set(Math.cos(span-.05)*(hoodR+.012),Math.sin(span-.05)*(hoodR+.012),0);hood.add(tie);
-  // Green hood roller at the lip, and the gear train out to it on the +z side (beltless).
-  const lipA=.13, rollerR=.026, rollerD=rb+.075+rollerR-.012;
-  const lip=wheelStack(hood,Math.cos(lipA)*rollerD,Math.sin(lipA)*rollerD,rollerR,[-.03,0,.03],.024,green,alloy,2*plateZ+.02);lip.name='kepler-hood-shaft';
-  const gearMat=mat(0x5d6368,{metal:.7,rough:.4});
+  const tie=new THREE.Mesh(new THREE.CylinderGeometry(.005,.005,2*plateZ-.01,8),black);tie.rotation.x=Math.PI/2;tie.position.set(Math.cos(span-.05)*(hoodR+.012),Math.sin(span-.05)*(hoodR+.012),0);hood.add(tie);
+  // Green hood roller at the lip; small end gears inside the +z plate on the flywheel and roller shafts.
+  const lipA=.12, rollerR=.022, rollerD=rb+.075+rollerR-.012;
+  const lip=wheelStack(hood,Math.cos(lipA)*rollerD,Math.sin(lipA)*rollerD,rollerR,[-.028,0,.028],.022,green,black,2*plateZ);lip.name='kepler-hood-shaft';
+  const gearMat=mat(0x3a3e42,{metal:.6,rough:.4});
   function gear(parent:THREE.Object3D,x:number,y:number,r:number,z:number) {
     const group=new THREE.Group();group.position.set(x,y,z);parent.add(group);
     const pts:[number,number][]=[];const n=Math.round(r*900)*2;
-    for(let i=0;i<n;i++){const a=i*Math.PI*2/n,rr=r*(i%2?1:.9);pts.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
-    const holes:[number,number][][]=[];
-    for(let j=0;j<4;j++){const a=j*Math.PI/2+.4;holes.push([[Math.cos(a)*r*.3,Math.sin(a)*r*.3],[Math.cos(a+.6)*r*.72,Math.sin(a+.6)*r*.72],[Math.cos(a-.6)*r*.72,Math.sin(a-.6)*r*.72]]);}
-    pocketPlate(group,pts,holes,gearMat,0,.006);
+    for(let i=0;i<n;i++){const a=i*Math.PI*2/n,rr=r*(i%2?1:.88);pts.push([Math.cos(a)*rr,Math.sin(a)*rr]);}
+    pocketPlate(group,pts,[],gearMat,0,.005);
     return group;
   }
-  const gz=plateZ+.014, step=rollerD/3;
-  const gears=[gear(hood,0,0,step*.52,gz)];
-  for(let i=1;i<=3;i++)gears.push(gear(hood,Math.cos(lipA)*step*i,Math.sin(lipA)*step*i,step*.47,gz));
-  camera(root,-.085,.05,-.11);
+  const gz=plateZ-.008;
+  const gears=[gear(hood,0,0,.02,gz),gear(hood,Math.cos(lipA)*rollerD,Math.sin(lipA)*rollerD,.016,gz)];
+  camera(root,-.07,.045,-.105);
   let exit=Math.PI/2+.5,speed=0;hood.rotation.z=exit-lipA;
   const ballAt=(a:number)=>[F[0]+rb*Math.cos(a),F[1]+rb*Math.sin(a)] as [number,number];
   return {flywheel,hood,root,

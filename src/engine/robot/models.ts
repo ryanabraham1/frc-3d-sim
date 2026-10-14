@@ -63,6 +63,68 @@ export interface RobotAnimState {
   upx?: number;
   upy?: number;
   upz?: number;
+  /**
+   * 0–1: how far the intake / sliding hopper is pulled in to squeeze the last FUEL toward the indexer while shooting
+   * a nearly empty hopper (see Robot.animateModel). Models with a retracting intake fold it by this much.
+   */
+  squeeze?: number;
+}
+
+/**
+ * A powered roller that moves FUEL in the physical hopper (robot/mechHopper.ts). Its axis passes through `at` (in
+ * `node`'s frame, default the origin) along `node`'s local `axis`; the roller's own spin about that axis is ignored, so
+ * `node` may be the spinning group itself. `speed` is the surface speed (m/s), positive = right-handed about the axis
+ * as seen in the robot frame at build time. `run`: 'intake' turns with the intake command, 'feed' while the robot is
+ * firing, 'both' with either.
+ */
+export interface MechRoller {
+  node: THREE.Object3D;
+  at?: [number, number, number];
+  axis?: 'x' | 'y' | 'z';
+  /** Tread radius and length (m). Omitted: measured from the drawn roller (the node's geometry within 4.5 cm of the axis). */
+  radius?: number;
+  length?: number;
+  speed: number;
+  run: 'intake' | 'feed' | 'both';
+  /** Intake rollers only: a field ball touching this roller while it runs is taken in (capture by contact). */
+  capture?: boolean;
+  /** A rigid shaft whose compliant tread also presses the ball onto it while running (a vertical conveyor lift). */
+  grip?: boolean;
+}
+
+/**
+ * Hooks for the physical hopper (robot/mechHopper.ts): which drawn parts move FUEL, and where the shooter takes it.
+ * Every other visible mesh of the model is a collider exactly as drawn.
+ */
+export interface HopperMechanism {
+  rollers: MechRoller[];
+  /**
+   * Flywheel contact: a ball whose centre comes within `radius` of the segment through `at` (in `node`'s frame) along
+   * `axis`, `length` long (0 = a point), while the robot fires, is launched.
+   */
+  shooter: { node: THREE.Object3D; at: [number, number, number]; radius: number; axis?: 'x' | 'y' | 'z'; length?: number;
+    /** Only balls whose robot-frame centre passes this test (e.g. inside the feed column) reach the flywheel. */
+    gate?(x: number, y: number, z: number): boolean }[];
+  /** Moving parts whose motion drags FUEL along by friction (a dye rotor's spinning floor). Other fast spinners only collide. */
+  drive?: THREE.Object3D[];
+  /**
+   * A dye rotor: the spinning plate `node` (turning about its local y, top `top` above its origin, `radius` wide) and its
+   * spiral rib act as a screw conveyor: while feeding, a ball resting on the plate is carried round with it and walked
+   * inward at `inward` m/s toward the throat at the plate's centre.
+   */
+  rotor?: { node: THREE.Object3D; radius: number; top: number; inward: number;
+    /** Vertical reach of an upright rotating guide above the floor (default 0). */
+    bladeHeight?: number };
+  /** Low-friction guides (UHMW / polycarbonate) FUEL slides along (subtrees), e.g. a dye rotor's spiral fin. */
+  slick?: THREE.Object3D[];
+  /** Drawn parts FUEL passes through (subtrees). */
+  ignore?: THREE.Object3D[];
+  /** Hopper fill (0–1) below which shooting folds the intake in to squeeze the rest toward the indexer (default 0.36). */
+  squeezeBelow?: number;
+  /** Soft elastic roof (a stretching net): robot-frame height of the slack net and of the fully stretched net. */
+  net?: { rim: number; full: number; inside(x: number, z: number): boolean;
+    /** Robot-frame footprint (x, z) the net is tied around: between rim and full height its edges are walls. */
+    area?: { min: [number, number]; max: [number, number] } };
 }
 
 export interface ModelKit {
@@ -101,6 +163,8 @@ export interface RobotModel {
   handoffStyle?: 'fold' | 'conveyor' | 'direct' | 'toss';
   /** Status light position (robot frame), on top of the model's structure. */
   lightAt?: [number, number, number];
+  /** Physical hopper hooks: FUEL is carried by these rollers and launched only at the shooter (robot/mechHopper.ts). */
+  mech?: HopperMechanism;
   /**
    * Game-piece flow through this robot (see pieceFlow.ts), as points in the robot frame. `intake` runs from just
    * inside the intake mouth to the stow point (omit the stow point: `stow` or the held anchor / hopper is appended);
@@ -254,6 +318,8 @@ export function hoodShell(parent: THREE.Object3D, radius: number, width: number,
   const geo = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, curveSegments: n });
   geo.translate(0, 0, -width / 2);
   g.add(new THREE.Mesh(geo, m));
+  g.userData.hood = true; // the hood collider follows this drawn shell (Robot.updateHoodCollider)
+  g.userData.hoodRotor = parent; // ...and the node that swings it is the pivot it hangs on
   parent.add(g);
   return g;
 }
@@ -304,7 +370,7 @@ const HOPPER_FLOOR = 0.09;
  * impacts form the pile; initial packing is only a starting pose, never a fixed resting target. Intake tokens hand
  * their exact endpoint to the new particle so it rolls into the pile without a second spawn.
  */
-export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; allowAboveRim?:boolean; outline?:readonly [number,number][]; keepouts?:readonly FuelKeepout[]; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number }): { set(f: number): void } {
+export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; length: number; width: number; height: number; color: number; capacity?: number; exactFloor?: boolean; allowAboveRim?:boolean; outline?:readonly [number,number][]; keepouts?:readonly FuelKeepout[]; inside?: (x: number, z: number) => boolean; ceiling?: (x: number, z: number) => number; floor?: (x: number, z: number) => number }): { set(f: number): void } {
   // A real hopper floor rides just above the chassis tubing, not up at bumper-top height: lower the bin to it (same roof) so
   // the FUEL fills the room under the old floor instead of leaving a dead gap above the frame.
   const drop = bin.exactFloor ? 0 : Math.max(0, Math.min(bin.y0 - HOPPER_FLOOR, 0.12));
@@ -320,7 +386,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     const reach2 = (r * k) ** 2; // foam FUEL squashes a little where it touches (k = 2 would be rigid spheres)
     const out: Slot[] = [];
     const restHeight = (px: number, pz: number): number => {
-      let py = r;
+      let py = r + Math.max(0, (o.floor?.(o.x + px, pz) ?? o.y0) - o.y0);
       for (const q of out) {
         const dx = q.x - (o.x + px), dz = q.z - pz, d2 = dx * dx + dz * dz;
         if (d2 < reach2) py = Math.max(py, q.y - o.y0 + Math.sqrt(reach2 - d2));
@@ -363,6 +429,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
           const dx=-spanX/2+(a+((b+h)%2)*.5+phase)*gap;
           if(dx>spanX/2 || dz>spanZ/2)continue;
           const x=o.x+(swapped?dz:dx),z=swapped?dx:dz,y=o.y0+r*sy+h*layer;
+          if(y-r*sy<(o.floor?.(x,z)??o.y0))continue;
           if(o.inside&&!o.inside(x,z))continue;
           if(o.keepouts&&clearFuelKeepouts(new THREE.Vector3(x,y,z),r,o.keepouts))continue;
           if(y+r*sy>Math.min(o.y0+o.height,o.ceiling?.(x,z)??Infinity))continue;
@@ -380,7 +447,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   if (o.capacity) {
     let k = 1.92;
     slots = pour(r, o.capacity, k);
-    while ((slots.length < o.capacity || (!o.allowAboveRim && top(slots, r) > o.height)) && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
+    while ((slots.length < o.capacity || top(slots, r) > o.height) && k > 1.7) { k -= 0.02; slots = pour(r, o.capacity, k); }
     if(slots.length<o.capacity) {
       const packed=closePack(r,o.capacity,k);
       if(packed.length>slots.length)slots=packed;
@@ -412,6 +479,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   for (let i = 0; i <= count; i++) mesh.setColorAt(i, tint.clone().multiplyScalar(0.9 + rand() * 0.1));
   const pile = new FuelPile(o, slots, r);
   mesh.userData.wakeFuel = () => pile.wake();
+  mesh.userData.fuelPile = pile;
   mesh.userData.bindFuelContacts = (visual?: THREE.Object3D, importedOnly = false) => { pile.contacts = visual ? new FuelContacts(visual, mesh, false, importedOnly) : undefined; };
   mesh.userData.resizeFuelBin = (bounds: { x: number; length: number; height: number }) => {
     if (Math.abs(o.x - bounds.x) + Math.abs(o.length - bounds.length) + Math.abs(o.height - bounds.height) < 1e-5) return;
@@ -446,7 +514,11 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     return position;
   };
   mesh.userData.animateFuel = (s: RobotAnimState) => {
-    const moved = pile.step(s, (x, y, z, vx, vy, vz) => mesh.userData.fuelEscape?.(mesh, x, y, z, vx, vy, vz));
+    const moved = pile.step(s, (x, y, z, vx, vy, vz) => {
+      // A ball the host never owned (replica / preview placeholder) just fell off an overfull open bin. The count would
+      // refill it at its seed and it would spill again forever, so the bin shows no more than it can hold.
+      if (mesh.userData.fuelEscape?.(mesh, x, y, z, vx, vy, vz) === false) mesh.userData.fuelSpillCap = pile.size - 1;
+    });
     if (pile.size !== mesh.count) mesh.count = pile.size; // balls that went over the rim
     if (!moved) return;
     for (let i = 0; i < mesh.count; i++) place(i);
@@ -461,7 +533,11 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
       }
       mesh.visible = want > 0;
   };
-  mesh.userData.setFuelCount = (n: number) => setCount(Math.min(count + (pile.open ? 1 : 0), Math.max(0, n)));
+  mesh.userData.setFuelCount = (n: number) => {
+    // Asking for fewer than the spill cap means the load really dropped (shots): the cap is stale.
+    if (mesh.userData.fuelSpillCap !== undefined && n < mesh.userData.fuelSpillCap) mesh.userData.fuelSpillCap = undefined;
+    setCount(Math.min(count + (pile.open ? 1 : 0), Math.max(0, n), mesh.userData.fuelSpillCap ?? Infinity));
+  };
   mesh.userData.fuelSurface = () => ({positions: pile.positions, count: pile.size, radius: r});
   return { set(f) {
     mesh.userData.fuelRequestedFill = f;
@@ -1057,7 +1133,7 @@ export function columnFeed(k: ModelKit, colX: number, wheel: THREE.Object3D, rot
  * `floor` spins about y (positive = the direction FUEL travels along the spiral); `feed(r)` is the path a ball of
  * radius r takes from the rim, along the spiral wall and up the tower.
  */
-export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1; guide?: boolean }): { floor: THREE.Group; tower: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
+export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: number; wallH: number; towerX: number; towerR: number; towerTop: number; plate: THREE.Material; pocket?: THREE.Material; accent?: THREE.Material; motors?: number; motorSide?: 1 | -1; guide?: boolean; fence?: boolean; motorY?: number }): { floor: THREE.Group; tower: THREE.Group; rollers: THREE.Object3D[]; feed(r: number): THREE.Vector3[] } {
   const { x, y0, R, wallH } = o;
   const pocketM = o.pocket ?? mat(0x34373d, { metal: 0.3, rough: 0.55 });
   const accent = o.accent ?? mat(0x24272c, { metal: 0.4, rough: 0.45 });
@@ -1091,7 +1167,8 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
   }
   floor.add(bolts);
   floor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 20), accent));
-  // Stationary fence with a top flange and standoffs.
+  // Stationary fence with a top flange and standoffs (a robot whose balls ride directly on the plate leaves it out).
+  if (o.fence !== false) {
   const fence = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.012, R + 0.012, wallH, 56, 1, true), mat(0x1b1d21, { rough: 0.5 }));
   (fence.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
   fence.position.y = wallH / 2;
@@ -1106,6 +1183,8 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, wallH + 0.02, 6), mat(0x2a2d32, { metal: 0.6 }));
     post.position.set(Math.cos(a) * (R + 0.024), wallH / 2, Math.sin(a) * (R + 0.024));
     g.add(post);
+  }
+
   }
   // Spiral guide wall from the rim in to the tower, with a row of vertical feed rollers on its inner face.
   const tx = o.towerX - x;
@@ -1171,10 +1250,10 @@ export function dyeRotor(parent: THREE.Object3D, o: { x: number; y0: number; R: 
     const mx = Math.cos(a) * (R + 0.06);
     const mz = Math.sin(a) * (R + 0.06);
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.075, 16), mat(0x16171a, { rough: 0.6 }));
-    body.position.set(mx, -0.005, mz);
+    body.position.set(mx, o.motorY ?? -0.005, mz);
     g.add(body);
     const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0315, 0.0315, 0.01, 16), new THREE.MeshStandardMaterial({ color: 0x39d353, emissive: 0x1a7a2a, emissiveIntensity: 0.4 }));
-    band.position.set(mx, 0.028, mz);
+    band.position.set(mx, (o.motorY ?? -0.005) + 0.033, mz);
     g.add(band);
   }
   return {

@@ -49,18 +49,28 @@ export function buildAimbotCad(root: THREE.Group, k: ModelKit, isAnimated: () =>
     {x:AIMBOT_TURRET.x,z:AIMBOT_TURRET.z,radius:.085,bottom:.15,top:.44},
     {x:AIMBOT_TURRET.x,z:AIMBOT_TURRET.z,radius:.18,bottom:.44,top:.95},
   ];
-  const pile = fuel(k, -.64, .34, .23, .72, .66, -.34, (x, z) => !(x > -.02 && z > -.02));
+  // The extension's upper CAD rail is at .75355 m; use its inner lip, rather than the former .72 m estimate.
+  // Its inlet sits over the deployed slapdown assembly (CAD top .3572 m). That end is a raised floor, not more empty
+  // volume beneath the intake: otherwise the first bottom-layer spheres are trapped in its plates/rollers.
+  const pile = fuel(k, -.64, .34, .23, .75, .66, -.34, (x, z) => !(x > -.02 && z > -.02), undefined,
+    x => x < -.50 ? .36 : .23);
   let deploy = 1, spin = 0, lift = 0, rotorRate = 0;
   return {
     replaces, lightAt: [.17, .5, .36], intakeAnchor: tip,
     flow: {
       intake: () => [point(k, tip, 0, .02), new THREE.Vector3(-.46, .2, 0), new THREE.Vector3(-.3, .19, 0), new THREE.Vector3(-.15, .18, .05)],
       stow: pile.stow,
-      feed: () => [point(k, rotor, .12, .06, .1), point(k, rotor, .14, .06, .15), new THREE.Vector3(.145, .38, .15), point(k, turret, 0, .03, 0),
+      // Enter from the open rotor pocket on the storage side of the turret tower; the old
+      // +Z entrance started inside the tower's CAD plates and could not fit a FUEL sphere.
+      feed: () => [point(k, rotor, .14, .06, -.02), point(k, rotor, .14, .06, .15), new THREE.Vector3(.145, .38, .15), point(k, turret, 0, .03, 0),
         point(k, flywheel, -.05, .07, 0), point(k, flywheel, .07, .09, 0)],
     },
     update(s) {
       deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
+      // A load already present holds the sliding wall out. In particular, a restored/full preview load must not first
+      // be squeezed into the parked footprint while the extension eases open: that sweeps its seeds up over the rim.
+      const compactFraction = (.34 - -.34) / (.34 - -.64);
+      deploy = Math.max(deploy, THREE.MathUtils.clamp((s.fill - compactFraction) / (1 - compactFraction), 0, 1));
       pile.update(s.fill, deploy);
       if (!isAnimated()) return;
       // Slapdown: the CAD is deployed; folding rotates the plates up and in about the pivot axle, and the hopper walls it
@@ -71,7 +81,7 @@ export function buildAimbotCad(root: THREE.Group, k: ModelKit, isAnimated: () =>
       turret.rotation.y = k.turret.rotation.y;
       spin = scoringEase(spin, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
       flywheel.rotation.z -= 60 * spin * s.dt;
-      rotorRate = dyeRotorRate(rotorRate, s, 8);
+      rotorRate = dyeRotorRate(rotorRate, { ...s, enabled: s.enabled && (s.intaking || hoodLive(s)) }, 8);
       rotor.rotation.y += rotorRate * s.dt;
       // The whole flywheel pack tilts through the 27 degree range: flatter for long shots, steeper up close.
       lift = ease(lift, s.enabled && hoodLive(s) ? THREE.MathUtils.clamp((s.hood - .5) / .75, 0, 1) : 0, s.dt);

@@ -1,3 +1,4 @@
+import { normalizeLighting, normalizeBrightness } from '@engine/render/lighting';
 import type { CameraMode } from '@engine/camera/cameras';
 import { setSoundMuted, soundMuted } from '@engine/audio/sfx';
 import { detectTier, qualityPref, setQualityPref, type QualityPref } from '@engine/core/quality';
@@ -19,6 +20,7 @@ import './menu.css';
 /** Newtons per pound-force. */
 const LBF = 4.4482216;
 const STORAGE_KEY = 'frc-sim-settings-v1';
+const ROBOT_STORAGE_KEY = 'frc-sim-season-robots-v1';
 const FT = 0.3048;
 
 type Page = 'home' | 'solo' | 'garage' | 'controls' | 'rules' | 'settings' | 'multiplayer' | 'ranked';
@@ -36,6 +38,8 @@ function load(): Partial<GameSettings> | null {
     if (saved.aiDifficulty) saved.aiDifficulty = normalizeSkill(saved.aiDifficulty);
     if (saved.aiAlly?.skill) saved.aiAlly.skill = normalizeSkill(saved.aiAlly.skill);
     if (saved.aiOpponent?.skill) saved.aiOpponent.skill = normalizeSkill(saved.aiOpponent.skill);
+    saved.lighting = normalizeLighting(saved.lighting);
+    saved.brightness = normalizeBrightness(saved.brightness);
     return saved;
   } catch {
     return null;
@@ -47,6 +51,20 @@ function save(s: GameSettings): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
   } catch {
     /* storage unavailable (private mode) — fine */
+  }
+}
+
+/** Robot choices belong to their season: a 2026 build must not overwrite the saved 2025 build. */
+function loadSeasonRobots(): Record<string, RobotConfig> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROBOT_STORAGE_KEY) ?? '{}');
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    return Object.fromEntries(SEASONS.flatMap(season => {
+      const robot = saved[season.id];
+      return robot?.launcher && robot?.intake && robot?.climber ? [[season.id, robot]] : [];
+    }));
+  } catch {
+    return {};
   }
 }
 
@@ -63,6 +81,8 @@ export function defaultSettings(season: SeasonDefinition): GameSettings {
     autoIntake: true,
     seed: Math.floor(Math.random() * 1e6),
     shadows: true,
+    lighting: 'arena',
+    brightness: 1,
     aiOpponents: true,
     aiDifficulty: 'normal',
   };
@@ -203,6 +223,22 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       intake: { ...d.intake, ...stored.robot.intake, groundSide: d.intake.groundSide, stationSide: d.intake.stationSide },
     };
   }
+  const seasonRobots = loadSeasonRobots();
+  if (seasonRobots[season.id]) s.robot = cloneConfig(seasonRobots[season.id]);
+  const rememberRobot = () => {
+    seasonRobots[season.id] = cloneConfig(s.robot);
+    save(s);
+    try { localStorage.setItem(ROBOT_STORAGE_KEY, JSON.stringify(seasonRobots)); } catch { /* session memory still works */ }
+  };
+  const switchSeason = (id: string) => {
+    rememberRobot();
+    const teamNumber = s.robot.teamNumber;
+    season = getSeason(id);
+    s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
+    const remembered = seasonRobots[season.id];
+    if (remembered) s.robot = cloneConfig(remembered);
+    else s.robot.teamNumber = teamNumber;
+  };
   let page: Page = opts.page ?? 'home';
   /** Where Garage / Controls / Rules return to. */
   let backTo: Page = 'home';
@@ -563,6 +599,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${group('Sound', `<div class="seg">${opt('data-sound="on"', 'On', !soundMuted())}${opt('data-sound="off"', 'Off', soundMuted())}</div>`, 'Match start, period change, endgame and buzzer cues.')}
         ${group('Graphics quality', `<div class="seg">${(['auto', 'low', 'medium', 'high'] as const).map((q) => opt(`data-quality="${q}"`, q[0].toUpperCase() + q.slice(1), qualityPref() === q)).join('')}</div>`, `Auto picked ${detectTier()} for this device. Lower settings simulate less (hoppers) and draw less; applies to the next match.`)}
         ${group('Shadows', `<div class="seg">${opt('data-toggle="shadows"', s.shadows ? 'On' : 'Off', s.shadows)}</div>`, 'Turn off for a smoother frame rate on slower devices.')}
+        ${group('Lighting', `<div class="seg">${(['arena', 'studio', 'dramatic'] as const).map((look) => opt(`data-lighting="${look}"`, look[0].toUpperCase() + look.slice(1), normalizeLighting(s.lighting) === look)).join('')}</div>`, 'Arena: classic event lighting. Studio: soft, bright highlights. Dramatic: warm spotlights with cool blue edges. Applies to the next match.', 'wide')}
+        ${group('Brightness', `<label>Brightness <output data-brightness-value>${Math.round(normalizeBrightness(s.brightness) * 100)}%</output><input data-brightness type="range" min="70" max="140" step="5" value="${Math.round(normalizeBrightness(s.brightness) * 100)}" aria-label="Lighting brightness" /></label>`, 'Adjust the selected look. Applies to the next match.')}
         ${group('Default camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, 'Press V in a match to switch.', 'wide')}
         ${group('Driving aids', `<div class="seg">${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}</div>`, 'None of these change scoring.', 'wide')}
         ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate during 3 v 3.', 'wide')}
@@ -638,13 +676,11 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
 
   const render = () => {
     if (lobby?.lobby && lobby.lobby.seasonId !== s.seasonId) {
-      season = getSeason(lobby.lobby.seasonId);
-      const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
-      s.robot.teamNumber = teamNumber;
+      switchSeason(lobby.lobby.seasonId);
     }
     if (season.normalizeRobotConfig) s.robot = season.normalizeRobotConfig(s.robot);
     sanitizeSpot();
+    rememberRobot();
     if (lobby) lobby.settings = s;
     // A relay wake/status update can arrive while the user is typing. Keep the form draft and focus.
     const online = page === 'multiplayer' || page === 'ranked';
@@ -780,10 +816,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-modal="confirm"]').forEach((b) => (b.onclick = launch));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
-      season = getSeason(seasonSel.value);
-      const teamNumber = s.robot.teamNumber;
-      s = { ...defaultSettings(season), alliance: s.alliance, station: s.station, camera: s.camera, aiOpponents: s.aiOpponents, aiDifficulty: s.aiDifficulty, aiAlly: { skill: s.aiAlly?.skill }, aiRadio: s.aiRadio };
-      s.robot.teamNumber = teamNumber;
+      switchSeason(seasonSel.value);
       if (lobby) { lobby.settings = s; lobby.setSeason(season.id); }
       render();
     };
@@ -846,10 +879,17 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-sound]').forEach((b) => (b.onclick = () => (setSoundMuted(b.dataset.sound === 'off'), render())));
     all('[data-k="resetPrefs"]').forEach((b) => (b.onclick = () => {
       const d = defaultSettings(season);
-      s = { ...s, camera: d.camera, shadows: d.shadows, autoIntake: d.autoIntake, manualAuto: d.manualAuto, aiRadio: d.aiRadio };
+      s = { ...s, camera: d.camera, shadows: d.shadows, lighting: d.lighting, brightness: d.brightness, autoIntake: d.autoIntake, manualAuto: d.manualAuto, aiRadio: d.aiRadio };
       setQualityPref('auto');
       setSoundMuted(false);
       render();
+    }));
+    all('[data-lighting]').forEach((b) => (b.onclick = () => { s.lighting = normalizeLighting(b.dataset.lighting); render(); }));
+    all<HTMLInputElement>('[data-brightness]').forEach((input) => (input.oninput = () => {
+      s.brightness = normalizeBrightness(Number(input.value) / 100);
+      const output = el.querySelector('[data-brightness-value]');
+      if (output) output.textContent = `${Math.round(s.brightness * 100)}%`;
+      save(s);
     }));
     all('[data-quality]').forEach((b) => (b.onclick = () => (setQualityPref(b.dataset.quality as QualityPref), render())));
     all('[data-toggle]').forEach(

@@ -41,6 +41,8 @@ export class HeadlessSim {
     readonly season: SeasonDefinition,
     R: RapierModule,
     opts: { robot: RobotConfig; alliance: Alliance; pose: FieldPose; seed?: number; station?: number; log?: boolean;
+      /** Physical hopper (robot/mechHopper.ts) for models with mechanism hooks, instead of StowBay. */
+      mechHopper?: boolean;
       extraRobots?: { config: RobotConfig; alliance: Alliance; station: number; pose: FieldPose; id: number }[] },
   ) {
     this.physics = new PhysicsWorld(R, 1 / 90);
@@ -55,7 +57,7 @@ export class HeadlessSim {
     this.robot.shootWhileTracking = false; // settled-aim shots; game.ts enables shoot-while-tracking for REBUILT, tests opt in
     this.robot.controller = 'player';
     season.configureRobot?.(this.robot);
-    this.robot.attachPool(this.pool);
+    this.robot.attachPool(this.pool, opts.mechHopper ? 'mech' : 'stowbay');
     this.rng = new Rng(opts.seed ?? 1);
     const settings: GameSettings = {
       seasonId: season.id,
@@ -154,7 +156,7 @@ export class HeadlessSim {
       }
     }
     robot.tickIntake(dt);
-    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0) {
+    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0 && !robot.mech) {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);

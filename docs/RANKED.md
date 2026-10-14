@@ -29,6 +29,18 @@ and the 700 about 26 (the stronger player is blamed less, the weaker more); on a
 The factors average to 1, so a team's total change is unchanged, and 1v1s or evenly matched teams are plain Elo. Factors are
 clamped to 0.35-1.65.
 
+### Repeated opponents
+
+Matches remain playable, but the relay reduces Elo gains when one player keeps winning against the same rival: full
+gains for the first three consecutive wins, 50% on the fourth, 20% on the fifth, 10% on the sixth, and 0% from the
+seventh onward (rounded down). Losses and abandonment penalties retain their normal cost; wins, draws and games still
+count. Draw gains remain normal; forfeit wins use the same reduction as played wins. Each rival is tracked separately
+across all modes, even if teams or colours change; the longest current rival win streak sets the player's multiplier.
+A loss, draw or rated match without that rival on the opposing side breaks the streak, so trading wins retains full
+Elo. Voids, reconnects, renaming and server restarts do not reset it. History is scoped to the current
+season and read from the existing match records; no schema change is required. If that read fails, positive gains are
+withheld and the result explains why. The result card also explains when gains were reduced for repeated opponents.
+
 ## Spectating
 
 Once a ranked match is running (`state: 'match'`), the relay lists its room in `list` replies with `ranked: true` even though it is

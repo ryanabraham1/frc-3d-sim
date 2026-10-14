@@ -10,8 +10,8 @@ import { additionalRebuiltTeamRobots } from './additionalTeamRobots';
 import { moreRebuiltTeamRobots } from './moreTeamRobots';
 import * as THREE from 'three';
 import type { TeamRobot } from '@engine/core/season';
-import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_RUBBER, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
-import { adaptedDumper, adaptedRotorColumn, adaptedTurretShooter } from '@engine/robot/adaptedCadParts';
+import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, hoodShell, hopperWalls, INTAKE_RUBBER, lattice, mat, pivot, plate, registerRobotModel, roller, spin, tubeMat, bumperRing, darkTubeMat, type ModelKit, type RobotAnimState, type HopperMechanism, columnFeed, dyeRotor, flowAt, hopperStow, jitter, overBumperIntake } from '@engine/robot/models';
+import { adaptedDumper, adaptedRotorColumn, adaptedToploaderShooter } from '@engine/robot/adaptedCadParts';
 import { hoodFor, turretShooter } from '@engine/robot/turretShooter';
 import { inch } from '@engine/units';
 import { hopperNetCeiling, launcherExitOffsets } from '@engine/robot/config';
@@ -92,49 +92,112 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   const outline=highTideHopper(k.visual,L,W,bt,H-.01,side,smoke,teal,black,sponsor);
   k.visual.userData.hopperChamfer=outline;
   const shooterX=L*.05, deck=H-.075;
+  // Match physics (the stow bay) and the drawn pile share this list, so it keeps the real shooter envelope only.
   k.visual.userData.fuelKeepouts=[
     {x:shooterX,z:0,radius:.075,bottom:bt-.12,top:deck-.035},
     {x:shooterX,z:0,radius:.17,bottom:deck-.035,top:H+.24},
   ];
+  // The drawn pile also stays clear of the roller throat (teal rings to r .112, wheels to ~.123 from its axis).
+  const pileKeepouts=[
+    {x:shooterX,z:0,radius:.113,bottom:bt-.12,top:deck-.035},
+    {x:shooterX,z:0,radius:.17,bottom:deck-.035,top:H+.24},
+    // Roller-throat wheel stacks (x - .085 from the throat axis, wheel + tread r .05, spanning z +-.075) and their z-bars.
+    ...[-.06,0,.06].map(z=>({x:shooterX-.085,z,radius:.06,bottom:bt-.12,top:H})),
+    ...[-1,1].map(sz=>({x:shooterX-.085,z:sz*.105,radius:.012,bottom:bt-.12,top:H})),
+    // Tie-down bars under the fixed bearing wing plate (`hightide-fixed-bearing-wings`).
+    ...[-1,1].map(sz=>({x:shooterX,z:sz*W*.4,radius:.011,bottom:H-.07-.012-.23,top:H-.07-.012})),
+  ];
+
   const netCeiling=hopperNetCeiling(c);
-  const mechanismCeiling=(x:number,z:number)=>Math.hypot(x-shooterX,z)<.245 ? deck-.075 : netCeiling(x,z);
+  // Under the turret (flywheel and hood hang to ~H-.17 and sweep a circle) and under the fixed wing plate spanning the hopper.
+  const wingBottom=H-.07-.012-.002, turretReach=.21;
+  const mechanismCeiling=(x:number,z:number)=>{
+    const r=Math.hypot(x-shooterX,z);
+    if(r<turretReach)return Math.min(deck-.075,H-.1735);
+    if(Math.abs(x-shooterX)<(Math.abs(z)>.12?.12:.17)+.04&&Math.abs(z)<W*.43+.03)return Math.min(wingBottom,netCeiling(x,z));
+    return r<.245?deck-.075:netCeiling(x,z);
+  };
   Object.assign(mechanismCeiling,{setStretch:netCeiling.setStretch});
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: (x,z) => Math.hypot(x-(L*.05),z) > .153 && outline.inside(x,z), ceiling: mechanismCeiling });
+  // Balls ride on the rotor plate and a flat floor plate beside it: the pile floor is the drawn floor.
+  const floorY=.09;
+  const floorPlate=plate(k.visual,outline.points,.004,black);floorPlate.rotation.x=Math.PI/2;floorPlate.position.y=floorY-.002;floorPlate.name='hightide-hopper-floor';
+  const fill = fillBlock(k.visual, { x: 0, y0: floorY+.01, exactFloor:true, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - .01 - floorY - .01, color: FUEL, capacity: c.hopperCapacity, keepouts:pileKeepouts, inside: (x,z) => outline.inside(x,z), ceiling: mechanismCeiling });
   // Dye rotor: pocketed spinning plate in a fenced tub, spiral guide wall into the open tower under the turret.
   const rr = Math.min(L, W) * 0.44;
-  const dye = highTideRotor(k.visual, L*.05, bt+.02, rr, H-.08, black, teal);
+  const dye = highTideRotor(k.visual, L*.05, floorY, rr, H-.08, black, teal);
   const t = k.turret;
   t.position.set(L * 0.05, H - 0.07, 0);
   // Pancake turret: wide black disc with a teal ring, shooter on top.
-  const sh = highTideShooter(t,k.visual,shooterX,t.position.y,W);
+  const sh = adaptedToploaderShooter(t,{topY:.06,color:0x202326}) ?? highTideShooter(t,k.visual,shooterX,t.position.y,W);
+  sh.root.name='hightide-pancake-shooter';
   // Hopper extension that slides out over the deployed intake: black frame, smoked sides, nearly full height (BtB
   // photo). Stowed it sits inside the open intake end of the main box.
   const tray = new THREE.Group();
   tray.name = 'sliding-hopper';
   k.visual.add(tray);
   const trayH = H - .02 - (bt + .02);
-  hopperWalls(tray, { intakeSide: k.groundSide, floorDepth: .12, x: side * (L / 2 - 0.155), y0: bt + 0.02, length: 0.30, width: W * 0.93, height: trayH, m: sponsor, frame: black });
-  for (const sz of [-1, 1]) box(tray, .30, .05, .006, black, side * (L / 2 - 0.155), bt + .045, sz * (W * .465 + .004));
-  const trayFill = fillBlock(tray, { x: side*(L/2-.13), y0:bt+.03, length:.25, width:W*.88, height:(c.hopperExpansion?.fullHeight ?? H)-bt-.04, color:FUEL, capacity:30 });
+  // Sides, top rails and an outer end wall above the intake mouth; open toward the main hopper and underneath, where
+  // the intake ramp lifts FUEL in over the bumper (a closed inner end would wall the extension off from the rotor).
+  const trayX = side * (L / 2 - 0.155), mouthTop = bt + .10;
+  for (const sz of [-1, 1]) {
+    box(tray, .30, trayH, .008, sponsor, trayX, bt + .02 + trayH / 2, sz * W * .465);
+    box(tray, .30, .05, .006, black, trayX, bt + .045, sz * (W * .465 + .004));
+    box(tray, .30, .018, .018, black, trayX, bt + .02 + trayH, sz * W * .465);
+    box(tray, .022, trayH, .022, black, trayX + side * .15, bt + .02 + trayH / 2, sz * W * .465);
+  }
+  box(tray, .008, bt + .02 + trayH - mouthTop, W * .93, sponsor, trayX + side * .15, (mouthTop + bt + .02 + trayH) / 2, 0).name = 'hightide-extension-end-wall';
+  box(tray, .018, .018, W * .93, black, trayX + side * .15, bt + .02 + trayH, 0);
+  // Hopper floor around the dye rotor: a funnel falling from the walls to the rotor's lip, so FUEL in the corners rolls
+  // onto the plate. [EST: the binder shows the rotor filling the floor; the corners outside its circle need a floor]
+  const rotorR = Math.min(L, W) * .44 + .012;
+  const floorShape = new THREE.Shape(outline.points.map(([x, z]) => new THREE.Vector2(x, -z)));
+  const hole = new THREE.Path(); hole.absarc(L * .05, 0, rotorR, 0, Math.PI * 2, true); floorShape.holes.push(hole);
+  const floorGeo = new THREE.ShapeGeometry(floorShape, 48).rotateX(-Math.PI / 2);
+  const fp = floorGeo.getAttribute('position') as THREE.BufferAttribute;
+  for (let i = 0; i < fp.count; i++) fp.setY(i, floorY + .004 + .09 * Math.min(1, Math.max(0, Math.hypot(fp.getX(i) - L * .05, fp.getZ(i)) - rotorR) / .2));
+  floorGeo.computeVertexNormals();
+  const hopperFloor = new THREE.Mesh(floorGeo, black);
+  hopperFloor.name = 'hightide-hopper-floor';
+  k.visual.add(hopperFloor);
+  const trayFill = fillBlock(tray, { x: trayX, y0:bt+.03, length:.29, width:W*.92, height:(c.hopperExpansion?.fullHeight ?? H)-bt-.04, color:FUEL, capacity:c.hopperCapacity });
   const intake = highTideIntake(k);
   const deploy = { v: 0 };
   let rotorRate = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.9, width: W * 0.9, height: hopH, r: FUEL_R });
+  // Physical hopper hooks (robot/mechHopper.ts): the intake drums carry FUEL up the ramp over the bumper (their tops run
+  // inward), the spinning rotor floor and its fin sweep it into the open throat, the three lift wheels push it up the
+  // column, and the turret's flywheel takes it at the top. Surface speeds [EST].
+  const full = c.hopperExpansion?.fullHeight ?? H;
+  const mech: HopperMechanism = {
+    squeezeBelow: .5,
+    rollers: [
+      ...intake.rollers.map((node, i) => ({ node, axis: 'z' as const, speed: side * .9, run: 'both' as const, capture: i < 2, grip: true })),
+      ...dye.lift.map(node => ({ node, axis: 'z' as const, speed: 4, run: 'feed' as const, grip: true })),
+    ],
+    drive: [dye.floor],
+    rotor: { node: dye.floor, radius: dye.radius + .01, top: .004, inward: .8, bladeHeight: dye.bladeHeight },
+    // The turret's flywheel stands in the top of the throat: a ball the lift wheels bring up to it is pinched against
+    // the hood. Only a ball inside the column gets there (a ball on top of the pile beside it does not).
+    shooter: [{ node: sh.flywheel, at: [0, 0, 0], axis: sh.flywheel.userData.flowSpinAxis as 'x' | 'z', length: .12, radius: .13, gate: (x, _y, z) => Math.hypot(x - dye.tower.position.x, z) < .07 }],
+    net: { rim: H - .01, full, inside: () => true, area: { min: [side < 0 ? -L / 2 - .25 : -outline.hx, -W * .485], max: [side < 0 ? outline.hx : L / 2 + .25, W * .485] } },
+  };
   return {
     replaces: ['bumpers', 'chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-L * 0.4, H - 0.01, W * 0.4],
+    mech,
     flow: { intake: intake.intake, stow: pile.stow, feed: () => [...dye.feed(FUEL_R), ...sh.path().map(p => flowAt(k, sh.root, p.x, p.y, p.z))] },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      const d = latchDeploy(deploy, s);
+      // Shooting the hopper low, intake and extension slide back in and push the FUEL on them onto the rotor.
+      const d = latchDeploy(deploy, s) * (1 - .75 * (s.squeeze ?? 0));
       intake.update(s, d);
       tray.position.x = side * d * 0.2;
       k.visual.userData.netIntakeExtension={side,length:d*.2};
       trayFill.set(d > .35 ? s.fill : 0);
       fill.set(s.fill);
-      // Slowly counter-rotates to agitate; spins hard to feed while firing.
-      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.aiming || s.firing > 0 ? 9 : -1.2, 6, s.dt);
+      // Slowly turns back to agitate; spins hard to feed while firing, the way that screws the fin's spiral inward.
+      rotorRate = approach(rotorRate, !s.enabled ? 0 : s.aiming || s.firing > 0 ? -3 : 1.2, 6, s.dt);
       dye.update(rotorRate, s.dt);
       sh.update(s);
     },
@@ -152,22 +215,27 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   const bt = c.bumperTop;
   const blue = mat(0x2d6fe0, { metal: 0.5, rough: 0.4 });
   const black = mat(0x131417, { metal: 0.3, rough: 0.55 });
-  const blackTube = darkTubeMat(0x17181b);
-  const smoke = mat(0x1d1f23, { opacity: 0.62, metal: 0.1, rough: 0.3 });
+  const blackTube = mat(0x17181b, { metal: .3, rough: .55 });
+  const smoke = mat(0x15171b, { opacity: .94, metal: .1, rough: .45 });
   const side = k.groundSide;
   const db = drivebase(k, { motorRing: 0x2d6fe0 });
   const hopH = H - bt - 0.04;
   hopperWalls(k.visual, { intakeSide: k.groundSide, floorDepth: .12, x: 0, y0: bt, length: L * 0.96, width: W * 0.96, height: hopH, m: smoke });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) bar(k.visual, [sx * L * 0.48, bt, sz * W * 0.48], [sx * L * 0.48, H - 0.02, sz * W * 0.48], 0.022, blackTube);
-  // Slatted black cage around the top of the hopper.
-  for (const sz of [-1, 1]) lattice(k.visual, [-L * 0.48, H - 0.1, sz * W * 0.48], [L * 0.96, 0, 0], [0, 0.08, 0], { cells: 7, w: 0.012, m: black });
+  // TBA 2026 pit photos (refs/1323-2026): continuous dark sponsor panels and a clean rim,
+  // with a blue turret ring supported by the central feed tower. Dimensions remain estimates.
+  for (const sz of [-1, 1]) {
+    bar(k.visual, [-L*.48,H-.025,sz*W*.48], [L*.48,H-.025,sz*W*.48], .022, blackTube);
+    box(k.visual,L*.92,.025,.012,black,0,bt+.018,sz*W*.485);
+  }
+  for (const sx of [-1, 1]) bar(k.visual,[sx*L*.48,H-.025,-W*.48],[sx*L*.48,H-.025,W*.48],.022,blackTube);
   for (const sz of [-1, 1]) {
     const rotY = sz > 0 ? 0 : Math.PI;
     const z = sz * (W * 0.48 + 0.006);
-    decal(k.visual, 'WE BELIEVE', { w: 0.16, h: 0.035, x: -L * 0.22, y: H - 0.15, z, rotY });
-    decal(k.visual, 'fabworks', { w: 0.14, h: 0.03, x: -L * 0.22, y: bt + hopH * 0.35, z, rotY });
+    decal(k.visual, 'WE BELIEVE', { w: 0.23, h: 0.045, x: -L * 0.22, y: H - 0.15, z, rotY });
+    decal(k.visual, 'fabworks.', { w: 0.20, h: 0.035, x: -L * 0.22, y: bt + hopH * 0.35, z, rotY });
     decal(k.visual, 'AT', { w: 0.07, h: 0.05, x: 0, y: H - 0.15, z, rotY });
-    decal(k.visual, 'MADTOWN', { w: 0.15, h: 0.035, x: L * 0.22, y: H - 0.16, z, rotY });
+    decal(k.visual, 'MADTOWN', { w: 0.22, h: 0.04, x: L * 0.22, y: H - 0.16, z, rotY });
   }
   // The net roof stretches over the load: FUEL past the rigid box rides up into its dome.
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.97, width: W * 0.97, height: (c.hopperExpansion?.fullHeight ?? H) - bt - .04, color: FUEL, capacity: c.hopperCapacity, inside: (x,z) => Math.hypot(x,z) > .095, ceiling: hopperNetCeiling(c) });
@@ -179,7 +247,12 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   if (cadColumn) dye.tower.visible = false;
   const t = k.turret;
   t.position.set(tx, H - 0.07, 0);
-  const sh = adaptedTurretShooter(t, { width: .20, topY: .06, color: 0x2d6fe0 }) ?? turretShooter(t, { width: Math.max(0.19, 0.15 + 0.04), wheel: mat(0x2b2d31, { rough: 0.7 }), plate: black, accent: blue, height: 0.15, topY: 0.06 });
+  // User-requested 604-style head shared with RIPCURRENT: complete turret CAD,
+  // uniformly resized, with the hood pivoting on its original shaft. Not MadTown CAD.
+  const sh = adaptedToploaderShooter(t,{topY:.06,color:0x202326}) ?? highTideShooter(t,k.visual,tx,t.position.y,W);
+  sh.root.name='madtown-turret-head';
+  // The retention net is sewn around the turning head, rather than drawn through it.
+  k.visual.userData.netOpenings=[{x:tx,z:0,radius:.18,bottom:H-.2,top:H+.25}];
   // Photo reference: horizontal slotted shield carried by an upright lifting frame.
   const b = c.shotBlocker!;
   const len = b.reach;
@@ -208,7 +281,7 @@ registerRobotModel('madtown-2026-1323', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [side * L * 0.4, H - 0.01, W * 0.4],
-    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: dyeFeed(k, dye, sh.flywheel) },
+    flow: { intake: overBumperIntake(k, intake.tip, FUEL_R), stow: pile.stow, feed: () => [...dye.feed(FUEL_R), ...sh.path().map(p => flowAt(k, sh.root, p.x, p.y, p.z))] },
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
@@ -387,13 +460,18 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const lidHole: [number, number][] = Array.from({ length: 40 }, (_, i) => [tx + Math.cos(-i * Math.PI / 20) * .118, tz + Math.sin(-i * Math.PI / 20) * .118]);
   const lid = pocketPlate(tower, [[x0, z0], [hx, z0], [hx, hz], [x0, hz]], [lidHole], clear, 0, .004);
   lid.rotation.x = Math.PI / 2; lid.position.y = deckY + .002;
-  box(tower, .005, .13, hz - z0, clear, x0, deckY + .065, (z0 + hz) / 2).name = 'kepler-turret-shield';
-  box(tower, hx - x0, .09, .005, clear, (x0 + hx) / 2, deckY + .045, z0);
+  // Clear shields round the lower head (photos): tall on the hopper side, lower on the other three.
+  box(tower, .005, .17, hz - z0, clear, x0, deckY + .085, (z0 + hz) / 2).name = 'kepler-turret-shield';
+  box(tower, hx - x0, .1, .005, clear, (x0 + hx) / 2, deckY + .05, z0);
+  box(tower, hx - x0, .07, .005, clear, (x0 + hx) / 2, deckY + .035, hz + .004);
+  box(tower, .005, .07, hz - z0, clear, hx + .004, deckY + .035, (z0 + hz) / 2);
   // Blue LED arc round the turret base, on the hopper side (glows in every 2026 photo).
-  const ledMat = new THREE.MeshStandardMaterial({ color: 0x5fd0ff, emissive: 0x23a6ff, emissiveIntensity: 1.6, roughness: .4 });
-  const led = new THREE.Mesh(new THREE.TorusGeometry(.135, .009, 8, 48, Math.PI * 1.05), ledMat);
+  const ledMat = new THREE.MeshBasicMaterial({ color: 0x1286ff });
+  // A flexible strip standing on the clear lid round the bearing opening, facing the hopper.
+  ledMat.side = THREE.DoubleSide;
+  const led = new THREE.Mesh(new THREE.CylinderGeometry(.128, .128, .018, 40, 1, true, -Math.PI * .25 - 1.2, 2.4), ledMat);
   led.name = 'kepler-blue-led-arc'; led.userData.noShadow = true;
-  led.rotation.x = -Math.PI / 2; led.rotation.z = Math.PI * .47; led.position.set(tx, deckY + .012, tz); tower.add(led);
+  led.position.set(tx, deckY + .011, tz); tower.add(led);
   // Dark interior of the tower (electronics, Talon FX motors, wiring), seen through the clear sides in every photo.
   box(tower, hx - tx - .03, deckY - bt - .05, hz - z0 - .04, black, (tx + .01 + hx) / 2, (bt + deckY) / 2 - .01, (z0 + hz) / 2).name = 'kepler-tower-electronics';
   // Hopper walls: clear polycarbonate on silver rails. The wall opposite the turret is the tall one, with triangular
@@ -430,7 +508,7 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.02, length: L * 0.97, width: W * 0.97, height: (top - bt) * 0.97, color: FUEL, capacity: c.hopperCapacity, keepouts:k.visual.userData.fuelKeepouts, inside: inHopper });
   const t = k.turret;
   // The bearing sits inside the tower under its clear lid; only the head stands above (about 4 in over the walls).
-  t.position.set(tx, top - 0.03, tz);
+  t.position.set(tx, top - 0.05, tz);
   const sh = keplerShooter(t);
   // Roller floor: long rollers running front to back, rolling FUEL across to the turret-side lane.
   const floorRollers: THREE.Group[] = [];
@@ -447,9 +525,11 @@ registerRobotModel('kepler-1690', (k: ModelKit) => {
   const lifts:THREE.Group[]=[];
   const liftGreen=mat(0x5fbf3a,{rough:.75});
   for(let i=0;i<3;i++)lifts.push(roller(transfer,.029,.158,liftGreen,tx-.12+i*.04,rollerY+.04+i*(deckY-rollerY-.08)/2,tz));
-  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, width:W*.89 });
+  // Hinged low, at bumper height: the deployed arms run nearly flat over the carpet (photo jJiksKT).
+  const hingeY = bt - .01;
+  const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 1, frame: black, width:W*.89, hingeY });
   const arms=intake.hinge.children[0],iw=W*.89;
-  const armLength=Math.hypot(c.intake.reach+.03,c.bumperTop+.01);
+  const armLength=Math.hypot(c.intake.reach+.03,hingeY-.05);
   // Exposed silver leading shaft with three separated rubber sleeves, silver pocketed end gussets, and the
   // ball-support ramp behind it.
   roller(arms,.013,iw,alu,side*(armLength+.025),-.037,0);

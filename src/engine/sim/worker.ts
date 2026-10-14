@@ -14,6 +14,7 @@ import { MatchWorld } from '../core/matchWorld';
 import { MatchSim, botSettings } from '../core/matchSim';
 import { radioFor } from '../ai/team';
 import { RobotMirror } from './robotMirror';
+import { syncWorldVisuals } from './worldVisuals';
 import { PIECE_STRIDE, type FromWorker, type RobotHudState, type SimEvent, type SimFrame, type ToWorker } from './protocol';
 
 const scope = self as unknown as { postMessage(m: unknown, transfer: Transferable[]): void; onmessage: ((e: MessageEvent<ToWorker>) => void) | null };
@@ -33,11 +34,17 @@ let radioSeq = 0;
 let firstFrame = true;
 let lastFrameAt = 0;
 let lastState = '';
+let warming: Promise<unknown> = Promise.resolve();
 
 scope.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   try {
-    if (m.t === 'init') void init(m);
+    if (m.t === 'warm') {
+      warming = Promise.all([loadRapier(), prepareCadModels(m.models, { detail: m.cadDetail })]);
+      // init reports failures through the normal worker fallback.
+      void warming.catch(() => {});
+    } else if (m.t === 'init') void init(m);
+    else if (m.t === 'start' && sim) { last = performance.now(); loop(); }
     else if (m.t === 'input') {
       cmd = m.cmd;
       hp.push(...m.hp);
@@ -58,9 +65,10 @@ scope.onmessage = (e: MessageEvent<ToWorker>) => {
 
 async function init(m: Extract<ToWorker, { t: 'init' }>): Promise<void> {
   try {
+    await warming;
     const R = await loadRapier();
     const season = getSeason(m.settings.seasonId);
-    await prepareCadModels(m.setup.robots.map((r) => r.config.model));
+    await prepareCadModels(m.setup.robots.map((r) => r.config.model), { detail: m.cadDetail });
     StowBay.ACTIVE_MAX = m.activeMax;
     speed = m.speed;
     const playerId = m.setup.robots[0]?.id ?? null;
@@ -69,6 +77,7 @@ async function init(m: Extract<ToWorker, { t: 'init' }>): Promise<void> {
       scene: new THREE.Scene(),
       playerId,
       realHopper: (rs) => m.hopper === 'all' || (m.hopper === 'player' && rs.id === playerId),
+      hopperMode: m.hopperMode,
       pieceFlow: true,
       optimize: true,
       aiSettings: botSettings(m.setup, settings),
@@ -86,8 +95,8 @@ async function init(m: Extract<ToWorker, { t: 'init' }>): Promise<void> {
     }, m.log ? { log: { mode: 'local' } } : {});
     mirrors = world.robots.map((r) => new RobotMirror(r));
     post({ t: 'ready', shapes: mirrors.map((x) => x.shape) });
-    last = performance.now();
-    loop();
+    // The view starts the countdown after its shaders and first GPU upload are ready.
+    sendFrame(0, performance.now());
   } catch (err) {
     post({ t: 'error', message: err instanceof Error ? `${err.message}\n${err.stack}` : String(err) });
   }
@@ -135,12 +144,12 @@ function sendFrame(stepped: number, now: number): void {
   const transfer: Transferable[] = [];
   const clock = w.clock;
   const climbReady = clock.started && !clock.finished && clock.current.mode === 'teleop' && clock.driveRemaining <= (s.season.endgameSeconds ?? 30);
-  const visuals = w.robots.map((r, i) => {
-    r.climbReady = climbReady;
-    r.syncVisual(stepped);
-    const v = mirrors[i].capture(firstFrame);
+  syncWorldVisuals(w, stepped, s.simTime, climbReady);
+  const visuals = mirrors.map((mirror) => {
+    const v = mirror.capture(firstFrame);
     transfer.push(v.nodes.buffer, v.mats.buffer, v.tokens.buffer);
     for (const inst of v.inst) transfer.push(inst.matrices.buffer);
+    for (const geometry of v.geometry) transfer.push(geometry.positions.buffer);
     return v;
   });
   const pool = w.pool;
@@ -178,7 +187,7 @@ function sendFrame(stepped: number, now: number): void {
     pieceStates,
     events: events.splice(0),
     boost: s.boost,
-    perf: { stepMs, frameMs, realHoppers: w.robots.filter((r) => r.bay).length },
+    perf: { stepMs, frameMs, realHoppers: w.robots.filter((r) => r.bay || r.mech).length },
   };
   lastScore = scoreKey;
   lastRules = rulesKey;

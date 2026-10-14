@@ -6,6 +6,39 @@ import { PhysicsWorld } from '../src/engine/physics/world';
 import { FieldFrame } from '../src/engine/coords';
 import { cloneConfig } from '../src/engine/robot/config';
 import { IDLE_COMMAND, Robot } from '../src/engine/robot/robot';
+import { mergeStatic } from '../src/engine/render/mergeStatic';
+
+it('retains shared indexed vertices when batching CAD, including mirrored parts', () => {
+  const root = new THREE.Group(), material = new THREE.MeshStandardMaterial();
+  for (const scale of [1, -1]) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), material);
+    mesh.scale.x = scale;
+    mesh.position.x = scale * 2;
+    root.add(mesh);
+  }
+  const before = geometrySignature(root);
+  mergeStatic(root);
+  const geometry = (root.children[0] as THREE.Mesh).geometry;
+  expect(geometry.index!.count).toBe(72);
+  expect(geometry.getAttribute('position').count).toBe(48);
+  geometrySignature(root).forEach((value, i) => expect(value).toBeCloseTo(before[i], 5));
+});
+
+it('bakes quantized CAD positions without wrapping translated geometry', () => {
+  const root = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial();
+  for (const x of [-4, 4]) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Int16Array([-32767, 0, 0, 32767, 0, 0, 0, 32767, 0]), 3, true));
+    geo.setIndex([0, 1, 2]);
+    const mesh = new THREE.Mesh(geo, material); mesh.position.set(x, 0, 2); root.add(mesh);
+  }
+  const before = geometrySignature(root);
+  mergeStatic(root);
+  const after = geometrySignature(root);
+  expect(root.children.length).toBe(1);
+  after.forEach((value, i) => expect(value).toBeCloseTo(before[i], 5));
+});
 
 beforeAll(async () => { await RAPIER.init(); });
 

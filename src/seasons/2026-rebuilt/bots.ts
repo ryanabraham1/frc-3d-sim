@@ -1,5 +1,5 @@
 import { aroundCircles, clusterCounts, CycleBot } from '@engine/ai/cycleBot';
-import { dist, routeThroughBands } from '@engine/ai/steering';
+import { dist, routeThroughBands, turnToward } from '@engine/ai/steering';
 import { TeamBrain } from '@engine/ai/team';
 import type { FieldPoint, FieldPose } from '@engine/coords';
 import type { AiChoice, SeasonContext } from '@engine/core/season';
@@ -9,9 +9,10 @@ import { BANDS } from './autopilot';
 import * as C from './constants';
 import { side, towerSlots } from './field';
 import type { RebuiltRules } from './rules';
+import { routeRebuiltTraffic } from './traffic';
 
 export const REBUILT_AI_STRATEGIES: AiChoice[] = [
-  { id: 'auto', label: 'Adaptive', description: 'Reads the match every few seconds and switches between the plans below: shift control by default, pressing the opponents when that pays (see docs/AI-STRATEGY.md for the benchmarks behind each switch).' },
+  { id: 'auto', label: 'Adaptive', description: 'Einstein prioritizes collection and active scoring windows. Normal and Hard use Press: full robots contest opponents between their own shifts.' },
   { id: 'shift', label: 'Shift control', description: 'Everyone scores: fill hoppers while your HUB is inactive, stage at the zone line, dump the moment it lights up, then climb as high as possible.' },
   { id: 'press', label: 'Press', description: 'Shift control, but a robot that is already full while your HUB is inactive goes and contests the opponents’ best shooter until it is time to come back.' },
   { id: 'stockpile', label: 'Stockpile', description: 'A dedicated feeder stays in the NEUTRAL ZONE lobbing FUEL into your zone all match; scorers shoot from the pile.' },
@@ -48,13 +49,9 @@ function planRoles(team: TeamBrain): Map<number, string> {
   return roles;
 }
 
-/**
- * Adaptive plan for 'auto'. Benchmarks (docs/AI-STRATEGY.md): Press beats Shift control by ~200 points a match and
- * every other plan, whoever the opponents are; it already aims its pressure at whoever is hurting us most (the
- * opponents' top scorer — usually the human driver). Late in the match Press switches itself off (robots stay home
- * to dump and climb), so the adapter only has to pick the alliance's posture.
- */
+/** Einstein prioritizes scoring cycles; Normal/Hard retain Press and explicit strategy orders remain available. */
 function adaptRebuilt(team: TeamBrain): { id: string; reason: string } | null {
+  if (team.skill === 'einstein') return { id: 'shift', reason: 'fill up and stage for our scoring window before committing to defense' };
   const top = team.scout.topScorer();
   const target = top ? team.label(top).replace('You', 'the driver') : 'their best shooter';
   return { id: 'press', reason: `full robots hound ${target} while our HUB is off` };
@@ -86,7 +83,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const shootSpot = (): FieldPoint => {
     if (chassisAim) return stanceSpot();
     const p = myPose();
-    const y = clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
+    const y = bot.hunter ? side(r.alliance, 0, C.HUB_CENTER.y + (r.station - 2) * 1.1).y : clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
     return { x: side(r.alliance, 2.7, 0).x, y };
   };
   const towerCenter = side(r.alliance, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
@@ -159,9 +156,14 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const raidWindow = rules.hubActive(r.alliance) ? -Infinity : rules.secondsUntilActive(r.alliance);
     const spot = raidWindow > 8 ? shootSpot() : me;
     const raidSpeed = Math.max(1, r.config.maxSpeed * 0.65);
-    const raidable = (p: FieldPoint) => raidWindow > (dist(me, p) + dist(p, spot)) / raidSpeed + 8;
+    const raidable = (p: FieldPoint) => !bot.hunter && raidWindow > (dist(me, p) + dist(p, spot)) / raidSpeed + 8;
     let best: FieldPoint | null = null, cost = maxCost;
-    const candidates=scanFuel().filter(({p})=>filter(p) && (fromWall(p.x)<=C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH-.3 || raidable(p)) && !isBlocked(p) && !nearTower(p));
+    const teammates = team.members.filter(mate => mate !== r).map(mate => ({
+      pose: mate.pose, radius: Math.hypot(mate.footprint.length, mate.footprint.width) / 2 + (mate.controller === 'player' ? 0.55 : 0.1),
+    }));
+    const candidates = scanFuel().filter(({ p }) => filter(p) &&
+      (fromWall(p.x) <= C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 || raidable(p)) && !isBlocked(p) && !nearTower(p) &&
+      !teammates.some(mate => dist(mate.pose, p) < mate.radius));
     const density=clusterCounts(candidates.map(({p})=>p),1.2);
     for (const [idx,{p}] of candidates.entries()) {
       // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
@@ -169,6 +171,12 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       if (inTrench(p)) continue; // FUEL under a TRENCH jams robots that go in after it
       const mine = dist(me, p);
       let c = mine + (inRow ? 1.5 : 0) - .4*Math.min(density[idx]-1,r.capacityLeft-1,12);
+      // Keep sweeping a patch intake-first instead of turning around for every ball behind us.
+      if (bot.hunter && r.speed > 0.5 && mine < 3) {
+        const heading = myPose().yaw - r.intakeYawOffset;
+        const forward = (p.x - me.x) * Math.cos(heading) + (p.y - me.y) * Math.sin(heading);
+        if (forward < 0) c += Math.min(2, -forward * 2);
+      }
       for (const mp of matePoses) if (dist(mp, p) + 0.4 < mine) c += 2.5;
       if (c < cost) { cost = c; best = p; }
     }
@@ -192,7 +200,13 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const chassisAim = !r.config.launcher.turret;
   const hubP = side(r.alliance, C.HUB_CENTER.x, C.HUB_CENTER.y);
   const towardWall = r.alliance === 'blue' ? Math.PI : 0;
+  let levelStance: FieldPoint | null = null;
   const stanceSpot = (): FieldPoint => {
+    if (levelStance) {
+      const taken = team.members.some((o) => o !== r && dist(o.pose, levelStance!) < Math.max(o.footprint.length, o.footprint.width) + 0.15);
+      if (!taken) return levelStance;
+      levelStance = null;
+    }
     // Angle around the HUB on the wall side, from where the robot is; teammates already there push it round.
     const off = (a: number) => wrap(a - towardWall);
     const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -206,32 +220,43 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     for (let k = 0; k < 3; k++) {
       const p = spotAt(a);
       const taken = team.members.some((o) => o !== r && dist(o.pose, p) < Math.max(o.footprint.length, o.footprint.width) + 0.15);
-      if (!taken) return p;
+      if (!taken) return levelStance = p;
       a = towardWall + clamp(off(a) + (off(a) >= 0 ? -0.55 : 0.55) * (k + 1) * (k % 2 ? -1 : 1), -0.8, 0.8);
     }
-    return spotAt(a);
+    return levelStance = spotAt(a);
   };
   // G408: don't run the intake while FUEL the HUB just released is rolling at us (a catch is a foul).
-  const hubFuelNear = (radius = 2.6): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < radius);
+  const hubFuelNear = (radius = bot.hunter ? CATCH_RADIUS : 2.6): boolean => rules.freshHubFuel().some((i) => dist(myPose(), ctx.frame.toField(ctx.pool.position(i))) < radius);
   const stanceCommand = (live: boolean): RobotCommand => {
-    const spot = stanceSpot();
-    const face = Math.atan2(hubP.y - spot.y, hubP.x - spot.x) + r.shotYawOffset;
+    let spot = stanceSpot();
+    // A stopped robot can still be perched on FUEL. Its launcher tilts with the chassis, so a level-field shot
+    // solution misses until all four wheels reach the carpet. Move around the HUB instead of dumping from that perch.
+    if (dist(myPose(), spot) < 0.3 && r.speed < 0.4 && r.uprightness < 0.995) {
+      const a = Math.atan2(spot.y - hubP.y, spot.x - hubP.x);
+      const off = Math.atan2(Math.sin(a - towardWall), Math.cos(a - towardWall));
+      const next = towardWall + (Math.abs(off) > 0.3 ? off - Math.sign(off) * 0.45 : (off >= 0 ? -0.55 : 0.55));
+      const d = Math.hypot(spot.x - hubP.x, spot.y - hubP.y);
+      levelStance = spot = { x: hubP.x + Math.cos(next) * d, y: hubP.y + Math.sin(next) * d };
+    }
+    const face = Math.atan2(hubP.y - myPose().y, hubP.x - myPose().x) + r.shotYawOffset;
     const there = dist(myPose(), spot) < 0.3;
-    const cmd = there ? { ...IDLE_COMMAND, omega: 0 } : bot.driveTo(spot, face, undefined, 0.5);
+    const cmd = there ? { ...IDLE_COMMAND, omega: turnToward(myPose().yaw, face, r.config.maxOmega * 0.8) } : bot.driveTo(spot, face, undefined, 0.5);
     cmd.intake = r.capacityLeft > 0 && !hubFuelNear();
     // Fire once planted (auto-align squares the chassis and holds the first shot until aligned). Once a burst is going
     // the robot keeps firing wherever it points, so a driver lets off the trigger while the robot is being shoved or
     // swung around (it would only spray FUEL) and fires again when it settles.
-    const settled = r.speed < 0.4 && Math.abs(r.body.angvel().y) < 1.2 && !(r.inBurst && Math.abs(Math.atan2(Math.sin(face - myPose().yaw), Math.cos(face - myPose().yaw))) > 0.1);
+    const settled = r.speed < 0.4 && r.uprightness >= 0.995 && Math.abs(r.body.angvel().y) < 1.2 && !(r.inBurst && Math.abs(Math.atan2(Math.sin(face - myPose().yaw), Math.cos(face - myPose().yaw))) > 0.1);
     cmd.shoot = inZone() && live && r.held.length > 0 && settled && (there || insideZone());
     return cmd;
   };
 
   const shootingCommand = (active: boolean): RobotCommand => {
-    if (chassisAim && r.held.length > 0) return stanceCommand(active);
+    if (chassisAim && r.held.length > 0) {
+      return stanceCommand(active);
+    }
     // In the zone with FUEL: shoot, and keep scooping up FUEL lying in the zone (fed stockpile, misses).
     const zoneFuel = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7, 4) : null;
-    const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(insideZone() && inZone() ? myPose() : shootSpot());
+    const cmd = zoneFuel && inZone() ? collect(zoneFuel) : bot.driveTo(!bot.hunter && insideZone() && inZone() ? myPose() : shootSpot());
     if (!zoneFuel && insideZone()) { cmd.vx *= 0.5; cmd.vy *= 0.5; }
     cmd.intake = r.capacityLeft > 0 && !hubFuelNear();
     cmd.shoot = inZone() && active && r.held.length > 0;
@@ -285,7 +310,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     else team.say(null, `HUB inactive for ${Math.round(rules.secondsUntilActive(r.alliance))} s — fill up and stage at the line`, 'phase', 5);
   };
 
-  let raidReturning=false;
+  let raidReturning = false;
   const think = (dt: number): RobotCommand => {
     const cmd = decide(dt);
     // Hard and up, G408: no intake while FUEL the HUB just released is falling within reach. Normal bots still catch it
@@ -323,14 +348,14 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       }
     }
 
-    // Einstein: while our HUB is off, the robot best placed to (nearest, preferring a full one) hounds the human driver
+    // Einstein: while our HUB is off, the best-placed loaded robot hounds the human driver
     // whenever their HUB is (about to be) live; it breaks off in time to be back for our own shift.
-    if (bot.hunter && !active && untilActive > toSpot + 2 && remaining > 25) {
-      const human = ctx.robots.find((o) => o.alliance === enemy && (o.controller === 'player' || o.id === 0));
+    if (bot.hunter && r.held.length >= r.config.hopperCapacity * 0.8 && !active && untilActive > toSpot + 2 && remaining > 25) {
+      const human = ctx.robots.find((o) => o.alliance === enemy && o.controller === 'player');
       if (human && !human.isClimbing && (rules.hubActive(enemy) || rules.secondsUntilActive(enemy) < 4)) {
-        // A full robot (nothing better to do until our shift) hunts first; two go when the driver carries a big load
-        // and two of us are full. An empty driver is shadowed anyway, to slow their refill.
-        const free = team.members.filter((m) => !m.isClimbing && !m.tippedOver);
+        // Only robots that have finished their refill compete for the job; an empty nearby teammate must not
+        // win the assignment and then decline to hunt. Two loaded robots can pressure a large human load.
+        const free = team.members.filter((m) => !m.isClimbing && !m.tippedOver && m.held.length >= m.config.hopperCapacity * 0.8);
         const cost = (m: Robot) => dist(m.pose, human.pose) - (m.capacityLeft === 0 ? 3 : 0);
         const hunters = free.sort((a, b) => cost(a) - cost(b)).slice(0, human.held.length > 20 && free.filter((m) => m.capacityLeft === 0).length >= 2 ? 2 : 1);
         if (hunters.includes(r)) {
@@ -341,7 +366,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       }
     }
 
-    if(bot.hard && !active && role !== 'defender' && untilActive > toSpot+3 && remaining>30) {
+    if(bot.hard && !bot.hunter && !active && role !== 'defender' && untilActive > toSpot+3 && remaining>30) {
       if(r.held.length>=12 && fromWall(myPose().x)>C.FIELD_LENGTH-C.ALLIANCE_ZONE_DEPTH) raidReturning=true;
       if(!r.held.length) raidReturning=false;
       if(raidReturning) {
@@ -363,9 +388,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
 
     if (active || untilActive < toSpot + 0.4) {
       const live = active || untilActive < 0.6; // shots land after activation
-      // Hard: a live HUB is worth more than a full hopper. Go dump once half full, and leave a wider margin so the
+      // Einstein amortizes barrier crossings over larger loads; both competitive skills leave slack so the
       // hopper is empty before the shift ends instead of carrying FUEL through 25 s of an inactive HUB.
-      const enough = bot.hard ? Math.min(r.config.hopperCapacity * 0.5, 24) : Math.min(r.config.hopperCapacity, 48);
+      const enough = bot.hard ? Math.min(r.config.hopperCapacity * (bot.hunter ? 0.8 : 0.5), bot.hunter ? 64 : 24) : Math.min(r.config.hopperCapacity, 48);
       const margin = bot.hard ? 3.5 : 1;
       if (r.held.length > 0 && (inZone() || r.capacityLeft === 0 || r.held.length >= enough || activeLeft < toSpot + r.held.length / r.config.launcher.rate + margin || !active)) {
         return shootingCommand(live);
@@ -396,11 +421,12 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   // A raised shooter hood blocks the robot at a TRENCH arm: drivers stow it (stop shooting) before rolling through.
   const stowNearTrench = (cmd: RobotCommand): RobotCommand => {
     // Only while rolling: a robot planted at a stance beside an arm keeps shooting.
-    if (!(r.config.launcher.hoodRise! > 0) || r.speed < 0.8 || !rules.nearTrenchArm(r, 1.2)) return cmd;
+    if (!r.hasHood || r.speed < 0.8 || !rules.nearTrenchArm(r, 1.2)) return cmd;
     return { ...cmd, shoot: false, pass: false, aim: false };
   };
   const bot: CycleBot = new CycleBot(ctx, r, {
     batch: Infinity,
+    yieldToDriver: true,
     // Every decision is made by `think`; the generic collector is only the fallback.
     tactics: (dt) => stowNearTrench(think(dt)),
     accepts: (_i, p) => fromWall(p.x) < C.CENTER_X,
@@ -408,7 +434,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     onStuck: () => { if (chase) blocked.push({ p: chase.p, until: ctx.clock.elapsed + 8 }); chase = null; },
     release: () => r.climbPhase === 'hanging' && ctx.clock.driveRemaining > 40,
     route: (goal) => {
-      const via = routeThroughBands(myPose(), goal, openBands(), half, r.clearanceHeight, bot.hard);
+      const via = routeRebuiltTraffic(myPose(), goal, openBands(), half, r.clearanceHeight,
+        ctx.robots.filter(other => other !== r).map(other => ({ ...other.pose,
+          halfWidth: Math.max(other.footprint.length, other.footprint.width) / 2, speed: other.speed })), bot.hard);
       return via === goal ? aroundCircles(myPose(), goal, [tower]) : via;
     },
     score: () => stowNearTrench(shootingCommand(rules.hubActive(r.alliance))),

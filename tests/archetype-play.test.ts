@@ -36,6 +36,24 @@ function solo(sid: string, id: string, seconds: number) {
 }
 
 describe('AI plays each robot archetype the way it is built', () => {
+  it('a chassis-aimed shooter moves off an uneven stance before unloading', () => {
+    const s = season('2026-rebuilt');
+    const hub = s.testing!.goalCenter('blue');
+    const sim = new HeadlessSim(s, RAPIER, { robot: config(s.id, 'limestone-1678'), alliance: 'blue', pose: { x: hub.x - 1.8, y: hub.y, yaw: 0 } });
+    try {
+      sim.rules.onPeriodChange(sim.ctx.clock.start());
+      while (sim.ctx.clock.mode !== 'teleop') for (const c of sim.ctx.clock.advance(0.1)) sim.rules.onPeriodChange(c);
+      sim.run(0.4);
+      sim.load(40);
+      // A FUEL-sized perch can leave the stopped chassis rolled about eleven degrees.
+      sim.robot.body.setRotation({ x: Math.sin(0.1), y: 0, z: 0, w: Math.cos(0.1) }, true);
+      const bot = s.createBotPilot!(sim.ctx, sim.rules, sim.robot);
+      const cmd = bot.update(sim.physics.dt);
+      expect(cmd.shoot).toBe(false);
+      expect(Math.hypot(cmd.vx, cmd.vy)).toBeGreaterThan(0.1);
+    } finally { sim.dispose(); }
+  });
+
   // Chassis-aimed dumpers take a stance ~1.8 m from the HUB, stop and unload (they hit ~40% while chasing FUEL).
   it.each(['overload-254', 'limestone-1678', 'big-hopper'])('2026 %s scores from a planted stance', (id) => {
     // 60 s of TELEOP (scored 100-133 when measured): the stance-and-dump loop repeats every few seconds, so a longer run

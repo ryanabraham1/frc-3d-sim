@@ -2,7 +2,7 @@
   "id": "wisp-422",
   "sourceFile": "2025-422.glb",
   "inputBytes": 301067340,
-  "outputBytes": 8203804,
+  "outputBytes": 13965984,
   "inputTriangles": 17382550,
   "outputTriangles": 526949,
   "omittedOccurrences": 521,
@@ -26,5 +26,6 @@
     "elevator-stage",
     "elevator-stage-2",
     "carriage"
-  ]
+  ],
+  "repairedNormals": true
 }

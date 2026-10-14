@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { takeSimulationWorker } from './workerBoot';
 import type { MatchWorld } from '../core/matchWorld';
 import type { GameSettings } from '../core/season';
 import type { MatchSetup, NetGameState } from '../net/protocol';
@@ -21,7 +22,9 @@ interface Kept {
 export interface WorkerSimInit {
   settings: GameSettings;
   setup: MatchSetup;
+  cadDetail?: 'full' | 'match';
   hopper: HopperPhysics;
+  hopperMode?: 'mech' | 'stowbay';
   activeMax: number;
   log: boolean;
   speed: number;
@@ -62,7 +65,7 @@ export class WorkerSim {
   ) {
     this.mirrors = world.robots.map((r) => new RobotMirror(r, makeToken));
     this.speed = init.speed;
-    this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+    this.worker = takeSimulationWorker();
     this.ready = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('simulation worker did not start in 60 s')), 60000);
       this.worker.onmessage = (e: MessageEvent<FromWorker>) => {
@@ -89,6 +92,7 @@ export class WorkerSim {
   private readonly speed: number;
 
   get started(): Promise<void> { return this.ready; }
+  start(): void { this.send({ t: 'start' }); }
 
   private fail(reason: string): void {
     if (this.disposed) return;
@@ -176,7 +180,7 @@ export class WorkerSim {
     for (let i = 0; i < this.mirrors.length; i++) {
       const va = fa.visuals[i], vb = fb.visuals[i];
       if (!vb) continue;
-      this.mirrors[i].applyNodes(va?.nodes ?? vb.nodes, vb.nodes, k);
+      this.mirrors[i].applyNodes(va?.nodes ?? vb.nodes, vb.nodes, k, va?.parents ?? vb.parents ?? [], vb.parents ?? []);
       this.mirrors[i].applyTokens(va?.tokens ?? vb.tokens, vb.tokens, k);
     }
     this.drawPieces(fa.pieces, fb.pieces, k);
@@ -187,7 +191,16 @@ export class WorkerSim {
     const n = Math.min(pool.count, b.length / PIECE_STRIDE);
     for (let i = 0; i < n; i++) {
       const j = i * PIECE_STRIDE;
-      if (!b[j]) { pool.drawMirror(i, null); continue; }
+      // Possession switches on the same snapshot boundary as the robot's held-piece visibility.
+      // Otherwise CORAL disappears from the gripper before its interpolated eject reaches the release.
+      const drawn = k < 1 ? a[j] : b[j];
+      if (!drawn) { pool.drawMirror(i, null); continue; }
+      if (!b[j]) {
+        this.p1.set(a[j + 1], a[j + 2], a[j + 3]);
+        this.q1.set(a[j + 4], a[j + 5], a[j + 6], a[j + 7]);
+        pool.drawMirror(i, this.p1, this.q1);
+        continue;
+      }
       this.p1.set(b[j + 1], b[j + 2], b[j + 3]);
       this.q1.set(b[j + 4], b[j + 5], b[j + 6], b[j + 7]);
       if (k < 1 && a !== b && a[j]) {

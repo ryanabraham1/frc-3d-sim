@@ -50,7 +50,9 @@ export function build1987Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
     flow: {
       intake: () => [point(k, tip, 0, .02), new THREE.Vector3(-.50, .22, 0), new THREE.Vector3(-.36, .2, 0), new THREE.Vector3(-.2, .18, 0)],
       stow: pile.stow,
-      feed: () => [point(k, rotor, -.15, .08), point(k, rotor, -.06, .2), new THREE.Vector3(AXIS_X, .40, 0), point(k, flywheel, .06, .02), point(k, flywheel, -.02, .11)],
+      // The rotor bowl's raised walls occupy the old (.15 m-high) entrance. Start above its
+      // actual CAD floor, on the incoming side of the bowl, leaving a full 75 mm sphere clear.
+      feed: () => [point(k, rotor, -.19, .20), point(k, rotor, -.06, .2), new THREE.Vector3(AXIS_X, .40, 0), point(k, flywheel, .06, .02), point(k, flywheel, -.02, .11)],
     },
     update(s) {
       deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);

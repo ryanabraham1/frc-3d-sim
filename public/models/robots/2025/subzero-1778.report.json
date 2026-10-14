@@ -2,7 +2,7 @@
   "id": "subzero-1778",
   "sourceFile": "1778.gltf",
   "inputBytes": 273057824,
-  "outputBytes": 7520996,
+  "outputBytes": 11539500,
   "inputTriangles": 6152864,
   "outputTriangles": 576417,
   "omittedOccurrences": 572,
@@ -25,5 +25,6 @@
     "carriage",
     "elevator-stage",
     "intake"
-  ]
+  ],
+  "repairedNormals": true
 }

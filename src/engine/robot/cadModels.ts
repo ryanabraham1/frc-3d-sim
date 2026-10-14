@@ -1,4 +1,4 @@
-import { HOOD_SHOT_MAX, scoringEase } from './scoringReadiness';
+import { HOOD_SHOT_MAX, scoringEase, hoodLive } from './scoringReadiness';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -19,6 +19,7 @@ import { build7769Cad } from './chunkCadModel';
 import { build1987Cad } from './cycloneCadModel';
 import { build9496Cad } from './matterhornCadModel';
 import { buildAimbotCad } from './aimbotCadModel';
+import { finishReefscapeCad } from './reefscapeCadFinishes';
 
 export const HERO_CAD_MODEL_IDS = ['hero-constantine-1318','hero-sentinel-1923','hero-mantis-6800','hero-multiclass-6731','hero-fireweed-1540', 'hero-multiclass-5800', 'hero-multiclass-5800-gadgeteer', 'hero-nomad-6995','hero-poofs-254','hero-gadgeteer-9408','hero-mystic-498'] as const;
 /** Model ids that reuse another model's CAD file (every real team robot needs its own id; see shot-blocker.test.ts). */
@@ -30,7 +31,7 @@ export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678',
 export const ADAPTED_CAD_MODEL_IDS = ['overload-254', 'sandspit-3476', 'ripcurrent-4414', 'madtown-2026-1323', 'kepler-1690', 'croquembouche-5940'] as const;
 export const CAD_DONOR_DEPENDENCIES: Record<string, readonly string[]> = {
   'overload-254': ['shooter-581-donor'], 'sandspit-3476': ['shooter-581-donor'],
-  'ripcurrent-4414': ['rotor-604-donor','mixtape-971'], 'madtown-2026-1323': ['rotor-604-donor','mixtape-971'],
+  'ripcurrent-4414': ['rotor-604-donor','toploader-604'], 'madtown-2026-1323': ['rotor-604-donor','toploader-604'],
   'kepler-1690': ['mixtape-971'], 'croquembouche-5940': ['mixtape-971'],
 };
 const assets = new Map<string, THREE.Group>();
@@ -48,19 +49,20 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
 export async function prepareCadModels(
   ids: readonly (string | undefined)[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS],
-  opts: { timeoutMs?: number; onProgress?: (done: number, total: number) => void } = {},
+  opts: { timeoutMs?: number; onProgress?: (done: number, total: number) => void; detail?: 'full' | 'match' } = {},
 ): Promise<void> {
   if (typeof document === 'undefined') return;
   const requested = ids.flatMap(id => id ? [CAD_ALIASES[id] ?? id,...(CAD_DONOR_DEPENDENCIES[id] ?? [])] : []);
   const assetIds: readonly string[] = [...HERO_CAD_MODEL_IDS.filter(id => !(id in CAD_ALIASES)),...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor'];
   const wanted = [...new Set(requested)].filter(id => assetIds.includes(id));
+  const detail = opts.detail ?? (typeof location !== 'undefined' && new URLSearchParams(location.search).get('cadDetail') === 'full' ? 'full' : 'match');
   let done = 0;
   opts.onProgress?.(0, wanted.length);
   const all = Promise.all(wanted.map(id => {
     if (assets.has(id)) { opts.onProgress?.(++done, wanted.length); return Promise.resolve(); }
     let request = pending.get(id);
     if (!request) {
-      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(HERO_CAD_MODEL_IDS as readonly string[]).includes(id) ? 'wcp-hero-heist' : (CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${id}.glb`)
+      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(HERO_CAD_MODEL_IDS as readonly string[]).includes(id) ? 'wcp-hero-heist' : (CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${detail === 'full' ? '' : 'match/'}${id}.glb`)
         .then(gltf => { setAsset(id, gltf.scene); })
         .catch(error => { console.warn(`CAD model ${id} unavailable; using procedural model.`, error); })
         .finally(() => { pending.delete(id); });
@@ -88,7 +90,7 @@ export function cadRobotModelBuilder(id: string | undefined): RobotModelBuilder 
 }
 
 function buildCadModel(id: string, k: ModelKit): RobotModel {
-  const root = ownedClone(assets.get(id)!);
+  const root = ownedClone(assets.get(id)!, (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? id : undefined);
   root.name = `cad-${id}`;
   root.userData.cadModel = id;
   k.visual.add(root);
@@ -112,7 +114,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   if (id === 'aimbot-3256') return buildAimbotCad(root,k,()=>animated);
   const get = (name: string) => root.getObjectByName(name);
   const pivot = (name: string, at: [number, number, number], parent: THREE.Object3D = root): THREE.Group => {
-    const group = new THREE.Group(); group.name = `cad-${name}-pivot`; group.position.fromArray(at);
+    const group = new THREE.Group(); group.name = `cad-${name}-pivot`; if (name === 'hood') { group.userData.hood = true; group.userData.hoodRotor = group; } group.position.fromArray(at);
     parent.add(group);
     const part = get(name);
     if (part) { part.removeFromParent(); part.position.sub(group.position); group.add(part); }
@@ -144,6 +146,9 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   const ease = (from: number, to: number, dt: number) => dt > 0 ? from + (to - from) * (1 - Math.exp(-7 * dt)) : to;
   const point = (o: THREE.Object3D, x = 0, y = 0, z = 0) => {
     k.visual.updateMatrixWorld(true);
+    if (o === flywheel && o.parent) {
+      return k.visual.worldToLocal(o.parent.localToWorld(new THREE.Vector3(x,y,z).add(o.position)));
+    }
     return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
   };
   return {
@@ -151,15 +156,22 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     lightAt: [0,.65,k.config.frameWidth*.35], intakeAnchor: intakeTip,
     flow: {
       intake: () => isLimestone
-        ? [new THREE.Vector3(-.65,.17,0),new THREE.Vector3(-.52,.30,0),new THREE.Vector3(-.40,.46,0),new THREE.Vector3(-.26,.59,0),new THREE.Vector3(-.13,.49,0)]
+        // The deployed rollers lift FUEL through the intake lip, underneath the retention net.
+        // The previous .59 m centre waypoint put the entire ball above the lowered .53 m roof.
+        ? [new THREE.Vector3(-.65,.17,0),new THREE.Vector3(-.52,.30,0),new THREE.Vector3(-.40,.38,0),new THREE.Vector3(-.26,.40,0),new THREE.Vector3(-.13,.38,0)]
         : isToploader ? [new THREE.Vector3(-.58,.12,0),new THREE.Vector3(-.40,.22,0),new THREE.Vector3(-.28,.3,0)]
         : [point(intakeTip,0,.075), new THREE.Vector3(-.28,.3,0)],
       stow: hopper.stow,
       feed: (shot = 0) => {
         const z = isToploader ? 0 : ((shot % 4) - 1.5) * .145;
+        // Measured GLB rubber envelopes: Limestone's drum radius is .0461 m, Rubble's .0508 m;
+        // Toploader's shaft runs along X with a .0351 m Y/Z roller radius. Stage the 75 mm-radius
+        // FUEL on the incoming tangent, not at the old point inside the rotating rubber. The shot
+        // takes this lead ball away; the ballistic projectile still starts at the launcher exit.
+        const tangent = (isToploader ? .0351 : isLimestone ? .0461 : .0508) + .075 + .003;
         return [new THREE.Vector3(-.22,.3,z), new THREE.Vector3(.05,.32,z),
-          isToploader ? point(flywheel,0,.035,.06) : point(flywheel,-.06,.035,z),
-          isToploader ? point(flywheel,0,.07,-.025) : point(flywheel,.02,.07,z)];
+          isToploader ? point(flywheel,0,-tangent-.07,0) : point(flywheel,-tangent,-.07,z),
+          isToploader ? point(flywheel,0,-tangent,0) : point(flywheel,-tangent,0,z)];
       },
     },
     update(s) {
@@ -181,14 +193,14 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
       // CAD contact tangent: the fixed drum hoods are exported near their high-shot position, not the UI's 52-degree middle shot.
       // Rotate from that measured reference to the actual requested launch angle.
       const cadShotAngle = isToploader ? .90 : isLimestone ? 1.265 : 1.349;
-      hoodAngle = scoringEase(hoodAngle, s.aiming ? THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-cadShotAngle : 0, s.dt);
+      hoodAngle = scoringEase(hoodAngle, hoodLive(s) ? THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-cadShotAngle : isLimestone ? .12 : 0, s.dt);
       hood.rotation[isToploader ? 'x' : 'z'] = hoodAngle;
       flywheel.rotation[isToploader ? 'x' : 'z'] += (s.enabled && (s.aiming || s.firing > 0) ? 45 : 0)*s.dt;
     },
   };
 }
 
-function ownedClone<T extends THREE.Object3D>(source:T):T {
+function ownedClone<T extends THREE.Object3D>(source:T, reefscapeId?: string):T {
   const clone=source.clone(true) as T;
   clone.traverse(o => {
     const m = o as THREE.Mesh;
@@ -198,6 +210,11 @@ function ownedClone<T extends THREE.Object3D>(source:T):T {
     const materialCopies = (Array.isArray(m.material) ? m.material : [m.material]).map(material => {
       const copy = material.clone() as THREE.MeshStandardMaterial;
       if (copy.isMeshStandardMaterial) {
+        if (reefscapeId) {
+          let group = o;
+          while (group.parent && group.parent !== clone) group = group.parent;
+          finishReefscapeCad(copy, reefscapeId, group.name);
+        }
         // Onshape's exported CAD swatches need a darker, matte finish under the game's bright field lighting.
         if (copy.name !== 'rubber') copy.color.convertSRGBToLinear();
         if (copy.userData.cadSheet && !copy.userData.cadSmoothSheet) copy.flatShading = true;

@@ -73,6 +73,30 @@
         "--strictPort"
       ],
       "port": 5182
+    },
+    {
+      "name": "netfix",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "/Users/ryanabraham/Downloads/frc-3d-sim/node_modules/vite/bin/vite.js",
+        "/private/tmp/claude-501/-Users-ryanabraham-Downloads-frc-3d-sim/17bb0c25-7460-44e6-b8b4-6cc138446f7f/scratchpad/netfix",
+        "--port",
+        "5183",
+        "--strictPort"
+      ],
+      "port": 5183
+    },
+    {
+      "name": "perf",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "/Users/ryanabraham/Downloads/frc-3d-sim/node_modules/vite/bin/vite.js",
+        "/private/tmp/claude-501/-Users-ryanabraham-Downloads-frc-3d-sim/17bb0c25-7460-44e6-b8b4-6cc138446f7f/scratchpad/perf",
+        "--port",
+        "5184",
+        "--strictPort"
+      ],
+      "port": 5184
     }
   ]
 }

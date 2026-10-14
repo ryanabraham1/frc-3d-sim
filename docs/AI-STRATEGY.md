@@ -39,7 +39,7 @@ Strategy, blue vs red on Shift control (4 seeds):
 Robots that are already full during their own inactive shift have nothing to do but wait; sending them to contest
 the opponents' shooters (and coming home in time for their own shift) is worth about 200 points a match, far more
 than a full-time defender or feeder. A conveyor-feeding variant ("pass while full") also lost to simply waiting.
-**Adaptive** therefore always runs Press, and aims the pressure at the opponents' top scorer. Press stops itself
+**Adaptive** on Normal/Hard runs Press and aims the pressure at the opponents' top scorer. Einstein uses the scoring-first revision below. Press stops itself
 in the last 30 s so every robot dumps and climbs.
 
 (These strategy runs predate the archetype rebalance below, when every Hard bot had an 80-ball hopper firing
@@ -171,3 +171,41 @@ AI lineups (station 1, 2, 3) per opponent difficulty:
 
 A role you order for a teammate picks a fitting build (e.g. 2024 *Amp* → AMP + TRAP specialist), and the menu lets you
 choose each teammate's robot directly.
+
+
+### Einstein scoring and congested crossings (2026-10-14)
+
+Einstein now prioritizes refill, staging and active scoring windows. It carries a useful load before crossing back,
+avoids small cross-field raids, uses closer shooting stances, and can creep through nearby fuel with a fixed shooter
+only while aligned and level. Loaded hunters compete for the defense assignment; an empty nearer teammate cannot
+claim it and then decline. Only human-controlled opponents qualify for this hunting behavior.
+
+AUTO reserves travel, alignment and unloading time, uses loaded clearance height, and recovers when it stops making
+progress. Stationary robots close single-file bump/trench lanes: take another compatible crossing, back out before
+changing lanes if already blocked, or wait clear when every compatible lane is occupied. The physical regression
+places a stationary teammate at 4414's preferred bump entrance and requires an alternate crossing within 12 seconds.
+
+Friendly driver routing is a per-season opt-in (`yieldToDriver`), enabled for REBUILT. It predicts the driver's short
+motion path and avoids fuel beneath teammates. Rescue shoves require a human who is trying to drive and has stopped
+shooting/feeding.
+
+Production-simulator benchmark measured on `3ef713c` (including the concurrent 105-FUEL 4414 change), identical 4414/1323/2910 lineups on both alliances, three seeds,
+all robots AI-controlled, ordinary hardware and moving-shot actuator lag:
+
+| Seed | Blue FUEL | Red FUEL | Blue AUTO | Red AUTO |
+|---|---:|---:|---:|---:|
+| 1 | 580 | 572 | 86 | 120 |
+| 2 | 532 | 642 | 118 | 117 |
+| 3 | 650 | 586 | 127 | 126 |
+
+This is a small deterministic all-AI benchmark, not a promised score against a human. The production regression
+requires more than 3,000 combined FUEL and 450 AUTO FUEL across these seeds, and every robot must score over 50.
+Run `tests/slow/rebuilt-einstein-flow.test.ts`; `REBUILT_BENCH_OUT=/tmp/results.json` exports per-seed measurements.
+The old headless match harness holds turret fire while tracking, so its totals are not interchangeable with this
+production-loop test.
+
+### Fixed shooter recovery comparison (2026-10-14)
+
+Full production simulator traces found fixed shooters holding fuel in an active scoring zone without requesting a shot for 31–52 seconds per match. A planted stance returned zero turning command even after heading displacement; the previous Einstein creep collector could also keep postponing unloading. Fixed shooters now retain an available stance, aim from their actual position, and explicitly turn toward the HUB while planted. They unload before chasing more nearby fuel.
+
+With unchanged hardware and seeds 1–3, combined credited fuel changed from 1,152 / 1,174 / 1,236 to 1,317 / 1,320 / 1,203: 3,562 to 3,840 (+7.8%). These are all-AI matches, not evidence of human-level competition. One seed regressed. A separate collection-target hysteresis experiment halved goal switching but scored only 3,651 total; it was rejected rather than shipping smoother movement as a scoring improvement. Trace launch counts distinguish requests from credited points and must not be called scoring accuracy.

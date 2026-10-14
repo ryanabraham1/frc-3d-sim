@@ -33,7 +33,8 @@ export class SupabaseLogStore implements MatchLogStore {
   constructor(url: string, key: string, fetchImpl: typeof fetch = fetch) {
     this.url = url.replace(/\/$/, '');
     this.key = key;
-    this.fetchImpl = fetchImpl;
+    // Workers requires its native fetch receiver to be the global scope, not this store.
+    this.fetchImpl = fetchImpl.bind(globalThis);
   }
   async save(key: string, gz: Uint8Array, meta: LogMeta): Promise<void> {
     const path = `${meta.season}/${key}`;

@@ -289,7 +289,11 @@ export class TeamBrain {
       const h = this.health.get(r.id)!;
       // Beached (wheels off the carpet) or pinned: a push helps. Plain stalls against something get a while to sort
       // themselves out first (the robot's own escape moves usually do).
-      const needs = !r.isClimbing && this.now >= h.noHelpUntil && h.why !== 'tipped' && h.why !== null &&
+      // A driver holding still to shoot/feed is choosing a stance, even if loose fuel unloads a wheel.
+      // Only send a shove to a human who is actually trying to drive and has let off the trigger.
+      const humanWantsHelp = r.controller !== 'player' ||
+        (Math.hypot(r.lastCommand.vx, r.lastCommand.vy) > 0.6 && !r.lastCommand.shoot && !r.lastCommand.pass);
+      const needs = humanWantsHelp && !r.isClimbing && this.now >= h.noHelpUntil && h.why !== 'tipped' && h.why !== null &&
         (h.why === 'stalled' ? h.stuck > 4 : h.stuck > 1.6);
       if (!needs) {
         if (h.helper && h.stuck === 0) this.say(h.helper, `${this.label(r)} is free — back to work`, `freed:${r.id}`, 8);

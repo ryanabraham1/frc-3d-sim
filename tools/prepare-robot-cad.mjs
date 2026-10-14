@@ -6,6 +6,7 @@ import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extension
 import { dedup, prune, weld, simplifyPrimitive, join, meshopt, reorder, getBounds } from '@gltf-transform/functions';
 import { MeshoptEncoder, MeshoptDecoder, MeshoptSimplifier } from 'meshoptimizer';
 import { Matrix4 } from 'three';
+import { repairCadNormals } from './repair-cad-normals.mjs';
 
 const specs = {
   // Hero Heist Mantis is distinct from Valor's 2026 Downpour. Keep source
@@ -737,16 +738,20 @@ for (const id of ids) {
       if (!p.getAttribute('POSITION')?.getCount() || p.getIndices()?.getCount() === 0) { mesh.removePrimitive(p); p.dispose(); }
     }
   };
-  await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
+  if (spec.year === 2025) {
+    // Retain hard face seams and pocketed structure; no permissive seam collapse.
+    await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.85,.0001), join(), weld(), prune());
+  } else await doc.transform(prune(), dedup(), weld(), reduce(MeshoptSimplifier,.10,.003), join(), weld(), reduce(cadSimplifier,.04,.002), prune());
   // Robot 2's many pocketed CAD faces retain excess coplanar tessellation after joining.
   // A final bounded pass reduces those faces without quantizing positions (0.5 mm unless the robot or a spec's `finePass` sets it).
   // Specs opt in with `finalPass: true` or `finePass` when the joined asset still exceeds the size budget.
-  if (id === 'reblitz-2910' || id === 'hero-gadgeteer-9408' || spec.finalPass || spec.finePass) {
+  if (spec.year !== 2025 && (id === 'reblitz-2910' || id === 'hero-gadgeteer-9408' || spec.finalPass || spec.finePass)) {
     for (const mesh of root.listMeshes()) for (const p of mesh.listPrimitives()) {
       simplifyPrimitive(p, { simplifier: cadSimplifier, ratio: id === 'hero-gadgeteer-9408' ? .45 : .40, error: id === 'hero-gadgeteer-9408' ? .001 : typeof spec.finePass === 'number' ? spec.finePass : .0005 });
     }
     await doc.transform(prune());
   }
+  if (spec.year === 2025) await repairCadNormals(doc);
   const outputTriangles = triangleCount();
   const bounds = getBounds(scene);
   if (spec.lossless || spec.year === 2025 || spec.year === 2024 || id === 'reblitz-2910') {

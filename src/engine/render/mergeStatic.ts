@@ -57,15 +57,28 @@ function mergeCluster(anchor: THREE.Object3D, dynamic: Set<THREE.Object3D>): voi
   const rel = new THREE.Matrix4();
   for (const g of groups.values()) {
     if (g.meshes.length < 2) continue;
-    const needUv = !!(g.mat as THREE.MeshStandardMaterial).map;
+    const textured = g.mat as THREE.MeshStandardMaterial;
+    const needUv = !!(textured.map || textured.normalMap || textured.bumpMap || textured.roughnessMap || textured.metalnessMap || textured.alphaMap || textured.emissiveMap);
     const geos: THREE.BufferGeometry[] = [];
+    const indexed = g.meshes.every((m) => !!m.geometry.index);
     for (const m of g.meshes) {
       rel.multiplyMatrices(inv, m.matrixWorld);
-      let geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      let geo = !indexed && m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
       for (const name of Object.keys(geo.attributes)) {
         if (name !== 'position' && name !== 'normal' && !(needUv && name === 'uv')) geo.deleteAttribute(name);
       }
       if (!geo.attributes.normal) geo.computeVertexNormals();
+      // glTF meshopt assets can store positions/normals in normalized integer attributes. Baking a metre-space
+      // transform into those buffers wraps/clamps values outside their encoded range. Expand before transforming.
+      for (const name of ['position', 'normal']) {
+        const attr = geo.getAttribute(name);
+        if (!attr || (!attr.normalized && attr.array instanceof Float32Array)) continue;
+        const values = new Float32Array(attr.count * attr.itemSize);
+        for (let i = 0; i < attr.count; i++) {
+          for (let k = 0; k < attr.itemSize; k++) values[i * attr.itemSize + k] = attr.getComponent(i, k);
+        }
+        geo.setAttribute(name, new THREE.BufferAttribute(values, attr.itemSize));
+      }
       if (needUv && !geo.attributes.uv) {
         geos.length = 0;
         break;
@@ -107,11 +120,22 @@ function materialKey(m: THREE.Material): string {
   if (!(s.isMeshStandardMaterial || s.isMeshBasicMaterial)) return m.uuid;
   const c = (x?: THREE.Color) => (x ? x.getHexString() : '-');
   return [m.type, c(s.color), c(s.emissive), s.emissiveIntensity, s.metalness, s.roughness, s.map?.uuid, s.envMap?.uuid,
+    (m as THREE.MeshStandardMaterial).roughnessMap?.uuid, (m as THREE.MeshStandardMaterial).bumpMap?.uuid, (m as THREE.MeshStandardMaterial).bumpScale,
     s.envMapIntensity, m.side, s.flatShading, m.polygonOffset, m.polygonOffsetFactor, m.vertexColors, m.depthWrite,
     m.alphaTest, s.wireframe].join(',');
 }
 
 function flipWinding(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  if (geo.index) {
+    const index = geo.index;
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      const second = index.getX(i + 1);
+      index.setX(i + 1, index.getX(i + 2));
+      index.setX(i + 2, second);
+    }
+    index.needsUpdate = true;
+    return geo;
+  }
   for (const name of Object.keys(geo.attributes)) {
     const a = geo.attributes[name] as THREE.BufferAttribute;
     const n = a.itemSize;

@@ -1,5 +1,5 @@
 import { captureFields, restoreFields, type RecoveryFields } from '../net/recovery';
-import { collectScoringReadiness, HOOD_SHOT_MAX } from './scoringReadiness';
+import { collectScoringReadiness } from './scoringReadiness';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type RAPIER from '@dimforge/rapier3d-compat';
@@ -8,7 +8,7 @@ import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
 import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
-import { FREE_SPEED_RATIO, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
+import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 import type { ClimbGrip } from '../field/climbGrip';
@@ -16,6 +16,7 @@ import { fillBlock, pointIn, robotModelBuilder, type ModelPart, type PlaceAnim, 
 import { PieceFlow } from './pieceFlow';
 import { FuelContacts } from './fuelContacts';
 import { StowBay, type Cavity } from './stowBay';
+import { MechHopper } from './mechHopper';
 import { GamePiecePool } from '../gamepiece/pool';
 import { mergeStatic, poseKey, poseSnapshot } from '../render/mergeStatic';
 import { ProfiledAxis } from './profiledAxis';
@@ -108,8 +109,6 @@ export const ALLIANCE_COLORS: Record<Alliance, number> = { red: 0xd32f2f, blue: 
 
 const G = 9.81;
 /** A firing burst stays "locked on" this long after each shot (longer than the slowest launcher's shot interval). */
-const HOOD_FLAT = 0.5; // launch elevation (rad) at which the hood lies flat
-const HOOD_OPEN_RATE = 4; // hood opening per second (about 0.25 s to open)
 const BURST_HOLD_S = 0.6;
 
 export class Robot {
@@ -148,6 +147,7 @@ export class Robot {
   private readonly fp: { length: number; width: number };
   private expansionCollider?: RAPIER.Collider;
   private payloadCollider!: RAPIER.Collider;
+  private frameCollider!: RAPIER.Collider;
   private hoodCollider: RAPIER.Collider | null = null;
   /**
    * Mass of one held game piece (kg), set by the sim from the season's piece. A robot's rated `mass` is its empty playing
@@ -187,7 +187,8 @@ export class Robot {
       while (n < this.config.hopperCapacity && loadedRobotHeight(this.config, n + 1) <= this.overheadLimit) n++;
       room = Math.min(room, n - this.held.length);
     }
-    if (this.config.intake.rate) room = Math.min(room, Math.floor(this.intakeBudget));
+    // A physical hopper takes what its rollers can pull in: no separate intake-rate budget.
+    if (this.config.intake.rate && !this.mech) room = Math.min(room, Math.floor(this.intakeBudget));
     return Math.max(0, room);
   }
   /** Pieces the intake can swallow right now at `config.intake.rate`: refills with time, spent as pieces are taken. */
@@ -299,15 +300,15 @@ export class Robot {
       .setFriction(0.3)
       .setMass(m * 0.35)
       .setCollisionGroups(GROUPS.robot);
-    this.physics.world.createCollider(frameCol, this.body);
+    this.frameCollider = this.physics.world.createCollider(frameCol, this.body);
     // Carried game pieces: a contact-free mass in the hopper / carriage, sized each step from what the robot holds.
     this.payloadCollider = this.physics.world.createCollider(R.ColliderDesc.ball(0.05)
       .setTranslation(0, (c.bumperTop + c.height) / 2, 0).setMass(0).setCollisionGroups(0), this.body);
-    if (c.launcher.hoodRise && c.launcher.hoodRise > 0 && c.launcher.enabled) {
-      // Raised shooter hood: a box over the shooter (scoring end, about half the width, most of it for a robot-wide
-      // dumper) whose top follows the hood (updateHoodCollider). Only field structure sees it, like the shot blocker.
-      this.hoodCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(c.frameLength * 0.2, 0.02, c.frameWidth * 0.22)
-        .setTranslation(-groundSideSign(c) * c.frameLength * 0.15, c.height, 0).setMass(0).setFriction(0.2).setCollisionGroups(collisionGroups(Group.ROBOT, Group.FIELD)), this.body);
+    if (c.launcher.enabled) {
+      // Raised shooter hood: a box that Robot.updateHoodCollider fits to the DRAWN hood every time it moves, so the
+      // TRENCH arm stops the robot exactly where the hood on screen touches it. Only field structure sees it.
+      this.hoodCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(0.05, 0.02, 0.05)
+        .setMass(0).setFriction(0.2).setCollisionGroups(collisionGroups(Group.ROBOT, Group.FIELD)), this.body);
       this.hoodCollider.setEnabled(false);
     }
     if (c.hopperExpansion) {
@@ -428,6 +429,7 @@ export class Robot {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x141516 }));
     this.hopperNet.name = 'stretching-hopper-net';
+    this.hopperNet.userData.mirrorGeometry = true;
     this.hopperNet.userData.segments = segments;
     this.hopperNet.userData.grid = positions;
     this.hopperNet.userData.heights = new Float32Array(positions.length/3);
@@ -495,7 +497,8 @@ export class Robot {
       if (y >= c.height - .06) tops.push({ x, z, y });
     };
     this.bay?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
-    for (const mesh of this.bay ? [] : this.fuelPiles) {
+    this.mech?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
+    for (const mesh of this.bay || this.mech ? [] : this.fuelPiles) {
       const surface = mesh.userData.fuelSurface?.();
       if (!surface || !mesh.visible) continue;
       for (let i = 0; i < surface.count; i++) {
@@ -543,7 +546,7 @@ export class Robot {
       heights[i]=shown;
       p.setXYZ(i, px, shown, pz);
     }
-    const openings = this.visual.userData.fuelKeepouts as {x:number;z:number;radius:number;bottom:number;top:number}[] | undefined;
+    const openings = (this.visual.userData.netOpenings ?? this.visual.userData.fuelKeepouts) as {x:number;z:number;radius:number;bottom:number;top:number}[] | undefined;
     if (openings) for (let i=0;i<p.count;i+=2) {
       const ax=p.getX(i),az=p.getZ(i),bx=p.getX(i+1),bz=p.getZ(i+1);
       for (const o of openings) {
@@ -684,6 +687,7 @@ export class Robot {
       barrel.rotation.z = c.launcher.angle * 0.6;
       this.turret.add(barrel);
     }
+    if (c.launcher.enabled) this.buildGenericHood(alu);
     this.addPart('launcher', ...this.turret.children);
     if (c.launcher.enabled) this.visual.add(this.turret);
 
@@ -695,6 +699,7 @@ export class Robot {
     this.visual.add(this.climberArm);
     this.addPart('climber', this.climberArm);
     this.buildModel({ dark, alu, bumper: bumperMat });
+    this.gatherHood();
 
     // Status light (on = enabled)
     this.statusLight = new THREE.Mesh(
@@ -855,23 +860,49 @@ export class Robot {
     this.wireFuelPiles();
   }
 
+  /** Hopper fill (0–1) below which shooting starts folding the intake in to squeeze the last FUEL (see animateModel). */
+  static SQUEEZE_BELOW = 0.36;
+
   /** FUEL an uncovered hopper keeps taking after it is brim-full: the rest roll over the rim (see StowBay). */
   private static readonly OVERFLOW_ROOM = 4;
   /** Held FUEL as real physics bodies in the hopper (host / single-player). Null: the visual-only particle pile draws the load. */
   bay: StowBay | null = null;
+  /** Held FUEL simulated in this robot's own frame and moved by its mechanisms (robot/mechHopper.ts). */
+  mech: MechHopper | null = null;
 
-  /** Make held FUEL the pool's own bodies. Skipped on multiplayer replicas and for robots with no FUEL hopper. */
-  attachPool(pool: GamePiecePool): void {
-    if (this.bay || !this.fuelPiles.length) return;
+  /**
+   * Make held FUEL the pool's own bodies. Skipped on multiplayer replicas and for robots with no FUEL hopper.
+   * `mode`: 'mech' = the physical hopper for models with mechanism hooks (`RobotModel.mech`; robots without them keep
+   * the particle pile); 'stowbay' = the older wall-slab hopper (StowBay) for any FUEL robot.
+   */
+  attachPool(pool: GamePiecePool, mode: 'mech' | 'stowbay' = 'stowbay'): void {
+    if (this.bay || this.mech || !this.fuelPiles.length) return;
+    if (mode === 'mech') {
+      if (!this.model?.mech) return;
+      this.mech = new MechHopper(this, pool, this.model.mech);
+      pool.bays.set(this.id, this.mech);
+      return;
+    }
     this.bay = new StowBay(this, pool);
     pool.bays.set(this.id, this.bay);
   }
+
+  /** 0–1: intake folded in to squeeze the last FUEL toward the indexer (see animateModel). */
+  get squeeze(): number { return this.anim.squeeze ?? 0; }
 
   /**
    * Go back to the visual-only particle pile (what multiplayer replicas draw) while keeping every held FUEL held. Used to
    * shed physics on a slow host; the pile is filled from the held count on the next visual sync.
    */
   detachPool(pool: GamePiecePool): void {
+    if (this.mech) {
+      this.mech.park();
+      this.mech.dispose();
+      this.mech = null;
+      pool.bays.delete(this.id);
+      for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
+      return;
+    }
     if (!this.bay) return;
     this.bay.park();
     pool.bays.delete(this.id);
@@ -911,10 +942,23 @@ export class Robot {
     return Number.isFinite(min.x) ? { min, max, open: this.openHopper, keepouts: this.visual.userData.fuelKeepouts, chamfer:this.visual.userData.hopperChamfer, outline:this.visual.userData.fuelOutline } : null;
   }
 
+  /** A scripted preload belongs below its bin's local roof, including fixed mechanism plates above the hopper. */
+  fuelPlacementFits(position: THREE.Vector3, radius: number): boolean {
+    const local = new THREE.Vector3();
+    return this.fuelPiles.some(pile => {
+      const b = pile.userData.fuelBin;
+      if (!b) return false;
+      local.copy(position).applyMatrix4(this.relativeMatrix(pile).invert());
+      if (Math.abs(local.x - b.x) > b.length / 2 - radius || Math.abs(local.z) > b.width / 2 - radius) return false;
+      const ceiling = Math.min(b.y0 + b.height, pile.userData.fuelCeiling?.(local.x, local.z) ?? Infinity);
+      return local.y + radius <= ceiling && local.y >= b.y0 + radius - .05;
+    });
+  }
+
   /** One conserved load across main and deployed extension bins. */
   private distributeFuel(): void {
     if (!this.fuelPiles.length) return;
-    if (this.bay) {
+    if (this.bay || this.mech) {
       // The pool's own bodies are the load: the particle piles stay empty.
       for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
       return;
@@ -997,9 +1041,9 @@ export class Robot {
    * leaves the robot where it is, carrying the chassis' own motion plus its own, and falls under normal physics.
    * Nothing is thrown: if the robot is level and still, nothing ever gets here.
    */
-  private fuelEscaped(mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number): void {
+  private fuelEscaped(mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number): boolean {
     const idx = this.held[this.held.length - 1];
-    if (idx === undefined || idx < 0) return; // replicas hold placeholders: only the host spills real pieces
+    if (idx === undefined || idx < 0) return false; // replicas hold placeholders: only the host spills real pieces
     this.held.pop();
     this.visual.updateMatrixWorld(true);
     const local = this.visual.worldToLocal(mesh.localToWorld(new THREE.Vector3(x, y, z)));
@@ -1009,6 +1053,7 @@ export class Robot {
     const vel = new THREE.Vector3(vx, vy, vz).applyQuaternion(this.visual.quaternion)
       .add(new THREE.Vector3(lin.x, lin.y, lin.z)).add(new THREE.Vector3(ang.x, ang.y, ang.z).cross(arm));
     this.spilled.push({ idx, pos, vel });
+    return true;
   }
 
   /**
@@ -1078,12 +1123,12 @@ export class Robot {
       { vx: 2, omega: 1.5 }, { vz: 2, omega: -1.5 },
       { place: { height: 1.7, forward: 0.6, level: 4, side: 0 } }, { place: { height: 1.2, forward: 0.5, level: 3, side: 1 } },
       { place: { height: 1.2, forward: 0.5, level: 3, side: -1 } }, { place: { height: 1.0, forward: 0.5, level: 2, side: 2 } },
-      { place: { height: 0.45, forward: 0.3, level: 1, handoff: 0.5 } }, { enabled: false },
+      { place: { height: 0.45, forward: 0.3, level: 1, handoff: 0.5 } }, { aiming: true, squeeze: 1 }, { enabled: false },
     ];
     const moved = new Set<THREE.Object3D>();
     for (const p of probes) {
       for (let i = 0; i < 12; i++) {
-        Object.assign(s, { enabled: true, intaking: false, firing: 0, passing: false, aiming: false, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0, fill: 0 }, p);
+        Object.assign(s, { enabled: true, intaking: false, firing: 0, passing: false, aiming: false, climb: 0, blocker: 0, place: null, vx: 0, vz: 0, omega: 0, fill: 0, squeeze: 0 }, p);
         s.time += s.dt;
         model.update(s);
       }
@@ -1152,6 +1197,7 @@ export class Robot {
       return;
     }
     const model = this.model;
+    if (this.genericHood) this.poseGenericHood(frameDt ?? this.physics.dt);
     if (!model && !this.roundHopper) return;
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
     const a = this.anim;
@@ -1178,6 +1224,11 @@ export class Robot {
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.shooterPitch;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
+    // Shooting a nearly empty hopper, the intake folds in progressively and pushes the last FUEL toward the indexer
+    // (2910's hopper compresses, 4414's tray slides back over the dye rotor). It deploys again to intake.
+    const below = this.model?.mech?.squeezeBelow ?? Robot.SQUEEZE_BELOW;
+    const squeeze = a.aiming && !a.intaking ? clamp((below - a.fill) / 0.25, 0, 1) : 0;
+    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * 0.9) : squeeze;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
@@ -1193,6 +1244,9 @@ export class Robot {
     a.omega = this.body.angvel().y;
     this.tmp.set(0, 1, 0).applyQuaternion(this.q); // this.q is already the inverse chassis rotation
     a.upx = this.tmp.x; a.upy = this.tmp.y; a.upz = this.tmp.z;
+    // A hood that is still down when the robot gets under a low overhead (TRENCH arm) can't open there.
+    if (this.hoodHeldDown()) { a.aiming = false; a.firing = 0; }
+    else if (this.hoodLatched) a.hood = this.hoodLatchPitch; // hood already up against the arm: it stays where it is
     if (simulation) this.scoringModelReady = collectScoringReadiness(() => model?.update(a));
     else model?.update(a);
     if (!simulation) {
@@ -1467,7 +1521,14 @@ export class Robot {
       tvx = along * Math.cos(yaw);
       tvy = along * Math.sin(yaw);
     }
-    const targetW = this.enabled ? clamp(cmd.omega, -c.maxOmega, c.maxOmega) : 0;
+    let targetW = this.enabled ? clamp(cmd.omega, -c.maxOmega, c.maxOmega) : 0;
+    if (!tank) {
+      const scale = swerveSpeedScale(tvx, -tvy, targetW, yaw,
+        c.frameLength / 2 - .06, c.frameWidth / 2 - .06, c.maxSpeed);
+      tvx *= scale;
+      tvy *= scale;
+      targetW *= scale;
+    }
     if (!this.enabled) tvx = tvy = 0;
     const m = this.body.mass();
     const v = this.body.linvel();
@@ -1495,6 +1556,22 @@ export class Robot {
     const wm = this.wheel;
     // Motor force is fixed by the drivetrain (sized for the empty robot); carried pieces only add mass to move.
     wm.motorLimit = (c.mass * c.maxAccel) / 4;
+    // Once the mechanisms are stowed, a compact robot can still be nose-up against a low beam. Full wheel force
+    // keeps its frame pinched there even with an empty hopper. Ease the motors while the tilted frame exceeds
+    // the overhead clearance so gravity can settle it onto its wheels; normal drive returns as soon as it fits.
+    if (this.overheadLimit < Infinity && this.clearanceHeight <= this.overheadLimit && this.hoodTop < this.overheadLimit) {
+      let touchingBeam = false;
+      this.physics.world.contactPairsWith(this.frameCollider, other => {
+        if (((other.collisionGroups() >>> 16) & Group.FIELD) === 0) return;
+        this.physics.world.contactPair(this.frameCollider, other, manifold => {
+          for (let i = 0; i < manifold.numSolverContacts(); i++) {
+            const point = manifold.solverContactPoint(i);
+            if (point && point.y >= this.overheadLimit) touchingBeam = true;
+          }
+        });
+      });
+      if (touchingBeam) wm.motorLimit = Math.min(wm.motorLimit, c.mass / 4); // 1 m/s² settling limit [EST]
+    }
     wm.stall = wm.motorLimit * STALL_RATIO;
     wm.freeSpeed = c.maxSpeed * FREE_SPEED_RATIO;
     wm.disabled = !this.enabled;
@@ -1806,28 +1883,6 @@ export class Robot {
     this.turretYaw = this.turretAxis.step(desired, dt);
     this.pitchAxis.pos = this.shooterPitch;
     this.shooterPitch = this.pitchAxis.step(aiming ? (this.lastShotAngle || c.launcher.angle) : snoopy ? 0 : c.launcher.angle, dt);
-    // The open hood sticks up above the frame: it opens (further for a lob) while shooting and parks flat otherwise. It
-    // can't open while the robot is under a low overhead (the TRENCH arm), like the shot blocker. An already open hood stays
-    // open (and stops the robot at the arm) until the driver stops shooting.
-    const open = aiming && !(this.hoodPinned && this.hoodOpen < 0.05) ? clamp((this.shooterPitch - HOOD_FLAT) / (HOOD_SHOT_MAX - HOOD_FLAT), 0.35, 1) : 0;
-    this.hoodOpen += clamp(open - this.hoodOpen, -dt * HOOD_OPEN_RATE, dt * HOOD_OPEN_RATE);
-    this.updateHoodCollider();
-  }
-  /** Hood opening, 0 = parked flat, 1 = fully open for the steepest lob. Simulation state (drives the hood collider). */
-  hoodOpen = 0;
-  /** Hood is held down by something overhead (only robots whose open hood rises above the frame). */
-  get hoodPinned(): boolean { return (this.config.launcher.hoodRise ?? 0) > 0 && this.overheadLimit < Infinity; }
-  /** Height (m) the open hood sticks up above the frame top right now. */
-  get hoodHeightAboveFrame(): number { return (this.config.launcher.hoodRise ?? 0) * this.hoodOpen; }
-  private updateHoodCollider(): void {
-    const col = this.hoodCollider;
-    if (!col) return;
-    const h = this.hoodHeightAboveFrame;
-    col.setEnabled(h > 0.01);
-    if (h <= 0.01) return;
-    const c = this.config, half = (h + 0.04) / 2;
-    col.setShape(new this.physics.R.Cuboid(c.frameLength * 0.2, half, c.frameWidth * 0.22));
-    col.setTranslationWrtParent({ x: -groundSideSign(c) * c.frameLength * 0.15, y: c.height - 0.04 + half, z: 0 });
   }
   /** Turret and hood under motion profiles (speed and acceleration limited, like a motion-controlled motor). */
   private turretAxisState: ProfiledAxis | null = null;
@@ -1857,6 +1912,150 @@ export class Robot {
       this.turret.userData.shooterPitch = this.shooterPitch;
     }
     this.animateModel(dt,true);
+    this.updateHoodCollider();
+  }
+
+  // ───────────────────────── shooter hood ─────────────────────────
+
+  /** Hood nodes (`userData.hood`) found in the robot's drawn model, with their meshes' local bounds. */
+  private hoodParts: { mesh: THREE.Mesh; pts: Float32Array }[] | null = null;
+  private hoodRoots: THREE.Object3D[] = [];
+  private hoodSig: number[] = [];
+  private hoodTopY = 0;
+  private hoodBoxMin = new THREE.Vector3();
+  private hoodBoxMax = new THREE.Vector3();
+  private hoodLatched: boolean | null = null;
+  private hoodLatchPitch = 0;
+  private genericHood: THREE.Group | null = null;
+  private genericHoodAngle = 0;
+  private readonly hoodTmp = new THREE.Vector3();
+  private readonly hoodInv = new THREE.Matrix4();
+  private readonly hoodMat = new THREE.Matrix4();
+
+  /** Does the robot draw an articulated shooter hood (so it has hood geometry to collide with)? */
+  get hasHood(): boolean { this.gatherHood(); return this.hoodParts!.length > 0; }
+
+  private gatherHood(): void {
+    if (this.hoodParts) return;
+    const parts: { mesh: THREE.Mesh; pts: Float32Array }[] = [];
+    this.hoodRoots = [];
+    this.visual.traverseVisible((o) => {
+      if (!o.userData.hood) return;
+      this.hoodRoots.push(o);
+      o.traverseVisible((m) => {
+        const mesh = m as THREE.Mesh;
+        if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh) return;
+        mesh.userData.keep = true; // static-mesh merging must not remove the node the collider reads
+        parts.push({ mesh, pts: extremePoints(mesh.geometry) });
+      });
+    });
+    this.hoodParts = parts;
+  }
+
+  /** Bounds of the drawn hood in the chassis frame (null when the robot has none). Refreshed when the hood has moved. */
+  hoodBounds(force = false): { min: THREE.Vector3; max: THREE.Vector3 } | null {
+    this.gatherHood();
+    if (!this.hoodParts!.length) return null;
+    let moved = force;
+    this.hoodRoots.forEach((root, n) => {
+      root.updateWorldMatrix(true, false);
+      const e = root.matrixWorld.elements;
+      for (let i = 0; i < 16; i++) {
+        const k = n * 16 + i;
+        if (!(Math.abs(e[i] - (this.hoodSig[k] ?? NaN)) <= 1e-6)) moved = true;
+        this.hoodSig[k] = e[i];
+      }
+    });
+    if (moved) {
+      this.visual.updateWorldMatrix(true, false);
+      this.hoodInv.copy(this.visual.matrixWorld).invert();
+      const mn = this.hoodBoxMin.set(Infinity, Infinity, Infinity), mx = this.hoodBoxMax.set(-Infinity, -Infinity, -Infinity);
+      for (const root of this.hoodRoots) root.updateWorldMatrix(false, true);
+      for (const p of this.hoodParts!) {
+        this.hoodMat.multiplyMatrices(this.hoodInv, p.mesh.matrixWorld);
+        for (let i = 0; i < p.pts.length; i += 3) {
+          this.hoodTmp.set(p.pts[i], p.pts[i + 1], p.pts[i + 2]).applyMatrix4(this.hoodMat);
+          mn.min(this.hoodTmp); mx.max(this.hoodTmp);
+        }
+      }
+      this.hoodTopY = mx.y;
+    }
+    return { min: this.hoodBoxMin, max: this.hoodBoxMax };
+  }
+
+  /** The hood collider's current box in the chassis frame (null while it is off), for tests and debugging. */
+  hoodColliderBox(): { min: THREE.Vector3; max: THREE.Vector3 } | null {
+    const col = this.hoodCollider;
+    if (!col || !col.isEnabled()) return null;
+    const he = (col.shape as RAPIER.Cuboid).halfExtents, t = col.translationWrtParent() ?? { x: 0, y: 0, z: 0 };
+    return { min: new THREE.Vector3(t.x - he.x, t.y - he.y, t.z - he.z), max: new THREE.Vector3(t.x + he.x, t.y + he.y, t.z + he.z) };
+  }
+
+  /** Highest point (m above the floor) of the drawn hood, 0 when there is none. */
+  get hoodTop(): number { return this.hoodBounds() ? this.hoodTopY : 0; }
+
+  /**
+   * Fit the hood collider to the drawn hood. It exists only while the hood sticks up above the frame AND the season reports
+   * a low overhead over the robot (`overheadLimit`: the TRENCH arm). Away from the arm the hood doesn't collide with the
+   * rest of the field, so shooting beside the HUB, the TOWER or a wall plays exactly as before.
+   */
+  private updateHoodCollider(): void {
+    const col = this.hoodCollider;
+    if (!col) return;
+    const b = this.hoodBounds();
+    if (!b) { if (col.isEnabled()) col.setEnabled(false); return; }
+    const frameTop = this.config.height;
+    const on = this.overheadLimit < Infinity && b.max.y > frameTop + 0.01;
+    if (!on) { if (col.isEnabled()) col.setEnabled(false); return; }
+    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - b.min.y) / 2), hz = Math.max(0.01, (b.max.z - b.min.z) / 2);
+    col.setShape(new this.physics.R.Cuboid(hx, hy, hz));
+    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + b.min.y) / 2, z: (b.max.z + b.min.z) / 2 });
+    col.setEnabled(true);
+  }
+
+  /**
+   * The hood can't open while the robot is under a low overhead (a TRENCH arm), like the shot blocker. A hood that is
+   * already up when the robot gets there stays up (and stops it at the arm); one that is down stays down until clear.
+   */
+  private hoodHeldDown(): boolean {
+    if (this.overheadLimit === Infinity || !this.hasHood) { this.hoodLatched = null; return false; }
+    // Lowering is always allowed. Once stowed, discard the raised entry latch even if the robot has never
+    // left the overhead region; pressing shoot again under the beam must not drive the hood up into it.
+    if (this.hoodLatched && this.hoodTop < this.overheadLimit - 0.01) this.hoodLatched = false;
+    if (this.hoodLatched === null) {
+      this.hoodBounds(true);
+      this.hoodLatched = this.hoodTopY >= this.overheadLimit - 0.01;
+      this.hoodLatchPitch = this.shooterPitch;
+    }
+    return !this.hoodLatched;
+  }
+
+  /** Generic (model-less) robots draw a hinged hood plate over the shooter that opens with the shot angle. */
+  private buildGenericHood(alu: THREE.Material): void {
+    const c = this.config;
+    const wide = (c.launcher.exits ?? 1) > 1;
+    const width = wide ? c.frameWidth * 0.9 : 0.2;
+    const hinge = new THREE.Group();
+    // Parked, the plate lies just above the frame top (so it never adds travel height); it swings up from there.
+    hinge.position.set(wide ? -0.14 : -0.04, c.height - 0.002 - this.turret.position.y, 0);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.012, width), alu);
+    plate.position.x = 0.11;
+    hinge.add(plate);
+    hinge.userData.hood = true;
+    this.turret.add(hinge);
+    this.genericHood = hinge;
+  }
+
+  private poseGenericHood(dt: number): void {
+    const g = this.genericHood!;
+    const act = this.netAct ?? this.actBits();
+    let aiming = (act & 8) !== 0 && this.enabled;
+    if (this.hoodHeldDown()) aiming = false;
+    // Opens (further for a lob) while shooting, folds flat otherwise.
+    const want = aiming ? 0.25 + 0.5 * clamp((this.shooterPitch - 0.5) / 0.95, 0, 1) : 0;
+    const step = 4 * dt;
+    this.genericHoodAngle += clamp(want - this.genericHoodAngle, -step, step);
+    g.rotation.z = this.genericHoodAngle;
   }
 
   get scoringMechanismReady(): boolean {
@@ -2065,7 +2264,7 @@ export class Robot {
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
     const c0 = this.config;
     const c = c0.launcher;
-    if (!c.enabled || this.held.length === 0 || this.fireCooldown > 0 || this.climbPhase !== 'none' || this.tippedOver) return null;
+    if (!c.enabled || this.held.length === 0 || (this.fireCooldown > 0 && !this.mech) || this.climbPhase !== 'none' || this.tippedOver) return null;
     // Auto-align robots hold fire until the chassis first points at the target (launcher.alignTolerance, default
     // ~3°). Once a burst is under way they keep firing whatever the heading error: standing still or creeping, the
     // servo keeps every ball on target, but a hard shove or a sudden sprint leaves the chassis behind and the balls
@@ -2083,7 +2282,7 @@ export class Robot {
     }
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
-    // A multi-exit dumper alternates between its exits, so shots leave as several parallel streams.
+    // Wide dumpers feed whichever lane fills next; separate turrets still alternate.
     const offsets = launcherExitOffsets(c0);
     const ex = this.launcherExit(offsets[this.exitIndex % offsets.length]);
     // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
@@ -2106,17 +2305,33 @@ export class Robot {
       }
     }
     if (!this.shootWhileTracking && (Math.abs(theta-this.shooterPitch) > .035 || !this.scoringMechanismReady)) return null;
+    if (this.mech) {
+      // Physical hopper: the indexer runs while the robot is ready to fire, and only a ball that has reached the flywheel
+      // leaves, so the fire rate is what the mechanism delivers (still capped at launcher.rate by the cooldown).
+      this.mech.demandFeed();
+      if (this.fireCooldown > 0) return null;
+      const pick = this.mech.takeShot();
+      if (pick < 0) return null;
+      const k = this.held.lastIndexOf(pick);
+      if (k >= 0) { this.held.splice(k, 1); this.held.push(pick); }
+    }
     // Fire from the current actuator pose; tracking lag remains a physical aiming error.
     if (this.shootWhileTracking) theta = this.shooterPitch;
     this.lastShotAngle = theta;
-    this.exitIndex++;
+    this.lastShotExit = this.exitIndex % offsets.length;
+    this.exitIndex += c.unevenFeed && !c.turret && offsets.length > 1 ? rng.int(1, offsets.length) : 1;
     this.burstTime = BURST_HOLD_S;
     this.anim.firing = 1;
     const yawN = aimYaw + rng.gauss(0, c.spread);
     const pitchN = theta + rng.gauss(0, c.spread);
     const sN = speed * (1 + rng.gauss(0, c.speedError));
     const horiz = sN * Math.cos(pitchN);
-    this.fireCooldown = this.packLimit ? Math.max(1 / c.rate, 2.1 * this._projectile.radius / Math.max(.5, horiz)) : 1 / c.rate;
+    // Loose fuel arrives in clumps, with gaps as the hopper settles. The bounded interval has mean 1/rate;
+    // aim/spread stays independent, and the physical hopper can still delay a shot until a ball arrives.
+    const interval = (c.unevenFeed ? rng.range(.45, 1.55) : 1) / c.rate;
+    const feedDelay = this.packLimit ? Math.max(interval, 2.1 * this._projectile.radius / Math.max(.5, horiz)) : interval;
+    // Carry at most one frame of overshoot into the next interval so uneven timing does not reduce average BPS.
+    this.fireCooldown = feedDelay + (c.unevenFeed ? Math.min(0, this.fireCooldown) : 0);
     const vel = new THREE.Vector3(horiz * Math.cos(yawN), sN * Math.sin(pitchN), -horiz * Math.sin(yawN));
     const r = this.body.rotation();
     const tilt = this.q.set(r.x, r.y, r.z, r.w).multiply(new THREE.Quaternion(0, -Math.sin(heading / 2), 0, Math.cos(heading / 2)));
@@ -2131,6 +2346,7 @@ export class Robot {
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
+  private lastShotExit: number | null = null;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
   lastShotAngle = 0;
@@ -2147,7 +2363,9 @@ export class Robot {
   }
 
   tick(dt: number): void {
-    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    const launcher = this.config.launcher;
+    const uneven = launcher.unevenFeed;
+    this.fireCooldown = Math.max(uneven ? -dt : 0, this.fireCooldown - dt);
     this.burstTime = Math.max(0, this.burstTime - dt);
     for (const [i, t] of this.launchedRecently) {
       if (t <= dt) this.launchedRecently.delete(i);
@@ -2156,6 +2374,7 @@ export class Robot {
     this.updateClimb(dt);
     this.updateTipped(dt);
     this.bay?.update(dt);
+    this.mech?.update(dt);
   }
 
   // ───────────────────────── climbing (simplified, kinematic) ─────────────────────────
@@ -2260,9 +2479,9 @@ export class Robot {
     return 0;
   }
 
-  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodOpen overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
+  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
   restoreRecovery(state: RecoveryFields): void {
-    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodOpen overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
+    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
     this.replicaClimbProgress = null;
     this.netAct = null;
     this.lastCommand = { ...IDLE_COMMAND };
@@ -2358,7 +2577,9 @@ export class Robot {
     this.scoringSimulated = false;
     this.fireCooldown = 0;
     this.exitIndex = 0;
+    this.lastShotExit = null;
     this.bay?.clear();
+    this.mech?.clear();
     this.held.length = 0;
     this.flow?.clear(0);
     this.blockerDeploy = 0;
@@ -2382,6 +2603,7 @@ export class Robot {
       arrive: this.fuelPiles.length ? position => this.receiveFuel(position) : undefined,
       take: roll && this.fuelPiles.length ? entry => {
         if (this.bay) return this.bay.takeForFeed(entry);
+        if (this.mech) return null; // the physical hopper's balls travel to the shooter themselves
         const bins = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0 && (p as THREE.InstancedMesh).count > 0);
         let best: THREE.Object3D | undefined, distance = Infinity;
         const local = new THREE.Vector3();
@@ -2412,8 +2634,8 @@ export class Robot {
       } : undefined,
       lanes: launcherExitOffsets(c).length,
       // Host: the exit the last shot actually left from. Replicas don't know it and alternate.
-      shotLane: () => this.netAct === null && this.exitIndex > 0 ? this.exitIndex - 1 : null,
-    }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
+      shotLane: () => this.netAct === null ? this.lastShotExit : null,
+    }, roll, pieceR, roll && this.fuelPiles.length ? new FuelContacts(this.visual, this.visual, true) : undefined);
   }
 
   /**
@@ -2465,7 +2687,7 @@ export class Robot {
 
   /** A piece was just captured at this world position (animates it into the robot when piece flow is on). */
   noteCapture(world: { x: number; y: number; z: number }): void {
-    if (!this.bay) this.flow?.noteCapture(world);
+    if (!this.bay && !this.mech) this.flow?.noteCapture(world);
   }
 
   /** Held pieces still animating into the robot (not yet drawn in the hopper / held position). */
@@ -2516,6 +2738,7 @@ export class Robot {
   /** `alpha`: how far the clock is between the previous physics step and the latest (1 = draw the latest). */
   syncVisual(frameDt?: number, alpha = 1): void {
     this.bay?.settle();
+    this.mech?.pose();
     const now = (globalThis.performance?.now?.() ?? Date.now()) / 1000;
     const dt = frameDt ?? (this.lastSync < 0 ? 0 : clamp(now - this.lastSync, 0, 0.1));
     this.updateHopperEnvelope();
@@ -2531,7 +2754,7 @@ export class Robot {
       this.visual.position.lerpVectors(this.prevPos, this.visual.position, alpha);
       this.visual.quaternion.slerpQuaternions(this.prevQuat, this.visual.quaternion, alpha);
     }
-    this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
+    if (!this.mech) this.flow?.update(dt, this.held.length, 1 / Math.max(0.1, this.config.launcher.rate), this.netAct !== null, this.anim.aiming && this.anim.enabled);
     if (this.bay && this.flow && this.piecesInTransit === 0) this.bay.releaseStaged();
     const cap = Math.max(1, this.config.hopperCapacity);
     const frac = clamp((this.held.length - this.piecesInTransit) / cap, 0, 1);
@@ -2559,4 +2782,29 @@ export class Robot {
     scene.remove(this.visual);
     this.physics.world.removeRigidBody(this.body);
   }
+}
+
+/**
+ * Up to 26 vertices of `geo` that are extreme along the axes and diagonals: a tight stand-in for the mesh's convex
+ * hull, so a rotated hood's bounds follow its real shape rather than the inflated corners of its local box.
+ */
+const HULL_DIRS: [number, number, number][] = (() => {
+  const d: [number, number, number][] = [];
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) if (x || y || z) d.push([x, y, z]);
+  return d;
+})();
+function extremePoints(geo: THREE.BufferGeometry): Float32Array {
+  const pos = geo.getAttribute('position');
+  const best = HULL_DIRS.map(() => -Infinity);
+  const idx = HULL_DIRS.map(() => 0);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    for (let k = 0; k < HULL_DIRS.length; k++) {
+      const d = HULL_DIRS[k], v = d[0] * x + d[1] * y + d[2] * z;
+      if (v > best[k]) { best[k] = v; idx[k] = i; }
+    }
+  }
+  const out = new Float32Array(HULL_DIRS.length * 3);
+  HULL_DIRS.forEach((_, k) => { out[k * 3] = pos.getX(idx[k]); out[k * 3 + 1] = pos.getY(idx[k]); out[k * 3 + 2] = pos.getZ(idx[k]); });
+  return out;
 }

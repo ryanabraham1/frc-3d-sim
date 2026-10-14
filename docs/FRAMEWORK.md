@@ -152,14 +152,14 @@ Target: playable field in ~1 day, full rules in ~2–3 days.
 **Day 2 · Physics checks (required)**
 - [ ] Implement `testing` in your SeasonDefinition: `scoringSpots` (grid over the legal scoring zone),
       `goalCount`, `goalCenter`, `traversals` (every lane robots must drive, with height limits).
-- [ ] `npm test` — `tests/physics.test.ts` automatically fires real pieces for projectile seasons and drives
+- [ ] `npm run test:full` — `tests/physics.test.ts` automatically fires real pieces for projectile seasons and drives
       every season's lanes through loose pieces. Placement seasons set `testing.mechanism: 'placement'`
       and provide a dedicated real-physics mechanism suite. `scatterCount` can reflect the game's floor supply.
 
 **Day 2–3 · Polish**
 - [ ] AUTO routines (`autopilot.ts`) — update `BANDS` for the new field.
 - [ ] Robot defaults that fit the year's constraints (height/extension limits, typical speed).
-- [ ] `npm test`, `npm run build`, deploy.
+- [ ] `npm run test:full`, `npm run build`, deploy.
 
 ---
 

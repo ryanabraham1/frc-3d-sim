@@ -5,7 +5,8 @@ import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls.js';
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.toneMapping=THREE.ACESFilmicToneMapping;document.body.append(renderer.domElement);
 const scene=new THREE.Scene();scene.background=new THREE.Color(0xdfe2e9);scene.add(new THREE.HemisphereLight(0xffffff,0x606575,3));const sun=new THREE.DirectionalLight(0xffffff,3);sun.position.set(3,5,4);scene.add(sun);
 const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.01,30);camera.position.set(3,2.4,3);const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,0,0);controls.update();
-const gltf=await new GLTFLoader().loadAsync('/robots/2026/hightide-generated-reference.glb');scene.add(gltf.scene);
+const robot=new URLSearchParams(location.search).get('robot')==='orbit'?'orbit':'hightide';document.querySelector('p').textContent=`Supplied ${robot==='orbit'?'Orbit':'HighTide'} reference · drag to orbit`;
+const gltf=await new GLTFLoader().loadAsync(`/robots/2026/${robot}-generated-reference.glb`);scene.add(gltf.scene);
 gltf.scene.traverse(o=>{if(o.isMesh)o.material=new THREE.MeshStandardMaterial({color:0x718a93,roughness:.6,metalness:.2,side:THREE.DoubleSide,vertexColors:!!o.geometry.attributes.color})});
 renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera)});
 </script></body></html>

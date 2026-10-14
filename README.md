@@ -36,10 +36,18 @@ The gallery uses the same models and animation path as the game; it is a develop
 | Command | What it does |
 |---|---|
 | `npm run dev` | Dev server with hot reload (multiplayer relay included at `/ws`; add `-- --host` for LAN play) |
-| `npm test` | Unit tests (rules, scoring, staging, clock, coordinates) |
+| `npm test` | Routine regressions: rules, scoring, mechanisms, CAD, AI behavior and networking |
+| `npm run test:full` | All regressions, including exhaustive physics sweeps and full-match AI simulations |
+| `npm run test:changed` | Tests affected by uncommitted changes (includes slow suites when affected) |
 | `npm run typecheck` | TypeScript check |
 | `npm run build` | Production build to `dist/` (static — deploy anywhere, e.g. Vercel) |
 | `npm run preview` | Serve the production build locally |
+
+Use `npm test` while developing. Before releasing or changing a season's physics or AI strategy,
+run `npm run test:full`. Full-match simulations and exhaustive scoring-spot sweeps are deliberately
+outside the routine run; their coverage and thresholds are preserved. To target a slow suite, use
+`npm run test:full -- tests/physics.test.ts` (or another test path). Benchmarks remain opt-in through
+`AI_BENCH=1` or `PERF_BENCH=1`; see their test-file headers for options.
 
 ## Single-player AI
 

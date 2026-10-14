@@ -8,20 +8,29 @@ export interface FuelBin {
   keepouts?:readonly FuelKeepout[];
   outline?:readonly [number,number][];
   ceiling?: (x: number, z: number) => number;
+  floor?: (x: number, z: number) => number;
 }
 export interface FuelSeed { x: number; y: number; z: number; s: number; sy?: number }
 
 /** Small sleeping, visual-only particle solver. No Rapier bodies, geometry rebuilds or fixed rest targets. */
 /** Seconds a ball's hand-over point stays usable for the pile's next new ball. */
 const ARRIVAL_TTL = 0.5;
+const JAM_SECONDS = 1.5;
 
 export class FuelPile {
   contacts?: { sync(): boolean; resolve(p: Float32Array, v: Float32Array, j: number, radius: number): void };
-  wake(): void { this.awake = this.count > 0; this.quiet = 0; }
+  wake(): void { this.awake = this.count > 0; this.quiet = 0; this.calm = 0; }
   readonly positions: Float32Array;
   private readonly velocity: Float32Array;
   private readonly before: Float32Array;
   private readonly contactRadius: Float32Array;
+  /**
+   * Seconds awake and unprovoked (no wake, kick, tilt or count change). A load the bin can't hold at full ball size (a
+   * net-roofed hopper at its binder capacity) is over-constrained: the contact passes and the walls/roof/keepouts keep
+   * trading the same few millimetres and the pile never meets the sleep threshold. Past `JAM_SECONDS` it is frozen as it
+   * stands (every hard constraint was applied last, so only the foam overlap shows).
+   */
+  private calm = 0;
   private readonly netted: boolean;
   private readonly confinedPoint=new THREE.Vector3();
   /** Where intaken balls were handed over (robot frame), with the pile clock at the time. */
@@ -75,7 +84,7 @@ export class FuelPile {
         if (d < best) { best = d; x = seed.x; z = seed.z; }
       }
     }
-    let y = b.y0 + r;
+    let y = Math.max(b.y0, b.floor?.(x, z) ?? b.y0) + r;
     for (let i = 0; i < this.count; i++) {
       const j = i * 3, d2 = (x - this.positions[j]) ** 2 + (z - this.positions[j + 2]) ** 2;
       const diameter = this.radius * 1.8;
@@ -128,7 +137,7 @@ export class FuelPile {
     }
     this.count = n;
     for (let i = 0; i < n; i++) this.confine(i, this.positions[i * 3], this.positions[i * 3 + 2]);
-    this.awake = n > 0; this.quiet = 0;
+    this.awake = n > 0; this.quiet = 0; this.calm = 0;
     if (!n) { this.arrivals.length = 0; this.kickX = this.kickZ = this.kickTurn = 0; }
   }
 
@@ -143,18 +152,18 @@ export class FuelPile {
     if (this.count > 0 && this.contacts?.sync()) this.wake();
     // Gravity in the chassis frame: a tilted or overturned robot pours its pile toward the low side.
     const ux = s.upx ?? 0, uy = s.upy ?? 1, uz = s.upz ?? 0;
-    if (Math.abs(ux - this.upX) + Math.abs(uy - this.upY) + Math.abs(uz - this.upZ) > 0.01 && this.count > 0) { this.awake = true; this.quiet = 0; }
+    if (Math.abs(ux - this.upX) + Math.abs(uy - this.upY) + Math.abs(uz - this.upZ) > 0.01 && this.count > 0) { this.awake = true; this.quiet = 0; this.calm = 0; }
     this.upX = ux; this.upY = uy; this.upZ = uz;
     if (this.sampled && s.enabled && this.count > 0) {
       const dx = this.previousX - s.vx, dz = this.previousZ - s.vz, turn = this.previousOmega - s.omega;
       if (Math.hypot(dx, dz) + Math.abs(turn) * 0.15 > 0.025) {
         this.kickX += dx * 0.65; this.kickZ += dz * 0.65; this.kickTurn += turn * 0.5;
-        this.awake = this.count > 0; this.quiet = 0;
+        this.awake = this.count > 0; this.quiet = 0; this.calm = 0;
       }
       // A hard hit jolts the whole robot: the loose FUEL near the top jumps and can clear the rim.
       const impact = Math.hypot(dx, dz);
       if (this.open && impact > 2.5) this.lift = Math.min(2.2, 0.6 + (impact - 2.5) * 0.45);
-      if (Math.abs(s.omega) * Math.hypot(s.vx, s.vz) > 0.2) { this.awake = this.count > 0; this.quiet = 0; }
+      if (Math.abs(s.omega) * Math.hypot(s.vx, s.vz) > 0.2) { this.awake = this.count > 0; this.quiet = 0; this.calm = 0; }
     }
     this.previousX = s.vx; this.previousZ = s.vz; this.previousOmega = s.omega; this.sampled = true;
     this.pending += dt;
@@ -170,7 +179,7 @@ export class FuelPile {
     this.kickX = this.kickZ = this.kickTurn = 0;
     if (this.lift > 0) { for (let i = 0; i < this.count; i++) v[i * 3 + 1] += this.lift; this.lift = 0; }
     this.before.set(p);
-    const steps = Math.min(2, Math.ceil(time * 60)), h = time / steps;
+    const steps = Math.min(2, Math.ceil(time * 60)), h = Math.min(time / steps, 1 / 60); // a slow frame runs slow-motion, never with coarse substeps
     for (let sub = 0; sub < steps; sub++) {
       for (let i = 0; i < this.count; i++) {
         const j = i * 3, oldX = p[j], oldZ = p[j + 2];
@@ -217,6 +226,7 @@ export class FuelPile {
     for (let j = 0; j < this.count * 3; j++) movement = Math.max(movement, Math.abs(p[j] - this.before[j]));
     this.quiet = movement < 0.003 ? this.quiet + time : 0;
     if (this.quiet > 0.6) { this.awake = false; v.fill(0); }
+    else if ((this.calm += time) > JAM_SECONDS) { this.awake = false; v.fill(0); }
     return true;
   }
 
@@ -250,7 +260,7 @@ export class FuelPile {
     if (!overLip && ((p[j + 2] < minZ && v[j + 2] < 0) || (p[j + 2] > maxZ && v[j + 2] > 0))) v[j + 2] *= -0.08;
     p[j] = x; p[j + 2] = z;
     if (!overLip && b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
-    const floor = b.y0 + ry, roof = Math.min(b.y0 + b.height, b.ceiling?.(p[j], p[j + 2]) ?? Infinity) - ry;
+    const floor = Math.max(b.y0, b.floor?.(p[j], p[j + 2]) ?? b.y0) + ry;
     if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.94; v[j + 2] *= 0.94; }
     if(b.outline) {
       this.confinedPoint.set(p[j],p[j+1],p[j+2]);
@@ -262,7 +272,9 @@ export class FuelPile {
         p[j]=this.confinedPoint.x;p[j+2]=this.confinedPoint.z;v[j]*=-.08;v[j+2]*=-.08;
       }
     }
-    // Uncovered bins have no lid: only the rim (see releaseOverRim) ends a ball's climb.
+    // Uncovered bins have no lid: only the rim (see releaseOverRim) ends a ball's climb. Uses the final x/z: outline and
+    // keepout pushes can move a ball under a lower part of the roof.
+    const roof = Math.min(b.y0 + b.height, b.ceiling?.(p[j], p[j + 2]) ?? Infinity) - ry;
     if (!this.open && p[j + 1] > roof) { p[j + 1] = roof; v[j + 1] = Math.min(0, -v[j + 1] * 0.06); }
   }
 }

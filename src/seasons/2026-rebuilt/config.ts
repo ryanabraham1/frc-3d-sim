@@ -94,9 +94,6 @@ export const REBUILT_ROBOT_MASS = lb(150);
 /** FUEL/s a stock robot's floor intake can swallow [EST]; real teams override it (INTAKE_RATE in teamRobots.ts). */
 export const DEFAULT_INTAKE_RATE = 20;
 
-/** How far an open shooter hood sticks up above a stock robot's frame (m): 6 in at full travel [EST]. */
-export const HOOD_RISE = inch(6);
-
 /** Boost applied to every real team robot's INTAKE_RATE (user decision 2026-10-05: intakes felt too weak). */
 export const INTAKE_RATE_BOOST = 1.7;
 
@@ -106,7 +103,6 @@ export function rebuiltRobotDefaults(): RobotConfig {
   c.mass = REBUILT_ROBOT_MASS;
   c.height = inch(21);
   c.launcher.height = inch(19);
-  c.launcher.hoodRise = HOOD_RISE;
   c.hopperCapacity = 40;
   c.preload = C.FUEL_MAX_PRELOAD;
   c.climber.maxLevel = 0;
@@ -152,9 +148,8 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
-  // An adjustable hood sticks up above the frame when it opens for a shot (6 in at full travel [EST]); the TRENCH arm then
-  // blocks the robot until the hood is parked. A fixed hood never moves, so it adds nothing.
-  c.launcher.hoodRise = c.launcher.maxAngle > c.launcher.minAngle ? c.launcher.hoodRise ?? HOOD_RISE : 0;
+  // Discard the legacy vertical slide from saved configs; hood height follows its model pivot.
+  delete (c.launcher as RobotConfig['launcher'] & { hoodLift?: unknown }).hoodLift;
   // Saved picks of the former turret ROMAN I preset (47 FUEL, 14/s, turret) become the imported Roman II drum robot.
   if (c.model === 'roman-6329' && c.launcher.turret && c.hopperCapacity === 47 && c.launcher.rate === 14) {
     c.launcher.turret = false; c.launcher.exits = 4; c.autoAlign = true; c.hopperCapacity = ROMAN_CAPACITY; c.launcher.rate = 20;
@@ -167,6 +162,7 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
     if (Math.abs(c.frameLength-inch(27))<1e-6) c.frameLength=.6985;
     if (Math.abs(c.height-inch(21))<1e-6) c.height=.55;
   }
+  c.launcher.unevenFeed ??= true;
   c.intake.station ??= true;
   c.intake.groundSide ??= 'back';
   c.intake.stationSide ??= 'back';
@@ -212,6 +208,7 @@ export function build(b: Build): RobotConfig {
   c.launcher.height = b.tall ? inch(26) : inch(19);
   c.launcher.rate = b.rate;
   c.launcher.exits = b.dumper ? DUMPER_EXITS : 1;
+  c.launcher.unevenFeed = true;
   c.climber.maxLevel = b.climb;
   if (b.speed) c.maxSpeed = b.speed;
   if (b.weight) c.maxAccel *= Math.min(1, 125 / b.weight);
@@ -223,7 +220,7 @@ export function build(b: Build): RobotConfig {
 export function rebuiltRobotPresets() {
   return [
     { id: 'turret', label: 'Turret trench bot', description: 'Under 22¼ in so it drives through the TRENCH; full-width ground intake, turret shooter that scores on the move, 35-FUEL hopper. The turret makes it slower and its single stream fires 8/s, less accurately on the move.', config: build({ intake: 'both', aim: 'turret', hopper: 35, tall: false, rate: 8, climb: 0, speed: 4.2, weight: 132, accuracy: 72 }) },
-    { id: 'fixed', label: 'Dumper + auto-align', description: 'Trench-height robot whose shooter spans the whole front of the robot (a "dumper"): FUEL leaves in four parallel streams (12/s). Aimed by rotating the chassis, 60-FUEL hopper. Quick. The most common competitive design.', config: build({ intake: 'both', aim: 'align', dumper: true, hopper: 60, tall: false, rate: 12, climb: 0, speed: 4.8, weight: 116, accuracy: 82 }) },
+    { id: 'fixed', label: 'Dumper + auto-align', description: 'Trench-height robot whose shooter spans the whole front of the robot (a "dumper"): FUEL leaves in uneven bursts across four exits (12/s). Aimed by rotating the chassis, 60-FUEL hopper. Quick. The most common competitive design.', config: build({ intake: 'both', aim: 'align', dumper: true, hopper: 60, tall: false, rate: 12, climb: 0, speed: 4.8, weight: 116, accuracy: 82 }) },
     { id: 'big-hopper', label: 'Big-hopper BUMP bot', description: 'Tall (30 in) with a 70-FUEL hopper and a fast multi-wheel shooter (14/s): too tall for the TRENCH, so it crosses the BUMPs. Slower to drive and less accurate on the move; auto-align.', config: build({ intake: 'both', aim: 'align', hopper: 70, tall: true, rate: 14, climb: 0, speed: 4.0, weight: 135, accuracy: 70 }) },
     { id: 'outpost', label: 'OUTPOST-fed shooter', description: 'No ground intake: loads FUEL from its OUTPOST CHUTE, relying on the human player. Simple and accurate; auto-align, 40-FUEL hopper.', config: build({ intake: 'outpost', aim: 'align', hopper: 40, tall: false, rate: 10, climb: 0, speed: 4.8, weight: 112, accuracy: 90 }) },
   ];
@@ -240,7 +237,7 @@ export const rebuiltRobotOptions: RobotOption[] = [
   opt('aim', 'Shooter aiming', [['turret', 'Turret'], ['align', 'Chassis auto-align', 'Holding Space rotates the robot onto the HUB, then fires'], ['driver', 'Driver aims']],
     (c) => (c.launcher.turret ? 'turret' : c.autoAlign ? 'align' : 'driver'),
     (c, v) => { c.launcher.turret = v === 'turret'; c.autoAlign = v === 'align'; if (v === 'turret') c.launcher.exits = 1; }),
-  opt('exits', 'Shooter exit', [['single', 'Single stream', 'All FUEL leaves from one point on the robot'], ['dumper', `Dumper (${DUMPER_EXITS} streams)`, 'A shooter as wide as the robot: FUEL leaves in parallel streams at the same balls-per-second. No turret.']],
+  opt('exits', 'Shooter exit', [['single', 'Single stream', 'All FUEL leaves from one point on the robot'], ['dumper', `Dumper (${DUMPER_EXITS} streams)`, 'A shooter as wide as the robot: FUEL leaves in uneven bursts across its exits at the same average feed rate. No turret.']],
     (c) => ((c.launcher.exits ?? 1) > 1 ? 'dumper' : 'single'),
     (c, v) => {
       c.launcher.exits = v === 'dumper' ? DUMPER_EXITS : 1;

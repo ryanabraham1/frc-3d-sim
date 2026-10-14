@@ -2,9 +2,9 @@
   "id": "quixilver-604-2025",
   "sourceFile": "2025 FRC604 Robot.glb",
   "inputBytes": 233000672,
-  "outputBytes": 8222104,
+  "outputBytes": 13264584,
   "inputTriangles": 10345680,
-  "outputTriangles": 608135,
+  "outputTriangles": 1026584,
   "omittedOccurrences": 322,
   "bounds": {
     "min": [
@@ -25,5 +25,10 @@
     "climber",
     "effector",
     "arm"
-  ]
+  ],
+  "restoredTubes": {
+    "count": 18,
+    "source": "https://github.com/frc604/2025-public/tree/f178f14f165da90f894d02db1130c483b80241e3/FRC-2025/advantagescope_assets/Robot_2025-FRC604"
+  },
+  "repairedNormals": true
 }

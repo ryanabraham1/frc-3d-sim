@@ -2,7 +2,7 @@
   "id": "singularity-1706",
   "sourceFile": "2025-1706.glb",
   "inputBytes": 260589040,
-  "outputBytes": 9656932,
+  "outputBytes": 16757648,
   "inputTriangles": 18108238,
   "outputTriangles": 617642,
   "omittedOccurrences": 1406,
@@ -26,5 +26,6 @@
     "climber",
     "elevator-stage-2",
     "elevator-stage"
-  ]
+  ],
+  "repairedNormals": true
 }

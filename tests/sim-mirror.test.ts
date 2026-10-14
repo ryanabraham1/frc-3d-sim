@@ -8,6 +8,9 @@ import { MatchWorld, type WorldOptions } from '../src/engine/core/matchWorld';
 import { MatchSim, botSettings } from '../src/engine/core/matchSim';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import { NODE_STRIDE, RobotMirror } from '../src/engine/sim/robotMirror';
+import { cloneConfig } from '../src/engine/robot/config';
+import { HeadlessSim } from '../src/engine/testing/headless';
+import { loadCad2026 } from './helpers/cad2026';
 
 beforeAll(() => RAPIER.init());
 
@@ -51,4 +54,36 @@ it('a replica world mirrors every robot model node of the simulated one', () => 
     m.applyNodes(a, b, 0.5);
     expect(m.nodes[0].position.x).toBeCloseTo(a[0] + 0.2, 5);
   } finally { sim.free(); view.free(); }
+});
+
+it('worker frames carry the raised CAD net and stretching fabric with their balls', async () => {
+  await loadCad2026();
+  const season = getSeason('2026-rebuilt');
+  for (const id of ['limestone-1678', 'ripcurrent-4414']) {
+    const config = cloneConfig(season.teamRobots!.find(t => t.id === id)!.config);
+    const create = () => new HeadlessSim(season, RAPIER, { robot: cloneConfig(config), alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 } });
+    const sim = create(), view = create();
+    try {
+      sim.robot.detachPool(sim.pool); view.robot.detachPool(view.pool);
+      const from = new RobotMirror(sim.robot), to = new RobotMirror(view.robot);
+      expect(to.shape).toBe(from.shape);
+      sim.robot.hopperRaised = true;
+      sim.robot.held.push(...Array(config.hopperCapacity).fill(-1));
+      for (let i = 0; i < 120; i++) sim.robot.syncVisual(1 / 60);
+      const f = from.capture(true);
+      expect(f.geometry.length).toBeGreaterThan(0);
+      to.applyDiscrete(f); to.applyNodes(f.nodes, f.nodes, 1);
+      const name = id === 'limestone-1678' ? 'cad-hopper-net' : 'stretching-hopper-net';
+      const a = sim.robot.visual.getObjectByName(name) as THREE.LineSegments;
+      const b = view.robot.visual.getObjectByName(name) as THREE.LineSegments;
+      expect(Array.from(b.geometry.getAttribute('position').array)).toEqual(Array.from(a.geometry.getAttribute('position').array));
+      const p = b.geometry.getAttribute('position');
+      expect(Math.max(...Array.from({length: p.count}, (_, i) => p.getY(i)))).toBeGreaterThan(config.height + .04);
+      sim.robot.hopperRaised = false;
+      sim.robot.held.length = 0;
+      for (let i = 0; i < 120; i++) sim.robot.syncVisual(1 / 60);
+      to.applyDiscrete(from.capture());
+      expect(Array.from(b.geometry.getAttribute('position').array)).toEqual(Array.from(a.geometry.getAttribute('position').array));
+    } finally { sim.dispose(); view.dispose(); }
+  }
 });

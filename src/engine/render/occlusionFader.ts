@@ -27,28 +27,58 @@ export class OcclusionFader {
   private readonly faded = new Map<THREE.Mesh, Faded>();
   private readonly dir = new THREE.Vector3();
   private readonly box = new THREE.Box3();
+  private readonly bounds = new WeakMap<THREE.Mesh, { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4; box: THREE.Box3 }>();
+  private readonly rays: THREE.Ray[] = [];
+  private readonly distances: number[] = [];
+  private readonly candidates: THREE.Mesh[][] = [];
 
-  constructor(private readonly root: THREE.Object3D) {}
+  constructor(private readonly root: THREE.Object3D) {
+    // Only the nearest triangle of each mesh matters, not every triangle behind it.
+    this.raycaster.firstHitOnly = true;
+  }
 
   /** Fade whatever blocks the view from `eye` to any of `targets`; pass no targets to fade everything back in. */
   update(dt: number, eye: THREE.Vector3, targets: readonly THREE.Vector3[]): void {
     for (const f of this.faded.values()) f.blocking = false;
+    for (let i = 0; i < targets.length; i++) {
+      const ray = this.rays[i] ??= new THREE.Ray();
+      this.distances[i] = this.dir.copy(targets[i]).sub(eye).length();
+      ray.set(eye, this.dir.normalize());
+      (this.candidates[i] ??= []).length = 0;
+    }
     if (targets.length) {
       this.root.traverseVisible((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
         if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-        this.box.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld);
-        if (this.box.distanceToPoint(eye) < EYE_MARGIN) this.fade(mesh);
+        let bounds = this.box;
+        if (mesh.userData.staticField) {
+          let cached = this.bounds.get(mesh);
+          if (!cached || cached.geometry !== mesh.geometry || !cached.matrix.equals(mesh.matrixWorld)) {
+            cached = { geometry: mesh.geometry, matrix: mesh.matrixWorld.clone(),
+              box: new THREE.Box3().copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld) };
+            this.bounds.set(mesh, cached);
+          }
+          bounds = cached.box;
+        } else bounds.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrixWorld);
+        const distance = bounds.distanceToPoint(eye);
+        if (distance < EYE_MARGIN) this.fade(mesh);
+        // Reject remote/off-ray cells before invoking their triangle trees. traverseVisible also excludes
+        // hidden ancestors (Three's recursive raycaster otherwise tests invisible descendants).
+        for (let i = 0; i < targets.length; i++) {
+          if (this.distances[i] >= 1e-3 && distance <= this.distances[i] && this.rays[i].intersectsBox(bounds)) {
+            this.candidates[i].push(mesh);
+          }
+        }
       });
     }
-    for (const target of targets) {
-      const dist = this.dir.copy(target).sub(eye).length();
+    for (let i = 0; i < targets.length; i++) {
+      const dist = this.distances[i];
       if (dist < 1e-3) continue;
-      this.raycaster.set(eye, this.dir.divideScalar(dist));
+      this.raycaster.ray.copy(this.rays[i]);
       this.raycaster.far = dist;
       this.hits.length = 0;
-      this.raycaster.intersectObject(this.root, true, this.hits);
+      this.raycaster.intersectObjects(this.candidates[i], false, this.hits);
       for (const h of this.hits) {
         const mesh = h.object as THREE.Mesh;
         if (mesh.isMesh && mesh.visible) this.fade(mesh);

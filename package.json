@@ -13,11 +13,14 @@
     "test:all": "vitest run",
     "typecheck": "tsc --noEmit",
     "cad:prepare": "node --max-old-space-size=6144 tools/prepare-robot-cad.mjs",
+    "cad:match": "node tools/prepare-match-cad.mjs",
     "serve": "node server/index.ts",
     "cloudflare:dev": "wrangler dev --config cloudflare/wrangler.jsonc --port 8787",
     "cloudflare:deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",
     "cloudflare:typecheck": "tsc --noEmit -p cloudflare/tsconfig.json",
-    "cloudflare:smoke": "node tools/relay-smoke.mjs"
+    "cloudflare:smoke": "node tools/relay-smoke.mjs",
+    "test:full": "vitest run",
+    "test:changed": "vitest run --changed"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

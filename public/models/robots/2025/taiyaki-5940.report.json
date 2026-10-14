@@ -2,14 +2,14 @@
   "id": "taiyaki-5940",
   "sourceFile": "2025-5940.glb",
   "inputBytes": 234692708,
-  "outputBytes": 8081360,
+  "outputBytes": 14307764,
   "inputTriangles": 8544486,
   "outputTriangles": 532386,
   "omittedOccurrences": 630,
   "bounds": {
     "min": [
       -0.7009354252367814,
-      0.00007350370287895897,
+      7.350370287895897e-05,
       -0.37909498810768116
     ],
     "max": [
@@ -25,5 +25,6 @@
     "climber",
     "elevator-stage",
     "carriage"
-  ]
+  ],
+  "repairedNormals": true
 }

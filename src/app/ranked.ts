@@ -77,7 +77,7 @@ function lastResultHtml(lobby: LobbyController): string {
   if (to && !from) move = 'placed';
   else if (to && from && to.ordinal > from.ordinal) move = 'up';
   else if (to && from && to.ordinal < from.ordinal) move = 'down';
-  const card = `<div class="rk-result ${r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''}"><b>${title}</b><span>${points}</span></div>`;
+  const card = `<div class="rk-result ${r.delta > 0 ? 'up' : r.delta < 0 ? 'down' : ''}"><b>${title}</b><span>${points}</span>${r.reason ? `<span>${esc(r.reason)}</span>` : ''}</div>`;
   if (!move || !to) return card;
   const heading = move === 'up' ? 'Rank up!' : move === 'placed' ? 'Placement complete' : 'Rank down';
   const line = move === 'placed' ? `You placed <b>${to.label}</b>` : `${from!.label} → <b>${to.label}</b>`;
@@ -181,6 +181,7 @@ export function rankedLandingPage(lobby: LobbyController, _ctx: MpPageCtx): { bo
             <li>In team modes the change is shared by skill: if you carry a weaker teammate and lose, you lose less; they lose more.</li>
             <li>Both sides <b>ban</b> robots, then <b>pick</b> theirs in snake order. A robot can only be picked once per alliance.</li>
             <li>Choose your starting position, then play. Everyone reports the result; the rating moves only if they agree.</li>
+            <li>The first three consecutive wins against the same opponent award full Elo, then gains drop to 50%, 20%, 10%, and 0%. Trading wins, a draw or a different opponent resets the streak. Losses still count normally.</li>
             <li><b>Leaving a match counts as a loss.</b> A dropped connection has 30 seconds to come back.</li>
           </ol>
         </section>

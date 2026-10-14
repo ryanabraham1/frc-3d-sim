@@ -11,8 +11,6 @@ const DB = 'frc-sim-logs';
 const STORE = 'matches';
 /** Keep at most this many already-uploaded logs locally; un-uploaded ones are never dropped. */
 const KEEP_UPLOADED = 10;
-/** Give up on a log after this many failed attempts (a rejected file shouldn't retry forever). */
-const MAX_ATTEMPTS = 6;
 
 export interface StoredLog {
   id: string;
@@ -88,7 +86,7 @@ export async function saveLog(log: Pick<StoredLog, 'createdAt' | 'seasonId' | 'f
 
 /** Retry logs that never reached the server (call once at game start). */
 export async function flushPending(): Promise<void> {
-  for (const l of await listLogs()) if (!l.uploaded && l.attempts < MAX_ATTEMPTS) await tryUpload(l);
+  for (const l of await listLogs()) if (!l.uploaded) await tryUpload(l);
   await prune();
 }
 

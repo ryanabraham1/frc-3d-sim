@@ -143,20 +143,16 @@ export interface RobotConfig {
     maxSpeed: number;
     /** Exit height above floor. */
     height: number;
-    /**
-     * How far (m) the raised shooter hood sticks up above the frame top when it is fully open at `maxAngle`. It scales
-     * with the hood angle above the parked `angle`; a parked or fixed hood adds nothing. The robot gets a collider at
-     * that height, so a robot shooting with its hood up cannot drive under a low overhead (2026 TRENCH).
-     */
-    hoodRise?: number;
     /** True = turret can yaw independently of the drivetrain. */
     turret: boolean;
     /**
      * Number of side-by-side exits across the front of the robot (default 1). A "dumper" has a shooter as wide as the
-     * robot with several exits (e.g. 4): shots cycle through them, so FUEL leaves in parallel streams. `rate` is the
+     * robot with several exits (e.g. 4). `unevenFeed` varies their order and cadence. `rate` is the
      * total shots/s across all exits, so throughput is unchanged. Incompatible with a turret.
      */
     exits?: number;
+    /** Loose hopper feed: uneven shot spacing and exit order, with the same mean feed interval. */
+    unevenFeed?: boolean;
     /** Separate turret centers (meters, chassis frame; side positive left). Share aim, alternate shots. */
     mounts?: { forward: number; side: number }[];
     /** Throat offset ahead of each turret center; rotates with turret yaw. */

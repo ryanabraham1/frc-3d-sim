@@ -4,6 +4,37 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import type { Alliance } from '../../engine/coords';
 import type { FieldBuilder, Vec3 } from '../../engine/field/builder';
 import { HUB_CAD_NET, HUB_CAD_PARTS } from './hubCad.generated';
+import { cloneSpatialField, prepareSpatialField } from '../../engine/render/spatialField';
+import { COLORS } from './constants';
+import { mergeStatic } from '../../engine/render/mergeStatic';
+import { applyCadFinishes } from '../../engine/field/cadFinishes';
+import { getRobotEnvironment } from '../../engine/robot/models';
+import { prepareHubBanner } from './hubBanner';
+
+/** Batch the rigid HUB hardware by material; keep the addressable light group and hidden aesthetic net intact. */
+export function prepareHubVisual(root: THREE.Group): void {
+  applyCadFinishes(root);
+  root.traverse((o) => {
+    if (/Net \(Aesthetic\)/.test(o.name)) o.visible = false;
+  });
+  const lights = root.getObjectByName('hub-diffusers');
+  mergeStatic(root, lights ? new Set([lights]) : new Set());
+  prepareSpatialField(root);
+}
+
+/** glTF factors are linear; the field exporter wrote sRGB hex channels directly, washing out the alliance paint.
+ * Set the cached materials through Three's sRGB-aware hex conversion to match the procedural field. */
+export function restoreAllianceColors(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    if (!(o as THREE.Mesh).isMesh) return;
+    const material = (o as THREE.Mesh).material;
+    for (const m of Array.isArray(material) ? material : [material]) {
+      const paint = m as THREE.MeshStandardMaterial;
+      if (paint.name === 'alliance-blue') paint.color.setHex(COLORS.blue);
+      if (paint.name === 'alliance-red') paint.color.setHex(COLORS.red);
+    }
+  });
+}
 
 /**
  * The HUB as built: the official FE-2026 REBUILT field CAD (tools/prepare-field-cad.py / .mjs). Collision always comes
@@ -49,8 +80,9 @@ export function prepareHubCad(): Promise<void> {
   if (typeof document === 'undefined' || typeof window === 'undefined') return Promise.resolve();
   const load = (file: string) => new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/field/${file}`);
   return (loading ??= Promise.all([
-    load('2026-hub.glb').then((g) => { asset = g.scene; }).catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }),
-    load('2026-field.glb').then((g) => { fieldAsset = g.scene; }).catch((e) => { console.warn('[field] field CAD unavailable, drawing the stand-in', e); }),
+    prepareHubBanner(),
+    load('2026-hub.glb').then((g) => { prepareHubVisual(g.scene); asset = g.scene; }).catch((e) => { console.warn('[field] HUB CAD unavailable, drawing the stand-in', e); }),
+    load('2026-field.glb').then((g) => { restoreAllianceColors(g.scene); applyCadFinishes(g.scene); prepareSpatialField(g.scene); fieldAsset = g.scene; }).catch((e) => { console.warn('[field] field CAD unavailable, drawing the stand-in', e); }),
   ]).then(() => undefined));
 }
 
@@ -60,8 +92,9 @@ export function prepareHubCad(): Promise<void> {
  */
 export function addFieldCadVisual(b: FieldBuilder): boolean {
   if (!fieldAsset) return false;
-  const field = fieldAsset.clone(true);
-  field.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+  const field = cloneSpatialField(fieldAsset);
+  field.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = !(m.material as THREE.Material).transparent; m.receiveShadow = true; } });
+  applyCadFinishes(field, getRobotEnvironment());
   // CAD frame: metres, Z up, origin at the field centre (= world origin), blue at -x.
   field.rotation.x = -Math.PI / 2;
   field.name = 'field-cad';
@@ -97,15 +130,16 @@ export function addHubCadColliders(b: FieldBuilder, a: Alliance, c: { x: number;
  */
 export function addHubCadVisual(b: FieldBuilder, a: Alliance, c: { x: number; y: number }, light: THREE.MeshStandardMaterial): boolean {
   if (!asset) return false;
-  const hub = asset.clone(true);
+  const hub = cloneSpatialField(asset);
   hub.traverse((o) => {
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
-    m.castShadow = true;
+    m.castShadow = !(m.material as THREE.Material).transparent;
     m.receiveShadow = true;
     // The CAD's aesthetic net is drawn by the flexible NetSheet instead (it bulges); the stand-in tint keeps clear parts clear.
     if (/Net \(Aesthetic\)/.test(m.name) || /Net \(Aesthetic\)/.test(m.parent?.name ?? '')) m.visible = false;
   });
+  applyCadFinishes(hub, getRobotEnvironment());
   hub.getObjectByName('hub-diffusers')?.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).material = light; });
   // The asset is hub-local, Z up: rotate into the y-up world and turn the red hub 180 degrees.
   const g = new THREE.Group();

@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { LightingPreset } from '../render/lighting';
 import type { Alliance, FieldFrame, FieldPose } from '../coords';
 import type { FieldBuilder } from '../field/builder';
 import type { GamePiecePool, GamePieceSpec } from '../gamepiece/pool';
@@ -41,6 +42,8 @@ export interface GameSettings {
   autoIntake: boolean;
   seed: number;
   shadows: boolean;
+  lighting?: LightingPreset;
+  brightness?: number;
   /** Fill the remaining single-player stations with AI (default true). */
   aiOpponents?: boolean;
   /** Opponent AI skill. */
@@ -177,7 +180,8 @@ export interface SeasonRules {
   /** A human-player button was pressed (`button` 1 = H; 2 / 3 only for seasons declaring `humanPlayerButtons`). */
   humanPlayerAction(alliance: Alliance, button?: number): void;
   /** Per rendered frame: lights and other cosmetic effects. */
-  updateVisuals(dt: number, time: number): void;
+  /** A worker view already receives robot/piece visuals; only field visuals need updating there. */
+  updateVisuals(dt: number, time: number, robotVisualsMirrored?: boolean): void;
   results(): MatchResults;
   /**
    * Multiplayer: JSON-serializable rules state that clients need for HUD/visuals (not the score or clock —

@@ -53,7 +53,9 @@ export function buildSpectreCad(root:THREE.Group,k:ModelKit,animated:()=>boolean
       const parked=!collecting&&p.height<=.46&&!p.algae;
       // Tool pitch here = the code's absolute claw angle (shoulder + wrist, ArmPoseConstants) + 180°.
       const deg=(a:number)=>a*Math.PI/180;
-      let nextPitch=.0,nextExtension=0,nextTool=deg(125),nextSlide=0;
+      // The exported wrist housing hangs below the arm centerline. A flat parked
+      // shoulder put it through the carpet; a 10° clearance pose keeps it above the floor. [EST]
+      let nextPitch=deg(10),nextExtension=0,nextTool=deg(125),nextSlide=0;
       if(climbing){
         const pull=THREE.MathUtils.clamp((1-s.climb)/.75,0,1);
         nextPitch=THREE.MathUtils.lerp(110,-5,pull)*Math.PI/180;

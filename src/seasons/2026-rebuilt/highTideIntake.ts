@@ -30,12 +30,16 @@ export function highTideIntake(k:ModelKit) {
   const ramp=box(root,start.distanceTo(finish),.005,width*.96,carbon,(start.x+finish.x)/2,(start.y+finish.y)/2,0);
   ramp.rotation.z=Math.atan2(finish.y-start.y,finish.x-start.x);
   let speed=0;
-  return {root, intake:()=>{
+  return {root, rollers, intake:()=>{
     const z=(Math.random()-.5)*width*.6;
     return rollers.map(drum=>flowAt(k,drum,0,.028+.075,z));
   }, update(s:RobotAnimState,deployed:number) {
     root.position.x=side*deployed*.20;
-    speed=approach(speed,s.enabled&&s.intaking?32:0,8,s.dt);
-    for(const drum of rollers)spin(drum,-side*speed,s.dt);
+    // During low-load squeeze the inner kicker still carries FUEL over the bumper into the rotor; braking it while
+    // retracting the extension pins the final balls between that drum and the tray end wall.
+    const conveying=s.intaking||((s.squeeze??0)>0&&(s.aiming||s.firing>0));
+    speed=approach(speed,s.enabled&&conveying?32:0,8,s.dt);
+    // Tops of the drums run inward (toward the hopper), as they carry FUEL up the ramp.
+    for(const drum of rollers)spin(drum,side*speed,s.dt);
   }};
 }

@@ -7,6 +7,8 @@ import { SKILL, TeamBrain } from './team';
 import type { AiSkill } from '../core/season';
 
 export interface BotStrategy {
+  /** Give the human driver a wider, predicted path through traffic. Opt in per season. */
+  yieldToDriver?: boolean;
   score(): RobotCommand;
   supply(): FieldPose;
   accepts(index: number, point: FieldPoint): boolean;
@@ -126,7 +128,7 @@ export class CycleBot implements AutoPilot {
     const lateral = Math.abs(-(p.x - t.x) * job.dir.y + (p.y - t.y) * job.dir.x);
     const yaw = Math.atan2(job.dir.y, job.dir.x);
     if (along > -reach + 0.1 || lateral > 0.35) {
-      const cmd = this.driveTo(behind, yaw);
+      const cmd = this.driveTo(behind, yaw, job.push);
       this.distanceToGoal = 0; // routing around robots near the target isn't a stall
       return cmd;
     }
@@ -216,13 +218,22 @@ export class CycleBot implements AutoPilot {
 
   driveTo(goal: FieldPoint, yaw?: number, engage?: Robot, slowRadius = 0.85): RobotCommand {
     const r = this.robot, p = r.pose;
-    const waypoint = this.strategy.route?.(goal) ?? goal;
+    let waypoint = this.strategy.route?.(goal) ?? goal;
+    // Route around our driver before contact. Repulsion alone only reacts at the bumper and can look like defense.
+    // Predict a short way along their motion so we yield to the lane they are entering.
+    for (const other of this.ctx.robots) {
+      if (!this.strategy.yieldToDriver || other === r || other === engage || other.controller !== 'player' || other.alliance !== r.alliance) continue;
+      const q = other.pose, velocity = other.fieldVelocity;
+      const radius = (Math.hypot(other.footprint.width, other.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + 0.3;
+      const detour = aroundCircles(p, waypoint, [{ x: q.x + velocity.vx * 0.3, y: q.y + velocity.vy * 0.3, r: radius }]);
+      if (detour !== waypoint) waypoint = this.strategy.route?.(detour) ?? detour;
+    }
     this.distanceToGoal = dist(p, goal);
     const v = arrive(p, waypoint, r.config.maxSpeed * this.pace, waypoint === goal ? slowRadius : 0.85);
     const near = dist(p, goal) < 0.35 && waypoint === goal;
     // Opponents it would be a foul to touch right now (protected zones) get a much wider berth.
     const obstacles = this.ctx.robots.filter((o) => o !== r && o !== engage).map((o) => ({ ...o.pose,
-      r: (Math.hypot(o.footprint.width, o.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + (o.alliance !== r.alliance && this.strategy.cautious?.(o) ? 0.75 : 0.08) }));
+      r: (Math.hypot(o.footprint.width, o.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + (this.strategy.yieldToDriver && o.alliance === r.alliance && o.controller === 'player' ? 0.3 : o.alliance !== r.alliance && this.strategy.cautious?.(o) ? 0.75 : 0.08) }));
     const repulsion = avoid(p, obstacles, 0.45, r.config.maxSpeed * 0.55);
     let vx = v.vx + repulsion.vx, vy = v.vy + repulsion.vy;
     // Circulate clockwise around an approaching teammate. Radial repulsion alone leaves two robots

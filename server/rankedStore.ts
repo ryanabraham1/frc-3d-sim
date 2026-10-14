@@ -45,6 +45,8 @@ export interface RankedStore {
   /** Register or refresh a player and return their rating for the current season. */
   touchPlayer(playerId: string, name: string): Promise<RatingRow>;
   getRating(playerId: string): Promise<RatingRow>;
+  /** Most recent non-void matches for this player in the current season, newest first. */
+  recentMatches(playerId: string, limit: number): Promise<MatchRecord[]>;
   /** Record a finished match and apply `changes` to the players' ratings. */
   saveMatch(match: MatchRecord, changes: RatingChange[]): Promise<void>;
   /** The season's single leaderboard. */
@@ -99,6 +101,10 @@ export class MemoryStore implements RankedStore {
 
   async getRating(playerId: string) {
     return normalizeRow(this.players.get(playerId)?.row);
+  }
+
+  async recentMatches(playerId: string, limit: number) {
+    return this.matches.filter((m) => m.season === RANKED_SEASON_ID && m.status !== 'void' && m.players.some((p) => p.playerId === playerId)).slice(-limit).reverse();
   }
 
   async saveMatch(match: MatchRecord, changes: RatingChange[]) {
@@ -171,6 +177,11 @@ export class SupabaseStore implements RankedStore {
   async getRating(playerId: string) {
     const rows = await this.call<Partial<RatingRow>[]>(`ranked_season_ratings?player_id=eq.${encodeURIComponent(playerId)}&${this.season_()}&select=${this.cols}`);
     return normalizeRow(rows?.[0]);
+  }
+
+  async recentMatches(playerId: string, limit: number) {
+    const player = encodeURIComponent(JSON.stringify([{ playerId }]));
+    return this.call<MatchRecord[]>(`ranked_matches?${this.season_()}&status=neq.void&players=cs.${player}&order=created_at.desc,id.desc&limit=${limit}&select=mode,season,outcome,redScore:red_score,blueScore:blue_score,status,players`);
   }
 
   async saveMatch(match: MatchRecord, changes: RatingChange[]) {
