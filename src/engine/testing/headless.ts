@@ -156,7 +156,7 @@ export class HeadlessSim {
       }
     }
     robot.tickIntake(dt);
-    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0 && !robot.mech) {
+    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0 && !robot.mech && !robot.capturesByContact) {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);

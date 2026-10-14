@@ -933,6 +933,68 @@ export class Robot {
     return m;
   }
 
+  /** Robot-frame matrix of `o` from its nodes' live transforms (cached matrices go stale where nothing renders). */
+  private liveMatrix(o: THREE.Object3D): THREE.Matrix4 {
+    const out = new THREE.Matrix4(), m = new THREE.Matrix4();
+    for (let p: THREE.Object3D | null = o; p && p !== this.visual; p = p.parent) out.premultiply(p.matrixAutoUpdate ? m.compose(p.position, p.quaternion, p.scale) : p.matrix);
+    return out;
+  }
+
+  /** Robot-frame point where the indexer takes a ball out of the hopper: the start of the model's feed path, or null. */
+  feedEntry(shot = 0): THREE.Vector3 | null {
+    const path = this.model?.flow?.feed?.(shot);
+    return path && path.length ? path[0].clone() : null;
+  }
+
+  /**
+   * Robot-frame x span of the hopper floor that conveys FUEL toward the indexer: the model's feed rollers (a roller
+   * floor), or null when the model doesn't say (then the whole floor is driven, as on most REBUILT hoppers).
+   */
+  drivenFloorSpan(): [number, number] | null {
+    const mech = this.model?.mech, rollers = mech?.rollers.filter(r => r.run !== 'intake') ?? [];
+    if (!rollers.length && !mech?.rotor) return null;
+    let lo = Infinity, hi = -Infinity;
+    const v = new THREE.Vector3();
+    for (const r of rollers) {
+      v.set(...(r.at ?? [0, 0, 0])).applyMatrix4(this.liveMatrix(r.node));
+      lo = Math.min(lo, v.x); hi = Math.max(hi, v.x);
+    }
+    // A dye rotor is a driven floor across its whole plate.
+    if (mech?.rotor) {
+      v.set(0, 0, 0).applyMatrix4(this.liveMatrix(mech.rotor.node));
+      lo = Math.min(lo, v.x - mech.rotor.radius); hi = Math.max(hi, v.x + mech.rotor.radius);
+    }
+    return [lo, hi];
+  }
+
+  /**
+   * The model's intake rollers as robot-frame segments (axis point, unit direction, tread radius, length), with whether
+   * each captures field FUEL by contact and whether it is running now. Empty when the model has no roller hooks.
+   */
+  intakeRollers(): { c: THREE.Vector3; u: THREE.Vector3; radius: number; length: number; capture: boolean; on: boolean }[] {
+    const rollers = this.model?.mech?.rollers.filter(r => r.run !== 'feed') ?? [];
+    const on = this.enabled && this.lastCommand.intake;
+    const q = new THREE.Quaternion(), s = new THREE.Vector3(), t = new THREE.Vector3();
+    return rollers.map(r => {
+      const m = this.liveMatrix(r.node);
+      m.decompose(t, q, s);
+      const axis = r.axis ?? 'z';
+      return { c: new THREE.Vector3(...(r.at ?? [0, 0, 0])).applyMatrix4(m), u: new THREE.Vector3(axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0).applyQuaternion(q),
+        radius: r.radius ?? 0.03, length: r.length ?? 0.6, capture: !!r.capture, on: on || r.run === 'both' && !!this.bay?.feedingIndexer };
+    });
+  }
+
+  /** FUEL comes in only by touching a running capture roller (the real-body hopper of a model with roller hooks). */
+  get capturesByContact(): boolean { return !!this.bay && !!this.model?.mech?.rollers.some(r => r.capture); }
+
+  /** Robot-frame centre (x, z) and radius of the model's dye rotor floor, or null. */
+  floorRotor(): { x: number; z: number; radius: number } | null {
+    const rotor = this.model?.mech?.rotor;
+    if (!rotor) return null;
+    const v = new THREE.Vector3().applyMatrix4(this.liveMatrix(rotor.node));
+    return { x: v.x, z: v.z, radius: rotor.radius };
+  }
+
   /** Box in the robot frame that the active FUEL bins (main plus deployed extensions) enclose. */
   fuelCavity(): Cavity | null {
     const active = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0);
@@ -2293,6 +2355,8 @@ export class Robot {
   launch(target: AimTarget | null, rng: Rng): { pos: THREE.Vector3; vel: THREE.Vector3 } | null {
     const c0 = this.config;
     const c = c0.launcher;
+    // Wanting to fire runs the hopper's floor rollers toward the indexer, between shots too.
+    if (this.bay && c.enabled && this.held.length) this.bay.demandFeed();
     if (!c.enabled || this.held.length === 0 || (this.fireCooldown > 0 && !this.mech) || this.climbPhase !== 'none' || this.tippedOver) return null;
     // Auto-align robots hold fire until the chassis first points at the target (launcher.alignTolerance, default
     // ~3°). Once a burst is under way they keep firing whatever the heading error: standing still or creeping, the
@@ -2304,8 +2368,10 @@ export class Robot {
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
     }
     if (this.bay) {
-      // The ball physically nearest the launcher is the one that leaves (the pool pops the last held piece).
+      // Only a ball the indexer actually has (one that reached its entry) can leave; the floor rollers run meanwhile.
       const exit = this.launcherExit(0), pick = this.bay.pickForLaunch(new THREE.Vector3(exit.forward, exit.up, -exit.side));
+      // (Pieces held but never put in the hopper, e.g. scripted, still go the old way.)
+      if (pick < 0 && this.bay.occupied) return null;
       const k = pick >= 0 ? this.held.lastIndexOf(pick) : -1;
       if (k >= 0) { this.held.splice(k, 1); this.held.push(pick); }
     }

@@ -12,6 +12,14 @@ const WALL = 0.05; // half-thickness of each wall slab (outside the cavity)
 /** Intake roller pull speed (m/s) and the time after which a ball that never made it in is dropped straight inside. */
 const PULL = 4.5;
 const FEED_TIMEOUT = 1.2;
+/** Surface speed of a driven hopper floor (roller floor / indexer belts) carrying FUEL to the indexer (m/s) [EST]. */
+const FLOOR_SPEED = 1.2;
+/** How long one "wants to fire" keeps the floor rollers running (s): covers the gaps between shots. */
+const FEED_HOLD = 0.25;
+/** Compliant intake tread: how far past the rigid roller a ball is still gripped (m). */
+const GRIP = 0.015;
+/** A ball the intake has let go of that is not in the hopper by then is a field ball again (s). */
+const LOOSE_AFTER = 0.25;
 
 /**
  * Keeps a robot's held FUEL as the very same Rapier bodies that roll on the field (the pool's own pieces, drawn by the
@@ -25,13 +33,19 @@ const FEED_TIMEOUT = 1.2;
  *   in a box. The count is therefore correct the instant a ball is captured.
  * - Overflow: an uncovered hopper has no roof, so a ball that rolls over a wall's top edge simply keeps being the same
  *   body; once past the wall it is released to the field with the velocity it already has. Nothing is spawned.
- * - Shooting: the ball closest to the launcher is the one that leaves.
+ * - Shooting: only a ball that has reached the indexer's entry (`Robot.feedEntry`, the start of the model's feed path)
+ *   can leave. While the robot wants to fire, the driven part of the floor (`Robot.drivenFloorSpan`, the feed rollers;
+ *   the whole floor when the model doesn't say) carries the balls resting on it toward that entry. A ball anywhere
+ *   else (on an undriven intake tray, up on the pile) only gets there by rolling down or being pushed by a moving wall
+ *   (the intake folding in, the hopper squeezing shut): nothing is pulled out of a heap.
  */
 export class StowBay {
   /** Held pieces that are inside the cavity. */
   readonly stowed = new Set<number>();
   /** Balls held in this hopper: the live (simulated) ones plus the buried lower layers. */
   get count(): number { return this.stowed.size + this.buried.size; }
+  /** Any ball in this hopper at all, including ones still on their way in from the intake. */
+  get occupied(): boolean { return this.count + this.feeding.size > 0; }
   /** Balls in the buried lower layers (not simulated). */
   get buriedCount(): number { return this.buried.size; }
   /**
@@ -48,7 +62,7 @@ export class StowBay {
   static ACTIVE_MAX = 26;
   static ACTIVE_MIN = 8;
   /** Balls being pulled in: elapsed time, the model's intake lane (robot frame) and the waypoint they are heading for. */
-  private readonly feeding = new Map<number, { t: number; pts: THREE.Vector3[]; k: number }>();
+  private readonly feeding = new Map<number, { t: number; pts: THREE.Vector3[]; k: number; loose: number }>();
   /** The model's own meshes in the hopper region as static trimesh colliders (re-posed when their node moves). */
   private cad: { mesh: THREE.Mesh; built: THREE.Matrix4; inverse: THREE.Matrix4; now: THREE.Matrix4; collider: RAPIER.Collider }[] | null = null;
   private tick = 0;
@@ -73,6 +87,34 @@ export class StowBay {
   private readonly w = new THREE.Vector3();
 
   constructor(private readonly robot: Robot, private readonly pool: GamePiecePool) {}
+
+  private time = 0;
+  private feedUntil = -1;
+  /** The robot wants to fire: run the floor rollers toward the indexer for a moment. */
+  demandFeed(): void { this.feedUntil = this.time + FEED_HOLD; }
+  get feedingIndexer(): boolean { return this.time < this.feedUntil; }
+
+  /** Indexer entry (robot frame): the model's feed path start, else just over the floor at the launcher end of the hopper. */
+  private entry(cav: Cavity, out: THREE.Vector3): THREE.Vector3 {
+    const e = this.robot.feedEntry(0);
+    if (e) return out.copy(e);
+    const r = this.radius * this.ballScale;
+    return out.set(cav.max.x - r, cav.min.y + this.floorLift + r, (cav.min.z + cav.max.z) / 2);
+  }
+
+  /**
+   * A ball the indexer has: at its entry (within a ball and a half of it along the robot, across the whole width for a
+   * wide feeder, within two balls across for a single lane) and low enough to be on the entry rather than on the pile.
+   * Generic robots without a drawn feed path take it anywhere along the front of the floor.
+   */
+  private atEntry(p: THREE.Vector3, entry: THREE.Vector3): boolean {
+    const r = this.radius;
+    if (Math.abs(p.x - entry.x) > r * 1.6 || p.y > entry.y + r * 0.8) return false;
+    // A wide feeder (dumper) takes balls across the whole hopper; so does a generic robot with no drawn feed path (a
+    // full-width roller indexer along the front of the floor).
+    const wide = (this.robot.config.launcher.exits ?? 1) > 1 || !this.robot.feedEntry(0);
+    return wide || Math.abs(p.z - entry.z) < r * 2.2;
+  }
 
   private get radius(): number { return this.pool.colliderRadius; }
   // Net loads must occupy their real volume; compressing every ball leaves the fabric slack at full capacity.
@@ -107,7 +149,7 @@ export class StowBay {
       this.stats.captured++;
       const from = this.toLocal(body.translation(), new THREE.Vector3());
       const pts = [from, ...this.robot.intakePath(from)];
-      this.feeding.set(i, { t: 0, pts, k: 1 });
+      this.feeding.set(i, { t: 0, pts, k: 1, loose: 0 });
       this.pool.setStowed(i, GROUPS.feeding, this.ballScale);
     } else {
       this.dropIn(i, cav);
@@ -124,6 +166,8 @@ export class StowBay {
     const w = cav.max.x - cav.min.x - 2 * rc, l = cav.max.z - cav.min.z - 2 * rc;
     const perRow = Math.max(1, Math.floor(w / d) + 1), rows = Math.max(1, Math.floor(l / row) + 1);
     const perLayer = perRow * rows;
+    // Packed from the indexer's end, the way a team stages a preload: the first balls sit at the entry.
+    const flip = this.entry(cav, this.w).x > (cav.min.x + cav.max.x) / 2;
     let slot = 0, valid=0;
     // Skip mechanism space while packing; never preload a ball inside the shooter.
     for (;;) {
@@ -136,6 +180,7 @@ export class StowBay {
       cav.min.y + this.floorLift + rc + layer * layerH,
       Math.min(cav.min.z + rc + j * row + shiftZ, cav.max.z - rc),
     );
+    if (flip) this.v.x = cav.min.x + cav.max.x - this.v.x;
     const probe = this.v.clone();
     if (!clearFuelKeepouts(probe, rc, cav.keepouts ?? []) && !clearHopperChamfer(probe,rc,cav.chamfer) && !clearFuelOutline(probe,rc,cav.outline) && valid++===this.stowed.size) break;
     slot++;
@@ -277,6 +322,7 @@ export class StowBay {
     for (const i of this.stowed) {
       if (this.staging.has(i)) continue;
       this.toLocal(this.pool.bodies[i].translation(), p);
+      if (!this.atEntry(p, entry)) continue;
       const d = p.distanceToSquared(entry);
       if (d < distance) { best = i; distance = d; position.copy(p); }
     }
@@ -309,18 +355,22 @@ export class StowBay {
     this.staging.clear();
   }
 
-  /** Use the lead conveyor ball, otherwise the nearest stored ball; -1 when none is inside. */
-  pickForLaunch(exit: THREE.Vector3): number {
+  /** Use the lead conveyor ball, otherwise a ball at the indexer entry; -1 when none has reached it. */
+  pickForLaunch(_exit: THREE.Vector3): number {
     // Claimed balls are already in conveyor order. Consume the lead rather than reselecting the hidden pile.
     const staged = this.staging.values().next().value;
     if (staged !== undefined) return staged;
     if (!this.stowed.size && this.buried.size) this.wakeLayer(true);
     this.frame();
+    const cav = this.cavity ?? this.robot.fuelCavity();
+    if (!cav) return -1;
+    const entry = this.entry(cav, new THREE.Vector3());
     let best = -1, d = Infinity;
     const p = new THREE.Vector3();
     for (const i of this.stowed) {
       this.toLocal(this.pool.bodies[i].translation(), p);
-      const dist = p.distanceToSquared(exit);
+      if (!this.atEntry(p, entry)) continue;
+      const dist = p.distanceToSquared(entry);
       if (dist < d) { d = dist; best = i; }
     }
     return best;
@@ -348,6 +398,7 @@ export class StowBay {
 
   /** Once per physics step, before the world steps. */
   update(dt: number): void {
+    this.time += dt;
     this.carryTeleport();
     const cav = this.robot.fuelCavity();
     if (!cav) return;
@@ -360,24 +411,37 @@ export class StowBay {
       // Rebalance only while the chassis is calm: a hit or a hard turn should slosh the whole pile.
       const v = this.robot.body.linvel(), calm = Math.hypot(v.x - this.lastVel.x, v.z - this.lastVel.z) < 0.5;
       this.lastVel.set(v.x, v.y, v.z);
-      if (calm || !this.buried.size) this.rebalance();
+      if ((calm || !this.buried.size) && !this.feedingIndexer) this.rebalance();
     }
+    // Feeding moves the bottom of the pile (the balls on the floor rollers and at the indexer): it all has to be live.
+    if (this.feedingIndexer && this.buried.size) this.wakeLayer(true);
+    if (this.robot.capturesByContact) { this.frame(); this.captureByContact(); }
     if (!this.stowed.size && !this.feeding.size) return;
     this.frame();
     const r = this.radius, p = new THREE.Vector3(), target = new THREE.Vector3(), vel = new THREE.Vector3();
     // Balls being pulled in by the intake rollers along the model's own intake lane.
+    const rollers = this.robot.intakeRollers(), byContact = rollers.length > 0;
     for (const [i, f] of this.feeding) {
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
-      const inside = p.x > cav.min.x + r * 0.6 && p.x < cav.max.x - r * 0.6 && Math.abs(p.z - (cav.min.z + cav.max.z) / 2) < (cav.max.z - cav.min.z) / 2 - r * 0.6
-        && p.y > cav.min.y && p.y < cav.max.y + (cav.open ? 3 * r : 0) && f.k >= f.pts.length - 1;
-      if (inside) {
+      const within = p.x > cav.min.x + r * 0.6 && p.x < cav.max.x - r * 0.6 && Math.abs(p.z - (cav.min.z + cav.max.z) / 2) < (cav.max.z - cav.min.z) / 2 - r * 0.6
+        && p.y > cav.min.y && p.y < cav.max.y + (cav.open ? 3 * r : 0);
+      // Rollers carry a ball only while it touches one that is running (models with roller hooks); otherwise the
+      // intake lane stands in for them up to the stow point.
+      const gripped = byContact ? this.touchesRoller(p, rollers, r) : f.k < f.pts.length - 1;
+      if (within && (byContact ? !gripped || p.y < cav.max.y : f.k >= f.pts.length - 1)) {
         this.feeding.delete(i);
         this.stowed.add(i);
         this.pool.setStowed(i, GROUPS.stowed, this.ballScale);
         continue;
       }
-      if (f.t > FEED_TIMEOUT) {
+      if (byContact) {
+        // Let go outside the hopper (it fell back off the rollers, or they stopped): an ordinary field ball where it is.
+        f.loose = gripped ? 0 : f.loose + dt;
+        if (f.loose > LOOSE_AFTER || f.t > FEED_TIMEOUT * 3) { this.feeding.delete(i); this.dropOut(i); continue; }
+        f.t += dt;
+        if (!gripped) continue; // momentum and gravity only
+      } else if (f.t > FEED_TIMEOUT) {
         this.stats.timeouts++;
         this.feeding.delete(i);
         this.dropIn(i, cav);
@@ -393,10 +457,91 @@ export class StowBay {
       const lin = this.robot.body.linvel();
       body.setLinvel({ x: lin.x + vel.x, y: lin.y + vel.y + 9.81 * dt, z: lin.z + vel.z }, true);
     }
+    if (this.feedingIndexer) this.driveFloor(cav);
     // A ball that is over a wall's top edge (open hopper) is an ordinary field ball again. A ball that is merely outside
     // the walls below the rim was left there by a wall that moved in (retracting extension, lowered roof): it is pushed
     // back inside, never dropped.
     this.contain(cav, p, r);
+  }
+
+  /**
+   * The driven floor carries the balls lying on it toward the indexer entry at roller surface speed (friction: their
+   * horizontal velocity relative to the chassis eases toward it). Balls on the pile above, or on an undriven part of the
+   * floor, are left alone.
+   */
+  private driveFloor(cav: Cavity): void {
+    if (!this.stowed.size) return;
+    const r = this.radius * this.ballScale, floor = cav.min.y + this.floorLift;
+    const entry = this.entry(cav, new THREE.Vector3()), span = this.robot.drivenFloorSpan(), rotor = this.robot.floorRotor();
+    const wide = (this.robot.config.launcher.exits ?? 1) > 1 || !this.robot.feedEntry(0);
+    const lo = span ? span[0] - r : -Infinity, hi = span ? span[1] + r : Infinity;
+    const p = new THREE.Vector3(), rel = new THREE.Vector3(), want = new THREE.Vector3();
+    const lin = this.robot.body.linvel(), base = new THREE.Vector3(lin.x, lin.y, lin.z).applyQuaternion(this.qi);
+    for (const i of this.stowed) {
+      if (this.staging.has(i)) continue;
+      const body = this.pool.bodies[i];
+      this.toLocal(body.translation(), p);
+      if (p.y > floor + r * 1.35 || p.x < lo || p.x > hi) continue;
+      // A roller floor drives straight along the robot toward the entry line of a wide feeder, toward the lane of a
+      // single one (converging every ball on one point only wedges the floor layer).
+      want.set(entry.x - p.x, 0, wide ? 0 : entry.z - p.z);
+      const d = want.length();
+      if (d < r * 0.5) continue;
+      want.divideScalar(d);
+      // A dye rotor carries the balls on it round its centre (the spiral fin walks them toward the throat as they go), so
+      // a ball behind the centre column comes round to the throat instead of being shoved into the column.
+      if (rotor && Math.hypot(p.x - rotor.x, p.z - rotor.z) < rotor.radius + r) {
+        const tx = -(p.z - rotor.z), tz = p.x - rotor.x, tl = Math.hypot(tx, tz) || 1;
+        want.x = want.x * 0.5 + tx / tl; want.z = want.z * 0.5 + tz / tl;
+        want.normalize();
+      }
+      want.multiplyScalar(FLOOR_SPEED);
+      const v = body.linvel();
+      rel.set(v.x, v.y, v.z).applyQuaternion(this.qi).sub(base);
+      rel.x += (want.x - rel.x) * 0.3; rel.z += (want.z - rel.z) * 0.3;
+      rel.add(base).applyQuaternion(this.q);
+      body.setLinvel({ x: rel.x, y: rel.y, z: rel.z }, true);
+    }
+  }
+
+  /** Within grip of a running intake roller (robot frame). */
+  private touchesRoller(p: THREE.Vector3, rollers: ReturnType<Robot['intakeRollers']>, r: number): boolean {
+    const d = new THREE.Vector3();
+    for (const roller of rollers) {
+      if (!roller.on) continue;
+      d.copy(p).sub(roller.c);
+      const along = d.dot(roller.u);
+      if (Math.abs(along) > roller.length / 2 + r * 0.3) continue;
+      d.addScaledVector(roller.u, -THREE.MathUtils.clamp(along, -roller.length / 2, roller.length / 2));
+      if (d.length() < roller.radius + r + GRIP) return true;
+    }
+    return false;
+  }
+
+  /** Field FUEL touching a running capture roller comes in, where it is and moving as it is. */
+  private captureByContact(): void {
+    const robot = this.robot;
+    if (!robot.enabled || !robot.lastCommand.intake || robot.intakeRoom <= 0) return;
+    const rollers = robot.intakeRollers().filter(k => k.capture && k.on);
+    if (!rollers.length) return;
+    const t = robot.body.translation(), r = this.radius, p = new THREE.Vector3();
+    for (let i = 0; i < this.pool.count && robot.intakeRoom > 0; i++) {
+      if (this.pool.state[i] !== 'field' || robot.justLaunched(i)) continue;
+      const b = this.pool.bodies[i].translation();
+      if (Math.abs(b.x - t.x) > 1.2 || Math.abs(b.z - t.z) > 1.2) continue;
+      if (!this.touchesRoller(this.toLocal(b, p), rollers, r)) continue;
+      robot.noteCapture(b);
+      this.pool.hold(i, robot.id);
+      robot.held.push(i);
+    }
+  }
+
+  /** A ball the intake dropped outside the hopper: back on the field, same body, same motion. */
+  private dropOut(i: number): void {
+    const k = this.robot.held.lastIndexOf(i);
+    if (k >= 0) this.robot.held.splice(k, 1);
+    this.pool.releaseToField(i);
+    this.robot.noteLaunch(i);
   }
 
   /** Called once per rendered frame, after the physics steps: undo any pop through a wall before it is drawn. */

@@ -31,9 +31,9 @@ export interface QualityProfile {
 }
 
 export const QUALITY: Record<QualityTier, QualityProfile> = {
-  low: { tier: 'low', pixelRatioCap: 1, minPixelRatio: 0.6, shadows: false, hopperSolo: 'none', hopperHost: 'none', hopperWorker: 'none', activeMax: 14 },
-  medium: { tier: 'medium', pixelRatioCap: 1.25, minPixelRatio: 0.7, shadows: true, hopperSolo: 'none', hopperHost: 'none', hopperWorker: 'none', activeMax: 20 },
-  high: { tier: 'high', pixelRatioCap: 1.5, minPixelRatio: 0.75, shadows: true, hopperSolo: 'none', hopperHost: 'none', hopperWorker: 'none', activeMax: 26 },
+  low: { tier: 'low', pixelRatioCap: 1, minPixelRatio: 0.6, shadows: false, hopperSolo: 'player', hopperHost: 'player', hopperWorker: 'player', activeMax: 14 },
+  medium: { tier: 'medium', pixelRatioCap: 1.25, minPixelRatio: 0.7, shadows: true, hopperSolo: 'all', hopperHost: 'player', hopperWorker: 'all', activeMax: 20 },
+  high: { tier: 'high', pixelRatioCap: 1.5, minPixelRatio: 0.75, shadows: true, hopperSolo: 'all', hopperHost: 'all', hopperWorker: 'all', activeMax: 26 },
 };
 
 export interface DeviceInfo {

@@ -260,7 +260,7 @@ export class Game {
       scene: this.renderer.scene,
       playerId: mine?.id ?? null,
       realHopper: (rs) => !worker && this.wantsRealHopper(rs, net),
-      hopperMode: this.role === 'local' && new URLSearchParams(location.search).get('hopper') === 'stowbay' ? 'stowbay' : 'mech',
+      hopperMode: this.role === 'local' && new URLSearchParams(location.search).get('hopper') === 'mech' ? 'mech' : 'stowbay',
       pieceFlow: true,
       optimize: true,
       hud: this.hud,
@@ -395,11 +395,11 @@ export class Game {
   private startWorker(R: RapierModule): void {
     for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
     const piece = this.pool.mesh;
-    // `?hopper=all|player|none` overrides the device tier's choice (testing the real-body hopper); `?hopper=stowbay`
-    // puts every FUEL robot on the older wall-slab hopper instead of the physical (mechanism) hopper.
+    // `?hopper=all|player|none` overrides the device tier's choice of real-body hoppers; `?hopper=mech` puts the robots
+    // with mechanism hooks on the separate-world mechanism hopper (MechHopper) instead of StowBay.
     const asked = new URLSearchParams(location.search).get('hopper');
-    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'stowbay' ? 'all' : this.quality.hopperWorker;
-    const hopperMode = asked === 'stowbay' ? 'stowbay' as const : 'mech' as const;
+    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'mech' ? 'all' : this.quality.hopperWorker;
+    const hopperMode = asked === 'mech' ? 'mech' as const : 'stowbay' as const;
     this.remote = new WorkerSim(this.world, {
       settings: this.settings, setup: this.setup, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
       cadDetail: new URLSearchParams(location.search).get('cadDetail') === 'full' ? 'full' : 'match',
@@ -543,7 +543,7 @@ export class Game {
     if (this.role === 'client' || net?.recovering) return false;
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     const asked = this.role === 'local' ? new URLSearchParams(location.search).get('hopper') : null;
-    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'stowbay' ? 'all' : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
+    const mode = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'mech' ? 'all' : this.role === 'host' ? this.quality.hopperHost : this.quality.hopperSolo;
     if (mode === 'none') return false;
     if (this.role === 'host' && rs.peerId && rs.peerId !== net!.client.peerId) return false;
     return mode === 'all' || rs.id === mine?.id;
