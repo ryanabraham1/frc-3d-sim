@@ -91,14 +91,23 @@ it.each([254, 4414, 1987])('team %s intakes FUEL onto the pile surface instead o
   for (let i = 0; i < 30; i++) r.syncVisual(1 / 60);
   r.noteCapture(r.visual.localToWorld(new THREE.Vector3(side * (r.config.frameLength / 2 + 0.15), 0.075, 0)));
   r.held.push(-1);
-  let first = NaN;
+  let first = NaN, floor = bin.y0;
   for (let f = 0; f < 200 && Number.isNaN(first); f++) {
     r.syncVisual(1 / 60);
     const surface = pile.userData.fuelSurface();
-    if (surface.count > 0) first = surface.positions[1];
+    if (surface.count > 0) {
+      first = surface.positions[1];
+      // Where a ball rests on the drawn parts at that spot (a rotor deck or floor plate above the bin's nominal floor):
+      // dropped onto the floor there and lifted clear of the parts, as the pile itself does.
+      const clearance = pile.userData.fuelPile.clearance, x = surface.positions[0], z = surface.positions[2];
+      const rest = new Float32Array([x, bin.y0 + 0.075, z]);
+      floor = Math.max(bin.y0, clearance?.floorAt(x, z) ?? -Infinity);
+      rest[1] = floor + 0.075;
+      if (clearance) { clearance.push(rest, 0, 0.0735, Infinity); floor = rest[1] - 0.075; }
+    }
   }
   // An empty hopper: the ball arrives at floor level, not one ball higher with a drop onto the floor.
-  expect(first - (bin.y0 + 0.075)).toBeLessThan(0.04);
+  expect(first - (floor + 0.075)).toBeLessThan(0.04);
 });
 
 describe('imported CAD hoods', () => {

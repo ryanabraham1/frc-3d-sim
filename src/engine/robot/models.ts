@@ -1,7 +1,7 @@
 import { clearFuelKeepouts,type FuelKeepout } from './fuelKeepouts';
 import * as THREE from 'three';
 import { FuelPile } from './fuelPile';
-import { buildClearance, clearanceSources } from './fuelClearance';
+import { buildClearance, buildMovingClearance, clearanceSources } from './fuelClearance';
 import { FuelContacts } from './fuelContacts';
 import type { Alliance } from '../coords';
 import { FUEL_PACK_RADIUS, type RobotConfig } from './config';
@@ -385,16 +385,21 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   // comes to rest in the lowest pocket nearby, so the heap fills the whole floor before it builds up, with every ball
   // nested against its neighbors (no gaps) and an uneven, lumpy top. `inside` (robot-frame x/z) trims the footprint
   // for a non-rectangular hopper.
+  // Once the drawn mechanisms are known (see animateFuel): the drawn floor under (x, z), and whether a ball centred at
+  // (x, y, z) would sit inside a part. The pour then rests every ball where it could really be.
+  let drawnFloor: ((x: number, z: number) => number) | null = null, blocked: ((x: number, y: number, z: number) => boolean) | null = null;
   const pour = (r: number, n: number, k = PACK_K): Slot[] => {
     const halfX = Math.max(0, o.length / 2 - r), halfZ = Math.max(0, o.width / 2 - r);
     const reach2 = (r * k) ** 2; // foam FUEL squashes a little where it touches (k = 2 would be rigid spheres)
     const out: Slot[] = [];
     const restHeight = (px: number, pz: number): number => {
-      let py = r;
+      let py = drawnFloor ? Math.max(r, drawnFloor(o.x + px, pz) - o.y0 + r * 0.94) : r;
       for (const q of out) {
         const dx = q.x - (o.x + px), dz = q.z - pz, d2 = dx * dx + dz * dz;
         if (d2 < reach2) py = Math.max(py, q.y - o.y0 + Math.sqrt(reach2 - d2));
       }
+      // Inside a drawn part: it comes to rest on top of it instead (a rotor deck, a roller, a cone).
+      if (blocked) for (let lift = 0; lift < 0.25 && blocked(o.x + px, o.y0 + py, pz); lift += 0.01) py += 0.01;
       return py;
     };
     // Candidate pockets sit on a fine jittered grid (not a handful of random spots) so each ball really finds the lowest
@@ -469,6 +474,18 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   }
   slots.sort((a, b) => a.key - b.key);
   const count = slots.length;
+  /** Pour the same load again around the drawn mechanisms; null when even a heap can't hold it (the old pose is kept). */
+  const repour = (): Slot[] | null => {
+    for (let k = PACK_K; k > PACK_K - .21; k -= .02) {
+      const fresh = pour(r, count, k);
+      if (fresh.length >= count) return fresh.sort((a, b) => a.key - b.key);
+    }
+    // More than fits below the lip: heap the rest on top and let the pile decide what stays (on an open bin it rolls off).
+    const above = o.allowAboveRim; o.allowAboveRim = true;
+    const heaped = pour(r, count, PACK_K - .2);
+    o.allowAboveRim = above;
+    return heaped.length >= count ? heaped.sort((a, b) => a.key - b.key) : null;
+  };
   // One spare particle lets an uncovered hopper attempt pickup at the brim. It is not stored capacity.
   slots.push({ x: o.x, y: o.y0 + o.height + r, z: 0, s: 1, key: Infinity, sy: .94 });
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(r, 12, 8), mat(o.color, { rough: 0.85, metal: 0 }), count + 1);
@@ -485,7 +502,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   mesh.userData.fuelPile = pile;
   // Drawn mechanisms become a voxel clearance field the first time the pile steps with a load (the model is final by then).
   let clearanceVisual: THREE.Object3D | undefined;
-  mesh.userData.bindFuelClearance = (visual?: THREE.Object3D) => { clearanceVisual = visual; if (!visual) pile.clearance = undefined; };
+  mesh.userData.bindFuelClearance = (visual?: THREE.Object3D) => { clearanceVisual = visual; if (!visual) { pile.clearance = undefined; pile.moving = []; } };
   mesh.userData.bindFuelContacts = (visual?: THREE.Object3D, importedOnly = false) => { pile.contacts = visual ? new FuelContacts(visual, mesh, false, importedOnly) : undefined; };
   mesh.userData.resizeFuelBin = (bounds: { x: number; length: number; height: number }) => {
     if (Math.abs(o.x - bounds.x) + Math.abs(o.length - bounds.length) + Math.abs(o.height - bounds.height) < 1e-5) return;
@@ -525,8 +542,24 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
     if (clearanceVisual && mesh.count > 0 && Date.now() - lastClearanceBuild > 150) {
       const visual = clearanceVisual; clearanceVisual = undefined; lastClearanceBuild = Date.now();
       mesh.updateWorldMatrix(true, false);
-      const sources = clearanceSources(visual, mesh);
-      pile.clearance = buildClearance(sources, new THREE.Vector3(o.x - o.length / 2 - .1, o.y0 - .02, -o.width / 2 - .1), new THREE.Vector3(o.x + o.length / 2 + .1, o.y0 + o.height + .1, o.width / 2 + .1), r * FUEL_PACK_RADIUS + .006);
+      const { fixed, moving } = clearanceSources(visual, mesh), reach = r * FUEL_PACK_RADIUS + .006;
+      const lo = new THREE.Vector3(o.x - o.length / 2 - .1, o.y0 - .02, -o.width / 2 - .1), hi = new THREE.Vector3(o.x + o.length / 2 + .1, o.y0 + o.height + .1, o.width / 2 + .1);
+      // Floor: whatever is drawn below the bottom layer's centres or just above where the model put the floor (a dropped
+      // bin's floor is only a guess at the room under the frame; a drawn plate, roller or rotor deck there wins).
+      pile.clearance = buildClearance(fixed, lo, hi, reach, undefined, { lo: o.y0 - .01, hi: Math.max(bin.y0 + .03, o.y0 + .08) });
+      pile.moving = buildMovingClearance(moving, mesh, visual, lo, hi, reach);
+      const field = pile.clearance, tmp = new Float32Array(3);
+      for (const m of pile.moving) m.sync();
+      drawnFloor = (x, z) => field.floorAt(x, z);
+      blocked = (x, y, z) => {
+        tmp[0] = x; tmp[1] = y; tmp[2] = z;
+        if (field.push(tmp, 0, reach)) return true;
+        for (const m of pile.moving) { tmp[0] = x; tmp[1] = y; tmp[2] = z; if (m.push(tmp, 0, reach)) return true; }
+        return false;
+      };
+      const fresh = repour();
+      drawnFloor = blocked = null;
+      if (fresh) { for (let i = 0; i < count; i++) Object.assign(slots[i], fresh[i]); pile.reseed(); }
       pile.wake();
     }
     const moved = pile.step(s, (x, y, z, vx, vy, vz) => mesh.userData.fuelEscape?.(mesh, x, y, z, vx, vy, vz));

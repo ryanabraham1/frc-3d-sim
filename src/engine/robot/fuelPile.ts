@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { RobotAnimState } from './models';
 import { FUEL_PACK_RADIUS } from './config';
-import type { FuelClearance } from './fuelClearance';
+import type { FuelClearance, MovingClearance } from './fuelClearance';
 import {clearFuelOutline,clearFuelKeepouts,type FuelKeepout} from './fuelKeepouts';
 
 export interface FuelBin {
@@ -21,6 +21,8 @@ const JAM_SECONDS = 1.5;
 export class FuelPile {
   /** Drawn mechanisms rasterised into a voxel field (see `FuelClearance`); balls are pushed out of them. */
   clearance?: FuelClearance;
+  /** Moving assemblies near the bin (intake, sliding hopper, hood, turret), each followed in its own frame. */
+  moving: MovingClearance[] = [];
   contacts?: { sync(): boolean; resolve(p: Float32Array, v: Float32Array, j: number, radius: number): void };
   wake(): void { this.awake = this.count > 0; this.quiet = 0; this.calm = 0; }
   readonly positions: Float32Array;
@@ -68,6 +70,16 @@ export class FuelPile {
     // Foam FUEL squishes: balls pack at 0.9 of their drawn radius (drawn full size), so a load fits in less room.
     this.contactRadius = Float32Array.from(seeds, b => radius * FUEL_PACK_RADIUS * b.s);
     for (let i = 0; i < seeds.length; i++) this.reset(i);
+  }
+
+  /**
+   * The seeds were poured again (around the drawn mechanisms, once those are known): balls already in the bin start over
+   * from their new resting spots instead of being shoved out of the parts they were seeded inside.
+   */
+  reseed(): void {
+    for (let i = 0; i < this.seeds.length; i++) this.contactRadius[i] = this.radius * FUEL_PACK_RADIUS * this.seeds[i].s;
+    for (let i = 0; i < this.count; i++) this.reset(i);
+    this.wake();
   }
 
   private reset(i: number): void {
@@ -164,6 +176,8 @@ export class FuelPile {
     this.clock += dt;
     if (dt <= 0) return false;
     if (this.count > 0 && this.contacts?.sync()) this.wake();
+    // A moving part sweeping through the load (an intake folding in, a hopper sliding shut) shoves the balls it meets.
+    for (const m of this.moving) if (m.sync() && !this.awake && this.count > 0 && m.touches(this.positions, this.count)) { this.awake = true; this.quiet = 0; }
     // Gravity in the chassis frame: a tilted or overturned robot pours its pile toward the low side.
     const ux = s.upx ?? 0, uy = s.upy ?? 1, uz = s.upz ?? 0;
     if (Math.abs(ux - this.upX) + Math.abs(uy - this.upY) + Math.abs(uz - this.upZ) > 0.01 && this.count > 0) { this.awake = true; this.quiet = 0; this.calm = 0; }
@@ -263,7 +277,9 @@ export class FuelPile {
   private confine(i: number, oldX: number, oldZ: number): void {
     const b = this.bin, j = i * 3, p = this.positions, v = this.velocity;
     // Mechanisms first, so the bin walls, outline, keepouts and roof (applied below) always have the last word.
-    if (this.clearance) this.clearance.push(p, j, this.radius * FUEL_PACK_RADIUS * this.seeds[i].s + 0.006);
+    const reach = this.radius * FUEL_PACK_RADIUS * this.seeds[i].s + 0.006;
+    if (this.clearance) this.clearance.push(p, j, reach, b.y0 + b.height * 0.5);
+    for (const m of this.moving) m.push(p, j, reach);
     const r = this.radius * this.seeds[i].s, ry = r * (this.seeds[i].sy ?? 0.94);
     const minX = b.x - b.length / 2 + r, maxX = b.x + b.length / 2 - r, minZ = -b.width / 2 + r, maxZ = b.width / 2 - r;
     // Above the lip there is no side wall. Pair contacts can roll the ball across the rim continuously. A ball beside
@@ -276,7 +292,8 @@ export class FuelPile {
     if (!overLip && ((p[j + 2] < minZ && v[j + 2] < 0) || (p[j + 2] > maxZ && v[j + 2] > 0))) v[j + 2] *= -0.08;
     p[j] = x; p[j + 2] = z;
     if (!overLip && b.inside && !b.inside(x, z)) { p[j] = oldX; p[j + 2] = oldZ; v[j] *= -0.08; v[j + 2] *= -0.08; }
-    const floor = b.y0 + ry;
+    // The drawn floor where one is mapped (a plate above the nominal bin floor is stood on, not sunk through).
+    const floor = Math.max(b.y0, this.clearance?.floorAt(p[j], p[j + 2]) ?? -Infinity) + ry;
     if (p[j + 1] < floor) { p[j + 1] = floor; v[j + 1] = Math.max(0, -v[j + 1] * 0.06); v[j] *= 0.94; v[j + 2] *= 0.94; }
     if(b.outline) {
       this.confinedPoint.set(p[j],p[j+1],p[j+2]);
