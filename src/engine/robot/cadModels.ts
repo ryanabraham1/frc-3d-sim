@@ -1,4 +1,4 @@
-import { HOOD_SHOT_MAX, scoringEase, hoodLive } from './scoringReadiness';
+import { HOOD_SHOT_MAX, scoringEase } from './scoringReadiness';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
@@ -31,7 +31,7 @@ export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678',
 export const ADAPTED_CAD_MODEL_IDS = ['overload-254', 'sandspit-3476', 'ripcurrent-4414', 'madtown-2026-1323', 'kepler-1690', 'croquembouche-5940'] as const;
 export const CAD_DONOR_DEPENDENCIES: Record<string, readonly string[]> = {
   'overload-254': ['shooter-581-donor'], 'sandspit-3476': ['shooter-581-donor'],
-  'ripcurrent-4414': ['rotor-604-donor','toploader-604'], 'madtown-2026-1323': ['rotor-604-donor','toploader-604'],
+  'ripcurrent-4414': ['rotor-604-donor','mixtape-971'], 'madtown-2026-1323': ['rotor-604-donor','mixtape-971'],
   'kepler-1690': ['mixtape-971'], 'croquembouche-5940': ['mixtape-971'],
 };
 const assets = new Map<string, THREE.Group>();
@@ -146,9 +146,6 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   const ease = (from: number, to: number, dt: number) => dt > 0 ? from + (to - from) * (1 - Math.exp(-7 * dt)) : to;
   const point = (o: THREE.Object3D, x = 0, y = 0, z = 0) => {
     k.visual.updateMatrixWorld(true);
-    if (o === flywheel && o.parent) {
-      return k.visual.worldToLocal(o.parent.localToWorld(new THREE.Vector3(x,y,z).add(o.position)));
-    }
     return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
   };
   return {
@@ -156,22 +153,15 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
     lightAt: [0,.65,k.config.frameWidth*.35], intakeAnchor: intakeTip,
     flow: {
       intake: () => isLimestone
-        // The deployed rollers lift FUEL through the intake lip, underneath the retention net.
-        // The previous .59 m centre waypoint put the entire ball above the lowered .53 m roof.
-        ? [new THREE.Vector3(-.65,.17,0),new THREE.Vector3(-.52,.30,0),new THREE.Vector3(-.40,.38,0),new THREE.Vector3(-.26,.40,0),new THREE.Vector3(-.13,.38,0)]
+        ? [new THREE.Vector3(-.65,.17,0),new THREE.Vector3(-.52,.30,0),new THREE.Vector3(-.40,.46,0),new THREE.Vector3(-.26,.59,0),new THREE.Vector3(-.13,.49,0)]
         : isToploader ? [new THREE.Vector3(-.58,.12,0),new THREE.Vector3(-.40,.22,0),new THREE.Vector3(-.28,.3,0)]
         : [point(intakeTip,0,.075), new THREE.Vector3(-.28,.3,0)],
       stow: hopper.stow,
       feed: (shot = 0) => {
         const z = isToploader ? 0 : ((shot % 4) - 1.5) * .145;
-        // Measured GLB rubber envelopes: Limestone's drum radius is .0461 m, Rubble's .0508 m;
-        // Toploader's shaft runs along X with a .0351 m Y/Z roller radius. Stage the 75 mm-radius
-        // FUEL on the incoming tangent, not at the old point inside the rotating rubber. The shot
-        // takes this lead ball away; the ballistic projectile still starts at the launcher exit.
-        const tangent = (isToploader ? .0351 : isLimestone ? .0461 : .0508) + .075 + .003;
         return [new THREE.Vector3(-.22,.3,z), new THREE.Vector3(.05,.32,z),
-          isToploader ? point(flywheel,0,-tangent-.07,0) : point(flywheel,-tangent,-.07,z),
-          isToploader ? point(flywheel,0,-tangent,0) : point(flywheel,-tangent,0,z)];
+          isToploader ? point(flywheel,0,.035,.06) : point(flywheel,-.06,.035,z),
+          isToploader ? point(flywheel,0,.07,-.025) : point(flywheel,.02,.07,z)];
       },
     },
     update(s) {
@@ -193,7 +183,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
       // CAD contact tangent: the fixed drum hoods are exported near their high-shot position, not the UI's 52-degree middle shot.
       // Rotate from that measured reference to the actual requested launch angle.
       const cadShotAngle = isToploader ? .90 : isLimestone ? 1.265 : 1.349;
-      hoodAngle = scoringEase(hoodAngle, hoodLive(s) ? THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-cadShotAngle : isLimestone ? .12 : 0, s.dt);
+      hoodAngle = scoringEase(hoodAngle, s.aiming ? THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-cadShotAngle : 0, s.dt);
       hood.rotation[isToploader ? 'x' : 'z'] = hoodAngle;
       flywheel.rotation[isToploader ? 'x' : 'z'] += (s.enabled && (s.aiming || s.firing > 0) ? 45 : 0)*s.dt;
     },

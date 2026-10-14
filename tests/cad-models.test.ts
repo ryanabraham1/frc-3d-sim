@@ -36,8 +36,6 @@ describe('photo-fitted CAD mechanisms', () => {
       expect(walls.min.z).toBeLessThan(-config.frameWidth*.45);
     }
     if (id === 'madtown-2026-1323') {
-      expect(turret.getObjectByName('madtown-turret-head')).toBeDefined();
-      expect(turret.getObjectByName('madtown-turret-head')!.userData.cadDonor).toBe('toploader-604');
       expect(turret.position.x).toBe(0);
       expect(turret.position.z).toBe(0);
       expect(config.launcher.mounts).toEqual([{forward:0,side:0}]);
@@ -58,12 +56,9 @@ describe('photo-fitted CAD mechanisms', () => {
       }
     }
     const roots: THREE.Object3D[] = []; visual.traverse(o => {if(o.userData.cadDonor) roots.push(o);});
-    expect(roots.length).toBe(id==='kepler-1690'?0:id==='croquembouche-5940'||id==='madtown-2026-1323'?2:1);
+    expect(roots.length).toBe(id==='ripcurrent-4414'||id==='kepler-1690'?0:id==='croquembouche-5940'||id==='madtown-2026-1323'?2:1);
     if(id==='ripcurrent-4414') {
       expect(visual.getObjectByName('hightide-dolphin-fin')).toBeDefined();
-      const blade=visual.getObjectByName('hightide-curved-rotor-blade')!;
-      expect(blade).toBeDefined();
-      expect(new THREE.Box3().setFromObject(blade,true).getSize(new THREE.Vector3()).y).toBeGreaterThan(.06);
       expect(visual.getObjectByName('hightide-roller-throat')).toBeDefined();
     }
     for (let i=0;i<80;i++) {

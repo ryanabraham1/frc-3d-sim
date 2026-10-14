@@ -74,8 +74,6 @@ export class PieceFlow {
   private readonly contactPosition = new Float32Array(3);
   private readonly contactVelocity = new Float32Array(3);
   private readonly motorTarget = new THREE.Vector3();
-  private readonly contactStep = new THREE.Vector3();
-  private readonly contactPrevious = new THREE.Vector3();
   private readonly lanes: Staged[][] = [];
   private laneRound = 0;
   private idleFor = 0;
@@ -179,15 +177,10 @@ export class PieceFlow {
           this.motorTarget.sub(tok.obj.position).multiplyScalar(1 / .025).clampLength(0,6);
           tok.velocity.lerp(this.motorTarget,1-Math.exp(-60*h));
           tok.velocity.y -= 9.81 * h;
-          this.contactPrevious.copy(tok.obj.position);
           tok.obj.position.addScaledVector(tok.velocity, h);
           tok.obj.position.toArray(this.contactPosition);tok.velocity.toArray(this.contactVelocity);
-          for (let pass = 0; pass < 4; pass++) this.contacts.resolve(this.contactPosition,this.contactVelocity,0,this.radius);
+          this.contacts.resolve(this.contactPosition,this.contactVelocity,0,this.radius * .96);
           tok.obj.position.fromArray(this.contactPosition);tok.velocity.fromArray(this.contactVelocity);
-          if (this.contacts.penetration(tok.obj.position,this.radius)>.001 && this.contacts.penetration(this.contactPrevious,this.radius)<=.001) {
-            tok.obj.position.copy(this.contactPrevious);
-            tok.velocity.set(0,0,0);
-          }
         }
       } else this.at(tok, e * tok.cum[tok.cum.length - 1], tok.obj.position);
       if (this.roll) {
@@ -250,7 +243,6 @@ export class PieceFlow {
    */
   private index(dt: number, held: number, fireInterval: number, feeding: boolean): void {
     if (!this.paths.feed) return;
-    this.contacts?.sync();
     const n = this.laneCount;
     while (this.lanes.length < n) this.lanes.push([]);
     this.idleFor = feeding ? 0 : this.idleFor + dt;
@@ -293,14 +285,6 @@ export class PieceFlow {
             obj.visible = true;
             obj.rotation.set(0, 0, 0);
             obj.position.copy(source?.position ?? p[0]);
-            if (this.contacts) {
-              obj.position.toArray(this.contactPosition);
-              this.contactVelocity.fill(0);
-              // A fallback entrance can begin against several coincident CAD plates. Settle it once
-              // before drawing; recurring conveyor steps keep the shorter bounded contact solve.
-              for (let pass = 0; pass < 16; pass++) this.contacts.resolve(this.contactPosition, this.contactVelocity, 0, this.radius);
-              obj.position.fromArray(this.contactPosition);
-            }
             lane.push({ obj, s: 0, slot: lane.length, source: source ?? undefined, approach: source?.position.distanceTo(p[0]) ?? 0 });
           }
         }
@@ -319,45 +303,10 @@ export class PieceFlow {
         let next = b.s + Math.max(-step, Math.min(step, goal - b.s));
         if (!draining && i > 0) next = Math.min(next, lane[i - 1].s - lane[i - 1].approach + b.approach - pitch);
         if (draining && i < lane.length - 1) next = Math.max(next, lane[i + 1].s - lane[i + 1].approach + b.approach + pitch);
-        const previousProgress = b.s;
         b.s = draining ? next : Math.max(0, next);
         this.tmp.copy(b.obj.position);
         if (b.source && b.s < b.approach) b.obj.position.lerpVectors(b.source.position, p[0], Math.max(0, b.s) / Math.max(1e-6, b.approach));
         else this.sample(p, c, Math.max(0, b.s - b.approach), b.obj.position);
-        if (this.contacts) {
-          this.motorTarget.copy(b.obj.position);
-          const steps = Math.max(1, Math.ceil(this.motorTarget.distanceTo(this.tmp) / (this.radius * .25)));
-          this.contactStep.subVectors(this.motorTarget, this.tmp).multiplyScalar(1 / steps);
-          b.obj.position.copy(this.tmp);
-          const requestedProgress = b.s - previousProgress;
-          const stepLengthSq = this.contactStep.lengthSq();
-          let acceptedSteps = 0;
-          for (let sub = 0; sub < steps; sub++) {
-            // Fixed small increments matter when a wall blocks the conveyor. Interpolating the remaining
-            // distance would grow the final step until it jumped straight through that wall.
-            this.contactPrevious.copy(b.obj.position);
-            b.obj.position.add(this.contactStep);
-            b.obj.position.toArray(this.contactPosition);
-            this.contactVelocity.fill(0);
-            for (let pass = 0; pass < 4; pass++) this.contacts.resolve(this.contactPosition, this.contactVelocity, 0, this.radius);
-            b.obj.position.fromArray(this.contactPosition);
-            // Two opposing surfaces can leave no sphere-sized gap. Do not accept the alternating
-            // projections' remaining penetration: hold at the last clear point outside that throat.
-            if (this.contacts.penetration(b.obj.position, this.radius) > .001 &&
-                this.contacts.penetration(this.contactPrevious, this.radius) <= .001) {
-              b.obj.position.copy(this.contactPrevious);
-              // The belt has not advanced this ball through the blocked throat. Keep its arc
-              // progress in sync so following slots wait instead of piling onto its position.
-              break;
-            }
-            const accepted = stepLengthSq > 1e-12 ? THREE.MathUtils.clamp(
-              this.motorTarget.subVectors(b.obj.position, this.contactPrevious).dot(this.contactStep) / stepLengthSq, 0, 1,
-            ) : 1;
-            acceptedSteps += accepted;
-            if (accepted < .05) break;
-          }
-          b.s = previousProgress + requestedProgress * acceptedSteps / steps;
-        }
         if (this.roll) {
           // Roll in the actual travel direction rather than spin in place.
           b.obj.rotation.x += (b.obj.position.z - this.tmp.z) / this.radius;

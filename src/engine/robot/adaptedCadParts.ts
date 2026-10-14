@@ -96,32 +96,3 @@ export function adaptedRotorColumn(parent: THREE.Object3D, o: { x: number; y0: n
     upfeed.rotation.z += speed*4*s.dt;
   }};
 }
-
-/** Complete 604 turret head, uniformly reduced for a compact trench-height turret.
- * The original hood and flywheel keep their common shaft; only the hood changes elevation.
- */
-export function adaptedToploaderShooter(parent: THREE.Object3D, o: { topY: number; color?: number }) {
-  // 604's 432 mm head becomes a 329 mm turret, matching the compact bearing envelope.
-  const base = new THREE.Vector3(.0254,.5588,0), scale = .76;
-  const root = assembly('toploader-604',['turret','hood','flywheel'],base,new THREE.Vector3(scale,scale,scale),o.color);
-  if (!root) return;
-  root.rotation.y=-Math.PI/2;
-  root.position.y=o.topY-(.7492984171790681-base.y)*scale;
-  root.userData.fuelStructure=true;
-  parent.add(root);
-  const at=new THREE.Vector3(.02608,.5969,-.07444).sub(base);
-  const hood=hinge(root,'hood',at), flywheel=hinge(root,'flywheel',at);
-  flywheel.userData.flowSpinAxis='x';
-  let angle=0,speed=0;
-  const radius=.0351+.075/scale+.003;
-  // Native 604 shaft is X; rotating the complete turret by -90 degrees makes it Z.
-  const path=()=>[-Math.PI/2,-Math.PI/3,-Math.PI/6,0].map(a=>new THREE.Vector3(at.x,at.y+Math.sin(a)*radius,at.z-Math.cos(a)*radius));
-  return {root,hood,flywheel,path,update(s:RobotAnimState) {
-    // Fitted travel for the compact mounting: negative native-X rotation opens the
-    // source hood upward; positive rotation folds it down into the hopper.
-    angle=scoringEase(angle,hoodLive(s)?.5-THREE.MathUtils.clamp(s.hood,.5,1.28)-.08:0,s.dt);
-    hood.rotation.x=angle;
-    speed=scoringEase(speed,s.enabled&&hoodLive(s)?70:0,s.dt);
-    flywheel.rotation.x+=speed*s.dt;
-  }};
-}
