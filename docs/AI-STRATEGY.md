@@ -189,14 +189,14 @@ Friendly driver routing is a per-season opt-in (`yieldToDriver`), enabled for RE
 motion path and avoids fuel beneath teammates. Rescue shoves require a human who is trying to drive and has stopped
 shooting/feeding.
 
-Final isolated production-simulator benchmark, identical 4414/1323/2910 lineups on both alliances, three seeds,
+Production-simulator benchmark measured on `3ef713c` (including the concurrent 105-FUEL 4414 change), identical 4414/1323/2910 lineups on both alliances, three seeds,
 all robots AI-controlled, ordinary hardware and moving-shot actuator lag:
 
 | Seed | Blue FUEL | Red FUEL | Blue AUTO | Red AUTO |
 |---|---:|---:|---:|---:|
-| 1 | 593 | 589 | 86 | 120 |
-| 2 | 652 | 546 | 139 | 85 |
-| 3 | 595 | 597 | 132 | 127 |
+| 1 | 580 | 572 | 86 | 120 |
+| 2 | 532 | 642 | 118 | 117 |
+| 3 | 650 | 586 | 127 | 126 |
 
 This is a small deterministic all-AI benchmark, not a promised score against a human. The production regression
 requires more than 3,000 combined FUEL and 450 AUTO FUEL across these seeds, and every robot must score over 50.
