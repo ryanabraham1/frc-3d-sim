@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { setRobotEnvironment } from '../robot/models';
+import { getRobotEnvironment, setRobotEnvironment } from '../robot/models';
 import { mergeStatic } from './mergeStatic';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -28,6 +28,7 @@ export class Renderer {
   private pixelRatio: number;
   private slowWindows = 0;
   private fastWindows = 0;
+  private readonly environment: THREE.WebGLRenderTarget;
 
   constructor(
     readonly container: HTMLElement,
@@ -45,13 +46,16 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = opts.shadows ?? true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     container.appendChild(this.renderer.domElement);
     // Studio reflections for team robot models only (the field keeps its plain lighting): metal and polycarbonate
     // read as aluminum / smoked plastic instead of flat gray.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    setRobotEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
+    const room = new RoomEnvironment();
+    this.environment = pmrem.fromScene(room, 0.04);
+    setRobotEnvironment(this.environment.texture);
+    room.dispose();
     pmrem.dispose();
 
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.05, 200);
@@ -67,7 +71,7 @@ export class Renderer {
     const sun = new THREE.DirectionalLight(0xffffff, 2.2);
     sun.position.set(-6, 18, 8);
     sun.castShadow = opts.shadows ?? true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     const half = Math.max(fieldLength, fieldWidth) / 2 + 1;
     sun.shadow.camera.left = -half;
     sun.shadow.camera.right = half;
@@ -293,6 +297,8 @@ export class Renderer {
       if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
       else mat?.dispose();
     });
+    if (getRobotEnvironment() === this.environment.texture) setRobotEnvironment(null);
+    this.environment.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

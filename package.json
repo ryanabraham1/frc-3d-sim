@@ -13,6 +13,7 @@
     "test:all": "vitest run",
     "typecheck": "tsc --noEmit",
     "cad:prepare": "node --max-old-space-size=6144 tools/prepare-robot-cad.mjs",
+    "cad:match": "node tools/prepare-match-cad.mjs",
     "serve": "node server/index.ts",
     "cloudflare:dev": "wrangler dev --config cloudflare/wrangler.jsonc --port 8787",
     "cloudflare:deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",

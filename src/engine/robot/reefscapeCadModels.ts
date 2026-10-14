@@ -144,7 +144,9 @@ export function buildReefscapeCad(id:string,root:THREE.Group,k:ModelKit,animated
       // Reference-calibrated intake hinges: rotating about the roller bank
       // made the inboard linkage cut through the carpet. Fold at its frame end.
       if(id==='whisper-1690')intake.rotation.x=-(1-deploy)*1.2;else intake.rotation.z=-(1-deploy)*1.2;
-      const fold=id==='firefly-118'?Math.PI/2:id==='sublime-1678'?Math.PI/2:-1.1;
+      // SubLime's exported Poof arm folds inward about its longitudinal axle.
+      // The positive fold swung the gearbox out under the side bumper.
+      const fold=id==='firefly-118'?Math.PI/2:id==='sublime-1678'?-Math.PI/2:-1.1;
       climbAngle=ease(climbAngle,fold*(1-s.climb),s.dt);climb.rotation[id==='firefly-118'?'z':'x']=climbAngle;
     }};
 }

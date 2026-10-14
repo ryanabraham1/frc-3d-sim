@@ -1,0 +1,373 @@
+[
+  {
+    "id": "domotron-604",
+    "year": "2024",
+    "before": 1177681,
+    "after": 365345,
+    "bytes": 3864584
+  },
+  {
+    "id": "doppler-1690",
+    "year": "2024",
+    "before": 543329,
+    "after": 354070,
+    "bytes": 2566812
+  },
+  {
+    "id": "gold-rush-27",
+    "year": "2024",
+    "before": 506146,
+    "after": 211242,
+    "bytes": 2369508
+  },
+  {
+    "id": "nik-1678",
+    "year": "2024",
+    "before": 600537,
+    "after": 313525,
+    "bytes": 3305988
+  },
+  {
+    "id": "nocturne-3467",
+    "year": "2024",
+    "before": 726148,
+    "after": 341291,
+    "bytes": 3365044
+  },
+  {
+    "id": "presto-6328",
+    "year": "2024",
+    "before": 695277,
+    "after": 289949,
+    "bytes": 3210784
+  },
+  {
+    "id": "riot-1706",
+    "year": "2024",
+    "before": 529211,
+    "after": 249103,
+    "bytes": 2770600
+  },
+  {
+    "id": "roti-5940",
+    "year": "2024",
+    "before": 715214,
+    "after": 300314,
+    "bytes": 3336652
+  },
+  {
+    "id": "snoopy-6036",
+    "year": "2024",
+    "before": 849968,
+    "after": 334889,
+    "bytes": 3703780
+  },
+  {
+    "id": "surge-3005",
+    "year": "2024",
+    "before": 718867,
+    "after": 333818,
+    "bytes": 3455444
+  },
+  {
+    "id": "twister-118",
+    "year": "2024",
+    "before": 741238,
+    "after": 276959,
+    "bytes": 2861896
+  },
+  {
+    "id": "typhoon-2910",
+    "year": "2024",
+    "before": 730063,
+    "after": 492459,
+    "bytes": 3587788
+  },
+  {
+    "id": "ultraviolet-3847",
+    "year": "2024",
+    "before": 566901,
+    "after": 299178,
+    "bytes": 3107140
+  },
+  {
+    "id": "firefly-118",
+    "year": "2025",
+    "before": 469820,
+    "after": 199370,
+    "bytes": 2167296
+  },
+  {
+    "id": "quixilver-604-2025",
+    "year": "2025",
+    "before": 608135,
+    "after": 266741,
+    "bytes": 2748916
+  },
+  {
+    "id": "redundancy-190",
+    "year": "2025",
+    "before": 448288,
+    "after": 230270,
+    "bytes": 2530412
+  },
+  {
+    "id": "relay-3005",
+    "year": "2025",
+    "before": 763821,
+    "after": 636553,
+    "bytes": 4331352
+  },
+  {
+    "id": "singularity-1706",
+    "year": "2025",
+    "before": 617642,
+    "after": 264556,
+    "bytes": 3037116
+  },
+  {
+    "id": "spectre-2910",
+    "year": "2025",
+    "before": 538010,
+    "after": 239665,
+    "bytes": 2754364
+  },
+  {
+    "id": "sublime-1678",
+    "year": "2025",
+    "before": 599664,
+    "after": 299573,
+    "bytes": 3239204
+  },
+  {
+    "id": "subzero-1778",
+    "year": "2025",
+    "before": 576417,
+    "after": 244096,
+    "bytes": 2471012
+  },
+  {
+    "id": "taiyaki-5940",
+    "year": "2025",
+    "before": 532386,
+    "after": 263849,
+    "bytes": 2829080
+  },
+  {
+    "id": "whisper-1690",
+    "year": "2025",
+    "before": 636367,
+    "after": 281231,
+    "bytes": 3044896
+  },
+  {
+    "id": "wildstang-111",
+    "year": "2025",
+    "before": 538099,
+    "after": 235762,
+    "bytes": 2635736
+  },
+  {
+    "id": "wisp-422",
+    "year": "2025",
+    "before": 526949,
+    "after": 210142,
+    "bytes": 2422388
+  },
+  {
+    "id": "zuma-581",
+    "year": "2025",
+    "before": 868453,
+    "after": 335088,
+    "bytes": 3411080
+  },
+  {
+    "id": "aimbot-3256",
+    "year": "2026",
+    "before": 903169,
+    "after": 274804,
+    "bytes": 2522288
+  },
+  {
+    "id": "chunk-7769",
+    "year": "2026",
+    "before": 594685,
+    "after": 251454,
+    "bytes": 2495036
+  },
+  {
+    "id": "ctrl-alt-defeat-9470",
+    "year": "2026",
+    "before": 397361,
+    "after": 228954,
+    "bytes": 1525192
+  },
+  {
+    "id": "cyclone-1987",
+    "year": "2026",
+    "before": 705922,
+    "after": 227376,
+    "bytes": 2331668
+  },
+  {
+    "id": "downpour-6800",
+    "year": "2026",
+    "before": 584268,
+    "after": 264943,
+    "bytes": 1831516
+  },
+  {
+    "id": "intake-581-donor",
+    "year": "2026",
+    "before": 97271,
+    "after": 35730,
+    "bytes": 269372
+  },
+  {
+    "id": "limestone-1678",
+    "year": "2026",
+    "before": 409808,
+    "after": 251817,
+    "bytes": 1761316
+  },
+  {
+    "id": "matterhorn-9496",
+    "year": "2026",
+    "before": 692381,
+    "after": 231732,
+    "bytes": 2371768
+  },
+  {
+    "id": "mirage-1706",
+    "year": "2026",
+    "before": 728944,
+    "after": 270881,
+    "bytes": 2755732
+  },
+  {
+    "id": "mixtape-971",
+    "year": "2026",
+    "before": 601398,
+    "after": 336949,
+    "bytes": 2443052
+  },
+  {
+    "id": "reblitz-2910",
+    "year": "2026",
+    "before": 487204,
+    "after": 211901,
+    "bytes": 2137784
+  },
+  {
+    "id": "roman-6329",
+    "year": "2026",
+    "before": 673874,
+    "after": 225731,
+    "bytes": 2307228
+  },
+  {
+    "id": "rotor-604-donor",
+    "year": "2026",
+    "before": 100899,
+    "after": 62393,
+    "bytes": 451500
+  },
+  {
+    "id": "rubble-581",
+    "year": "2026",
+    "before": 454693,
+    "after": 239260,
+    "bytes": 1625592
+  },
+  {
+    "id": "shooter-581-donor",
+    "year": "2026",
+    "before": 286099,
+    "after": 91182,
+    "bytes": 631484
+  },
+  {
+    "id": "simbot-tim-1114",
+    "year": "2026",
+    "before": 110678,
+    "after": 31975,
+    "bytes": 225048
+  },
+  {
+    "id": "toploader-604",
+    "year": "2026",
+    "before": 779981,
+    "after": 418094,
+    "bytes": 2770404
+  },
+  {
+    "id": "hero-constantine-1318",
+    "year": "wcp-hero-heist",
+    "before": 660773,
+    "after": 241650,
+    "bytes": 2489496
+  },
+  {
+    "id": "hero-fireweed-1540",
+    "year": "wcp-hero-heist",
+    "before": 783563,
+    "after": 311525,
+    "bytes": 3128788
+  },
+  {
+    "id": "hero-gadgeteer-9408",
+    "year": "wcp-hero-heist",
+    "before": 693791,
+    "after": 335088,
+    "bytes": 3585660
+  },
+  {
+    "id": "hero-mantis-6800",
+    "year": "wcp-hero-heist",
+    "before": 523960,
+    "after": 227356,
+    "bytes": 2479800
+  },
+  {
+    "id": "hero-multiclass-5800",
+    "year": "wcp-hero-heist",
+    "before": 864080,
+    "after": 315883,
+    "bytes": 3270696
+  },
+  {
+    "id": "hero-multiclass-6731",
+    "year": "wcp-hero-heist",
+    "before": 649697,
+    "after": 239638,
+    "bytes": 2542056
+  },
+  {
+    "id": "hero-mystic-498",
+    "year": "wcp-hero-heist",
+    "before": 771829,
+    "after": 317626,
+    "bytes": 3278644
+  },
+  {
+    "id": "hero-nomad-6995",
+    "year": "wcp-hero-heist",
+    "before": 929693,
+    "after": 299630,
+    "bytes": 2992772
+  },
+  {
+    "id": "hero-poofs-254",
+    "year": "wcp-hero-heist",
+    "before": 575196,
+    "after": 211260,
+    "bytes": 2373944
+  },
+  {
+    "id": "hero-sentinel-1923",
+    "year": "wcp-hero-heist",
+    "before": 578483,
+    "after": 254992,
+    "bytes": 2662824
+  }
+]

@@ -12,7 +12,7 @@ import { animateAlgaeGrip } from '../src/seasons/2025-reefscape/algaeVisual';
 import { coralGeometry } from '../src/seasons/2025-reefscape/field';
 import { setRobotEnvironment } from '../src/engine/robot/models';
 import { prepareCadModels, setCadModelsEnabled, setCadAnimationEnabled, CAD_MODEL_IDS, CAD_2024_MODEL_IDS, CAD_2025_MODEL_IDS, ADAPTED_CAD_MODEL_IDS, HERO_CAD_MODEL_IDS } from '../src/engine/robot/cadModels';
-await prepareCadModels();
+await prepareCadModels(undefined, { detail: 'full' });
 const R = await loadRapier();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));

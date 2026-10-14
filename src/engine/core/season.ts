@@ -177,7 +177,8 @@ export interface SeasonRules {
   /** A human-player button was pressed (`button` 1 = H; 2 / 3 only for seasons declaring `humanPlayerButtons`). */
   humanPlayerAction(alliance: Alliance, button?: number): void;
   /** Per rendered frame: lights and other cosmetic effects. */
-  updateVisuals(dt: number, time: number): void;
+  /** A worker view already receives robot/piece visuals; only field visuals need updating there. */
+  updateVisuals(dt: number, time: number, robotVisualsMirrored?: boolean): void;
   results(): MatchResults;
   /**
    * Multiplayer: JSON-serializable rules state that clients need for HUD/visuals (not the score or clock —

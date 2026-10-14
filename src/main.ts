@@ -5,6 +5,7 @@ import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
 import { prepareCadModels } from '@engine/robot/cadModels';
+import { discardSimulationWorker, warmSimulationWorker } from '@engine/sim/workerBoot';
 import { inject } from '@vercel/analytics';
 
 // Initialize Vercel Web Analytics
@@ -25,6 +26,7 @@ const lobby = new LobbyController();
 
 function stopGame(): void {
   generation++;
+  discardSimulationWorker();
   game?.dispose();
   game = null;
   app.innerHTML = '';
@@ -34,6 +36,7 @@ function stopGame(): void {
 type EngineModules = { R: Awaited<ReturnType<typeof import('@engine/physics/world').loadRapier>>; Game: typeof import('@engine/core/game').Game; localSetup: typeof import('@engine/core/game').localSetup; getSeason: typeof import('@seasons/index').getSeason };
 let engineModules: Promise<EngineModules> | null = null;
 function loadEngineModules(): Promise<EngineModules> {
+  if (engineModules) return engineModules;
   const p: Promise<EngineModules> = Promise.all([
     import('@engine/physics/world'),
     import('@engine/core/game'),
@@ -102,6 +105,7 @@ async function loadEngine(settings: GameSettings, setup: MatchSetup | undefined,
   const { R, Game, localSetup, getSeason } = await withTimeout(loadEngineModules(), ENGINE_LOAD_TIMEOUT_MS, 'Engine load');
   // Only fetch/decode the CAD models of robots actually in this match (the full set is ~130 MB).
   const lineup = setup ?? localSetup(settings, getSeason(settings.seasonId));
+  if (!setup) warmSimulationWorker(lineup.robots.map((r) => r.config.model));
   status('LOADING FIELD\u2026');
   await withTimeout(getSeason(settings.seasonId).prepareAssets?.() ?? Promise.resolve(), CAD_LOAD_TIMEOUT_MS, 'Field load').catch(() => undefined);
   status('LOADING ROBOTS\u2026');

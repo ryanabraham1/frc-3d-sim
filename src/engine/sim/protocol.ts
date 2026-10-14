@@ -13,10 +13,13 @@ export type HopperPhysics = 'none' | 'player' | 'all';
 
 /** Screen → worker. */
 export type ToWorker =
+  | { t: 'warm'; models: readonly (string | undefined)[]; cadDetail?: 'full' | 'match' }
+  | { t: 'start' }
   | {
       t: 'init';
       settings: GameSettings;
       setup: MatchSetup;
+      cadDetail?: 'full' | 'match';
       /** Real-body hoppers: none, the player's robot, or every robot. */
       hopper: HopperPhysics;
       /** Which real-body hopper (see WorldOptions.hopperMode). */

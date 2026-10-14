@@ -132,7 +132,11 @@ export class ReefscapeRules implements SeasonRules {
       beam.name = 'end-effector-arm'; carriage.add(beam);
       const coral = new THREE.Mesh(this.coralGeo, this.coralMat);
       coral.userData.heldGamePiece=true;
-      const algae = new THREE.Mesh(this.algaeGeo, this.algaeMat); algae.position.set(0.36, -0.24, 0);
+      coral.userData.mirrorParent = true;
+      const algae = new THREE.Mesh(this.algaeGeo.clone(), this.algaeMat); algae.position.set(0.36, -0.24, 0);
+      algae.userData.heldGamePiece = true;
+      algae.userData.mirrorGeometry = true;
+      coral.visible = algae.visible = false;
       carriage.add(coral, algae); mast.add(carriage); robot.visual.add(mast);
       this.carriages.set(robot.id, carriage); this.heldVisuals.set(robot.id, { coral, algae });
       this.masts.set(robot.id, rails);
@@ -174,7 +178,14 @@ export class ReefscapeRules implements SeasonRules {
 
   private isAuto(): boolean { return ['auto', 'auto-pause'].includes(this.ctx.clock.current.id); }
   private activeScoring(): boolean { return this.ctx.clock.started && !this.ctx.clock.finished; }
-  private held(robot: Robot, algae: boolean): number | undefined { return robot.held.find((i) => (i >= C.CORAL_COUNT) === algae); }
+  private held(robot: Robot, algae: boolean): number | undefined {
+    const index = robot.held.find((i) => i >= 0 && (i >= C.CORAL_COUNT) === algae);
+    if (index !== undefined || !robot.held.includes(-1)) return index;
+    // Replica robot snapshots carry a count (-1 placeholders); the pool carries the real IDs and piece types.
+    const { pool } = this.ctx;
+    const replica = pool.owner.findIndex((owner, i) => owner === robot.id && pool.state[i] === 'held' && (i >= C.CORAL_COUNT) === algae);
+    return replica < 0 ? undefined : replica;
+  }
   private readonly bufferPassLatch = new Set<number>();
 
   private coralBuffered(robot: Robot): boolean {
@@ -1093,7 +1104,7 @@ export class ReefscapeRules implements SeasonRules {
     this.protectedContacts.clear(); for (const key of live) this.protectedContacts.add(key);
   }
 
-  updateVisuals(dt: number, time: number): void {
+  updateVisuals(dt: number, time: number, robotVisualsMirrored = false): void {
     const { pool, frame, score } = this.ctx;
     for (const a of ALLIANCES) {
       for (let f = 0; f < 6; f++) this.refs.algae[a][f].visible = this.reefAlgae(a, f);
@@ -1110,6 +1121,9 @@ export class ReefscapeRules implements SeasonRules {
       const m = this.mechanisms.get(robot.id)!;
       // Replica clients also predict driving against the raised elevator and barge.
       this.updateElevatorCollider(robot, m.height);
+      // The worker already seats and animates these pieces. Rebuilding them from its
+      // newest possession state fights interpolation and repeats costly CAD clearance searches.
+      if (robotVisualsMirrored) continue;
       const carriage = this.carriages.get(robot.id)!;
       carriage.position.y = m.height;
       // The generic end effector reaches along the scoring direction (yawed out to the side for side scorers).

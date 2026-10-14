@@ -41,7 +41,9 @@ async function initialize(): Promise<void> {
     thumbRenderer.toneMapping = THREE.ACESFilmicToneMapping;
     thumbRenderer.setClearColor(0x000000, 0);
     const pmrem = new THREE.PMREMGenerator(thumbRenderer);
-    env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    const room = new RoomEnvironment();
+    env = pmrem.fromScene(room, 0.04).texture;
+    room.dispose();
     pmrem.dispose();
   }
   setRobotEnvironment(env);
@@ -71,7 +73,10 @@ function build(season: SeasonDefinition, config: RobotConfig, alliance: 'red' | 
     dispose() {
       physics.world.free();
       scene.traverse((o) => {
-        if (o instanceof THREE.Mesh) o.geometry.dispose();
+        if (o instanceof THREE.Mesh) {
+          o.geometry.dispose();
+          for (const material of Array.isArray(o.material) ? o.material : [o.material]) material.dispose();
+        }
       });
     },
   };

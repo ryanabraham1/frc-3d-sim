@@ -19,6 +19,7 @@ import { build7769Cad } from './chunkCadModel';
 import { build1987Cad } from './cycloneCadModel';
 import { build9496Cad } from './matterhornCadModel';
 import { buildAimbotCad } from './aimbotCadModel';
+import { finishReefscapeCad } from './reefscapeCadFinishes';
 
 export const HERO_CAD_MODEL_IDS = ['hero-constantine-1318','hero-sentinel-1923','hero-mantis-6800','hero-multiclass-6731','hero-fireweed-1540', 'hero-multiclass-5800', 'hero-multiclass-5800-gadgeteer', 'hero-nomad-6995','hero-poofs-254','hero-gadgeteer-9408','hero-mystic-498'] as const;
 /** Model ids that reuse another model's CAD file (every real team robot needs its own id; see shot-blocker.test.ts). */
@@ -48,19 +49,20 @@ export async function decodeCadModel(id: string, data: ArrayBuffer): Promise<voi
 /** Preload before constructing robots; headless simulation retains lightweight procedural models. */
 export async function prepareCadModels(
   ids: readonly (string | undefined)[] = [...HERO_CAD_MODEL_IDS,...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,...ADAPTED_CAD_MODEL_IDS],
-  opts: { timeoutMs?: number; onProgress?: (done: number, total: number) => void } = {},
+  opts: { timeoutMs?: number; onProgress?: (done: number, total: number) => void; detail?: 'full' | 'match' } = {},
 ): Promise<void> {
   if (typeof document === 'undefined') return;
   const requested = ids.flatMap(id => id ? [CAD_ALIASES[id] ?? id,...(CAD_DONOR_DEPENDENCIES[id] ?? [])] : []);
   const assetIds: readonly string[] = [...HERO_CAD_MODEL_IDS.filter(id => !(id in CAD_ALIASES)),...CAD_MODEL_IDS,...CAD_2024_MODEL_IDS,...CAD_2025_MODEL_IDS,'intake-581-donor','shooter-581-donor','rotor-604-donor'];
   const wanted = [...new Set(requested)].filter(id => assetIds.includes(id));
+  const detail = opts.detail ?? (typeof location !== 'undefined' && new URLSearchParams(location.search).get('cadDetail') === 'full' ? 'full' : 'match');
   let done = 0;
   opts.onProgress?.(0, wanted.length);
   const all = Promise.all(wanted.map(id => {
     if (assets.has(id)) { opts.onProgress?.(++done, wanted.length); return Promise.resolve(); }
     let request = pending.get(id);
     if (!request) {
-      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(HERO_CAD_MODEL_IDS as readonly string[]).includes(id) ? 'wcp-hero-heist' : (CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${id}.glb`)
+      request = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/robots/${(HERO_CAD_MODEL_IDS as readonly string[]).includes(id) ? 'wcp-hero-heist' : (CAD_2024_MODEL_IDS as readonly string[]).includes(id) ? 2024 : (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? 2025 : 2026}/${detail === 'full' ? '' : 'match/'}${id}.glb`)
         .then(gltf => { setAsset(id, gltf.scene); })
         .catch(error => { console.warn(`CAD model ${id} unavailable; using procedural model.`, error); })
         .finally(() => { pending.delete(id); });
@@ -88,7 +90,7 @@ export function cadRobotModelBuilder(id: string | undefined): RobotModelBuilder 
 }
 
 function buildCadModel(id: string, k: ModelKit): RobotModel {
-  const root = ownedClone(assets.get(id)!);
+  const root = ownedClone(assets.get(id)!, (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? id : undefined);
   root.name = `cad-${id}`;
   root.userData.cadModel = id;
   k.visual.add(root);
@@ -188,7 +190,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   };
 }
 
-function ownedClone<T extends THREE.Object3D>(source:T):T {
+function ownedClone<T extends THREE.Object3D>(source:T, reefscapeId?: string):T {
   const clone=source.clone(true) as T;
   clone.traverse(o => {
     const m = o as THREE.Mesh;
@@ -198,6 +200,11 @@ function ownedClone<T extends THREE.Object3D>(source:T):T {
     const materialCopies = (Array.isArray(m.material) ? m.material : [m.material]).map(material => {
       const copy = material.clone() as THREE.MeshStandardMaterial;
       if (copy.isMeshStandardMaterial) {
+        if (reefscapeId) {
+          let group = o;
+          while (group.parent && group.parent !== clone) group = group.parent;
+          finishReefscapeCad(copy, reefscapeId, group.name);
+        }
         // Onshape's exported CAD swatches need a darker, matte finish under the game's bright field lighting.
         if (copy.name !== 'rubber') copy.color.convertSRGBToLinear();
         if (copy.userData.cadSheet && !copy.userData.cadSmoothSheet) copy.flatShading = true;

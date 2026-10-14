@@ -60,9 +60,10 @@ function mergeCluster(anchor: THREE.Object3D, dynamic: Set<THREE.Object3D>): voi
     const textured = g.mat as THREE.MeshStandardMaterial;
     const needUv = !!(textured.map || textured.normalMap || textured.bumpMap || textured.roughnessMap || textured.metalnessMap || textured.alphaMap || textured.emissiveMap);
     const geos: THREE.BufferGeometry[] = [];
+    const indexed = g.meshes.every((m) => !!m.geometry.index);
     for (const m of g.meshes) {
       rel.multiplyMatrices(inv, m.matrixWorld);
-      let geo = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      let geo = !indexed && m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
       for (const name of Object.keys(geo.attributes)) {
         if (name !== 'position' && name !== 'normal' && !(needUv && name === 'uv')) geo.deleteAttribute(name);
       }
@@ -125,6 +126,16 @@ function materialKey(m: THREE.Material): string {
 }
 
 function flipWinding(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  if (geo.index) {
+    const index = geo.index;
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      const second = index.getX(i + 1);
+      index.setX(i + 1, index.getX(i + 2));
+      index.setX(i + 2, second);
+    }
+    index.needsUpdate = true;
+    return geo;
+  }
   for (const name of Object.keys(geo.attributes)) {
     const a = geo.attributes[name] as THREE.BufferAttribute;
     const n = a.itemSize;
