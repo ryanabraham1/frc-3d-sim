@@ -99,8 +99,11 @@ await doc.transform(
   prune(),
   dedup(),
   weld({ tolerance: 1e-4 }),
-  simplify({ simplifier: MeshoptSimplifier, ratio: 0.5, error: 0.0008 }),
+  // Join per material first, then simplify: the error is relative to each mesh's extent (about 3 m joined), so
+  // 0.002 is about 6 mm. Simplifying each small part on its own kept nearly 600k triangles per HUB.
   join({ keepNamed: true }),
+  weld({ tolerance: 1e-4 }),
+  simplify({ simplifier: MeshoptSimplifier, ratio: 0, error: 0.002 }),
   prune(),
   meshopt({ encoder: MeshoptEncoder, level: 'medium' }),
 );
