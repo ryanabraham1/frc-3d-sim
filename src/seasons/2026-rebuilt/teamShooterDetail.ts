@@ -158,8 +158,8 @@ export function highTideShooter(t:THREE.Object3D, fixed:THREE.Object3D, x:number
   // Hood: a curved black sheet concentric with the flywheel, pivoting on its axis. Rotating the hood group by the
   // exit angle puts the hood's lip where the ball leaves (direction = lip angle - 90°).
   const hood=new THREE.Group(); hood.name='hightide-adjustable-hood'; hood.userData.hood=true; hood.userData.hoodRotor=hood; hood.position.set(F[0],F[1],0); root.add(hood);
-  // Keep the shell tail out of the feeder throat as the hood rises.
-  const span=.7, shell=new THREE.Shape();
+  // 29°: raised for a steep shot, a longer shell's tail swings down across the throat and over the rotor plate.
+  const span=.5, shell=new THREE.Shape();
   shell.absarc(0,0,hoodR+.006,0,span,false);shell.absarc(0,0,hoodR,span,0,true);shell.closePath();
   const shellMesh=new THREE.Mesh(new THREE.ExtrudeGeometry(shell,{depth:2*plateZ-.012,bevelEnabled:false,curveSegments:20}),black);
   shellMesh.geometry.translate(0,0,-(plateZ-.006));hood.add(shellMesh);

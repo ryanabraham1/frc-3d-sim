@@ -7,7 +7,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
+import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
@@ -163,14 +163,20 @@ export class Robot {
   private hopperNet?: THREE.LineSegments;
   private netFuel: THREE.Mesh[] = [];
   /** Net bulge actually drawn (m above `height`) and its rate: a soft spring chasing the load-based envelope. */
-  private netShown = 0;
-  private netVel = 0;
   private lastSync = -1;
   /** Actual envelope used for obstacle routing and flexible-roof collisions. */
   get manualHopper(): boolean { return this.config.hopperExpansion?.mechanism === 'telescoping'; }
   hopperRaised = false;
   get hopperCapacity(): number { return this.manualHopper && !this.hopperRaised ? this.config.hopperExpansion!.startCount : this.config.hopperCapacity; }
-  get clearanceHeight(): number { return this.manualHopper ? (this.hopperRaised ? this.config.hopperExpansion!.fullHeight : this.config.height) : loadedRobotHeight(this.config, this.held.length); }
+  /**
+   * Travel envelope of the hopper load. The configured expansion curve defines how much FUEL fits below the rim
+   * (including slack net capacity). Particle heaps and transient slosh deform the flexible net; treating their
+   * highest ball as a rigid, full-footprint box falsely blocks trench-safe loads and depends on visual updates.
+   */
+  get clearanceHeight(): number {
+    if (this.manualHopper) return this.hopperRaised ? this.config.hopperExpansion!.fullHeight : this.config.height;
+    return loadedRobotHeight(this.config, this.held.length);
+  }
   /** Lowest overhead obstacle above the robot this tick (set by the sim from the season; Infinity = none). */
   overheadLimit = Infinity;
   /**
@@ -308,7 +314,7 @@ export class Robot {
       // Raised shooter hood: a box that Robot.updateHoodCollider fits to the DRAWN hood every time it moves, so the
       // TRENCH arm stops the robot exactly where the hood on screen touches it. Only field structure sees it.
       this.hoodCollider = this.physics.world.createCollider(R.ColliderDesc.cuboid(0.05, 0.02, 0.05)
-        .setMass(0).setFriction(0.2).setCollisionGroups(collisionGroups(Group.ROBOT, Group.FIELD)), this.body);
+        .setMass(0).setFriction(0).setCollisionGroups(collisionGroups(Group.HOOD_SKIRT, Group.HOOD_STOP)), this.body);
       this.hoodCollider.setEnabled(false);
     }
     if (c.hopperExpansion) {
@@ -447,53 +453,51 @@ export class Robot {
 
   private static readonly NET_FUEL_R = 0.075; // real FUEL radius: balls under the net are full size
 
+  /** Lift of the fully stretched net above the rim at normalised (u, v) (config netDomeLift), built on first use. */
+  private netLift: ((u: number, v: number) => number) | null = null;
   /**
-   * Ease the drawn bulge toward the load-based envelope: an under-damped spring (ω ≈ 7 rad/s, ζ ≈ 0.7), so the net
-   * creeps up as FUEL comes in, settles with a little give, and sags back as the hopper empties. Visual only:
-   * collisions and routing use `clearanceHeight`.
+   * Robot-frame height of the highest FUEL top under a stretching net, measured from the balls actually held (real
+   * bodies each step, the drawn pile each frame); -1 until something has been measured. The
+   * fabric drape follows this; the travel envelope and intake limit use the configured load curve.
    */
-  private stepNetBulge(dt: number): void {
-    const target = this.clearanceHeight - this.config.height;
-    if (dt <= 0) {
-      if (this.lastSync < 0) this.netShown = target;
-      return;
-    }
-    const w = 7, zeta = 0.7;
-    for (let left = dt; left > 1e-6; left -= 0.02) {
-      const h = Math.min(0.02, left);
-      this.netVel += (-(2 * zeta * w) * this.netVel - w * w * (this.netShown - target)) * h;
-      this.netShown = Math.max(0, this.netShown + this.netVel * h);
-    }
-    if (Math.abs(this.netShown - target) < 1e-4 && Math.abs(this.netVel) < 1e-3) { this.netShown = target; this.netVel = 0; }
+  measuredTop = -1;
+
+  /**
+   * Highest held ball top (robot frame) of a physical hopper, or the rim when nothing is above it. (The legacy StowBay
+   * is not measured: its wall-slab cavity is not the drawn hopper, so its heaps say nothing about the real net.)
+   */
+  private measureRealHopper(): void {
+    if (!this.config.hopperExpansion || this.manualHopper || !this.mech) return;
+    let top = this.config.height;
+    this.mech.forEachLocal((_x, y) => { top = Math.max(top, y + Robot.NET_FUEL_R); });
+    this.measuredTop = top;
   }
 
   private updateHopperNet(dt: number): void {
     const net = this.hopperNet;
     if (!net) return;
-    this.stepNetBulge(dt);
-    const c = this.config, extra = this.netShown;
-    // FUEL can only rise as far as the net has actually stretched.
-    const stretch = extra / Math.max(1e-3, (c.hopperExpansion?.fullHeight ?? c.height) - c.height);
+    const c = this.config;
+    this.netLift ??= netDomeLift(c, c.height);
+    // The pile may rise into the whole dome: how far the net actually bulges is decided by the balls under it.
     for (const mesh of this.fuelPiles) {
       const ceiling = mesh.userData.fuelCeiling;
-      if (!ceiling?.setStretch) continue;
-      ceiling.setStretch(stretch);
-      // Opening a roof must wake a pile compressed beneath its earlier, lower ceiling.
-      if (Math.abs(stretch - (mesh.userData.netStretch ?? 1)) > 1e-4) mesh.userData.wakeFuel?.();
-      mesh.userData.netStretch = stretch;
+      if (!ceiling?.setStretch || mesh.userData.netStretch === 1) continue;
+      ceiling.setStretch(1);
+      mesh.userData.wakeFuel?.();
+      mesh.userData.netStretch = 1;
     }
     const area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
     // Imported sliding hoppers carry the roof anchors with the moving wall, including when stowed.
     const extension=this.visual.userData.netIntakeExtension;
     const cx = bin ? bin.x : area.cx+(extension?.side??0)*(extension?.length??0)/2, sx = bin ? bin.length / 2 : area.sx+(extension?.length??0)/2, sz = bin ? bin.width / 2 : area.sz;
-    // Uncovered FUEL rides up under the net; its tops are where the strands drape.
+    // The net drapes over the balls actually in the hopper: their tops are where the strands rest.
     const tops: { x: number; z: number; y: number }[] = [];
-    // Drape over the current simulated pile, including articulated extension bins.
-    // No decorative balls or preset net load points.
     this.visual.updateMatrixWorld(true);
     const point = new THREE.Vector3();
-    // Buried layers cannot contact the roof. Avoid checking them against every strand sample.
+    let highest = c.height;
+    // Buried layers cannot touch the net; only balls near the rim are draped over.
     const addTop = (x: number, y: number, z: number) => {
+      highest = Math.max(highest, y);
       if (y >= c.height - .06) tops.push({ x, z, y });
     };
     this.bay?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
@@ -507,38 +511,31 @@ export class Robot {
         addTop(point.x, point.y + surface.radius, point.z);
       }
     }
+    if (!this.mech) this.measuredTop = this.manualHopper || this.bay ? -1 : highest;
+    // Tight over each ball top, sagging between neighbours by about 3.5 % of the hopper's smaller side, tied at the rim
+    // (it can only rise so steeply from the tie line) and never past the fully stretched dome.
+    // Beyond a ball's own top the fabric falls away as a taut tent (slope continuous with the sag) until it meets the
+    // fabric spanning from its ties or a neighbouring ball.
+    const sag = .035 * Math.min(2 * sx, 2 * sz), R = Robot.NET_FUEL_R, slope = Math.max(.8, 2 * sag / R);
     const grid = net.userData.grid as number[], p = net.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < p.count; i++) {
       const x = grid[i * 3], z = grid[i * 3 + 2];
-      const bow = Math.max(0, 1 - x ** 4) * Math.max(0, 1 - z ** 4);
       let px = cx + x * sx, pz = z * sz;
       const chamfer=this.visual.userData.hopperChamfer;
       const clipped=chamfer && chamfer.fixedSide*px+Math.abs(pz)>chamfer.hx+chamfer.hz-chamfer.cut;
       if(clipped)px=chamfer.fixedSide*(chamfer.hx+chamfer.hz-chamfer.cut-Math.abs(pz));
-      // A slack net hangs lower than the balls it covers: it rests on their tops and drapes over each ball's curve
-      // (smoothly blended, like cloth), sagging in the gaps between them.
-      // Load count sets the allowed expansion, but only actual ball contacts lift the fabric. Between contacts the
-      // taut strands descend toward the fixed rim; an empty pocket must not inflate into a preset dome.
-      let y = c.height - 0.018 * bow;
-      const R = Robot.NET_FUEL_R + 0.008;
+      // Slack, the fabric dips a little below the rim between its ties.
+      let y = c.height - 0.012 * netDomeShape(x, z);
       for (const t of tops) {
-        const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2;
-        const reach = R + Math.max(0, t.y - c.height) / .8;
+        const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2, reach = R + (t.y - y + sag) / slope;
         if (d2 >= reach * reach) continue;
-        // Spherical contact over the ball, then tension carries the lift to nearby strands with a sloping falloff.
-        const distance = Math.sqrt(d2);
-        const surface = d2 < R * R ? t.y + .006 - R + Math.sqrt(R * R - d2) : -Infinity;
-        const tension = t.y + .006 - .8 * distance;
-        const cap = Math.max(surface, tension);
-        const k = 0.025, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
+        const d = Math.sqrt(d2), cap = d < R ? t.y - sag * d2 / (R * R) : t.y - sag - slope * (d - R);
+        const k = 0.02, h = Math.max(k - Math.abs(y - cap), 0) / k; // polynomial smooth max
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
-      // Even a full net follows individual ball contacts. A count-driven dome erases the pockets and makes the
-      // load look like a rigid bubble; tension above already carries each real contact into neighbouring strands.
-      const maximum = Math.min(c.hopperExpansion?.fullHeight ?? c.height, c.height + extra);
-      // The net stays tied to the rim even beside a ball; interior fabric can stretch above it.
+      const edge = Math.max(0, Math.min((1 - Math.abs(x)) * sx, (1 - Math.abs(z)) * sz));
+      y = Math.min(y, c.height + this.netLift(x, z), c.height + 1.6 * edge);
       if(clipped)y=c.height;
-      y = Math.min(y, maximum, c.height + Math.max(0, y - c.height) * Math.min(1, bow * 5));
       // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
       const heights=net.userData.heights as Float32Array;
       const previous = heights[i];
@@ -546,7 +543,7 @@ export class Robot {
       heights[i]=shown;
       p.setXYZ(i, px, shown, pz);
     }
-    const openings = (this.visual.userData.netOpenings ?? this.visual.userData.fuelKeepouts) as {x:number;z:number;radius:number;bottom:number;top:number}[] | undefined;
+    const openings = this.visual.userData.fuelKeepouts as {x:number;z:number;radius:number;bottom:number;top:number}[] | undefined;
     if (openings) for (let i=0;i<p.count;i+=2) {
       const ax=p.getX(i),az=p.getZ(i),bx=p.getX(i+1),bz=p.getZ(i+1);
       for (const o of openings) {
@@ -877,6 +874,7 @@ export class Robot {
    */
   attachPool(pool: GamePiecePool, mode: 'mech' | 'stowbay' = 'stowbay'): void {
     if (this.bay || this.mech || !this.fuelPiles.length) return;
+    this.measuredTop = -1; // a drawn-pile measurement no longer describes the load
     if (mode === 'mech') {
       if (!this.model?.mech) return;
       this.mech = new MechHopper(this, pool, this.model.mech);
@@ -910,6 +908,19 @@ export class Robot {
     for (const pile of this.fuelPiles) pile.userData.setFuelCount?.(0);
   }
 
+  /** A scripted preload belongs below its bin's local roof, including fixed mechanism plates above the hopper. */
+  fuelPlacementFits(position: THREE.Vector3, radius: number): boolean {
+    const local = new THREE.Vector3();
+    return this.fuelPiles.some(pile => {
+      const b = pile.userData.fuelBin;
+      if (!b) return false;
+      local.copy(position).applyMatrix4(this.relativeMatrix(pile).invert());
+      if (Math.abs(local.x - b.x) > b.length / 2 - radius || Math.abs(local.z) > b.width / 2 - radius) return false;
+      const ceiling = Math.min(b.y0 + b.height, pile.userData.fuelCeiling?.(local.x, local.z) ?? Infinity);
+      return local.y + radius <= ceiling && local.y >= b.y0 + radius - .05;
+    });
+  }
+
   /** Which end of the robot the intake delivers to (the hopper mouth): -1 back, +1 front. */
   fuelIntakeSide(): number {
     const c = this.config;
@@ -938,21 +949,9 @@ export class Robot {
       }
     }
     // Covered net loads use the same count-dependent roof as their drawn net and clearance collider.
-    if (this.hopperNet) max.y = Math.min(max.y, this.clearanceHeight - .006);
+    // A stretching net lets the load rise to the net's full stretch; the balls decide how far it actually bulges.
+    if (this.hopperNet) max.y = Math.min(max.y, (this.config.hopperExpansion?.fullHeight ?? max.y) - .006);
     return Number.isFinite(min.x) ? { min, max, open: this.openHopper, keepouts: this.visual.userData.fuelKeepouts, chamfer:this.visual.userData.hopperChamfer, outline:this.visual.userData.fuelOutline } : null;
-  }
-
-  /** A scripted preload belongs below its bin's local roof, including fixed mechanism plates above the hopper. */
-  fuelPlacementFits(position: THREE.Vector3, radius: number): boolean {
-    const local = new THREE.Vector3();
-    return this.fuelPiles.some(pile => {
-      const b = pile.userData.fuelBin;
-      if (!b) return false;
-      local.copy(position).applyMatrix4(this.relativeMatrix(pile).invert());
-      if (Math.abs(local.x - b.x) > b.length / 2 - radius || Math.abs(local.z) > b.width / 2 - radius) return false;
-      const ceiling = Math.min(b.y0 + b.height, pile.userData.fuelCeiling?.(local.x, local.z) ?? Infinity);
-      return local.y + radius <= ceiling && local.y >= b.y0 + radius - .05;
-    });
   }
 
   /** One conserved load across main and deployed extension bins. */
@@ -1031,6 +1030,8 @@ export class Robot {
     for (const pile of this.fuelPiles) {
       pile.userData.fuelManagedCount = true;
       pile.userData.setFuelOpen?.(open);
+      pile.userData.bindFuelClearance?.(this.visual);
+      pile.userData.setFuelIntakeSide?.(groundSideSign(this.config));
       if (Robot.CAD_FUEL_CONTACTS || this.config.model==='aimbot-3256') pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
     }
@@ -1041,9 +1042,9 @@ export class Robot {
    * leaves the robot where it is, carrying the chassis' own motion plus its own, and falls under normal physics.
    * Nothing is thrown: if the robot is level and still, nothing ever gets here.
    */
-  private fuelEscaped(mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number): boolean {
+  private fuelEscaped(mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number): void {
     const idx = this.held[this.held.length - 1];
-    if (idx === undefined || idx < 0) return false; // replicas hold placeholders: only the host spills real pieces
+    if (idx === undefined || idx < 0) return; // replicas hold placeholders: only the host spills real pieces
     this.held.pop();
     this.visual.updateMatrixWorld(true);
     const local = this.visual.worldToLocal(mesh.localToWorld(new THREE.Vector3(x, y, z)));
@@ -1053,7 +1054,6 @@ export class Robot {
     const vel = new THREE.Vector3(vx, vy, vz).applyQuaternion(this.visual.quaternion)
       .add(new THREE.Vector3(lin.x, lin.y, lin.z)).add(new THREE.Vector3(ang.x, ang.y, ang.z).cross(arm));
     this.spilled.push({ idx, pos, vel });
-    return true;
   }
 
   /**
@@ -1249,6 +1249,7 @@ export class Robot {
     else if (this.hoodLatched) a.hood = this.hoodLatchPitch; // hood already up against the arm: it stays where it is
     if (simulation) this.scoringModelReady = collectScoringReadiness(() => model?.update(a));
     else model?.update(a);
+    this.applyHoodLift(a.dt);
     if (!simulation) {
       this.distributeFuel();
       for (const animate of this.fuelAnimations) animate(a);
@@ -1950,6 +1951,21 @@ export class Robot {
       });
     });
     this.hoodParts = parts;
+    this.hoodRotors = [...new Set(this.hoodRoots.map((o) => (o.userData.hoodRotor as THREE.Object3D | undefined) ?? o))];
+    this.hoodBaseY = this.hoodRotors.map((r) => r.position.y);
+    this.applyHoodLift(0);
+  }
+  private hoodRotors: THREE.Object3D[] = [];
+  private hoodBaseY: number[] = [];
+  private hoodFrac = 0;
+  /** Slide the hood assembly between its parked and open heights (`launcher.hoodLift`) as it opens for a shot. */
+  private applyHoodLift(dt: number): void {
+    const lift = this.config.launcher.hoodLift;
+    if (!lift || !this.hoodRotors.length) return;
+    const a = this.anim, want = a.aiming || a.firing > 0 ? 1 : 0;
+    this.hoodFrac += clamp(want - this.hoodFrac, -dt * 6, dt * 6);
+    const y = lift.rest + (lift.open - lift.rest) * this.hoodFrac;
+    this.hoodRotors.forEach((r, i) => { r.position.y = this.hoodBaseY[i] + y; });
   }
 
   /** Bounds of the drawn hood in the chassis frame (null when the robot has none). Refreshed when the hood has moved. */
@@ -1995,9 +2011,11 @@ export class Robot {
   get hoodTop(): number { return this.hoodBounds() ? this.hoodTopY : 0; }
 
   /**
-   * Fit the hood collider to the drawn hood. It exists only while the hood sticks up above the frame AND the season reports
-   * a low overhead over the robot (`overheadLimit`: the TRENCH arm). Away from the arm the hood doesn't collide with the
-   * rest of the field, so shooting beside the HUB, the TOWER or a wall plays exactly as before.
+   * Fit the hood collider (a skirt: the drawn hood's x reach and top on the centreline, carried down to the floor) to the drawn hood.
+   * It exists only while the hood reaches the overhead clearance AND the season reports a low overhead over the robot
+   * (`overheadLimit`: the TRENCH arm). It collides only with the wall under that arm (HOOD_STOP), so shooting beside the
+   * HUB, the TOWER or a wall plays as before, a hood that stays below the arm never blocks, and a robot stops with a low
+   * push exactly where the drawn hood meets the arm's face.
    */
   private updateHoodCollider(): void {
     const col = this.hoodCollider;
@@ -2005,11 +2023,22 @@ export class Robot {
     const b = this.hoodBounds();
     if (!b) { if (col.isEnabled()) col.setEnabled(false); return; }
     const frameTop = this.config.height;
-    const on = this.overheadLimit < Infinity && b.max.y > frameTop + 0.01;
-    if (!on) { if (col.isEnabled()) col.setEnabled(false); return; }
-    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - b.min.y) / 2), hz = Math.max(0.01, (b.max.z - b.min.z) / 2);
+    const on = this.overheadLimit < Infinity && b.max.y > Math.max(frameTop + 0.01, this.overheadLimit);
+    if (!on) { if (col.isEnabled()) { col.setEnabled(false); this.body.setSoftCcdPrediction(0); } return; }
+    // Speculative contacts (soft CCD) while the hood can hit the arm, so a robot driven at it at full speed stops where
+    // the drawn hood touches instead of sinking a step's travel into it.
+    this.body.setSoftCcdPrediction(0.12);
+    // The skirt has the hood's drawn x/z footprint and top, carried down to just above the floor: it meets the wall under
+    // the arm (field.ts) at the same face the drawn hood touches, and the push comes at wheel height, not hood height
+    // (a hood-height push tipped the robot onto its tail).
+    const bottom = 0.04;
+    // Only the hood's x reach and top matter for where the robot stops (the wall under the arm spans every y), so the skirt is
+    // a strip on the robot's centreline: a hood sitting off to one side (a turret aimed sideways, 1690's offset head) would
+    // otherwise push on the arm off-centre and spin the robot round the contact.
+    const hx = Math.max(0.01, (b.max.x - b.min.x) / 2), hy = Math.max(0.01, (b.max.y - bottom) / 2);
+    const hz = Math.max(0.01, Math.min(0.06, (b.max.z - b.min.z) / 2));
     col.setShape(new this.physics.R.Cuboid(hx, hy, hz));
-    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + b.min.y) / 2, z: (b.max.z + b.min.z) / 2 });
+    col.setTranslationWrtParent({ x: (b.max.x + b.min.x) / 2, y: (b.max.y + bottom) / 2, z: 0 });
     col.setEnabled(true);
   }
 
@@ -2375,6 +2404,7 @@ export class Robot {
     this.updateTipped(dt);
     this.bay?.update(dt);
     this.mech?.update(dt);
+    this.measureRealHopper();
   }
 
   // ───────────────────────── climbing (simplified, kinematic) ─────────────────────────
@@ -2635,7 +2665,7 @@ export class Robot {
       lanes: launcherExitOffsets(c).length,
       // Host: the exit the last shot actually left from. Replicas don't know it and alternate.
       shotLane: () => this.netAct === null ? this.lastShotExit : null,
-    }, roll, pieceR, roll && this.fuelPiles.length ? new FuelContacts(this.visual, this.visual, true) : undefined);
+    }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
   /**

@@ -29,11 +29,11 @@ export function point(k:ModelKit,o:THREE.Object3D,x=0,y=0,z=0) {
   }
   return k.visual.worldToLocal(o.localToWorld(new THREE.Vector3(x,y,z)));
 }
-export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean,roofAt?:(x:number,z:number)=>number,floorAt?:(x:number,z:number)=>number) {
+export function fuel(k:ModelKit,front:number,back:number,base:number,rim:number,width:number,compactFront=front,inside?:(x:number,z:number)=>boolean,roofAt?:(x:number,z:number)=>number) {
   const g=new THREE.Group();g.name='cad-hopper-fuel';k.visual.add(g);
   // A stretching net roof lets FUEL rise above the rigid rim into the net's dome.
   const e=k.config.hopperExpansion,netted=!!e&&e.mechanism!=='telescoping',roof=netted?e!.fullHeight:rim;
-  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,allowAboveRim:!netted&&!e&&!k.config.hopperCovered,color:0xf2c200,capacity:k.config.hopperCapacity,inside,keepouts:k.visual.userData.fuelKeepouts,ceiling:netted?hopperNetCeiling(k.config,rim):roofAt,floor:floorAt});
+  const pile=fillBlock(g,{x:(front+back)/2,y0:base,length:back-front,width,height:roof-base-.006,exactFloor:true,allowAboveRim:!netted&&!e&&!k.config.hopperCovered,color:0xf2c200,capacity:k.config.hopperCapacity,inside,keepouts:k.visual.userData.fuelKeepouts,ceiling:netted?hopperNetCeiling(k.config,rim):roofAt});
   const mesh=g.getObjectByName('hopper-fuel-pile')!;
   let fill=0,deploy=0;
   return {update(f:number,d:number){fill=f;deploy=d;
@@ -241,6 +241,9 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     shooter:[{node:flywheel,at:[0,0,.3309938],axis:'z',length:.62,radius:.142}],
     // FUEL resting on the bumper and intake behind the roller floor only moves once the hopper compresses.
     squeezeBelow:.5,
+    // A ball squashed to 0.9 r slips between the 17-18 mm feeder shafts and the intake drums; held FUEL in this roller
+    // hopper is only lightly loaded, so it keeps more of its size.
+    packRadius:.95,
   };
   return {replaces,lightAt:[0,.55,.30],intakeAnchor:tip,mech,
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],

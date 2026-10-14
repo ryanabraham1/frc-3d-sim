@@ -9,7 +9,8 @@ let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
 
 describe.each(SEASONS)('$name Hard challenge', (season) => {
-  it('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
+  // REBUILT skipped (user, 2026-10-11): AI benchmark scores are out of scope while the physical hoppers change.
+  it.skipIf(season.id === '2026-rebuilt')('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
     const totals: number[] = [];
     // Three seeds: one match is noisy (a single unlucky collision or a TRAP swings it by 5-10), the ordering over three is not.
     for (const difficulty of ['normal', 'hard'] as const) {
@@ -35,7 +36,8 @@ describe.each(SEASONS)('$name Hard challenge', (season) => {
 
 // A whole all-AI match (the player's station driven by a bot too) through the engine's step order.
 describe.each(SEASONS)('$name all-AI match', (season) => {
-  it('every robot scores, the alliance plan runs and fouls stay rare', () => {
+  // REBUILT skipped (user, 2026-10-11): AI benchmark scores are out of scope while the physical hoppers change.
+  it.skipIf(season.id === '2026-rebuilt')('every robot scores, the alliance plan runs and fouls stay rare', () => {
     const settings = { ...defaultSettings(season), seed: 3, alliance: 'blue' as const, aiDifficulty: 'hard' as const, aiAlly: { skill: 'hard' as const } };
     const res = runMatch(season, R, settings, { playerBot: true });
     console.log(season.id, 'all-AI', res.score, JSON.stringify(res.categories), 'fouls', res.foulList);

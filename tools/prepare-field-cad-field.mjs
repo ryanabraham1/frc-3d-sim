@@ -94,8 +94,12 @@ await doc.transform(
   prune(),
   dedup(),
   weld({ tolerance: 2e-4 }),
-  simplify({ simplifier: MeshoptSimplifier, ratio: 0.3, error: 0.0015 }),
+  // Join first, then simplify: meshopt's error is relative to each mesh's extent, so simplifying the joined field
+  // (about 17 m across) allows about 7 mm of deviation, invisible from the driver station. Simplifying each small
+  // part on its own kept nearly a million triangles.
   join({ keepNamed: false }),
+  weld({ tolerance: 2e-4 }),
+  simplify({ simplifier: MeshoptSimplifier, ratio: 0, error: 0.0004 }),
   prune(),
   meshopt({ encoder: MeshoptEncoder, level: 'medium' }),
 );

@@ -48,9 +48,16 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
     const vertices:number[]=[];
     const segment=(a:number[],b:number[])=>vertices.push(...a,...b);
     const bodyFront=-.31;
+    // Roof fabric tied round the rim sags between its ties (≈3.5 % of the smaller side), like the stretching nets.
+    const sagAt=(x:number,z:number)=>y-.035*Math.min(back-bodyFront,width)*Math.sqrt(Math.max(0,Math.sin(Math.PI*(x-bodyFront)/(back-bodyFront))*Math.cos(Math.PI*z/width)));
     for(let i=0;i<=20;i++) {
       const t=i/20,x=bodyFront+(back-bodyFront)*t,z=(t-.5)*width;
-      segment([x,y,-width/2],[x,y,width/2]); segment([bodyFront,y,z],[back,y,z]);
+      for(let j=0;j<20;j++){
+        const a=(j/20-.5)*width,b=((j+1)/20-.5)*width;
+        segment([x,sagAt(x,a),a],[x,sagAt(x,b),b]);
+        const xa=bodyFront+(back-bodyFront)*j/20,xb=bodyFront+(back-bodyFront)*(j+1)/20;
+        segment([xa,sagAt(xa,z),z],[xb,sagAt(xb,z),z]);
+      }
       for(const side of [-1,1]) segment([x,roof-.015,side*width/2],[x,y,side*width/2]);
       // Front retention net slopes down to the horizontally extended CAD intake lip.
       const bx=xf+(bodyFront-xf)*t,by=.51+(y-.51)*t;

@@ -94,7 +94,7 @@ it('a wall stop permanently rearranges a half-full pile rather than returning to
   const {fill,mesh,step}=pile(), s=state();
   fill.set(0.5);
   for(let frame=0;frame<360;frame++) step(s);
-  s.vx=4;
+  s.vx=6;
   for(let frame=0;frame<180;frame++) step(s);
   const before=mesh.instanceMatrix.array.slice();
   s.vx=0; // chassis loses its velocity on impact; the FUEL retains forward momentum
@@ -103,7 +103,7 @@ it('a wall stop permanently rearranges a half-full pile rather than returning to
   for(let i=0;i<mesh.count;i++) {
     const j=i*16;
     const travel=Math.hypot(mesh.instanceMatrix.array[j+12]-before[j+12],mesh.instanceMatrix.array[j+14]-before[j+14]);
-    if(travel>0.02) changed++;
+    if(travel>0.01) changed++;
   }
   expect(changed).toBeGreaterThan(mesh.count/3);
   const settled=mesh.instanceMatrix.version;

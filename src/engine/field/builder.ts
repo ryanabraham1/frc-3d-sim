@@ -8,7 +8,7 @@ import { makeTextTexture } from '../render/text';
 export type Vec3 = [number, number, number];
 
 /** Which physics layer a field element collides with. */
-export type CollideMode = 'all' | 'pieces' | 'robots' | false;
+export type CollideMode = 'all' | 'pieces' | 'robots' | 'hood' | false;
 
 export interface ElementOptions {
   color?: THREE.ColorRepresentation;
@@ -112,7 +112,7 @@ export class FieldBuilder {
     desc.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w });
     desc.setFriction(o.friction ?? 0.6);
     desc.setRestitution(o.restitution ?? 0.2);
-    desc.setCollisionGroups(mode === 'all' ? GROUPS.field : mode === 'pieces' ? GROUPS.pieceOnly : GROUPS.robotOnly);
+    desc.setCollisionGroups(mode === 'all' ? GROUPS.field : mode === 'pieces' ? GROUPS.pieceOnly : mode === 'hood' ? GROUPS.hoodStop : GROUPS.robotOnly);
     return this.physics.world.createCollider(desc, this.body);
   }
 

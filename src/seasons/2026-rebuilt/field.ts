@@ -321,6 +321,9 @@ function buildBumpsAndTrenches(b: FieldBuilder, a: Alliance, handles:number[]): 
     const armLo = Math.min(yRail, openEnd);
     const armHi = Math.max(yRail, openEnd);
     b.boxMinMax([hub.x - ad / 2, armLo, armBot], [hub.x + ad / 2, armHi + (pw > 0.005 ? 0 : 0), armTop], { color: col, roughness: 0.55, metalness: 0.15 });
+    // Under the arm, from the floor up to it: felt only by a raised shooter hood's skirt (Robot.updateHoodCollider), so the
+    // robot stops at the arm's face with a low push instead of tipping over the hood's contact. Robots otherwise drive through.
+    b.boxMinMax([hub.x - ad / 2, armLo, 0.02], [hub.x + ad / 2, armHi, armBot], { collide: 'hood', visible: false });
     // Black gusset plates bolting the arm to the pedestal, both faces.
     const gy = openEnd + sd * inch(2);
     for (const fs of [-1, 1]) {

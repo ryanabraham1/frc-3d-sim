@@ -9,7 +9,8 @@ let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
 
 describe.each(SEASONS)('$name Hard challenge', (season) => {
-  it('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
+  // REBUILT skipped (user, 2026-10-11): AI benchmark scores are out of scope while the physical hoppers change.
+  it.skipIf(season.id === '2026-rebuilt')('Hard opponents outscore Normal ones against the same idle player and Normal teammates', () => {
     const totals: number[] = [];
     // Three seeds: one match is noisy (a single unlucky collision or a TRAP swings it by 5-10), the ordering over three is not.
     for (const difficulty of ['normal', 'hard'] as const) {

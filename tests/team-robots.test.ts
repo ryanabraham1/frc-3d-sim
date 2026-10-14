@@ -65,7 +65,7 @@ describe('real team robots', () => {
     expect((spectreClimber.latchSeconds ?? 0) + (spectreClimber.secondsToClimb ?? 0)).toBeCloseTo(1.5);
     expect(team(y25, 'undertow-254').intake.ground && team(y25, 'undertow-254').intake.station).toBe(true);
     const rip = team(y26, 'ripcurrent-4414');
-    expect([rip.launcher.turret, rip.hopperCapacity, rip.climber.maxLevel]).toEqual([true, 85, 0]);
+    expect([rip.launcher.turret, rip.hopperCapacity, rip.climber.maxLevel]).toEqual([true, 105, 0]);
     expect(rip.height).toBeLessThan(0.565); // under the 22.25 in TRENCH
     expect(team(y26, 'overload-254').launcher.turret).toBe(false);
   });

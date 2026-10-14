@@ -96,7 +96,8 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
           const x = -L*.45+u*L*.9;
           // The front section bridges down from the telescoping roof to the fixed shooter/intake frame.
           const blend = u < .7 ? 1 : (1-u)/.3;
-          p.setXYZ(n++,x,H-.025+roofLift*blend-.014*Math.sin(Math.PI*u)*Math.sin(Math.PI*v),(v-.5)*W*.92);
+          // Fabric tied to the roof frame sags between its ties like the stretching nets (≈3.5 % of the smaller side).
+          p.setXYZ(n++,x,H-.025+roofLift*blend-.035*Math.min(L*.9,W*.92)*Math.sqrt(Math.sin(Math.PI*u)*Math.sin(Math.PI*v)),(v-.5)*W*.92);
         };
         for (let axis=0;axis<2;axis++) for(let line=0;line<=16;line++) for(let step=0;step<16;step++) {
           point(axis ? step/16 : line/16,axis ? line/16 : step/16);
