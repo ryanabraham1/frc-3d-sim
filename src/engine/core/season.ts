@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { LightingPreset } from '../render/lighting';
 import type { Alliance, FieldFrame, FieldPose } from '../coords';
 import type { FieldBuilder } from '../field/builder';
 import type { GamePiecePool, GamePieceSpec } from '../gamepiece/pool';
@@ -41,6 +42,8 @@ export interface GameSettings {
   autoIntake: boolean;
   seed: number;
   shadows: boolean;
+  lighting?: LightingPreset;
+  brightness?: number;
   /** Fill the remaining single-player stations with AI (default true). */
   aiOpponents?: boolean;
   /** Opponent AI skill. */

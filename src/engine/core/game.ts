@@ -235,6 +235,8 @@ export class Game {
     StowBay.ACTIVE_MAX = this.quality.activeMax;
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, {
       shadows: settings.shadows && this.quality.shadows,
+      lighting: settings.lighting,
+      brightness: settings.brightness,
       pixelRatioCap: this.quality.pixelRatioCap,
       minPixelRatio: this.quality.minPixelRatio,
     });

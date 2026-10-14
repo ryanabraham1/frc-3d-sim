@@ -1,17 +1,17 @@
 import * as THREE from 'three';
+import { LIGHTING, normalizeLighting, normalizeBrightness, type LightingPreset } from './lighting';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { getRobotEnvironment, setRobotEnvironment } from '../robot/models';
 import { mergeStatic } from './mergeStatic';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-
-/** Arena background / fog color (house lights down). */
-const ARENA_DARK = 0x0c0e13;
 
 /** Dynamic resolution never renders below this many device pixels per CSS pixel. */
 const DEFAULT_MIN_PIXEL_RATIO = 0.75;
 
 export interface RendererOptions {
   shadows?: boolean;
+  lighting?: LightingPreset;
+  brightness?: number;
   pixelRatioCap?: number;
   minPixelRatio?: number;
 }
@@ -44,7 +44,8 @@ export class Renderer {
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    const look = LIGHTING[normalizeLighting(opts.lighting)];
+    this.renderer.toneMappingExposure = look.exposure * normalizeBrightness(opts.brightness);
     this.renderer.shadowMap.enabled = opts.shadows ?? true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
@@ -62,14 +63,14 @@ export class Renderer {
     this.camera.position.set(0, 10, 12);
 
     // Event venue: the field is lit, the arena around it is dark (like a real FRC event under the house lights).
-    this.scene.background = new THREE.Color(ARENA_DARK);
-    this.scene.fog = new THREE.Fog(ARENA_DARK, 28, 70);
+    this.scene.background = new THREE.Color(look.background);
+    this.scene.fog = new THREE.Fog(look.background, 28, 70);
 
-    const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x3a3228, 1.1);
+    const hemi = new THREE.HemisphereLight(look.sky, look.ground, look.ambient);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffffff, 2.2);
-    sun.position.set(-6, 18, 8);
+    const sun = new THREE.DirectionalLight(look.key, look.keyPower);
+    sun.position.set(look.keyPosition[0], look.keyPosition[1], look.keyPosition[2]);
     sun.castShadow = opts.shadows ?? true;
     sun.shadow.mapSize.set(1024, 1024);
     const half = Math.max(fieldLength, fieldWidth) / 2 + 1;
@@ -82,7 +83,7 @@ export class Renderer {
     sun.shadow.bias = -0.0005;
     this.scene.add(sun);
 
-    const fill = new THREE.DirectionalLight(0xbfd4ff, 0.6);
+    const fill = new THREE.DirectionalLight(look.fill, look.fillPower);
     fill.position.set(8, 10, -6);
     this.scene.add(fill);
 

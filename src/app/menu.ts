@@ -1,3 +1,4 @@
+import { normalizeLighting, normalizeBrightness } from '@engine/render/lighting';
 import type { CameraMode } from '@engine/camera/cameras';
 import { setSoundMuted, soundMuted } from '@engine/audio/sfx';
 import { detectTier, qualityPref, setQualityPref, type QualityPref } from '@engine/core/quality';
@@ -37,6 +38,8 @@ function load(): Partial<GameSettings> | null {
     if (saved.aiDifficulty) saved.aiDifficulty = normalizeSkill(saved.aiDifficulty);
     if (saved.aiAlly?.skill) saved.aiAlly.skill = normalizeSkill(saved.aiAlly.skill);
     if (saved.aiOpponent?.skill) saved.aiOpponent.skill = normalizeSkill(saved.aiOpponent.skill);
+    saved.lighting = normalizeLighting(saved.lighting);
+    saved.brightness = normalizeBrightness(saved.brightness);
     return saved;
   } catch {
     return null;
@@ -78,6 +81,8 @@ export function defaultSettings(season: SeasonDefinition): GameSettings {
     autoIntake: true,
     seed: Math.floor(Math.random() * 1e6),
     shadows: true,
+    lighting: 'arena',
+    brightness: 1,
     aiOpponents: true,
     aiDifficulty: 'normal',
   };
@@ -594,6 +599,8 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         ${group('Sound', `<div class="seg">${opt('data-sound="on"', 'On', !soundMuted())}${opt('data-sound="off"', 'Off', soundMuted())}</div>`, 'Match start, period change, endgame and buzzer cues.')}
         ${group('Graphics quality', `<div class="seg">${(['auto', 'low', 'medium', 'high'] as const).map((q) => opt(`data-quality="${q}"`, q[0].toUpperCase() + q.slice(1), qualityPref() === q)).join('')}</div>`, `Auto picked ${detectTier()} for this device. Lower settings simulate less (hoppers) and draw less; applies to the next match.`)}
         ${group('Shadows', `<div class="seg">${opt('data-toggle="shadows"', s.shadows ? 'On' : 'Off', s.shadows)}</div>`, 'Turn off for a smoother frame rate on slower devices.')}
+        ${group('Lighting', `<div class="seg">${(['arena', 'studio', 'dramatic'] as const).map((look) => opt(`data-lighting="${look}"`, look[0].toUpperCase() + look.slice(1), normalizeLighting(s.lighting) === look)).join('')}</div>`, 'Arena: classic event lighting. Studio: soft, bright highlights. Dramatic: warm spotlights with cool blue edges. Applies to the next match.', 'wide')}
+        ${group('Brightness', `<label>Brightness <output data-brightness-value>${Math.round(normalizeBrightness(s.brightness) * 100)}%</output><input data-brightness type="range" min="70" max="140" step="5" value="${Math.round(normalizeBrightness(s.brightness) * 100)}" aria-label="Lighting brightness" /></label>`, 'Adjust the selected look. Applies to the next match.')}
         ${group('Default camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, 'Press V in a match to switch.', 'wide')}
         ${group('Driving aids', `<div class="seg">${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}</div>`, 'None of these change scoring.', 'wide')}
         ${group('AI radio', `<div class="seg">${(['all', 'team', 'off'] as const).map((v) => opt(`data-radio="${v}"`, v === 'all' ? 'Both alliances' : v === 'team' ? 'My alliance' : 'Off', (s.aiRadio ?? 'all') === v)).join('')}</div>`, 'Callouts the AI robots use to coordinate during 3 v 3.', 'wide')}
@@ -872,10 +879,17 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-sound]').forEach((b) => (b.onclick = () => (setSoundMuted(b.dataset.sound === 'off'), render())));
     all('[data-k="resetPrefs"]').forEach((b) => (b.onclick = () => {
       const d = defaultSettings(season);
-      s = { ...s, camera: d.camera, shadows: d.shadows, autoIntake: d.autoIntake, manualAuto: d.manualAuto, aiRadio: d.aiRadio };
+      s = { ...s, camera: d.camera, shadows: d.shadows, lighting: d.lighting, brightness: d.brightness, autoIntake: d.autoIntake, manualAuto: d.manualAuto, aiRadio: d.aiRadio };
       setQualityPref('auto');
       setSoundMuted(false);
       render();
+    }));
+    all('[data-lighting]').forEach((b) => (b.onclick = () => { s.lighting = normalizeLighting(b.dataset.lighting); render(); }));
+    all<HTMLInputElement>('[data-brightness]').forEach((input) => (input.oninput = () => {
+      s.brightness = normalizeBrightness(Number(input.value) / 100);
+      const output = el.querySelector('[data-brightness-value]');
+      if (output) output.textContent = `${Math.round(s.brightness * 100)}%`;
+      save(s);
     }));
     all('[data-quality]').forEach((b) => (b.onclick = () => (setQualityPref(b.dataset.quality as QualityPref), render())));
     all('[data-toggle]').forEach(
