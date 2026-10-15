@@ -7,7 +7,7 @@ import { fillBlock, hopperWalls, mat, type ModelKit } from './models';
  * a small loaded pile rides in it while it is out and the robot is carrying FUEL. Visual only; capacity still comes
  * from the config. Call `set(deploy, fill)` (deploy 0 = stowed, 1 = intake down; fill 0-1) from the model's update.
  */
-export function slidingHopper(k: ModelKit, o: { wall?: THREE.Material; frame?: THREE.Material; length?: number } = {}): { set(deploy: number, fill?: number): void } {
+export function slidingHopper(k: ModelKit, o: { wall?: THREE.Material; frame?: THREE.Material; length?: number; exactFloor?: boolean } = {}): { set(deploy: number, fill?: number): void } {
   const c = k.config, side = k.groundSide;
   const len = o.length ?? 0.24;
   const h = (c.height - c.bumperTop - 0.04) * 0.82;
@@ -16,7 +16,7 @@ export function slidingHopper(k: ModelKit, o: { wall?: THREE.Material; frame?: T
   g.name = 'sliding-hopper';
   k.visual.add(g);
   hopperWalls(g, { intakeSide: side, floorDepth: .12, x, y0: c.bumperTop + 0.02, length: len, width: c.frameWidth * 0.9, height: h, m: o.wall ?? mat(0xdde5f0, { opacity: 0.22, rough: 0.2 }), frame: o.frame ?? k.mats.dark });
-  const pile = fillBlock(g, { x, y0: c.bumperTop + 0.03, length: len * 0.96, width: c.frameWidth * 0.86, height: h * 0.95, color: 0xf2c200, capacity: 12 });
+  const pile = fillBlock(g, { x, y0: c.bumperTop + 0.03, length: len * 0.96, width: c.frameWidth * 0.86, height: h * 0.95, color: 0xf2c200, capacity: 12, exactFloor: o.exactFloor });
   return {
     set(d, fill = 0) {
       g.position.x = side * d * 0.2;

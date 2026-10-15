@@ -167,7 +167,9 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
   const blue = mat(0x2f62d4, { metal: 0.3, rough: 0.45 }), steel = tubeMat(0xb7bdc6), steelM = mat(0xb7bdc6, { metal: 0.7, rough: 0.35 }), black = mat(0x181a1e, { metal: 0.3, rough: 0.5 }), tan = mat(0xcbb98a, { rough: 0.9 });
   const db = drivebase(k, { tube: steel, motorRing: 0x2f62d4 });
   const sh0 = shell(k, { wall: clearMat(), frame: steel });
-  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity });
+  // The hopper floor is the spindexer's own level (exactFloor): dropped to the chassis rails, FUEL beside the bowl would
+  // sit in a pit under its fence and never reach the turret.
+  const fill = fillBlock(k.visual, { x: 0, y0: bt + 0.03, length: L * 0.92, width: W * 0.92, height: sh0.h * 0.9, color: FUEL, capacity: c.hopperCapacity, exactFloor: true });
   // Drilled steel rail across the intake end, with the white etched lettering on the clear sides.
   box(k.visual, 0.03, 0.08, W * 0.94, steelM, side * (L * 0.46), bt + 0.1, 0);
   for (const sz of [-1, 1]) {
@@ -192,7 +194,7 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
   }
   // Intake: silver pocketed arms, black rollers with blue rings.
   const intake = deployableIntake(k, { reach: c.intake.reach, rollers: 2, frame: steel, rollerMaterial: black });
-  const slide = slidingHopper(k);
+  const slide = slidingHopper(k, { exactFloor: true });
   const d = { v: 0 };
   let spinRate = 0;
   const pile = hopperStow({ x: 0, y0: bt + 0.03, length: L * 0.85, width: W * 0.85, height: sh0.h * 0.9, r: FUEL_R });
