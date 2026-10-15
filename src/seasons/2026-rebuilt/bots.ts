@@ -84,7 +84,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     if (chassisAim) return stanceSpot();
     const p = myPose();
     const y = bot.hunter ? side(r.alliance, 0, C.HUB_CENTER.y + (r.station - 2) * 1.1).y : clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
-    return { x: side(r.alliance, 2.7, 0).x, y };
+    return { x: side(r.alliance, bot.hard ? 2.4 : 2.7, 0).x, y };
   };
   const towerCenter = side(r.alliance, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
   const tower = { ...towerCenter, r: Math.hypot(C.TOWER_DEPTH, C.TOWER_WIDTH) / 2 + half * 0.7 };
@@ -118,7 +118,8 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     for (let i = 0; i < ctx.pool.count; i++) {
       if (ctx.pool.state[i] !== 'field') continue;
       const p = ctx.frame.toField(ctx.pool.position(i));
-      if (p.z > 0.25 || p.x < 0.5 || p.x > C.FIELD_LENGTH - 0.5 || p.y < 0.5 || p.y > C.FIELD_WIDTH - 0.5) continue;
+      const wm = bot.hard ? 0.12 : 0.5; // Hard and up also work the FUEL packed along the walls, where most of it ends up
+      if (p.z > 0.25 || p.x < wm || p.x > C.FIELD_LENGTH - wm || p.y < wm || p.y > C.FIELD_WIDTH - wm) continue;
       s.pts.push({ i, p });
     }
     return s.pts;
@@ -134,7 +135,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     if (m.t === ctx.clock.elapsed) return m.bands;
     m.t = ctx.clock.elapsed;
     const fuelNow = scanFuel();
-    m.bands = BANDS.map((band) => ({ ...band, gaps: band.gaps.filter((gap) => gap.maxRobotHeight === undefined || fuelNow.filter(({ p }) => inLane(p, band, gap)).length < 8) }));
+    m.bands = BANDS.map((band) => ({ ...band, gaps: band.gaps.filter((gap) => gap.maxRobotHeight === undefined || bot.hard || fuelNow.filter(({ p }) => inLane(p, band, gap)).length < 8) }));
     return m.bands;
   };
   // FUEL tucked against either TOWER can't be reached by an intake.
@@ -168,16 +169,17 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     for (const [idx,{p}] of candidates.entries()) {
       // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
       const inRow = Math.abs(fromWall(p.x) - C.HUB_CENTER.x) < C.HUB_SIZE / 2 + 0.3;
-      if (inTrench(p)) continue; // FUEL under a TRENCH jams robots that go in after it
+      if (!bot.hard && inTrench(p)) continue; // FUEL under a TRENCH jams robots that go in after it
       const mine = dist(me, p);
-      let c = mine + (inRow ? 1.5 : 0) - .4*Math.min(density[idx]-1,r.capacityLeft-1,12);
+      // Hard and up (benchmarked, docs/AI-STRATEGY.md): chase the densest pile, don't shun the HUB row, and keep teammates on separate patches.
+      let c = mine + (inRow && !bot.hard ? 1.5 : 0) - (bot.hard ? .8 : .4)*Math.min(density[idx]-1,r.capacityLeft-1,bot.hard ? 20 : 12);
       // Keep sweeping a patch intake-first instead of turning around for every ball behind us.
       if (bot.hunter && r.speed > 0.5 && mine < 3) {
         const heading = myPose().yaw - r.intakeYawOffset;
         const forward = (p.x - me.x) * Math.cos(heading) + (p.y - me.y) * Math.sin(heading);
         if (forward < 0) c += Math.min(2, -forward * 2);
       }
-      for (const mp of matePoses) if (dist(mp, p) + 0.4 < mine) c += 2.5;
+      for (const mp of matePoses) if (dist(mp, p) + 0.4 < mine) c += bot.hard ? 6 : 2.5;
       if (c < cost) { cost = c; best = p; }
     }
     return best;
@@ -192,6 +194,62 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     trackChase(p);
     const yaw = dist(myPose(), p) < 3 ? Math.atan2(p.y - myPose().y, p.x - myPose().x) + r.intakeYawOffset : undefined;
     return { ...bot.driveTo(p, yaw,undefined,.3), intake: r.capacityLeft > 0, ...extra };
+  };
+
+  // ── Sweep planner (Einstein): drivers don't chase FUEL one ball at a time. They pick a line through the densest strip
+  // (a wall lane, the back wall, a packed pile), run it at speed with the intake leading, and replan only when it is spent.
+  interface Sweep { a: FieldPoint; b: FieldPoint; dir: FieldPoint; len: number; since: number; started: boolean }
+  let sweepPlan: Sweep | null = null;
+  const sweepClaims = team.memo('sweepClaims', () => new Map<number, Sweep>());
+  const SWEEP_WIDTH = 0.5, SWEEP_MAX = 7, SWEEP_SPEED = 3.4;
+  const alongCorridor = (pts: FieldPoint[], a: FieldPoint, dir: FieldPoint, len: number) => {
+    let n = 0, far = 0;
+    for (const q of pts) {
+      const dx = q.x - a.x, dy = q.y - a.y, along = dx * dir.x + dy * dir.y;
+      if (along < -0.3 || along > len || Math.abs(-dx * dir.y + dy * dir.x) > SWEEP_WIDTH) continue;
+      n++; if (along > far) far = along;
+    }
+    return { n, far };
+  };
+  const planSweep = (allowed: (q: FieldPoint) => boolean): Sweep | null => {
+    const room = Math.max(1, r.capacityLeft);
+    const pts = scanFuel().map(({ p }) => p).filter((q) => allowed(q) && !isBlocked(q) && !nearTower(q));
+    if (pts.length < 4) return null;
+    const mates = [...sweepClaims.entries()].filter(([id, sw]) => id !== r.id && ctx.clock.elapsed - sw.since < 8).map(([, sw]) => sw);
+    const stride = Math.max(1, Math.floor(pts.length / 110));
+    let best: Sweep | null = null, bestScore = 0;
+    for (let i = 0; i < pts.length; i += stride) {
+      const a = pts[i];
+      const tTo = travelTime(a);
+      for (let k = 0; k < 8; k++) {
+        const ang = k * Math.PI / 4, dir = { x: Math.cos(ang), y: Math.sin(ang) };
+        const { n, far } = alongCorridor(pts, a, dir, SWEEP_MAX);
+        if (n < 3) continue;
+        const value = Math.min(n, room);
+        let score = value / (tTo + far / SWEEP_SPEED + 0.4);
+        for (const m of mates) if (Math.min(dist(a, m.a), dist(a, m.b)) < 1.6) score *= 0.35;
+        if (score > bestScore) { bestScore = score; best = { a, b: { x: a.x + dir.x * far, y: a.y + dir.y * far }, dir, len: far, since: ctx.clock.elapsed, started: false }; }
+      }
+    }
+    return best;
+  };
+  const sweepCommand = (allowed: (q: FieldPoint) => boolean, extra?: Partial<RobotCommand>): RobotCommand | null => {
+    const now = ctx.clock.elapsed, me = myPose();
+    if (sweepPlan) {
+      const left = alongCorridor(scanFuel().map(({ p }) => p).filter(allowed), sweepPlan.a, sweepPlan.dir, sweepPlan.len + 0.3).n;
+      if (r.capacityLeft === 0 || now - sweepPlan.since > 7 || left < 2 || (sweepPlan.started && dist(me, sweepPlan.b) < 0.7)) sweepPlan = null;
+    }
+    if (!sweepPlan) {
+      sweepPlan = planSweep(allowed);
+      if (sweepPlan) sweepClaims.set(r.id, sweepPlan); else sweepClaims.delete(r.id);
+    }
+    if (!sweepPlan) return null;
+    if (!sweepPlan.started && dist(me, sweepPlan.a) < 0.6) sweepPlan.started = true;
+    const goal = sweepPlan.started ? sweepPlan.b : sweepPlan.a;
+    const heading = Math.atan2(goal.y - me.y, goal.x - me.x);
+    const wallClamp = (q: FieldPoint) => ({ x: clamp(q.x, half + 0.04, C.FIELD_LENGTH - half - 0.04), y: clamp(q.y, half + 0.04, C.FIELD_WIDTH - half - 0.04) });
+    trackChase(goal);
+    return { ...bot.driveTo(wallClamp(goal), heading + r.intakeYawOffset, undefined, sweepPlan.started ? 0.05 : 0.3), intake: r.capacityLeft > 0, ...extra };
   };
 
   // Chassis-aimed robots (dumpers, fixed shooters) score like real drivers play them: drive to a stance ~1.8 m from the
@@ -214,7 +272,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const spotAt = (ang: number) => {
       // Far enough that the whole bumper stays inside the ALLIANCE ZONE (the HUB straddles the zone line).
       const minD = (C.ALLIANCE_ZONE_DEPTH - C.HUB_CENTER.x) * -1 + half + 0.12;
-      const d = Math.max(1.8, minD / Math.max(0.35, Math.abs(Math.cos(ang - towardWall))));
+      const d = Math.max(bot.hard ? 2.9 : 1.8, minD / Math.max(0.35, Math.abs(Math.cos(ang - towardWall))));
       return { x: hubP.x + Math.cos(ang) * d, y: clamp(hubP.y + Math.sin(ang) * d, half + 0.3, C.FIELD_WIDTH - half - 0.3) };
     };
     for (let k = 0; k < 3; k++) {
@@ -253,6 +311,15 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const shootingCommand = (active: boolean): RobotCommand => {
     if (chassisAim && r.held.length > 0) {
       return stanceCommand(active);
+    }
+    // Hard and up: FUEL is the scarce resource, not fire time (a robot shoots ~15% of an active shift), so every ball is worth
+    // its best shot. A turret firing on the move hit ~55%; planted and level it hits far more (docs/AI-STRATEGY.md).
+    if (bot.hard && r.held.length > 0) {
+      const planted = bot.driveTo(!bot.hunter && insideZone() && inZone() ? myPose() : shootSpot());
+      if (insideZone()) { planted.vx *= 0.3; planted.vy *= 0.3; }
+      planted.intake = r.capacityLeft > 0 && !hubFuelNear();
+      planted.shoot = inZone() && active && r.speed < 0.6 && r.uprightness >= 0.995;
+      return planted;
     }
     // In the zone with FUEL: shoot, and keep scooping up FUEL lying in the zone (fed stockpile, misses).
     const zoneFuel = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7, 4) : null;
@@ -396,6 +463,10 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
         return shootingCommand(live);
       }
       // Empty (or nearly): refill nearby; head back before the shift runs out.
+      if (bot.hunter) {
+        const sw = sweepCommand((p) => fromWall(p.x) <= C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 && travelTime(p) + travelTime(spot) < Math.max(4, activeLeft - 1), { shoot: inZone() && live && r.held.length > 0 });
+        if (sw) return sw;
+      }
       const near = nearestFuel((p) => travelTime(p) + travelTime(spot) < Math.max(4, activeLeft - 1));
       if (near) return collect(near, { shoot: inZone() && live && r.held.length > 0 });
       return shootingCommand(live);
@@ -403,6 +474,10 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
 
     // Our HUB is inactive: fill the hopper, keep the zone stocked, and be at the line when it lights up.
     if (r.capacityLeft > 0) {
+      if (bot.hunter) {
+        const sw = sweepCommand((q) => fromWall(q.x) <= C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 && travelTime(q) + travelTime(spot) < untilActive + 0.5);
+        if (sw) return sw;
+      }
       const p = nearestFuel((q) => travelTime(q) + travelTime(spot) < untilActive + 0.5);
       if (p) return collect(p);
     }

@@ -1,7 +1,7 @@
 # REBUILT realism push: progress tracker
 
 Updated as work lands. `[x]` = done and pushed to main, `[~]` = in progress, `[ ]` = not started.
-Last updated: 2026-10-14. COST CUT: the hood and pile agents finish their current item and stop; only the mechanism agent continues, on a narrowed list. AI tests are skipped for all of this work (your call).
+Last updated: 2026-10-14 (night). Real-ball hoppers are the default (section 3); latest `7df7826`; fast suite fully green. AI tests are skipped for all of this work (your call).
 
 ---
 
@@ -31,7 +31,7 @@ Balls held in the hopper (the visual pile) don't jitter, leak or sit inside mech
 - [~] Remaining overlaps (balls sunk more than 1 cm into drawn parts, full load): 971 18/35, 1678 27/70, 1690 14/38, 2910 6/50. Now adding per-robot keepouts using the room the packing freed
 - [~] No FUEL inside the 2910 shooter, feeder rollers or intake (still overlapping)
 - [~] 4414 rotor containment written (`f5797f9`, not on main). Handed to agent a091c2e: once kept out of the mechanisms, only about 72 FUEL fit, which clashes with the 85/105 target
-- [ ] Keepouts on EVERY hopper robot (24), not just four: 0 balls sunk more than 1 cm into any mechanism. Then piles rise and stretch their nets naturally (your report: balls clip into mechanisms, so nets look emptier than they should)
+- [~] Keepouts on EVERY hopper robot (24): moving parts get their own clearance field, drawn floors are stood on, the load is re-poured around the mechanisms (`a157bd5`). Sunk balls at full load 388 → 94. The drawn pile is now only the fallback (replicas, shed hoppers)
 - [ ] ~~Intaken balls enter from the intake side~~: dropped (cost cut); real-body hoppers replace the drawn pile
 - [ ] Checked full and part-full in the browser (worker mode)
 
@@ -42,14 +42,29 @@ intake retracts near empty to push the last balls in.
 
 - [x] Physical mechanism hopper (`MechHopper`) for 2910 and 4414, behind `?hopper=all` (`42aad27`)
 - [x] 4414 mechanism hooks: dye-rotor screw drive, reworked throat into the turret, launched at the flywheel (`42aad27`)
-- [ ] 4414 feed rate: only about 1–2 FUEL/s through the rotor today, far below the real robot (known gap)
+- [x] 4414 feed rate: steady 15.0–15.9 FUEL/s at 60/85/105 loads (dye rotor 6 m/s rim, fin funnels near the throat) (`4aa365d`)
 - [x] Intake only grabs balls it actually touches (`42aad27`, with `?hopper=all`)
-- [ ] Intake folds in near empty to squeeze the last FUEL into the indexer or rotor (2910, 4414)
+- [x] Intake folds in near empty to squeeze the last FUEL into the indexer or rotor (2910, 4414): with real balls the moving walls push them; 2910 empties 50/50, 4414 103/105
 - [ ] Balls going into the 4414 hopper land, roll and pile up on the load (no popping into place)
-- [ ] Real-body hoppers ON BY DEFAULT for every robot, built the way rebuilt.firstroboticsim does it (read from their code). Balls slosh, and spill over an open rim on a hard hit (e.g. a full 3256); netted hoppers keep them. Budget: worker step under about 4 ms in a 3v3 with full hoppers
+- [x] Real-body hoppers ON BY DEFAULT for every robot (StowBay; `?hopper=mech` for the old separate world). Same Rapier body in and out of the hopper, no swap on a spill. 3v3 with six full hoppers: 0.8 ms/step, 1.1 ms (p95 2.2) all feeding; browser worker step 2.2 ms (`aa800e6`)
+- [x] Indexer only takes a ball at its entry; driven floor (feed rollers / dye rotor / whole floor) carries floor balls to it while firing; nothing sucked out of the heap (`aa800e6`)
+- [x] 2910 and 4414 capture by roller contact; rollers drive a ball only while touching; a dropped ball is a field ball again (no timed drop-in) (`aa800e6`)
+- [x] Dumpers launch each ball where it reaches the rollers across their width, no fixed streams (`9867347`)
+- [x] Contact capture for every robot: models without roller hooks get a capture bar across their intake mouth; the intake lane carries a ball only while it stays on it (`56822b8`)
+- [x] Intake fold policy: chassis-aimed shooters (dumpers, 2910's drum) fold 0.5 s into the shot; turrets pulse when their feed floor has ≤ 2 balls or below 20%; auto-intake rests while shooting (`88f94a0`, `970478c`, `4aa365d`, `7d5e611`)
+- [x] Firm hopper faces after every step (4 mm skin, 8 cm slabs), slosh kept; no world-frame damping on held balls; pile wakes on hits/turns (`4aa365d`, `7d5e611`)
+- [x] Hoods only pivot (HOOD_LIFT slide removed; HOOD_SEAT fixed offset); stopped at the TRENCH only if the pivoted hood reaches the arm (`970478c`)
+- [x] Intakes stay deployed between AUTO and TELEOP (`970478c`)
+- [x] ~~Intake fold / pulse / sweep~~: removed at your request; the indexer takes a ball at its entry, else draws the nearest held ball, so nothing is stranded (`eebc8ce`)
+- [x] 4414 holds 85 under the TRENCH (binder): idle rotor agitates the load, foam packing 0.9 r (`4c8409a`)
+- [x] 1778 floor at its spindexer level (12 of 47 left behind its tower legs, was 27) (`50b943e`)
+- [x] 1678 slide-out section has clear side panels (`35545f4`); 604's floor steps up to its tray over the intake (`eebc8ce`); nets tie round the live hopper and held balls stay under the net dome (`f414eab`, `f7522cb`)
+- [ ] Generic drawn-shell boundary for every robot (voxel push tried; it blocks feed mechanisms, reverted)
+- [x] Every REBUILT robot empties fully at (or near) its rated speed in tests, with shoot-while-tracking as in matches (971 16.7/s, 5940 15.6/s, 6329/7769/9496 ~19/s after their feed rollers stopped holding the shot `2698fa9`)
+- [ ] Hard spins (3 rad/s) can still show 8–11 cm single-frame jumps on 4414/3256 (keepout exits)
   - each ball stays one Rapier body: in a hopper it switches to a "carried" group at 0.9 × radius; balls in the indexer lanes are disabled and moved by the feed; a ball leaving the hopper goes back to normal (spills)
   - thick (8 cm) hopper walls, plus a per-step correction that keeps carried balls on the deck and pushes them with moving walls: no jitter, no leaks
-- [ ] All tests green; browser check in worker mode
+- [x] Fast suite fully green (`7df7826`); browser check in worker mode (6 real hoppers, 2910)
 
 ### 3b. 4414 capacity: about 85 under the TRENCH, 105+ stretched (same agent)
 
@@ -62,12 +77,14 @@ the slide-out drawer, with holes over the turret and rotor.
 - [~] TRENCH clearance comes from the measured pile top under the net, not from a count formula (groundwork in `1ac47e7`)
 - [ ] Net collider and drawn net follow that measured height; an over-full net visibly hits the TRENCH arm
 - [ ] Intake under the TRENCH stops when the pile would reach the arm (no fixed cutoff count)
-- [ ] 105 FUEL physically fit (net area covers the box and the extended tray), with nothing in the turret or rotor keepouts
+- [ ] 105 FUEL physically fit (net area covers the box and the extended tray, tray reaching the intake), with nothing in the turret or rotor keepouts. Check dims against the HighTide binder (85 should pass under the TRENCH; at ~70 balls poke above it today). Your report: at full load balls overlap and ride above the net
 - [ ] Tests: about 85 passes under the TRENCH, about 100 is blocked (the cutoff is a range, emerging from the pile)
 
 ### 3c. All hopper nets realistic like rebuilt.firstroboticsim (same agent)
 
 Shared net code, applied to every netted robot (254, 581, 6800, 9470, 1323, 4414, 1678, 2910, 604).
+
+- [ ] Net attachment points: 581 and other netted robots tie their nets in the wrong place (your report)
 
 - [x] Shared dome net shape (big round dome, tied at the rim), also used as the pile ceiling (`1ac47e7`)
 - [ ] Covers/holes over turret, rotor and wheel stacks; chamfer and drawer support
@@ -100,3 +117,8 @@ Shared net code, applied to every netted robot (254, 581, 6800, 9470, 1323, 4414
 - [x] Motion-profiled hood and turret; hood parks unless shooting
 - [x] 4414 and 1690 models rebuilt from match photos and the AI reference GLBs
 - [x] Robot picker no longer draws a spinning robot over a standing one
+
+## Multiplayer (latency first)
+
+- [x] Host simulates no real-ball hoppers; every drawn pile runs light; no intake fold logic online (`ae68aea`, `eebc8ce`)
+- [x] Smart auto-intake removed; auto-intake just runs

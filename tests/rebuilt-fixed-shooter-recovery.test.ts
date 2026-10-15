@@ -10,7 +10,7 @@ it('turns a planted fixed shooter back toward the HUB after displacement', () =>
   const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
   const config = season.teamRobots!.find(r => r.config.model === 'reblitz-2910')!.config;
   const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', station: 2,
-    pose: { x: C.HUB_CENTER.x - 1.8, y: C.HUB_CENTER.y, yaw: 1.2 } });
+    pose: { x: C.HUB_CENTER.x - 2.9, y: C.HUB_CENTER.y, yaw: 1.2 } });
   try {
     sim.ctx.settings.aiAlly = { skill: 'einstein' };
     sim.rules.stage();

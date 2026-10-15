@@ -92,7 +92,9 @@ export const rebuiltShotAccuracy = {
 export const REBUILT_ROBOT_MASS = lb(150);
 
 /** FUEL/s a stock robot's floor intake can swallow [EST]; real teams override it (INTAKE_RATE in teamRobots.ts). */
-export const DEFAULT_INTAKE_RATE = 20;
+export const DEFAULT_INTAKE_RATE = 27;
+/** Slowest floor intake any robot gets, FUEL/s (user decision 2026-10-15). */
+export const MIN_INTAKE_RATE = 27;
 
 /** Boost applied to every real team robot's INTAKE_RATE (user decision 2026-10-05: intakes felt too weak). */
 export const INTAKE_RATE_BOOST = 1.7;
@@ -159,6 +161,7 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
+  if (c.intake.rate !== undefined) c.intake.rate = Math.max(MIN_INTAKE_RATE, c.intake.rate);
   // Hoods only pivot about their own hinge (saved configs may still carry the old vertical hood slide).
   delete (c.launcher as { hoodLift?: unknown }).hoodLift;
   const seat = c.model ? HOOD_SEAT[c.model] : undefined;
@@ -266,8 +269,8 @@ export const rebuiltRobotOptions: RobotOption[] = [
   opt('rate', 'Shooter', [['8', '8/s'], ['12', '12/s'], ['16', '16/s'], ['20', '20/s'], ['25', '25/s'], ['30', '30/s'], ['33', '33/s'], ['35', '35/s']],
     (c) => String([8, 12, 16, 20, 25, 30, 33, 35].reduce((b, x) => (Math.abs(x - c.launcher.rate) < Math.abs(b - c.launcher.rate) ? x : b), 8)),
     (c, v) => { c.launcher.rate = Number(v); }),
-  opt('intakeRate', 'Intake speed', [['10', '10/s'], ['14', '14/s'], ['20', '20/s'], ['25', '25/s'], ['30', '30/s'], ['40', '40/s']],
-    (c) => String([10, 14, 20, 25, 30, 40].reduce((b, x) => (Math.abs(x - (c.intake.rate ?? 20)) < Math.abs(b - (c.intake.rate ?? 20)) ? x : b), 20)),
+  opt('intakeRate', 'Intake speed', [['27', '27/s'], ['30', '30/s'], ['35', '35/s'], ['40', '40/s']],
+    (c) => String([27, 30, 35, 40].reduce((b, x) => (Math.abs(x - (c.intake.rate ?? 27)) < Math.abs(b - (c.intake.rate ?? 27)) ? x : b), 27)),
     (c, v) => { c.intake.rate = Number(v); },
     'FUEL the floor intake can swallow per second; faster refills mean less time stopped.'),
   opt('climb', 'TOWER climb', [['0', 'None'], ['1', 'LEVEL 1'], ['2', 'LEVEL 2'], ['3', 'LEVEL 3']],

@@ -3,6 +3,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { GROUPS } from '../physics/world';
 import { GamePiecePool } from '../gamepiece/pool';
 import type { Robot } from './robot';
+import { spawnClearance } from './spawnClearance';
 import { clearFuelOutline, clearFuelKeepouts, clearHopperChamfer, type HopperChamfer, type FuelKeepout } from './fuelKeepouts';
 
 /** Box (robot frame: x forward, y up, z right) a FUEL hopper holds its balls in. */
@@ -391,13 +392,18 @@ export class StowBay {
   }
 
   /** Consume the lead conveyor ball, otherwise draw directly from the hopper; -1 only when it is empty. */
-  pickForLaunch(_exit: THREE.Vector3): number {
+  pickForLaunch(exit: THREE.Vector3): number {
     const staged = this.staging.values().next().value;
     if (staged !== undefined) return staged;
     if (!this.stowed.size && this.buried.size) this.wakeLayer(true);
     this.frame();
     const cav = this.cavity ?? this.robot.fuelCavity();
-    return cav ? this.nearestForFeed(this.entry(cav, new THREE.Vector3())) : -1;
+    if (!cav) return -1;
+    // A wide drum takes balls all across its width: aim for the lane this shot leaves from, not the feed path's first
+    // lane, or the side nearest that one empties first and the whole load leaves as one stream.
+    const entry = this.entry(cav, new THREE.Vector3());
+    if ((this.robot.config.launcher.exits ?? 1) > 1 && !this.robot.config.launcher.turret) entry.z = exit.z;
+    return this.nearestForFeed(entry);
   }
 
   /**
@@ -470,7 +476,7 @@ export class StowBay {
       if (byContact) {
         // Let go outside the hopper (it fell back off the rollers, or they stopped): an ordinary field ball where it is.
         f.loose = gripped ? 0 : f.loose + dt;
-        if (f.loose > LOOSE_AFTER || f.t > FEED_TIMEOUT * 3) { this.feeding.delete(i); this.dropOut(i); continue; }
+        if (f.loose > LOOSE_AFTER || f.t > FEED_TIMEOUT * 3) { this.feeding.delete(i); this.dropOut(i, p, cav); continue; }
         f.t += dt;
         if (!gripped) continue; // momentum and gravity only
       } else if (f.t > FEED_TIMEOUT) {
@@ -601,11 +607,18 @@ export class StowBay {
     }
   }
 
-  /** A ball the intake dropped outside the hopper: back on the field, same body, same motion. */
-  private dropOut(i: number): void {
+  /**
+   * A ball the intake let go of. Already past the bumpers it is inside the robot, so it goes into the hopper: released
+   * there as a field ball it would sit inside the chassis collider and lift the robot onto it (beached). Out on the
+   * intake it drops back to the field, same body, same motion, passing through the robot until it is clear of the frame.
+   */
+  private dropOut(i: number, p: THREE.Vector3, cav: Cavity): void {
+    const fp = this.robot.footprint, r = this.radius;
+    if (Math.abs(p.x) < fp.length / 2 - r * 0.25 && Math.abs(p.z) < fp.width / 2 - r * 0.25) { this.dropIn(i, cav); return; }
     const k = this.robot.held.lastIndexOf(i);
     if (k >= 0) this.robot.held.splice(k, 1);
     this.pool.releaseToField(i);
+    this.pool.releaseGhost(i, () => spawnClearance(this.robot, this.pool.position(i), this.radius, this.pool.colliderHalfHeight) > 0.02, 1);
     this.robot.noteLaunch(i);
   }
 

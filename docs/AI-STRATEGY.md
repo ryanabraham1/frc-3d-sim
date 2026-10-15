@@ -209,3 +209,32 @@ production-loop test.
 Full production simulator traces found fixed shooters holding fuel in an active scoring zone without requesting a shot for 31–52 seconds per match. A planted stance returned zero turning command even after heading displacement; the previous Einstein creep collector could also keep postponing unloading. Fixed shooters now retain an available stance, aim from their actual position, and explicitly turn toward the HUB while planted. They unload before chasing more nearby fuel.
 
 With unchanged hardware and seeds 1–3, combined credited fuel changed from 1,152 / 1,174 / 1,236 to 1,317 / 1,320 / 1,203: 3,562 to 3,840 (+7.8%). These are all-AI matches, not evidence of human-level competition. One seed regressed. A separate collection-target hysteresis experiment halved goal switching but scored only 3,651 total; it was rejected rather than shipping smoother movement as a scoring improvement. Trace launch counts distinguish requests from credited points and must not be called scoring accuracy.
+
+### Closing the gap to a human driver (2026-10-14)
+
+Logs of 18 full Einstein-vs-human matches: the human alliance scored ~725, Einstein ~420. The human's robot launched ~740
+FUEL a match against ~265 for the same robot model under AI control. Where the two differ:
+
+- **Wall lanes.** 61% of the human's pickups were within 1.3 m of a side wall (trench lanes, back wall, packed strips), against
+  15% for bots. The bots' fuel scan threw out everything within 0.5 m of a wall and treated TRENCH lanes as closed, yet most
+  FUEL ends up packed along walls. A sweep down such a strip takes 20-30 FUEL/s.
+- **Accuracy.** FUEL, not fire time, is the scarce resource (a bot shoots ~15% of an active shift). Bots fired turrets on the
+  move at ~55% hit rate and parked fixed shooters 1.8 m from the HUB. Planted and level, from 2.4-3 m, they hit far more.
+- Rate/speed boosts did nothing (supply-limited), lobbing FUEL home cost fouls, a dedicated shadow defender cost more than it took.
+
+All-AI matches, red = variant and blue = unchanged, 4-6 seeds (noise about ±40; red − blue and red FUEL):
+
+| Change | Red − Blue | Red |
+|---|---:|---:|
+| Baseline | −45 to +7 | ~615 |
+| Pile-weighted targeting, no HUB-row penalty, 6 m teammate spacing | +50 | ~630 |
+| Fire/intake rate ×1.3-1.6, speed ×1.2, feeding, shadow defender | worse or equal | ≤ 625 |
+| Wall fuel + open TRENCH lanes + sweep planner alone | +11 to +35 | ~630 |
+| **Plant to shoot** (turret speed < 0.6 m/s, level) + sweep + wall fuel | +108 to +158 | ~780 |
+| + shooting spot 2.4 m from the wall, fixed-shooter stance 2.8-3.2 m from the HUB | +170 to +250 | ~850 |
+| Planted AUTO shots (no effect on AUTO FUEL), stricter 0.3 m/s, spot 1.6 m | no gain | — |
+
+Shipped (Hard and up unless noted): wall fuel and open TRENCH lanes, planted shooting at 2.4 m / stance 2.9 m, pile targeting.
+Einstein adds the **sweep planner**: it picks the line through the densest strip, runs it with the intake leading and
+replans only when it is spent. No stat of any robot is changed. `tests/slow/rebuilt-einstein-flow.test.ts` (Einstein mirror):
+650 → ~850 FUEL per alliance.

@@ -2494,7 +2494,8 @@ export class Robot {
     let ballSide: number | null = null;
     if (this.bay) {
       // Only a ball the indexer actually has (one that reached its entry) can leave; the floor rollers run meanwhile.
-      const exit = this.launcherExit(0), pick = this.bay.pickForLaunch(new THREE.Vector3(exit.forward, exit.up, -exit.side));
+      const lanes = launcherExitOffsets(c0), exit = this.launcherExit(lanes[this.exitIndex % lanes.length]);
+      const pick = this.bay.pickForLaunch(new THREE.Vector3(exit.forward, exit.up, -exit.side));
       // (Pieces held but never put in the hopper, e.g. scripted, still go the old way.)
       if (pick < 0 && this.bay.occupied) return null;
       const k = pick >= 0 ? this.held.lastIndexOf(pick) : -1;
@@ -2503,8 +2504,9 @@ export class Robot {
       // straight forward, so that is where it lies in the hopper. No fixed streams.
       const wide = launcherExitOffsets(c0);
       if (pick >= 0 && !c.turret && wide.length > 1) {
-        const half = Math.max(...wide.map(Math.abs)), z = this.bay.localOf(pick)?.z;
-        if (z !== undefined) ballSide = THREE.MathUtils.clamp(-z, -half, half);
+        // The ball drawn for this shot's lane leaves from that lane; one the floor brought from elsewhere leaves where it is.
+        const half = Math.max(...wide.map(Math.abs)), z = this.bay.localOf(pick)?.z, lane = exit.side;
+        if (z !== undefined) ballSide = Math.abs(-z - lane) < 2 * this._projectile.radius ? lane : THREE.MathUtils.clamp(-z, -half, half);
       }
     }
     const rv = this.body.linvel();
