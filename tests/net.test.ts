@@ -11,6 +11,9 @@ describe('protocol', () => {
     const back = unpackCommand(JSON.parse(JSON.stringify(packCommand(cmd))));
     expect(back).toEqual({ ...cmd, vx: 1.235 });
     expect(unpackCommand(packCommand({ ...cmd, climb: null, descend: true }))).toMatchObject({ climb: null, descend: true });
+    // An auto-intake (not the driver's button) travels to the host so its sim can rest the intake while shooting.
+    expect(unpackCommand(packCommand({ ...cmd, intake: true, autoIntake: true }))).toMatchObject({ intake: true, autoIntake: true });
+    expect(unpackCommand(packCommand({ ...cmd, intake: true }))!.autoIntake).toBeUndefined();
     expect(unpackCommand([1, 2, 3])).toBeNull();
     expect(unpackCommand([1, 2, 3, 0, 'x'])).toBeNull();
     expect(unpackCommand([NaN, 0, 0, 0, -1])).toBeNull();

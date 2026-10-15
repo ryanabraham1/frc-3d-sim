@@ -28,6 +28,11 @@ export interface RobotCommand {
   vy: number;
   omega: number;
   intake: boolean;
+  /**
+   * The intake is on only because of auto-intake (not the driver's button): while shooting or passing the sim decides
+   * whether to keep it running (moving, or FUEL near the mouth) or rest it so it can fold in to feed.
+   */
+  autoIntake?: boolean;
   /** REEFSCAPE ALGAE mode: floor ALGAE pickup and pulling ALGAE off the REEF are on (and CORAL pickup off); false = CORAL mode. */
   algaeMode?: boolean;
   shoot: boolean;
@@ -946,6 +951,29 @@ export class Robot {
     const out = new THREE.Matrix4(), m = new THREE.Matrix4();
     for (let p: THREE.Object3D | null = o; p && p !== this.visual; p = p.parent) out.premultiply(p.matrixAutoUpdate ? m.compose(p.position, p.quaternion, p.scale) : p.matrix);
     return out;
+  }
+
+  /**
+   * Auto-intake while shooting: keep the intake running if the robot is driving (commanded or actually moving) or a
+   * floor piece lies just ahead of the intake mouth; otherwise it rests so the intake can fold in to feed.
+   */
+  autoIntakeWanted(cmd: RobotCommand, pool: { count: number; state: ArrayLike<string>; position(i: number): { x: number; y: number; z: number } }): boolean {
+    const v = this.body.linvel();
+    if (Math.hypot(cmd.vx, cmd.vy) > 0.3 || Math.hypot(v.x, v.z) > 0.4) return true;
+    const c = this.config;
+    if (!c.intake.enabled || c.intake.ground === false) return false;
+    const t = this.body.translation(), yaw = c.intake.groundYaw, side = groundSideSign(c);
+    const edge = yaw === undefined ? this.fp.length / 2 : (Math.abs(Math.cos(yaw)) * this.fp.length + Math.abs(Math.sin(yaw)) * this.fp.width) / 2;
+    for (let i = 0; i < pool.count; i++) {
+      if (pool.state[i] !== 'field') continue;
+      const p = pool.position(i);
+      if (Math.abs(p.x - t.x) > 1.5 || Math.abs(p.z - t.z) > 1.5 || p.y > 0.3) continue;
+      const { f, l } = this.toLocal(p);
+      const along = yaw === undefined ? side * f : f * Math.cos(yaw) + l * Math.sin(yaw);
+      const across = yaw === undefined ? l : -f * Math.sin(yaw) + l * Math.cos(yaw);
+      if (along > edge - 0.06 && along < edge + c.intake.reach + 0.6 && Math.abs(across) < c.intake.width / 2 + 0.15) return true;
+    }
+    return false;
   }
 
   /** Robot-frame point where the indexer takes a ball out of the hopper: the start of the model's feed path, or null. */

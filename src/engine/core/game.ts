@@ -798,9 +798,11 @@ export class Game {
       vx,
       vy,
       omega,
-      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together. Auto-intake rests
-      // while shooting / passing so the intake can fold in to feed (holding the intake button still runs it).
-      intake: (inp.intake || (this.autoIntake && !inp.shoot && !inp.pass)) && !(this.blockerUp && robot.config.shotBlocker),
+      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together. An auto-intake
+      // (not the button) is decided by the sim while shooting: running when moving or FUEL is at the mouth, else resting
+      // so the intake can fold in to feed.
+      intake: (inp.intake || this.autoIntake) && !(this.blockerUp && robot.config.shotBlocker),
+      ...(this.autoIntake && !inp.intake ? { autoIntake: true } : {}),
       ...(this.algaeMode ? { algaeMode: true } : {}),
       shoot: inp.shoot,
       pass: inp.pass,

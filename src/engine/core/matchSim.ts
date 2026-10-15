@@ -165,6 +165,8 @@ export class MatchSim {
       if (on && rules.adjustCommand) cmd = rules.adjustCommand(r, cmd, dt);
       const target = cmd.pass && !cmd.shoot && rules.passTarget ? rules.passTarget(r) : rules.aimTarget(r);
       if (on) cmd = r.autoAlign(cmd, target);
+      // Auto-intake while shooting: keep collecting when moving or FUEL is at the mouth, else rest so the intake folds.
+      if (on && cmd.autoIntake && cmd.intake && (cmd.shoot || cmd.pass) && !r.autoIntakeWanted(cmd, pool)) cmd = { ...cmd, intake: false };
       r.lastCommand = cmd;
       r.overheadLimit = rules.overheadClearance?.(r) ?? Infinity;
       r.drive(cmd, dt);

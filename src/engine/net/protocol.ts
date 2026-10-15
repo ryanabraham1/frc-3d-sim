@@ -125,10 +125,11 @@ const F_PASS = 4;
 const F_DESCEND = 8;
 const F_BLOCK = 16;
 const F_ALGAE_MODE = 32;
+const F_AUTO_INTAKE = 64;
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
 export function packCommand(c: RobotCommand): PackedCommand {
-  const flags = (c.intake ? F_INTAKE : 0) | (c.shoot ? F_SHOOT : 0) | (c.pass ? F_PASS : 0) | (c.descend ? F_DESCEND : 0) | (c.block ? F_BLOCK : 0) | (c.algaeMode ? F_ALGAE_MODE : 0);
+  const flags = (c.intake ? F_INTAKE : 0) | (c.shoot ? F_SHOOT : 0) | (c.pass ? F_PASS : 0) | (c.descend ? F_DESCEND : 0) | (c.block ? F_BLOCK : 0) | (c.algaeMode ? F_ALGAE_MODE : 0) | (c.autoIntake ? F_AUTO_INTAKE : 0);
   const packed: PackedCommand = [r3(c.vx), r3(c.vy), r3(c.omega), flags, c.climb ?? -1];
   if (c.scoringLevel !== undefined || c.aimTarget !== undefined || c.aimVisible !== undefined) packed.push(c.scoringLevel ?? 0);
   if (c.aimTarget !== undefined || c.aimVisible !== undefined) packed.push(c.aimTarget ?? -1);
@@ -152,6 +153,7 @@ export function unpackCommand(p: unknown): RobotCommand | null {
     descend: (flags & F_DESCEND) !== 0,
     ...((flags & F_BLOCK) !== 0 ? { block: true } : {}),
     ...((flags & F_ALGAE_MODE) !== 0 ? { algaeMode: true } : {}),
+    ...((flags & F_AUTO_INTAKE) !== 0 ? { autoIntake: true } : {}),
     climb: climb >= 0 ? climb : null,
     ...(p.length >= 6 && p[5] ? { scoringLevel: p[5] } : {}),
     ...(p.length >= 7 ? { aimTarget: p[6] } : {}),
