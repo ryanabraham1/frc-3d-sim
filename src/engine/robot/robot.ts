@@ -857,8 +857,10 @@ export class Robot {
     this.wireFuelPiles();
   }
 
-  /** Hopper fill (0–1) below which shooting starts folding the intake in to squeeze the last FUEL (see animateModel). */
-  static SQUEEZE_BELOW = 0.36;
+  /** Period of a turret robot's intake pulse while it shoots out the last 20% (s). */
+  static PULSE_PERIOD = 1.4;
+  /** How long the driver has been aiming / shooting (s), for the intake fold timing. */
+  private aimedFor = 0;
 
   /** FUEL an uncovered hopper keeps taking after it is brim-full: the rest roll over the rim (see StowBay). */
   private static readonly OVERFLOW_ROOM = 4;
@@ -1312,11 +1314,19 @@ export class Robot {
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.shooterPitch;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
-    // Shooting a nearly empty hopper, the intake folds in progressively and pushes the last FUEL toward the indexer
-    // (2910's hopper compresses, 4414's tray slides back over the dye rotor). It deploys again to intake.
-    const below = this.model?.mech?.squeezeBelow ?? Robot.SQUEEZE_BELOW;
-    const squeeze = a.aiming && !a.intaking ? Math.max(clamp((below - a.fill) / 0.25, 0, 1), this.feedStarved ? 1 : 0) : 0;
-    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * 0.9) : squeeze;
+    // Driving the intake / extended hopper in pushes the FUEL on it toward the indexer (2910's hopper compresses, 4414's
+    // tray slides back over the dye rotor); it deploys again to intake. A wide shooter (dumper) folds in half a second
+    // into every shot; a turret robot below 20% pulses it in and out to work the last balls over; and any shooter that
+    // has balls left but none reaching the indexer folds it in.
+    this.aimedFor = a.aiming ? this.aimedFor + a.dt : 0;
+    const lc = this.config.launcher, dumper = (lc.exits ?? 1) > 1 && !lc.turret;
+    let squeeze = 0;
+    if (a.aiming && !a.intaking) {
+      if (dumper) squeeze = this.aimedFor > 0.5 ? 1 : 0;
+      else if (a.fill < 0.2) squeeze = Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0;
+      if (this.feedStarved && (dumper || a.fill >= 0.2)) squeeze = 1;
+    }
+    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * 1.6) : squeeze;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
