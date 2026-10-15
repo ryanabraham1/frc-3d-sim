@@ -116,6 +116,9 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
   // Sides, top rails and an outer end wall above the intake mouth; open toward the main hopper and underneath, where
   // the intake ramp lifts FUEL in over the bumper (a closed inner end would wall the extension off from the rotor).
   const trayX = side * (L / 2 - 0.155), mouthTop = bt + .10;
+  // Deployed, the extension runs out to the intake: its outer wall stands over the intake's tip (frame edge + bumper +
+  // reach), so the load has the whole run over the intake to spread into. [binder: "Extending hopper holds 85+"]
+  const trayTravel = c.bumperThickness + c.intake.reach - 0.015;
   for (const sz of [-1, 1]) {
     box(tray, .30, trayH, .008, sponsor, trayX, bt + .02 + trayH / 2, sz * W * .465);
     box(tray, .30, .05, .006, black, trayX, bt + .045, sz * (W * .465 + .004));
@@ -168,8 +171,8 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
       // Shooting the hopper low, intake and extension slide back in and push the FUEL on them onto the rotor.
       const d = latchDeploy(deploy, s) * (1 - .75 * (s.squeeze ?? 0));
       intake.update(s, d);
-      tray.position.x = side * d * 0.2;
-      k.visual.userData.netIntakeExtension={side,length:d*.2};
+      tray.position.x = side * d * trayTravel;
+      k.visual.userData.netIntakeExtension={side,length:d*trayTravel};
       trayFill.set(d > .35 ? s.fill : 0);
       fill.set(s.fill);
       // Slowly turns back to agitate; spins hard to feed while firing, the way that screws the fin's spiral inward.

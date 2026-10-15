@@ -1069,7 +1069,7 @@ export class Robot {
     const c = this.config, area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
     const extension = this.visual.userData.netIntakeExtension;
     if (bin) return { cx: bin.x, sx: bin.length / 2, sz: bin.width / 2 };
-    if (c.hopperExpansion?.area || extension) return { cx: area.cx + (extension?.side ?? 0) * (extension?.length ?? 0) / 2, sx: area.sx + (extension?.length ?? 0) / 2, sz: area.sz };
+    if (c.hopperExpansion?.area) return { cx: area.cx + (extension?.side ?? 0) * (extension?.length ?? 0) / 2, sx: area.sx + (extension?.length ?? 0) / 2, sz: area.sz };
     const cav = this.fuelCavity();
     return cav ? { cx: (cav.min.x + cav.max.x) / 2, sx: (cav.max.x - cav.min.x) / 2, sz: (cav.max.z - cav.min.z) / 2 } : area;
   }
