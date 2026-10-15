@@ -488,10 +488,7 @@ export class Robot {
       mesh.userData.wakeFuel?.();
       mesh.userData.netStretch = 1;
     }
-    const area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
-    // Imported sliding hoppers carry the roof anchors with the moving wall, including when stowed.
-    const extension=this.visual.userData.netIntakeExtension;
-    const cx = bin ? bin.x : area.cx+(extension?.side??0)*(extension?.length??0)/2, sx = bin ? bin.length / 2 : area.sx+(extension?.length??0)/2, sz = bin ? bin.width / 2 : area.sz;
+    const { cx, sx, sz } = this.liveNetArea();
     // The net drapes over the balls actually in the hopper: their tops are where the strands rest.
     const tops: { x: number; z: number; y: number }[] = [];
     this.visual.updateMatrixWorld(true);
@@ -1033,6 +1030,65 @@ export class Robot {
     if (!rotor) return null;
     const v = new THREE.Vector3().applyMatrix4(this.liveMatrix(rotor.node));
     return { x: v.x, z: v.z, radius: rotor.radius };
+  }
+
+  /**
+   * Where a stretching net is tied (robot frame): the model's own net area when it gives one (following its bin, or its
+   * sliding extension), otherwise the live hopper itself, slide-out sections included, so the net always covers the
+   * whole opening it is tied round.
+   */
+  liveNetArea(): { cx: number; sx: number; sz: number } {
+    const c = this.config, area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
+    const extension = this.visual.userData.netIntakeExtension;
+    if (bin) return { cx: bin.x, sx: bin.length / 2, sz: bin.width / 2 };
+    if (c.hopperExpansion?.area || extension) return { cx: area.cx + (extension?.side ?? 0) * (extension?.length ?? 0) / 2, sx: area.sx + (extension?.length ?? 0) / 2, sz: area.sz };
+    const cav = this.fuelCavity();
+    return cav ? { cx: (cav.min.x + cav.max.x) / 2, sx: (cav.max.x - cav.min.x) / 2, sz: (cav.max.z - cav.min.z) / 2 } : area;
+  }
+
+  /**
+   * Under a stretching net, the highest a ball top may reach at (x, z): the rim plus the net's dome over the live net
+   * area, never steeper than the drawn fabric rises from its ties (the same surface `updateHopperNet` draws). Null
+   * without a stretching net.
+   */
+  netCeilingFn(): ((x: number, z: number) => number) | null {
+    if (!this.hopperNet) return null;
+    const c = this.config, { cx, sx, sz } = this.liveNetArea();
+    this.netLift ??= netDomeLift(c, c.height);
+    const lift = this.netLift;
+    return (x, z) => {
+      const u = (x - cx) / sx, v = z / sz;
+      if (Math.abs(u) >= 1 || Math.abs(v) >= 1) return c.height;
+      const edge = Math.min((1 - Math.abs(u)) * sx, (1 - Math.abs(v)) * sz);
+      return Math.min(c.height + lift(u, v), c.height + 1.6 * edge);
+    };
+  }
+
+  /**
+   * Robot-frame roof over (x, z) from the active bins' own ceilings (1678's sloped roof, the low deck over a turret),
+   * or Infinity where none applies; a stretching net's dome comes from `netCeilingFn` instead. One function per pass.
+   */
+  hopperCeilingFn(): (x: number, z: number) => number {
+    const net = this.netCeilingFn();
+    const bins = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0);
+    const list: { inv: THREE.Matrix4; dy: number; ceiling: (x: number, z: number) => number }[] = [];
+    // A net's bins carry the config-area dome; the live net replaces it (mechanism decks still apply below it).
+    for (const mesh of bins.length ? bins : this.fuelPiles.slice(0, 1)) {
+      const ceiling = mesh.userData.fuelCeiling as ((x: number, z: number) => number) | undefined;
+      if (!ceiling || (net && (ceiling as { setStretch?: unknown }).setStretch)) continue;
+      const m = this.liveMatrix(mesh);
+      list.push({ inv: m.clone().invert(), dy: m.elements[13], ceiling });
+    }
+    const v = new THREE.Vector3();
+    return (x, z) => {
+      let roof = net ? net(x, z) : list.length ? -Infinity : Infinity;
+      if (list.length) {
+        let bins = -Infinity;
+        for (const b of list) { v.set(x, 0, z).applyMatrix4(b.inv); bins = Math.max(bins, b.ceiling(v.x, v.z) + b.dy); }
+        roof = net ? Math.min(roof, bins) : bins;
+      }
+      return roof;
+    };
   }
 
   /** Box in the robot frame that the active FUEL bins (main plus deployed extensions) enclose. */

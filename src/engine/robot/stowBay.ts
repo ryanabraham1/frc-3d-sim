@@ -687,6 +687,7 @@ export class StowBay {
     const cx = (cav.min.x + cav.max.x) / 2, cz = (cav.min.z + cav.max.z) / 2;
     const rs = r * this.ballScale; // the whole ball stays inside the side walls
     const hx = (cav.max.x - cav.min.x) / 2 - rs, hz = (cav.max.z - cav.min.z) / 2 - rs;
+    const ceilingAt = this.robot.hopperCeilingFn();
     for (const i of [...this.stowed]) {
       if (this.staging.has(i)) continue;
       const body = this.pool.bodies[i];
@@ -695,7 +696,9 @@ export class StowBay {
       // Firm faces (as rebuilt.firstroboticsim does): any ball more than a 4 mm skin into a side wall, the floor or a
       // roof is put back on the face.
       const outX = Math.abs(p.x - cx) > hx + SKIN, outZ = Math.abs(p.z - cz) > hz + SKIN;
-      const floor = cav.min.y + this.floorLift, outY = p.y < floor + rs - SKIN || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + SKIN); // covered: the whole ball stays under the roof / net
+      // The bins' own roof over this spot (a net's dome tied low at the rim, a sloped or stepped roof) caps a covered hopper.
+      const roof = cav.open ? Infinity : Math.min(cav.max.y, ceilingAt(p.x, p.z));
+      const floor = cav.min.y + this.floorLift, outY = p.y < floor + rs - SKIN || p.y > (cav.open ? cav.max.y + 0.6 : roof - rs + SKIN); // covered: the whole ball stays under the roof / net
       const clipped=clearHopperChamfer(p,rs,cav.chamfer)||clearFuelOutline(p,rs,cav.outline);
       // A ball in a mechanism envelope leaves it by the nearest side (the smallest move). Never more than KEEPOUT_STEP
       // at once: a jump to the envelope's far side, with the pile pressing back, showed as a shake.
@@ -719,7 +722,7 @@ export class StowBay {
         continue;
       }
       const old = p.clone();
-      p.set(cx + THREE.MathUtils.clamp(p.x - cx, -hx, hx), THREE.MathUtils.clamp(p.y, Math.min(floor + rs, cav.max.y - rs), cav.open ? Infinity : cav.max.y - rs), cz + THREE.MathUtils.clamp(p.z - cz, -hz, hz));
+      p.set(cx + THREE.MathUtils.clamp(p.x - cx, -hx, hx), THREE.MathUtils.clamp(p.y, Math.min(floor + rs, roof - rs), cav.open ? Infinity : roof - rs), cz + THREE.MathUtils.clamp(p.z - cz, -hz, hz));
       const lin = this.robot.body.linvel();
       this.toWorld(p, this.v);
       body.setTranslation({ x: this.v.x, y: this.v.y, z: this.v.z }, true);
