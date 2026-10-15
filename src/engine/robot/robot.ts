@@ -7,7 +7,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
-import { DEFAULT_WHEEL_COF, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
+import { DEFAULT_WHEEL_COF, FUEL_PACK_RADIUS, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
@@ -1021,6 +1021,9 @@ export class Robot {
 
   /** Shooting with balls left but none reaching the indexer for a moment: fold the intake / hopper in to push them over. */
   get feedStarved(): boolean { return !!this.bay?.starved; }
+
+  /** Collider radius of held FUEL as a fraction of the real ball, when the model declares one (`mech.packRadius`). */
+  get packRadius(): number | undefined { const m = this.model?.mech; return m ? m.packRadius ?? FUEL_PACK_RADIUS : undefined; }
 
   /** Robot-frame centre (x, z) and radius of the model's dye rotor floor, or null. */
   floorRotor(): { x: number; z: number; radius: number } | null {

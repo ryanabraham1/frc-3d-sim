@@ -110,7 +110,7 @@ for(const team of [4414,1690])it(`${team}: a full hopper leaves the shooter enve
     for(const e of envelopes)if(y+radius>e.bottom+.002&&y-radius<e.top-.002)
       expect(Math.hypot(x-e.x,z-e.z)).toBeGreaterThanOrEqual(e.radius+radius-.003);
   };
-  r.bay!.forEachLocal((x,y,z)=>check(x,y,z,sim.pool.colliderRadius*(r.config.hopperExpansion?1:.93)));
+  r.bay!.forEachLocal((x,y,z)=>check(x,y,z,r.bay!.ballRadius));
   expect(r.held.length).toBe(r.config.hopperCapacity);
   r.detachPool(sim.pool);
   for(let i=0;i<120;i++)r.syncVisual(1/60);

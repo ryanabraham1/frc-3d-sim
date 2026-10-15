@@ -22,6 +22,8 @@ const FEED_TIMEOUT = 1.2;
 const FLOOR_SPEED = 1.2;
 /** Rim speed of a dye rotor / spindexer floor (m/s) [EST: a ~0.3 m plate at ~150 rpm]. */
 const ROTOR_SPEED = 6;
+/** Rim speed of a dye rotor turning slowly backwards while idle to agitate the load (m/s) [EST]. */
+const AGITATE_SPEED = 0.5;
 /** How long one "wants to fire" keeps the floor rollers running (s): covers the gaps between shots. */
 const FEED_HOLD = 0.25;
 /** Compliant intake tread: how far past the rigid roller a ball is still gripped (m). */
@@ -152,8 +154,15 @@ export class StowBay {
   }
 
   private get radius(): number { return this.pool.colliderRadius; }
-  // Net loads must occupy their real volume; compressing every ball leaves the fabric slack at full capacity.
-  private get ballScale(): number { return this.robot.config.hopperExpansion?.mechanism !== 'telescoping' && this.robot.config.hopperExpansion ? 1 : GamePiecePool.STOWED_SCALE; }
+  // Netted hoppers hold their load at the packing their model declares (`mech.packRadius`: 4414's binder capacity needs
+  // the foam squashed to FUEL_PACK_RADIUS), otherwise at full size so the load fills the net; the drawn balls stay full size.
+  private get ballScale(): number {
+    const c = this.robot.config;
+    if (c.hopperExpansion?.mechanism === 'telescoping' || !c.hopperExpansion) return GamePiecePool.STOWED_SCALE;
+    return this.robot.packRadius ?? 1;
+  }
+  /** Collider radius of the balls in this hopper (m). */
+  get ballRadius(): number { return this.radius * this.ballScale; }
 
   private frame(): THREE.Vector3 {
     const t = this.robot.body.translation(), r = this.robot.body.rotation();
@@ -462,7 +471,8 @@ export class StowBay {
     }
     if (++this.lastCheck >= 10) {
       this.lastCheck = 0;
-      if (this.time - this.calmSince > 1.5 && !this.feedingIndexer) this.rebalance();
+      // A dye rotor keeps its load moving (agitating or feeding), so nothing in it is ever buried.
+      if (this.time - this.calmSince > 1.5 && !this.feedingIndexer && !this.robot.floorRotor()) this.rebalance();
     }
     // Feeding moves the bottom of the pile (the balls on the floor rollers and at the indexer): it all has to be live.
     if (this.feedingIndexer && this.buried.size) this.wakeLayer(true);
@@ -512,6 +522,7 @@ export class StowBay {
     }
     this.dampRelative(dt);
     if (this.feedingIndexer) this.driveFloor(cav);
+    else if (this.robot.floorRotor()) this.driveFloor(cav, true);
     // A ball that is over a wall's top edge (open hopper) is an ordinary field ball again. A ball that is merely outside
     // the walls below the rim was left there by a wall that moved in (retracting extension, lowered roof): it is pushed
     // back inside, never dropped.
@@ -523,7 +534,7 @@ export class StowBay {
    * horizontal velocity relative to the chassis eases toward it). Balls on the pile above, or on an undriven part of the
    * floor, are left alone.
    */
-  private driveFloor(cav: Cavity): void {
+  private driveFloor(cav: Cavity, agitate = false): void {
     if (!this.stowed.size) return;
     const r = this.radius * this.ballScale, floor = cav.min.y + this.floorLift;
     const wide = (this.robot.config.launcher.exits ?? 1) > 1 || !this.robot.feedEntry(0);
@@ -558,6 +569,8 @@ export class StowBay {
         want.normalize();
       }
       want.multiplyScalar(onRotor ? ROTOR_SPEED * Math.min(1, Math.hypot(p.x - rotor!.x, p.z - rotor!.z) / rotor!.radius + 0.35) : FLOOR_SPEED);
+      // Idle, a dye rotor turns slowly backwards to agitate the load (4414's binder): the pile levels instead of heaping.
+      if (agitate) { if (!onRotor) continue; want.set(p.z - rotor!.z, 0, -(p.x - rotor!.x)).normalize().multiplyScalar(AGITATE_SPEED); }
       const v = body.linvel();
       rel.set(v.x, v.y, v.z).applyQuaternion(this.qi).sub(base);
       rel.x += (want.x - rel.x) * 0.3; rel.z += (want.z - rel.z) * 0.3;
