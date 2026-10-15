@@ -73,7 +73,8 @@ export function build7769Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       intake.position.x = (1 - deploy) * CHUNK_TRAVEL + shuffle * deploy;
       net.position.x = -.62 + intake.position.x; net.scale.x = .64 - intake.position.x;
       spinShot = scoringEase(spinShot, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
-      spinFeed = scoringEase(spinFeed, s.enabled && (s.intaking || s.firing > 0) ? 1 : 0, s.dt);
+      // Feed rollers just spin up and down with the shots; they aren't a joint the shot waits for.
+      spinFeed = ease(spinFeed, s.enabled && (s.intaking || s.firing > 0) ? 1 : 0, s.dt);
       raise = scoringEase(raise, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
       // Rear faces of the flywheel and feeder move FUEL upward; the shot leaves over the top toward +X.
       flywheel.rotation.z -= 60 * spinShot * s.dt;

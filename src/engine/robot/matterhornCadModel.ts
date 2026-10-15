@@ -58,7 +58,8 @@ export function build9496Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       ext.position.x = (1 - deploy) * MATTERHORN_TRAVEL;
       net.position.x = -.64 + ext.position.x; net.scale.x = .78 - ext.position.x;
       spinShot = scoringEase(spinShot, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
-      spinFeed = scoringEase(spinFeed, s.enabled && (s.intaking || s.firing > 0) ? 1 : 0, s.dt);
+      // Feed rollers just spin up and down with the shots; they aren't a joint the shot waits for.
+      spinFeed = ease(spinFeed, s.enabled && (s.intaking || s.firing > 0) ? 1 : 0, s.dt);
       // Front faces of the drum and feeder rollers move FUEL upward through the gap behind the front guides.
       drum.rotation.z += 60 * spinShot * s.dt;
       for (const f of feeders) f.rotation.z += 40 * Math.max(spinShot, spinFeed * .5) * s.dt;

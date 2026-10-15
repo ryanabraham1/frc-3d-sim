@@ -79,7 +79,8 @@ export function build6329Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       if (!isAnimated()) return;
       pose(deploy);
       const feeding = s.enabled && (s.intaking || s.firing > 0);
-      spinFloor = scoringEase(spinFloor, feeding ? 1 : 0, s.dt);
+      // Feed rollers just spin up and down with the shots; they aren't a joint the shot waits for.
+      spinFloor = ease(spinFloor, feeding ? 1 : 0, s.dt);
       spinShot = scoringEase(spinShot, s.enabled && (s.aiming || s.firing > 0) ? 1 : 0, s.dt);
       for (const r of rollers) r.rotation.z += 30 * spinFloor * s.dt;
       for (const r of floorRollers) r.rotation.z -= 24 * spinFloor * s.dt;
