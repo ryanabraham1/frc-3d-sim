@@ -27,6 +27,22 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
   net.name = 'cad-hopper-net';
   net.userData.mirrorGeometry = true;
   if (limestone) extension.add(net);
+  // Clear side panels of the slide-out front section: they telescope with it, from the floor up to the sloped retention
+  // net, so FUEL in the extension is walled in at the sides (the GLB only has the stowed body's panels).
+  const sidePanels: THREE.Mesh[] = [];
+  if (limestone) {
+    const clear = new THREE.MeshStandardMaterial({ color: 0xdde5f0, transparent: true, opacity: .22, roughness: .2, side: THREE.DoubleSide, depthWrite: false });
+    for (const side of [-1, 1]) {
+      const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(1, 0), new THREE.Vector2(1, 1), new THREE.Vector2(0, 1)]);
+      const panel = new THREE.Mesh(new THREE.ShapeGeometry(shape), clear);
+      panel.name = 'cad-hopper-extension-side';
+      panel.userData.mirrorGeometry = true; // reshaped every frame: the worker mirror copies its vertices
+      panel.position.z = side * width / 2;
+      panel.renderOrder = 2;
+      extension.add(panel);
+      sidePanels.push(panel);
+    }
+  }
   let fraction = 0, horizontal = 0, vertical = 0;
   const settle = (a:number,b:number,dt:number) => dt > 0 ? THREE.MathUtils.lerp(a,b,1-Math.exp(-7*dt)) : b;
   const update = (fill:number,deployed:number,dt:number, hopperRaised = 0) => {
@@ -69,6 +85,15 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
       for(const z of [-width/2,width/2]) segment([bodyFront,h,z],[back,h,z]);
     }
     netGeometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3)); netGeometry.computeBoundingSphere();
+    // Side panels: a quad from the extended lip (xf) to the body front, floor to the sloping net (lip .51 → body y).
+    for (const panel of sidePanels) {
+      const pos = panel.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const corners: [number, number][] = [[xf, base], [bodyFront, base], [bodyFront, y], [xf, .51]];
+      for (let i = 0; i < 4; i++) pos.setXY(i, corners[i][0], corners[i][1]);
+      pos.needsUpdate = true;
+      panel.geometry.computeBoundingSphere();
+      panel.visible = bodyFront - xf > .01;
+    }
   };
   return { update, stow: () => {
     const f=horizontal>.5 ? front : -.31;
