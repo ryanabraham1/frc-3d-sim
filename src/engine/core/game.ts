@@ -377,7 +377,6 @@ export class Game {
     this.fader = new OcclusionFader(this.ctx.builder.root);
     this.seasonHud = season.createHud(this.ctx, this.rules, this.hud.slots);
 
-    if (this.role === 'client') this.clientSync!.maintainReady(performance.now());
   }
 
   private get logging(): boolean {

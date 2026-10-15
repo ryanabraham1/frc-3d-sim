@@ -5,7 +5,7 @@ import { approach, bar, box, decal, deployableIntake, drivebase, fillBlock, flow
 import { turretShooter } from '@engine/robot/turretShooter';
 import { flatNet } from '@engine/robot/rebuiltCadKit';
 import { inch } from '@engine/units';
-import { build, normalizeRebuiltConfig, setRebuiltAccuracy, stretchNet } from './config';
+import { build, fixedHood, normalizeRebuiltConfig, setRebuiltAccuracy, stretchNet } from './config';
 
 /**
  * Second batch of imported public CAD for 2026 (next top teams by EPA from the Spectrum CAD Collection). The loaded CAD
@@ -220,7 +220,7 @@ export function cadBatchRebuiltTeamRobots(): TeamRobot[] {
         c.launcher.reversed = true;
         // Black net over the hopper stretches: 40 FUEL under the rigid rim, about 22 more under the net [EST].
         stretchNet(c, 22);
-        c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle;
+        fixedHood(c);
         c.intake.reach = .2; c.intake.width = .62;
         c.maxSpeed = 4.6; setRebuiltAccuracy(c, 84);
       }) },

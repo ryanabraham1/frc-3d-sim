@@ -8,7 +8,7 @@ import { inch } from '@engine/units';
 import { hopperNetCeiling, launcherExitOffsets } from '@engine/robot/config';
 import { motor } from '@engine/robot/mechanicalDetail';
 import { slidingHopper } from '@engine/robot/slidingHopper';
-import { build, normalizeRebuiltConfig, setRebuiltAccuracy, ROMAN_CAPACITY, chunkCad, romanII, stretchNet } from './config';
+import { build, fixedHood, normalizeRebuiltConfig, setRebuiltAccuracy, ROMAN_CAPACITY, chunkCad, romanII, stretchNet } from './config';
 
 /**
  * Five more real 2026 REBUILT robots. Looks follow each team's published CAD / reveal photos, drawn in the clean,
@@ -605,11 +605,11 @@ export function moreRebuiltTeamRobots(): TeamRobot[] {
     { id: 'chunk-7769', team: 7769, name: 'CHUNK',
       description: '7769 The CREW (5 blue banners). Wide fixed shooter on 4 in Stealth wheels with a compliant-wheel feeder; the hood swings up around the flywheel shaft to shoot and drops for the TRENCH. Black sponsor-plated polycarb hopper under a net; the intake rides out on independently driven racks and shuffles while firing to prevent jams. Loads the public CAD. Under-trench box, so it holds about 37 FUEL [EST: packed into the modeled box; the team quotes almost 70, but a non-expanding trench-height hopper holds far less]. Its L1 climb arm is modeled but, like every stock 2026 robot, it starts without a climb. Rate and speed are estimates.',
       source: 'Onshape public "Full Robot" (assembly "Chunk") https://ostcse.onshape.com/documents/692fc43a78732f76f6a7fc01; Chief Delphi "FRC 7769 - CAD & Tech Slides : CHUNK" and Q&A',
-      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 19, climb: 0 }, (c) => { chunkCad(c); stretchNet(c, 20); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 84); }) },
+      config: cfg(7769, 'chunk-7769', { intake: 'both', aim: 'align', dumper: true, hopper: 37, tall: false, rate: 19, climb: 0 }, (c) => { chunkCad(c); stretchNet(c, 20); c.maxSpeed = 4.8; c.launcher.exitSpan = .6; fixedHood(c); setRebuiltAccuracy(c, 84); }) },
     { id: 'triple-threat-9128', team: 9128, name: 'Triple Threat',
       description: '9128 Itkan Robotics (twin of 10340). Three fixed shooter lanes with tubing-wrapped rollers under one static hood, black hex-perforated hopper, twin top intake rollers. 45 FUEL total following user tuning, including its intake-side hopper extension; 15–16 FUEL/s once the hopper is emptied, 20–25 in the first volley (team). Went undefeated at its first event.',
       source: 'Chief Delphi "Itkan Robotics 2026 Robot Reveal: Triple Threat" (BPS and hopper Q&A)',
-      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 20, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; /* static hood: range comes from wheel speed */ c.launcher.minAngle = c.launcher.maxAngle = c.launcher.angle; setRebuiltAccuracy(c, 82); }) },
+      config: cfg(9128, 'triple-threat-9128', { intake: 'both', aim: 'align', dumper: true, hopper: 45, tall: false, rate: 20, climb: 0 }, (c) => { c.launcher.exits = 3; c.maxSpeed = 4.7; c.hopperCovered = true; /* static hood: range comes from wheel speed */ fixedHood(c); setRebuiltAccuracy(c, 82); }) },
     { id: 'toploader-604', team: 604, name: 'Toploader',
       description: '604 Quixilver. A tall BUMP robot (27 in square) with a single-stream turret over a dye rotor ("serializer": about 15 FUEL/s in the team prototype, chosen over a 23/s full-width shooter so it can feed and score on the move), white corrugated-plastic walls, and a hopper that slides out with the intake. One-driver automated scoring. Holds 80–90 FUEL (user-reported; simulator uses 85) in its tall box and sliding hopper. Speed is a simulator estimate.',
       source: 'Chief Delphi "Team 604 Quixilver - 2026 Robot CAD and Code Release" (Toploader); The Blue Alliance 2026 photos',

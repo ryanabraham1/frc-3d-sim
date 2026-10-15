@@ -116,12 +116,21 @@ export function rebuiltRobotDefaults(): RobotConfig {
   return c;
 }
 
+/**
+ * Launch angle of a fixed (static) hood drum [EST]: steep enough to drop FUEL into the HUB from about 1.6 m out and still
+ * reach it from 4.5 m on wheel speed alone. The stock 62 deg could not score inside about 2.4 m (measured 2026-10-15).
+ */
+export const FIXED_HOOD_ANGLE = 70 * Math.PI / 180;
+export function fixedHood(c: RobotConfig): void {
+  c.launcher.angle = c.launcher.minAngle = c.launcher.maxAngle = FIXED_HOOD_ANGLE;
+}
+
 /** 6329 Roman II CAD dimensions (Drivetrain tubes: 30 in wide x 24 in long; CAD top 0.548 m) and its fixed drum [EST 70 deg]. */
 export const ROMAN_CAPACITY = 40;
 export function romanII(c: RobotConfig): void {
   c.frameLength = inch(24); c.frameWidth = inch(30); c.height = .55;
   c.launcher.height = .56; c.launcher.exitSpan = .75;
-  c.launcher.angle = c.launcher.minAngle = c.launcher.maxAngle = 70 * Math.PI / 180;
+  fixedHood(c);
   c.intake.reach = .2; c.intake.width = .62;
   c.maxSpeed = 4.6; setRebuiltAccuracy(c, 86);
 }
@@ -161,6 +170,9 @@ export function normalizeRebuiltConfig(config: RobotConfig): RobotConfig {
   if ((c.model === 'mixtape-971' && Math.abs(c.height - 0.638352) < 1e-6)
     || (c.model === 'downpour-6800' && Math.abs(c.height - 0.63) < 1e-6)) c.height = 0.55;
   c.intake.ground ??= true;
+  // Saved fixed-hood picks from before FIXED_HOOD_ANGLE carry the stock 62 deg hood, which can't score close in.
+  if ((c.model === 'chunk-7769' || c.model === 'triple-threat-9128' || c.model === 'matterhorn-9496')
+    && c.launcher.minAngle === c.launcher.maxAngle && Math.abs(c.launcher.angle - 62 * Math.PI / 180) < 0.01) fixedHood(c);
   if (c.intake.rate !== undefined) c.intake.rate = Math.max(MIN_INTAKE_RATE, c.intake.rate);
   // Hoods only pivot about their own hinge (saved configs may still carry the old vertical hood slide).
   delete (c.launcher as { hoodLift?: unknown }).hoodLift;

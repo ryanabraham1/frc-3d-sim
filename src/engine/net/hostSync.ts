@@ -66,7 +66,10 @@ export class HostSync {
   private forceKey = true;
   private readyFired = false;
   private readonly offs: (() => void)[] = [];
-  private readonly readyTimer: ReturnType<typeof setTimeout>;
+  private readyTimer: ReturnType<typeof setTimeout>;
+  /** Peers whose connection dropped (and hasn't come back): the only ones the match may start without. */
+  private readonly lost = new Set<string>();
+  private readonly waitStarted = performance.now();
   bytesSent = 0;
 
   constructor(
@@ -75,6 +78,8 @@ export class HostSync {
     private readonly src: HostSyncSource,
     private readonly hooks: HostSyncHooks,
     readyTimeoutMs = 20000,
+    /** Even a connected peer that never finishes loading is left behind after this long. */
+    private readonly readyHardCapMs = 120000,
   ) {
     this.lastQ = new Int16Array(src.pool.count * 3).fill(-32768);
     this.lastRot = new Int16Array(src.pool.count * 4).fill(-32768);
@@ -83,10 +88,10 @@ export class HostSync {
     this.offs.push(client.on('peer-left', ({ peerId }) => this.onPeerLeft(peerId)));
     // A dropped driver's robot goes idle at once; when they resume they get a full keyframe.
     this.offs.push(client.on('peer-lost', ({ peerId }) => this.onPeerLost(peerId)));
-    this.offs.push(client.on('peer-back', () => (this.forceKey = true)));
+    this.offs.push(client.on('peer-back', ({ peerId }) => { this.lost.delete(peerId); this.forceKey = true; }));
     this.offs.push(client.on('reconnecting', () => this.cmds.clear()));
     this.offs.push(client.on('reconnected', () => (this.forceKey = true)));
-    this.readyTimer = setTimeout(() => this.fireReady(), readyTimeoutMs);
+    this.readyTimer = setTimeout(() => this.readyTimeout(), readyTimeoutMs);
     queueMicrotask(() => this.checkReady());
   }
 
@@ -143,6 +148,7 @@ export class HostSync {
   }
 
   private onPeerLost(peerId: string): void {
+    this.lost.add(peerId);
     const robot = this.robotForPeer(peerId);
     if (robot) this.cmds.delete(robot.id);
   }
@@ -153,6 +159,20 @@ export class HostSync {
     this.waitingFor.delete(peerId);
     this.hooks.peerLeft(peerId, robot);
     this.checkReady();
+  }
+
+  /**
+   * Waited `readyTimeoutMs`: start without the peers whose connection dropped, but keep waiting for anyone still connected
+   * and loading (a slow machine still compiling shaders): starting without them left their robot frozen or lagging.
+   */
+  private readyTimeout(): void {
+    if (this.readyFired) return;
+    for (const p of this.lost) this.waitingFor.delete(p);
+    if (this.waitingFor.size && performance.now() - this.waitStarted < this.readyHardCapMs) {
+      this.readyTimer = setTimeout(() => this.readyTimeout(), 1000);
+      return;
+    }
+    this.fireReady();
   }
 
   private checkReady(): void {
