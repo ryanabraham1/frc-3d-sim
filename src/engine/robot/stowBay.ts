@@ -297,6 +297,14 @@ export class StowBay {
     }
   }
 
+  /** Robot-frame position of hopper ball `i` (null when it isn't one). */
+  localOf(i: number): THREE.Vector3 | null {
+    if (this.buried.has(i)) return this.buried.get(i)!.clone();
+    if (!this.stowed.has(i)) return null;
+    this.frame();
+    return this.toLocal(this.pool.bodies[i].translation(), new THREE.Vector3());
+  }
+
   /** Robot-frame positions of the balls in the hopper (the net drapes over them). */
   forEachLocal(cb: (x: number, y: number, z: number) => void): void {
     for (const l of this.buried.values()) cb(l.x, l.y, l.z);

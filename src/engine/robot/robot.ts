@@ -2367,6 +2367,7 @@ export class Robot {
       Robot.warnedProjectile = true;
       console.warn('[robot] robot.projectile was never set from the season game piece — shot solver is using defaults.');
     }
+    let ballSide: number | null = null;
     if (this.bay) {
       // Only a ball the indexer actually has (one that reached its entry) can leave; the floor rollers run meanwhile.
       const exit = this.launcherExit(0), pick = this.bay.pickForLaunch(new THREE.Vector3(exit.forward, exit.up, -exit.side));
@@ -2374,12 +2375,19 @@ export class Robot {
       if (pick < 0 && this.bay.occupied) return null;
       const k = pick >= 0 ? this.held.lastIndexOf(pick) : -1;
       if (k >= 0) { this.held.splice(k, 1); this.held.push(pick); }
+      // A wide shooter (dumper) launches each ball where it reaches the rollers across their width: the floor carries it
+      // straight forward, so that is where it lies in the hopper. No fixed streams.
+      const wide = launcherExitOffsets(c0);
+      if (pick >= 0 && !c.turret && wide.length > 1) {
+        const half = Math.max(...wide.map(Math.abs)), z = this.bay.localOf(pick)?.z;
+        if (z !== undefined) ballSide = THREE.MathUtils.clamp(-z, -half, half);
+      }
     }
     const rv = this.body.linvel();
     const heading = this.pose.yaw;
     // Wide dumpers feed whichever lane fills next; separate turrets still alternate.
     const offsets = launcherExitOffsets(c0);
-    const ex = this.launcherExit(offsets[this.exitIndex % offsets.length]);
+    const ex = this.launcherExit(ballSide ?? offsets[this.exitIndex % offsets.length]);
     // The launcher is bolted to the chassis: a tilted robot launches from a tilted spot, in a tilted direction
     // (the aim below assumes a level robot, so a rocking or tipping robot misses — as it would for real).
     const pos = this.localToWorld(ex.forward, ex.up, -ex.side, new THREE.Vector3());
@@ -2413,7 +2421,9 @@ export class Robot {
     // Fire from the current actuator pose; tracking lag remains a physical aiming error.
     if (this.shootWhileTracking) theta = this.shooterPitch;
     this.lastShotAngle = theta;
-    this.lastShotExit = this.exitIndex % offsets.length;
+    // The drawn feed lane nearest where the ball actually left.
+    this.lastShotExit = ballSide === null ? this.exitIndex % offsets.length
+      : offsets.reduce((best, o, k) => (Math.abs(o - ballSide!) < Math.abs(offsets[best] - ballSide!) ? k : best), 0);
     this.exitIndex += c.unevenFeed && !c.turret && offsets.length > 1 ? rng.int(1, offsets.length) : 1;
     this.burstTime = BURST_HOLD_S;
     this.anim.firing = 1;
