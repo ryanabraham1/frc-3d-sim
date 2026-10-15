@@ -1,4 +1,5 @@
 import { Quaternion, Vector3 } from 'three';
+import { FuelPile } from '../robot/fuelPile';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { Hud } from '../hud/hud';
@@ -235,6 +236,8 @@ export class Game {
     this.setup = net?.setup ?? localSetup(settings, season);
     this.quality = QUALITY[resolveTier()];
     StowBay.ACTIVE_MAX = this.quality.activeMax;
+    // Multiplayer optimises for latency: no real-ball hoppers on the host (quality.hopperHost) and light drawn piles.
+    FuelPile.lite = this.role !== 'local';
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, {
       shadows: settings.shadows && this.quality.shadows,
       lighting: settings.lighting,
