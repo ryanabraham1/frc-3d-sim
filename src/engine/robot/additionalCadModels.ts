@@ -250,7 +250,7 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],
       stow:pile.stow,feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;
         return [new THREE.Vector3(-.20,.27,z),new THREE.Vector3(.05,.29,z),new THREE.Vector3(.24,.36,z),point(k,hood,.037,-.028,z)];}},
-    update(s){deploy=ease(deploy,s.enabled||s.deployed?1-.75*(s.squeeze??0):0,s.dt);pile.update(s.fill,deploy);
+    update(s){deploy=ease(deploy,s.enabled||s.deployed?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return;
       // Source pickup is deployed. Fold upward and inward about its real bearing.
       intake.rotation.z=-(1-deploy)*2.65;

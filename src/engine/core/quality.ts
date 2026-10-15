@@ -6,12 +6,7 @@
 export type QualityTier = 'low' | 'medium' | 'high';
 export type QualityPref = 'auto' | QualityTier;
 
-/**
- * Which robots keep their held FUEL as real Rapier bodies (`StowBay`). Every tier is 'none' for now: real-body hoppers
- * showed balls poking through walls and nets, so the visual particle pile (what multiplayer clients see) is the default.
- * Set a tier to 'player' / 'all' to turn them back on. The rest draw the visual-only particle pile,
- * which costs no physics step time and looks the same to everyone watching (it is what every multiplayer client sees).
- */
+/** Which robots keep held FUEL as real Rapier bodies. Multiplayer uses visual piles on every tier. */
 export type HopperPhysics = 'all' | 'player' | 'none';
 
 export interface QualityProfile {
@@ -35,6 +30,11 @@ export const QUALITY: Record<QualityTier, QualityProfile> = {
   medium: { tier: 'medium', pixelRatioCap: 1.25, minPixelRatio: 0.7, shadows: true, hopperSolo: 'all', hopperHost: 'none', hopperWorker: 'all', activeMax: 20 },
   high: { tier: 'high', pixelRatioCap: 1.5, minPixelRatio: 0.75, shadows: true, hopperSolo: 'all', hopperHost: 'none', hopperWorker: 'all', activeMax: 26 },
 };
+
+/** Leave headroom for input, prediction and snapshots on every multiplayer device. */
+export function multiplayerQuality(profile: QualityProfile): QualityProfile {
+  return { ...profile, shadows: false, pixelRatioCap: Math.min(profile.pixelRatioCap, 1.25), hopperHost: 'none' };
+}
 
 export interface DeviceInfo {
   cores?: number;

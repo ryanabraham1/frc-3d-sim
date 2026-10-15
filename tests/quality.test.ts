@@ -4,7 +4,7 @@ import { SEASONS } from '../src/seasons';
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { cloneConfig } from '../src/engine/robot/config';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
-import { classifyDevice, QualityGovernor } from '../src/engine/core/quality';
+import { classifyDevice, QualityGovernor, QUALITY, multiplayerQuality } from '../src/engine/core/quality';
 
 it('classifies devices by cores, memory, touch and GPU', () => {
   expect(classifyDevice({ cores: 12, memoryGb: 8, gpu: 'ANGLE (Apple, Apple M2)' })).toBe('high');
@@ -53,3 +53,16 @@ it('a full hopper can be shed to the particle pile mid-match without losing a ba
     expect(r.held.length).toBeLessThan(before);
   } finally { sim.dispose(); }
 }, 60000);
+
+
+it('multiplayer reserves rendering headroom and disables real hoppers on every quality tier', () => {
+  for (const profile of Object.values(QUALITY)) {
+    const light = multiplayerQuality(profile);
+    expect(light.hopperHost).toBe('none');
+    expect(light.shadows).toBe(false);
+    expect(light.pixelRatioCap).toBeLessThanOrEqual(1.25);
+    expect(profile.hopperSolo).not.toBe('none');
+  }
+  expect(QUALITY.high.shadows).toBe(true);
+  expect(QUALITY.high.pixelRatioCap).toBe(1.5);
+});

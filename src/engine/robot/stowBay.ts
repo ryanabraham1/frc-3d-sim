@@ -43,11 +43,8 @@ const LOOSE_AFTER = 0.25;
  *   in a box. The count is therefore correct the instant a ball is captured.
  * - Overflow: an uncovered hopper has no roof, so a ball that rolls over a wall's top edge simply keeps being the same
  *   body; once past the wall it is released to the field with the velocity it already has. Nothing is spawned.
- * - Shooting: only a ball that has reached the indexer's entry (`Robot.feedEntry`, the start of the model's feed path)
- *   can leave. While the robot wants to fire, the driven part of the floor (`Robot.drivenFloorSpan`, the feed rollers;
- *   the whole floor when the model doesn't say) carries the balls resting on it toward that entry. A ball anywhere
- *   else (on an undriven intake tray, up on the pile) only gets there by rolling down or being pushed by a moving wall
- *   (the intake folding in, the hopper squeezing shut): nothing is pulled out of a heap.
+ * - Shooting: the indexer takes a ball at its entry first, otherwise draws the nearest held ball directly from the
+ *   hopper. The driven floor still moves the pile, but no intake folding or agitation policy is needed to empty it.
  */
 export class StowBay {
   /** Held pieces that are inside the cavity. */
@@ -76,12 +73,7 @@ export class StowBay {
   /** Balls being pulled in: elapsed time, the model's intake lane (robot frame) and the waypoint they are heading for. */
   private readonly feeding = new Map<number, { t: number; pts: THREE.Vector3[]; k: number; loose: number }>();
   /** The model's own meshes in the hopper region as static trimesh colliders (re-posed when their node moves). */
-  private cad: { mesh: THREE.Mesh; built: THREE.Matrix4; inverse: THREE.Matrix4; now: THREE.Matrix4; collider: RAPIER.Collider; sweep?: boolean }[] | null = null;
-  /**
-   * A folding intake part is pressing into the load harder than it can push it (balls sunk into it): the fold holds
-   * where it is until they move on (Robot.animateModel), the way a real intake stalls against a full hopper.
-   */
-  foldBlocked = false;
+  private cad: { mesh: THREE.Mesh; built: THREE.Matrix4; inverse: THREE.Matrix4; now: THREE.Matrix4; collider: RAPIER.Collider }[] | null = null;
   private tick = 0;
   private lastPos = new THREE.Vector3();
   private lastQuat = new THREE.Quaternion();
@@ -90,11 +82,6 @@ export class StowBay {
   static readonly TRIANGLE_BUDGET = 120000;
   static MAX_HULLS = 48;
   static MAX_PART = 0.32;
-  /** Longest intake part (deployed, outside the hopper) given a collider: it sweeps the load in as the intake folds. */
-  static MAX_SWEEP_PART = 0.8;
-  /** Colliders built with the intake deployed (they are rebuilt once it has been out a moment; see update). */
-  private deployedBuild = false;
-  private enabledFor = 0;
   trianglesInUse = 0;
   /** Diagnostics: balls released over the rim / out of the cavity, intake pulls that timed out. */
   readonly stats = { released: 0, timeouts: 0, captured: 0 };
@@ -112,31 +99,8 @@ export class StowBay {
 
   private time = 0;
   private feedUntil = -1;
-  /** When a ball last reached the indexer (or the robot last started wanting to fire). */
-  private lastFed = 0;
-  /**
-   * The driven floor (rotor plate / roller floor) has at most two balls on it while more are held elsewhere (on the
-   * intake tray, up the pile): the moment to fold the intake in and push them onto it.
-   */
-  get floorEmpty(): boolean {
-    const cav = this.cavity;
-    if (!cav || !this.occupied) return false;
-    this.frame();
-    const r = this.radius * this.ballScale, floor = cav.min.y + this.floorLift + r * 1.35;
-    const rotor = this.robot.floorRotor(), span = this.robot.drivenFloorSpan(), p = new THREE.Vector3();
-    let n = 0;
-    for (const i of this.stowed) {
-      this.toLocal(this.pool.bodies[i].translation(), p);
-      if (p.y > floor) continue;
-      const on = rotor ? Math.hypot(p.x - rotor.x, p.z - rotor.z) < rotor.radius : span ? p.x > span[0] - r && p.x < span[1] + r : true;
-      if (on && ++n > 2) return false;
-    }
-    return true;
-  }
-  /** Wanting to fire, balls left, and none has reached the indexer for a moment. */
-  get starved(): boolean { return this.feedingIndexer && this.occupied && this.time - this.lastFed > 0.35; }
   /** The robot wants to fire: run the floor rollers toward the indexer for a moment. */
-  demandFeed(): void { if (!this.feedingIndexer) this.lastFed = this.time; this.feedUntil = this.time + FEED_HOLD; }
+  demandFeed(): void { this.feedUntil = this.time + FEED_HOLD; }
   get feedingIndexer(): boolean { return this.time < this.feedUntil; }
 
   /** Indexer entry (robot frame): the model's feed path start, else just over the floor at the launcher end of the hopper. */
@@ -381,17 +345,9 @@ export class StowBay {
   takeForFeed(entry: THREE.Vector3): { position: THREE.Vector3; release(position: THREE.Vector3): void } | null {
     if (this.stowed.size <= this.staging.size && this.buried.size) this.wakeLayer();
     this.frame();
-    let best = -1, distance = Infinity;
-    const position = new THREE.Vector3(), p = new THREE.Vector3();
-    for (const i of this.stowed) {
-      if (this.staging.has(i)) continue;
-      this.toLocal(this.pool.bodies[i].translation(), p);
-      if (!this.atEntry(p, entry)) continue;
-      const d = p.distanceToSquared(entry);
-      if (d < distance) { best = i; distance = d; position.copy(p); }
-    }
-    if (best < 0) return null;
-    const idx = best;
+    const idx = this.nearestForFeed(entry);
+    if (idx < 0) return null;
+    const position = this.toLocal(this.pool.bodies[idx].translation(), new THREE.Vector3());
     this.staging.add(idx);
     this.pool.drawnElsewhere.add(idx);
     // Conveyor motion is bounded animation; the hidden duplicate does not need ball-to-ball physics.
@@ -419,26 +375,29 @@ export class StowBay {
     this.staging.clear();
   }
 
-  /** Use the lead conveyor ball, otherwise a ball at the indexer entry; -1 when none has reached it. */
+  /** Prefer a ball at the entry, otherwise draw the nearest unstaged ball from anywhere in the hopper. */
+  private nearestForFeed(entry: THREE.Vector3): number {
+    let best = -1, distance = Infinity, atEntry = false;
+    const p = new THREE.Vector3();
+    for (const i of this.stowed) {
+      if (this.staging.has(i)) continue;
+      this.toLocal(this.pool.bodies[i].translation(), p);
+      const ready = this.atEntry(p, entry), d = p.distanceToSquared(entry);
+      if ((ready && !atEntry) || (ready === atEntry && d < distance)) {
+        best = i; distance = d; atEntry = ready;
+      }
+    }
+    return best;
+  }
+
+  /** Consume the lead conveyor ball, otherwise draw directly from the hopper; -1 only when it is empty. */
   pickForLaunch(_exit: THREE.Vector3): number {
-    // Claimed balls are already in conveyor order. Consume the lead rather than reselecting the hidden pile.
     const staged = this.staging.values().next().value;
     if (staged !== undefined) return staged;
     if (!this.stowed.size && this.buried.size) this.wakeLayer(true);
     this.frame();
     const cav = this.cavity ?? this.robot.fuelCavity();
-    if (!cav) return -1;
-    const entry = this.entry(cav, new THREE.Vector3());
-    let best = -1, d = Infinity;
-    const p = new THREE.Vector3();
-    for (const i of this.stowed) {
-      this.toLocal(this.pool.bodies[i].translation(), p);
-      if (!this.atEntry(p, entry)) continue;
-      const dist = p.distanceToSquared(entry);
-      if (dist < d) { d = dist; best = i; }
-    }
-    if (best >= 0) this.lastFed = this.time;
-    return best;
+    return cav ? this.nearestForFeed(this.entry(cav, new THREE.Vector3())) : -1;
   }
 
   /**
@@ -464,14 +423,6 @@ export class StowBay {
   /** Once per physics step, before the world steps. */
   update(dt: number): void {
     this.time += dt;
-    // Robots start with the intake stowed: once it has been out a moment, rebuild the model colliders with it deployed so
-    // the parts that fold back over the hopper are known.
-    this.enabledFor = this.robot.enabled ? this.enabledFor + dt : this.enabledFor;
-    if (!this.deployedBuild && this.enabledFor > 1.5 && this.cad) {
-      for (const c of this.cad) this.robot.physics.world.removeCollider(c.collider, false);
-      this.cad = null;
-      this.deployedBuild = true;
-    }
     this.carryTeleport();
     const cav = this.robot.fuelCavity();
     if (!cav) return;
@@ -658,26 +609,8 @@ export class StowBay {
     this.robot.noteLaunch(i);
   }
 
-  /** After a step: is a sweeping intake part sunk into the load (more than 1 cm into two or more balls)? */
-  private checkFold(): void {
-    this.foldBlocked = false;
-    if (!this.cad || !this.stowed.size) return;
-    const world = this.robot.physics.world;
-    let pressed = 0;
-    for (const c of this.cad) {
-      if (!c.sweep) continue;
-      world.contactPairsWith(c.collider, other => {
-        world.contactPair(c.collider, other, m => {
-          for (let k = 0; k < m.numContacts(); k++) if (m.contactDist(k) < -0.01) { pressed++; break; }
-        });
-      });
-      if (pressed >= 2) { this.foldBlocked = true; return; }
-    }
-  }
-
   /** Called once per rendered frame, after the physics steps: undo any pop through a wall before it is drawn. */
   settle(): void {
-    this.checkFold();
     if (!this.stowed.size) return;
     this.cavity = this.robot.fuelCavity();
     if (this.cavity) { this.frame(); this.contain(this.cavity, new THREE.Vector3(), this.radius); }
@@ -687,7 +620,7 @@ export class StowBay {
     const cx = (cav.min.x + cav.max.x) / 2, cz = (cav.min.z + cav.max.z) / 2;
     const rs = r * this.ballScale; // the whole ball stays inside the side walls
     const hx = (cav.max.x - cav.min.x) / 2 - rs, hz = (cav.max.z - cav.min.z) / 2 - rs;
-    const ceilingAt = this.robot.hopperCeilingFn();
+    const ceilingAt = this.robot.hopperCeilingFn(), floorAt = this.robot.hopperFloorFn();
     for (const i of [...this.stowed]) {
       if (this.staging.has(i)) continue;
       const body = this.pool.bodies[i];
@@ -698,7 +631,7 @@ export class StowBay {
       const outX = Math.abs(p.x - cx) > hx + SKIN, outZ = Math.abs(p.z - cz) > hz + SKIN;
       // The bins' own roof over this spot (a net's dome tied low at the rim, a sloped or stepped roof) caps a covered hopper.
       const roof = cav.open ? Infinity : Math.min(cav.max.y, ceilingAt(p.x, p.z));
-      const floor = cav.min.y + this.floorLift, outY = p.y < floor + rs - SKIN || p.y > (cav.open ? cav.max.y + 0.6 : roof - rs + SKIN); // covered: the whole ball stays under the roof / net
+      const floor = Math.max(cav.min.y + this.floorLift, floorAt(p.x, p.z)), outY = p.y < floor + rs - SKIN || p.y > (cav.open ? cav.max.y + 0.6 : roof - rs + SKIN); // covered: the whole ball stays under the roof / net
       const clipped=clearHopperChamfer(p,rs,cav.chamfer)||clearFuelOutline(p,rs,cav.outline);
       // A ball in a mechanism envelope leaves it by the nearest side (the smallest move). Never more than KEEPOUT_STEP
       // at once: a jump to the envelope's far side, with the pile pressing back, showed as a shake.
@@ -762,29 +695,24 @@ export class StowBay {
     visual.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(visual.matrixWorld).invert();
     const zone = new THREE.Box3(cav.min.clone().subScalar(0.1), cav.max.clone().addScalar(0.1));
-    const candidates: { mesh: THREE.Mesh; rel: THREE.Matrix4; d: number; tris: number; sweep: boolean }[] = [];
-    // The hopper proper: an intake part outside it (deployed) is what sweeps the load in as the intake folds.
-    const hopper = new THREE.Box3(cav.min.clone().addScalar(0.02), cav.max.clone().subScalar(0.02));
+    const candidates: { mesh: THREE.Mesh; rel: THREE.Matrix4; d: number; tris: number }[] = [];
     visual.traverseVisible(o => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || mesh.userData.flowToken || mesh.userData.fuelNoContact) return;
       const g = mesh.geometry, pos = g.getAttribute('position');
       if (!pos) return;
       // Nets are soft roofs handled by the cavity (their hull would be a solid dome).
-      let intake = false;
       for (let q: THREE.Object3D | null = mesh; q && q !== visual; q = q.parent) {
         if (q.userData.flowToken || q.userData.fuelNoContact || /net|fabric|mesh-roof/i.test(q.name)) return;
-        if (/intake/i.test(q.name)) intake = true;
       }
       g.computeBoundingBox();
       const rel = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
       const bounds = g.boundingBox!.clone().applyMatrix4(rel);
       if (!bounds.intersectsBox(zone)) return;
       const centre = bounds.getCenter(new THREE.Vector3());
-      candidates.push({ mesh, rel, d: centre.distanceTo(zone.getCenter(new THREE.Vector3())), tris: g.index ? g.index.count / 3 : pos.count / 3, sweep: intake && this.deployedBuild && !hopper.containsPoint(centre) });
+      candidates.push({ mesh, rel, d: centre.distanceTo(zone.getCenter(new THREE.Vector3())), tris: g.index ? g.index.count / 3 : pos.count / 3 });
     });
-    // Sweeping intake parts first (they push the load to the indexer as the intake folds), then nearest first.
-    candidates.sort((a, b) => Number(b.sweep) - Number(a.sweep) || a.d - b.d);
+    candidates.sort((a, b) => a.d - b.d);
     // Convex hulls of the compact parts only (pillars, rollers, brackets, shooter pods): a hull costs a few contact tests,
     // a CAD trimesh costs thousands. Large panels are covered by the cavity walls. Hollow shapes never get a hull.
     let count = 0;
@@ -793,18 +721,15 @@ export class StowBay {
       if (count >= StowBay.MAX_HULLS) break;
       const g = c.mesh.geometry, pos = g.getAttribute('position');
       g.boundingBox!.clone().applyMatrix4(c.rel).getSize(size);
-      // Rollers, tubes and arms of a sweeping intake (long, thin across) are convex whatever their length (a 0.6 m drum);
-      // a bulky intake assembly's hull would be a solid wedge.
       const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
-      const rodLike = c.sweep && dims[1] < 0.1 && dims[2] <= StowBay.MAX_SWEEP_PART;
-      if ((dims[2] > StowBay.MAX_PART && !rodLike) || dims[0] < 0.012) continue;
+      if (dims[2] > StowBay.MAX_PART || dims[0] < 0.012) continue;
       const stride = Math.max(1, Math.floor(pos.count / 160));
       const points: number[] = [];
       for (let k = 0; k < pos.count; k += stride) { v.fromBufferAttribute(pos, k).applyMatrix4(c.rel); points.push(v.x, v.y, v.z); }
       const desc = R.ColliderDesc.convexHull(new Float32Array(points));
       if (!desc) continue;
       const collider = world.createCollider(desc.setMass(0).setFriction(0.45).setRestitution(0.15).setCollisionGroups(GROUPS.stowWall), robot.body);
-      this.cad.push({ mesh: c.mesh, built: c.rel.clone(), inverse: c.rel.clone().invert(), now: c.rel.clone(), collider, sweep: c.sweep });
+      this.cad.push({ mesh: c.mesh, built: c.rel.clone(), inverse: c.rel.clone().invert(), now: c.rel.clone(), collider });
       count++;
     }
     const budget = StowBay.TRIANGLE_BUDGET - count;

@@ -168,8 +168,8 @@ registerRobotModel('ripcurrent-4414', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      // Shooting the hopper low, intake and extension slide back in and push the FUEL on them onto the rotor.
-      const d = latchDeploy(deploy, s) * (1 - .75 * (s.squeeze ?? 0));
+      // Keep the intake and extension deployed while the indexer draws the load.
+      const d = latchDeploy(deploy, s);
       intake.update(s, d);
       tray.position.x = side * d * trayTravel;
       k.visual.userData.netIntakeExtension={side,length:d*trayTravel};

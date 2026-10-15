@@ -28,11 +28,6 @@ export interface RobotCommand {
   vy: number;
   omega: number;
   intake: boolean;
-  /**
-   * The intake is on only because of auto-intake (not the driver's button): while shooting or passing the sim decides
-   * whether to keep it running (moving, or FUEL near the mouth) or rest it so it can fold in to feed.
-   */
-  autoIntake?: boolean;
   /** REEFSCAPE ALGAE mode: floor ALGAE pickup and pulling ALGAE off the REEF are on (and CORAL pickup off); false = CORAL mode. */
   algaeMode?: boolean;
   shoot: boolean;
@@ -864,14 +859,8 @@ export class Robot {
 
   /** How far below a low overhead's real underside the season's `overheadLimit` is set (half an inch, Rapier's spare). */
   static OVERHEAD_SPARE = 0.0127;
-  /** Period of a turret robot's intake pulse while it shoots out the last 20% (s). */
-  static PULSE_PERIOD = 1.4;
-  /** A dumper pulsing its intake to free the last balls (until it stops shooting). */
-  private pulsing = false;
   /** Enabled at some point this match (deployed mechanisms stay out while disabled between periods). */
   private everEnabled = false;
-  /** How long the driver has been aiming / shooting (s), for the intake fold timing. */
-  private aimedFor = 0;
 
   /** FUEL an uncovered hopper keeps taking after it is brim-full: the rest roll over the rim (see StowBay). */
   private static readonly OVERFLOW_ROOM = 4;
@@ -898,7 +887,7 @@ export class Robot {
     pool.bays.set(this.id, this.bay);
   }
 
-  /** 0–1: intake folded in to squeeze the last FUEL toward the indexer (see animateModel). */
+  /** Legacy animation channel, held at zero: the indexer now draws FUEL without folding the intake. */
   get squeeze(): number { return this.anim.squeeze ?? 0; }
 
   /**
@@ -951,29 +940,6 @@ export class Robot {
     const out = new THREE.Matrix4(), m = new THREE.Matrix4();
     for (let p: THREE.Object3D | null = o; p && p !== this.visual; p = p.parent) out.premultiply(p.matrixAutoUpdate ? m.compose(p.position, p.quaternion, p.scale) : p.matrix);
     return out;
-  }
-
-  /**
-   * Auto-intake while shooting: keep the intake running if the robot is driving (commanded or actually moving) or a
-   * floor piece lies just ahead of the intake mouth; otherwise it rests so the intake can fold in to feed.
-   */
-  autoIntakeWanted(cmd: RobotCommand, pool: { count: number; state: ArrayLike<string>; position(i: number): { x: number; y: number; z: number } }): boolean {
-    const v = this.body.linvel();
-    if (Math.hypot(cmd.vx, cmd.vy) > 0.3 || Math.hypot(v.x, v.z) > 0.4) return true;
-    const c = this.config;
-    if (!c.intake.enabled || c.intake.ground === false) return false;
-    const t = this.body.translation(), yaw = c.intake.groundYaw, side = groundSideSign(c);
-    const edge = yaw === undefined ? this.fp.length / 2 : (Math.abs(Math.cos(yaw)) * this.fp.length + Math.abs(Math.sin(yaw)) * this.fp.width) / 2;
-    for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field') continue;
-      const p = pool.position(i);
-      if (Math.abs(p.x - t.x) > 1.5 || Math.abs(p.z - t.z) > 1.5 || p.y > 0.3) continue;
-      const { f, l } = this.toLocal(p);
-      const along = yaw === undefined ? side * f : f * Math.cos(yaw) + l * Math.sin(yaw);
-      const across = yaw === undefined ? l : -f * Math.sin(yaw) + l * Math.cos(yaw);
-      if (along > edge - 0.06 && along < edge + c.intake.reach + 0.6 && Math.abs(across) < c.intake.width / 2 + 0.15) return true;
-    }
-    return false;
   }
 
   /** Robot-frame point where the indexer takes a ball out of the hopper: the start of the model's feed path, or null. */
@@ -1046,8 +1012,6 @@ export class Robot {
   /** Floor FUEL comes in only by touching a running intake roller (every real-body hopper with a ground intake). */
   get capturesByContact(): boolean { return !!this.bay && this.config.intake.enabled && this.config.intake.ground !== false; }
 
-  /** Shooting with balls left but none reaching the indexer for a moment: fold the intake / hopper in to push them over. */
-  get feedStarved(): boolean { return !!this.bay?.starved; }
 
   /** Collider radius of held FUEL as a fraction of the real ball, when the model declares one (`mech.packRadius`). */
   get packRadius(): number | undefined { const m = this.model?.mech; return m ? m.packRadius ?? FUEL_PACK_RADIUS : undefined; }
@@ -1116,6 +1080,28 @@ export class Robot {
         roof = net ? Math.min(roof, bins) : bins;
       }
       return roof;
+    };
+  }
+
+  /**
+   * Robot-frame floor under (x, z) from the active bins' own floor profiles (`userData.fuelFloor`, e.g. 604's tray over
+   * its intake), or -Infinity where none is declared. One function per physics pass.
+   */
+  hopperFloorFn(): (x: number, z: number) => number {
+    const bins = this.fuelPiles.filter(p => p.userData.fuelRequestedFill > 0);
+    const list: { inv: THREE.Matrix4; dy: number; floor: (x: number, z: number) => number }[] = [];
+    for (const mesh of bins.length ? bins : this.fuelPiles.slice(0, 1)) {
+      const floor = mesh.userData.fuelFloor as ((x: number, z: number) => number) | undefined;
+      if (!floor) continue;
+      const m = this.liveMatrix(mesh);
+      list.push({ inv: m.clone().invert(), dy: m.elements[13], floor });
+    }
+    if (!list.length) return () => -Infinity;
+    const v = new THREE.Vector3();
+    return (x, z) => {
+      let y = -Infinity;
+      for (const b of list) { v.set(x, 0, z).applyMatrix4(b.inv); y = Math.max(y, b.floor(v.x, v.z) + b.dy); }
+      return y;
     };
   }
 
@@ -1198,6 +1184,13 @@ export class Robot {
   /** Pieces that went over the hopper rim and are waiting for the sim to turn them back into field pieces. */
   readonly spilled: { idx: number; pos: THREE.Vector3; vel: THREE.Vector3 }[] = [];
 
+  /** Per-world visual budget, also reapplied if a robot model is rebuilt or merged. */
+  private lightweight = false;
+  setLightweight(enabled: boolean): void {
+    this.lightweight = enabled;
+    this.wireFuelPiles();
+  }
+
   private wireFuelPiles(): void {
     const open = this.openHopper;
     if (this.statusLight) this.statusLight.userData.fuelNoContact = true;
@@ -1214,11 +1207,12 @@ export class Robot {
     });
     this.visual.userData.fuelCadContacts = cad || this.fuelPiles.length > 0;
     for (const pile of this.fuelPiles) {
+      if (pile.userData.fuelPile) pile.userData.fuelPile.lite = this.lightweight;
       pile.userData.fuelManagedCount = true;
       pile.userData.setFuelOpen?.(open);
-      pile.userData.bindFuelClearance?.(this.visual);
+      pile.userData.bindFuelClearance?.(this.lightweight ? undefined : this.visual);
       pile.userData.setFuelIntakeSide?.(groundSideSign(this.config));
-      if (Robot.CAD_FUEL_CONTACTS || this.config.model==='aimbot-3256') pile.userData.bindFuelContacts?.(this.visual, true);
+      if (!this.lightweight && (Robot.CAD_FUEL_CONTACTS || this.config.model==='aimbot-3256')) pile.userData.bindFuelContacts?.(this.visual, true);
       pile.userData.fuelEscape = (mesh: THREE.Object3D, x: number, y: number, z: number, vx: number, vy: number, vz: number) => this.fuelEscaped(mesh, x, y, z, vx, vy, vz);
     }
   }
@@ -1412,30 +1406,8 @@ export class Robot {
     a.firing = Math.max(0, a.firing - a.dt / 0.35);
     a.hood = this.shooterPitch;
     a.fill = clamp((this.held.length - this.piecesInTransit) / Math.max(1, this.config.hopperCapacity), 0, 1);
-    // Driving the intake / extended hopper in pushes the FUEL on it toward the indexer (2910's hopper compresses, 4414's
-    // tray slides back over the dye rotor); it deploys again to intake. A wide shooter (dumper) folds in half a second
-    // into every shot; a turret robot below 20% pulses it in and out to work the last balls over; and any shooter that
-    // has balls left but none reaching the indexer folds it in.
-    this.aimedFor = a.aiming ? this.aimedFor + a.dt : 0;
-    if (!a.aiming) this.pulsing = false;
-    // Any chassis-aimed shooter folds in with the shot (a wide drum like 2910's or a dumper); turrets pulse when their
-    // feed floor runs dry.
-    const lc = this.config.launcher, dumper = !lc.turret;
-    let squeeze = 0;
-    if (a.aiming && !a.intaking && this.mech) {
-      // The separate-world mechanism hopper (`?hopper=mech`): progressive fold below the model's fill threshold.
-      squeeze = clamp(((this.model?.mech?.squeezeBelow ?? 0.36) - a.fill) / 0.25, 0, 1);
-    } else if (a.aiming && !a.intaking) {
-      // Folded and still starved (balls perched on the folded intake): pulse it out and back in to shake them loose.
-      if (dumper) squeeze = this.aimedFor <= 0.5 ? 0 : this.feedStarved && (a.squeeze ?? 0) > 0.95 || this.pulsing ? (this.pulsing = true, Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0.4) : 1;
-      // A turret robot pulses its intake in and out once its feed floor runs dry (balls only left on the tray / pile),
-      // and through the last 20% (rebuilt.firstroboticsim's squeeze-when-floor-empty with agitation).
-      else if (a.fill < 0.2 || this.bay?.floorEmpty) squeeze = Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0;
-      if (this.feedStarved && (dumper || a.fill >= 0.2)) squeeze = 1;
-    }
-    // A folding intake slows against a load it can't move yet (its motor still pushes): it keeps closing as the balls give.
-    const foldRate = a.dt * (this.mech ? 0.9 : 1.6) * (this.bay?.foldBlocked ? 0.3 : 1);
-    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, foldRate) : squeeze;
+    // The indexer draws directly from the hopper; shooting never retracts or pulses the intake.
+    a.squeeze = 0;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
@@ -2561,8 +2533,7 @@ export class Robot {
     }
     if (!this.shootWhileTracking && (Math.abs(theta-this.shooterPitch) > .035 || !this.scoringMechanismReady)) return null;
     if (this.mech) {
-      // Physical hopper: the indexer runs while the robot is ready to fire, and only a ball that has reached the flywheel
-      // leaves, so the fire rate is what the mechanism delivers (still capped at launcher.rate by the cooldown).
+      // The running indexer draws a held ball; the launcher cooldown controls throughput.
       this.mech.demandFeed();
       if (this.fireCooldown > 0) return null;
       const pick = this.mech.takeShot();
@@ -2893,7 +2864,7 @@ export class Robot {
       lanes: launcherExitOffsets(c).length,
       // Host: the exit the last shot actually left from. Replicas don't know it and alternate.
       shotLane: () => this.netAct === null ? this.lastShotExit : null,
-    }, roll, pieceR, Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
+    }, roll, pieceR, !this.lightweight && Robot.CAD_FUEL_CONTACTS && roll && this.fuelPiles.length && this.visual.userData.fuelCadContacts ? new FuelContacts(this.visual, this.visual, true, true) : undefined);
   }
 
   /**

@@ -224,3 +224,47 @@ it('a ball taken in on top of a buried pile lands above the raised floor and sta
     expect(p.y).toBeGreaterThan(cav.min.y);
   } finally { sim.dispose(); }
 }, 120000);
+
+it('draws distant hopper stragglers into the indexer without folding, staging each conserved ball once', async () => {
+  await RAPIER.init();
+  const sim = make(undefined, 3);
+  try {
+    const bay = sim.robot.bay!, entry = new THREE.Vector3(0, .3, 0);
+    const ids = [...bay.stowed], t = sim.robot.body.translation();
+    // All balls are outside the old entry gate, including a high ball perched above the floor.
+    const positions = [new THREE.Vector3(-.6, .3, 0), new THREE.Vector3(-.4, .3, 0), new THREE.Vector3(0, .8, 0)];
+    ids.forEach((id, i) => sim.pool.bodies[id].setTranslation({ x: t.x + positions[i].x, y: t.y + positions[i].y, z: t.z + positions[i].z }, true));
+    const order = [1, 2, 0];
+    for (const k of order) {
+      const ball = bay.takeForFeed(entry);
+      expect(ball).not.toBeNull();
+      expect(ball!.position.distanceTo(positions[k])).toBeLessThan(.00001);
+    }
+    expect(new Set(sim.pool.drawnElsewhere)).toEqual(new Set(ids));
+    expect(bay.takeForFeed(entry)).toBeNull();
+    expect(sim.robot.held).toHaveLength(3);
+    bay.releaseStaged();
+    expect(bay.pickForLaunch(entry)).toBeGreaterThanOrEqual(0);
+    for (let n = 0; n < 300; n++) {
+      sim.step({ ...IDLE_COMMAND, shoot: true, intake: true });
+      sim.robot.syncVisual(1 / 90);
+      expect(sim.robot.squeeze).toBe(0);
+    }
+    expect(sim.robot.held).toHaveLength(0);
+    expect(sim.fired).toBe(3);
+  } finally { sim.dispose(); }
+});
+
+it('prefers an entry ball over a nearer ball above the indexer', async () => {
+  await RAPIER.init();
+  const sim = make(undefined, 2);
+  try {
+    const bay = sim.robot.bay!, t = sim.robot.body.translation(), entry = new THREE.Vector3(0, .3, 0);
+    const [ready, high] = [...bay.stowed];
+    sim.pool.bodies[ready].setTranslation({ x: t.x, y: t.y + .3, z: t.z + .3 }, true);
+    sim.pool.bodies[high].setTranslation({ x: t.x, y: t.y + .5, z: t.z }, true);
+    const ball = bay.takeForFeed(entry)!;
+    expect(ball.position.z).toBeCloseTo(.3);
+    expect(sim.pool.drawnElsewhere.has(ready)).toBe(true);
+  } finally { sim.dispose(); }
+});

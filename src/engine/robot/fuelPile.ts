@@ -23,7 +23,7 @@ export class FuelPile {
    * Multiplayer: latency matters more than the look of a held load, so every drawn pile runs light (two contact passes,
    * no moving-part fields) on the host and on clients alike.
    */
-  static lite = false;
+  lite = false;
   /** Drawn mechanisms rasterised into a voxel field (see `FuelClearance`); balls are pushed out of them. */
   clearance?: FuelClearance;
   /** Moving assemblies near the bin (intake, sliding hopper, hood, turret), each followed in its own frame. */
@@ -180,9 +180,9 @@ export class FuelPile {
     const dt = THREE.MathUtils.clamp(s.dt, 0, 0.1);
     this.clock += dt;
     if (dt <= 0) return false;
-    if (this.count > 0 && this.contacts?.sync()) this.wake();
+    if (!this.lite && this.count > 0 && this.contacts?.sync()) this.wake();
     // A moving part sweeping through the load (an intake folding in, a hopper sliding shut) shoves the balls it meets.
-    if (!FuelPile.lite) for (const m of this.moving) if (m.sync() && !this.awake && this.count > 0 && m.touches(this.positions, this.count)) { this.awake = true; this.quiet = 0; }
+    if (!this.lite) for (const m of this.moving) if (m.sync() && !this.awake && this.count > 0 && m.touches(this.positions, this.count)) { this.awake = true; this.quiet = 0; }
     // Gravity in the chassis frame: a tilted or overturned robot pours its pile toward the low side.
     const ux = s.upx ?? 0, uy = s.upy ?? 1, uz = s.upz ?? 0;
     if (Math.abs(ux - this.upX) + Math.abs(uy - this.upY) + Math.abs(uz - this.upZ) > 0.01 && this.count > 0) { this.awake = true; this.quiet = 0; this.calm = 0; }
@@ -222,7 +222,7 @@ export class FuelPile {
         this.confine(i, oldX, oldZ);
       }
       // Bounded pair budget: small hoppers, bounded contact passes, no allocations in the contact loop.
-      for (let pass = 0; pass < (FuelPile.lite ? 2 : this.netted ? 8 : this.count >= 40 ? 6 : 3); pass++) {
+      for (let pass = 0; pass < (this.lite ? 2 : this.netted ? 8 : this.count >= 40 ? 6 : 3); pass++) {
         for (let a = 0; a < this.count; a++) for (let b = a + 1; b < this.count; b++) {
           const j = a * 3, k = b * 3;
           let dx = p[k] - p[j], dy = p[k + 1] - p[j + 1], dz = p[k + 2] - p[j + 2];
@@ -245,7 +245,7 @@ export class FuelPile {
           }
           this.confine(a, ax, az); this.confine(b, bx, bz);
         }
-        if (this.contacts) for (let i = 0; i < this.count; i++) {
+        if (!this.lite && this.contacts) for (let i = 0; i < this.count; i++) {
           const oldX = p[i * 3], oldZ = p[i * 3 + 2];
           this.contacts.resolve(p, v, i * 3, this.radius * this.seeds[i].s * 0.96);
           this.confine(i, oldX, oldZ);
@@ -284,7 +284,7 @@ export class FuelPile {
     // Mechanisms first, so the bin walls, outline, keepouts and roof (applied below) always have the last word.
     const reach = this.radius * FUEL_PACK_RADIUS * this.seeds[i].s + 0.006;
     if (this.clearance) this.clearance.push(p, j, reach, b.y0 + b.height * 0.5);
-    if (!FuelPile.lite) for (const m of this.moving) m.push(p, j, reach);
+    if (!this.lite) for (const m of this.moving) m.push(p, j, reach);
     const r = this.radius * this.seeds[i].s, ry = r * (this.seeds[i].sy ?? 0.94);
     const minX = b.x - b.length / 2 + r, maxX = b.x + b.length / 2 - r, minZ = -b.width / 2 + r, maxZ = b.width / 2 - r;
     // Above the lip there is no side wall. Pair contacts can roll the ball across the rim continuously. A ball beside

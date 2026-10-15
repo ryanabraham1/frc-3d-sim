@@ -29,12 +29,14 @@ export interface WorldOptions {
   realHopper(rs: RobotSetup): boolean;
   /**
    * Which real-body hopper: 'stowbay' (default) = every FUEL robot's held balls are the field's own bodies in the main
-   * world, fed only from the indexer entry and caught by roller contact where the model has roller hooks; 'mech' = the
+   * world, drawn directly by the indexer and caught by roller contact where the model has roller hooks; 'mech' = the
    * separate-world mechanism hopper for models with hooks (`?hopper=mech`; robots without them keep the particle pile).
    */
   hopperMode?: 'mech' | 'stowbay';
   /** Draw pieces travelling through the robots (intake → hopper → shooter). */
   pieceFlow: boolean;
+  /** Multiplayer uses visual held loads and bounded pile work, preserving field and robot physics. */
+  lightweight?: boolean;
   /** Bake static robot parts into a few meshes (only worth it where the robots are drawn — and both sides of a mirror must agree). */
   optimize: boolean;
   /** HUD handed to the season context (rules only use ctx.toast; season HUDs get their own slots). */
@@ -81,7 +83,8 @@ export class MatchWorld {
       season.configureRobot?.(robot);
       // Held FUEL becomes real physics bodies only where it is worth the step time; everyone else draws the visual
       // particle pile.
-      if (opts.realHopper(rs)) robot.attachPool(this.pool, opts.hopperMode ?? 'stowbay');
+      robot.setLightweight(opts.lightweight ?? false);
+      if (!opts.lightweight && opts.realHopper(rs)) robot.attachPool(this.pool, opts.hopperMode ?? 'stowbay');
       if (opts.pieceFlow && season.pieceFlow !== false) {
         const piece = this.pool.mesh;
         const round = season.gamePiece.shape !== 'ring' && season.gamePiece.shape !== 'tube';

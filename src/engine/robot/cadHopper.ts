@@ -21,6 +21,9 @@ export function cadHopper(id: string, k: ModelKit, parts: {slider?:THREE.Object3
   const pile = fillBlock(group, { x:(front+back)/2, y0:base, length:back-front, width, height:raised-base-.006, exactFloor:true, color:0xf2c200, capacity:k.config.hopperCapacity, inside,
     ceiling: limestone ? x => x < -.31 ? .51+(liveRoof-.51)*THREE.MathUtils.clamp((x-liveFront)/(-.31-liveFront),0,1) : liveRoof : top ? (x,z) => Math.hypot(x-.0254,z) < .23 ? .54 : liveRoof : netted ? hopperNetCeiling(k.config, roof) : undefined });
   const mesh = group.getObjectByName('hopper-fuel-pile')!;
+  // 604's sliding section is a tray over the intake: in front of the main box its floor is the tray's, 0.26 m up (CAD
+  // 'hopper-slide' spans y 0.26-0.70), not the main floor, which there is the intake's space.
+  if (top) mesh.userData.fuelFloor = (x: number) => x < -.30 ? .265 : base;
   const extension = new THREE.Group(); extension.name = 'cad-hopper-extension'; k.visual.add(extension);
   const netGeometry = new THREE.BufferGeometry();
   const net = new THREE.LineSegments(netGeometry, new THREE.LineBasicMaterial({color:0x24292b, transparent:true,opacity:.8}));

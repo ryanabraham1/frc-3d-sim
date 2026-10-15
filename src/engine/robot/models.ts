@@ -549,7 +549,7 @@ export function fillBlock(parent: THREE.Object3D, bin: { x: number; y0: number; 
   };
   mesh.userData.animateFuel = (s: RobotAnimState) => {
     // One field build (~0.1-0.3 s) per 150 ms across all robots, so a six-robot match start doesn't freeze for a second.
-    if (clearanceVisual && mesh.count > 0 && Date.now() - lastClearanceBuild > 150) {
+    if (!pile.lite && clearanceVisual && mesh.count > 0 && Date.now() - lastClearanceBuild > 150) {
       const visual = clearanceVisual; clearanceVisual = undefined; lastClearanceBuild = Date.now();
       mesh.updateWorldMatrix(true, false);
       const { fixed, moving } = clearanceSources(visual, mesh), reach = r * FUEL_PACK_RADIUS + .006;

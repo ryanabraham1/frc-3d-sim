@@ -301,3 +301,17 @@ but this deployment uses Cloudflare to preserve room coordination in a single lo
 - `SeasonRules.recoveryState/restoreRecovery` is separate from visual `netState/applyNetState`: visual
   replication alone does not contain processing queues, violation timers, or exact inventory identities.
 - Focused regression coverage: `host-recovery`, `net-client-recovery`, `relay`, `lobby-churn`, and `netsync`.
+
+
+### Multiplayer performance profile
+
+Online matches use visual held-FUEL piles for every robot on the host and guests. Held balls retain their pool identities,
+capacity and shot accounting, but do not add hopper bodies or CAD hopper contacts to the host's physics step. Visual
+piles use two contact passes, skip CAD voxel-field construction and moving-part contacts, and keep their budget local
+to each world so a later solo match restores full detail. Shadows are off online and pixel ratio is capped at 1.25
+(or the device tier's lower cap). Field balls, robot collisions, 90 Hz physics, scoring and client prediction remain active.
+
+The indexer takes an entry ball first, otherwise draws the nearest ball from the hopper. Shooting and passing do not
+retract or pulse intakes, and auto-intake keeps running while shooting. Solo real-ball hoppers retain roller-contact
+pickup and driven floors; multiplayer uses the existing count-based held-load path. Use `?perf` to inspect
+`realHoppers: 0`, `shadows: 0`, `hostSimLoad`, and guest snapshot/prediction counters during a room test.

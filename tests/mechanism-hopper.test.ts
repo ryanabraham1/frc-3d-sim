@@ -75,7 +75,7 @@ it('captures only finite roller contact while powered, preserving the field pose
   } finally { f.dispose(); }
 });
 
-it('requires current flywheel contact to launch and never substitutes a distant inventory ball', () => {
+it('prefers flywheel contact then draws a distant held ball while the indexer is running', () => {
   const f = fixture();
   try {
     f.load(2); f.hopper.placeLocal(0, { x: -.25, y: .3, z: .2 });
@@ -83,9 +83,10 @@ it('requires current flywheel contact to launch and never substitutes a distant 
     f.tick(); expect(f.hopper.takeShot()).toBe(-1);
     f.hopper.demandFeed(); f.tick();
     expect(f.hopper.takeShot()).toBe(1);
+    expect(f.hopper.takeShot()).toBe(0);
     expect(f.hopper.takeShot()).toBe(-1);
-    expect([...f.hopper.indices()]).toEqual([0]);
-    expect(f.hopper.stats.launched).toBe(1);
+    expect([...f.hopper.indices()]).toEqual([]);
+    expect(f.hopper.stats.launched).toBe(2);
   } finally { f.dispose(); }
 });
 

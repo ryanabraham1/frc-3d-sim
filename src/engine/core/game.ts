@@ -1,5 +1,4 @@
 import { Quaternion, Vector3 } from 'three';
-import { FuelPile } from '../robot/fuelPile';
 import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { Hud } from '../hud/hud';
@@ -23,7 +22,7 @@ import { OcclusionFader } from '../render/occlusionFader';
 import { Renderer } from '../render/renderer';
 import { footprint } from '../robot/config';
 import { StowBay } from '../robot/stowBay';
-import { QUALITY, QualityGovernor, resolveTier, type QualityProfile } from './quality';
+import { QUALITY, multiplayerQuality, QualityGovernor, resolveTier, type QualityProfile } from './quality';
 import { IDLE_COMMAND, Robot, RobotCommand } from '../robot/robot';
 import { resolveStartPose } from '../startPose';
 import { clamp, formatClock } from '../units';
@@ -234,10 +233,9 @@ export class Game {
     this.role = net?.role ?? 'local';
     if (this.role === 'local') this.simSpeed = clamp(Number(new URLSearchParams(location.search).get('speed')) || 1, 0.25, 3);
     this.setup = net?.setup ?? localSetup(settings, season);
-    this.quality = QUALITY[resolveTier()];
+    const profile = QUALITY[resolveTier()];
+    this.quality = this.role === 'local' ? profile : multiplayerQuality(profile);
     StowBay.ACTIVE_MAX = this.quality.activeMax;
-    // Multiplayer optimises for latency: no real-ball hoppers on the host (quality.hopperHost) and light drawn piles.
-    FuelPile.lite = this.role !== 'local';
     this.renderer = new Renderer(container, season.fieldLength, season.fieldWidth, {
       shadows: settings.shadows && this.quality.shadows,
       lighting: settings.lighting,
@@ -268,6 +266,7 @@ export class Game {
       realHopper: (rs) => !worker && this.wantsRealHopper(rs, net),
       hopperMode: this.role === 'local' && new URLSearchParams(location.search).get('hopper') === 'mech' ? 'mech' : 'stowbay',
       pieceFlow: true,
+      lightweight: this.role !== 'local',
       optimize: true,
       hud: this.hud,
       aiSettings: botSettings(this.setup, settings),
@@ -801,11 +800,8 @@ export class Game {
       vx,
       vy,
       omega,
-      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together. An auto-intake
-      // (not the button) is decided by the sim while shooting: running when moving or FUEL is at the mouth, else resting
-      // so the intake can fold in to feed.
-      intake: (inp.intake || this.autoIntake) && !(this.blockerUp && robot.config.shotBlocker),
-      ...(this.autoIntake && !inp.intake ? { autoIntake: true } : {}),
+      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together.
+      intake: (this.autoIntake || inp.intake) && !(this.blockerUp && robot.config.shotBlocker),
       ...(this.algaeMode ? { algaeMode: true } : {}),
       shoot: inp.shoot,
       pass: inp.pass,

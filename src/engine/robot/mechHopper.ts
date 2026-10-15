@@ -548,8 +548,9 @@ export class MechHopper {
   demandFeed(): void { this.feedUntil = this.time + 0.12; }
   get feeding(): boolean { return this.time < this.feedUntil; }
 
-  /** The ball at the flywheel, taken out of this world, or -1 if none has reached it. */
+  /** Prefer flywheel contact, otherwise let the running indexer draw the nearest held ball. */
   takeShot(): number {
+    if (!this.feeding) return -1;
     while (this.atShooter.length) {
       const i = this.atShooter.shift()!;
       if (!this.balls.has(i)) continue;
@@ -557,7 +558,17 @@ export class MechHopper {
       this.stats.launched++;
       return i;
     }
-    return -1;
+    let best = -1, distance = Infinity;
+    const entries = this.shooterPoints();
+    for (const [i, body] of this.balls) {
+      const t = body.translation();
+      for (const entry of entries) {
+        const d = (t.x - entry.x) ** 2 + (t.y - entry.y) ** 2 + (t.z - entry.z) ** 2;
+        if (d < distance) { best = i; distance = d; }
+      }
+    }
+    if (best >= 0) { this.removeBall(best); this.stats.launched++; }
+    return best;
   }
 
   // ───────────────────────── step ─────────────────────────
