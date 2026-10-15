@@ -76,7 +76,12 @@ export class StowBay {
   /** Balls being pulled in: elapsed time, the model's intake lane (robot frame) and the waypoint they are heading for. */
   private readonly feeding = new Map<number, { t: number; pts: THREE.Vector3[]; k: number; loose: number }>();
   /** The model's own meshes in the hopper region as static trimesh colliders (re-posed when their node moves). */
-  private cad: { mesh: THREE.Mesh; built: THREE.Matrix4; inverse: THREE.Matrix4; now: THREE.Matrix4; collider: RAPIER.Collider }[] | null = null;
+  private cad: { mesh: THREE.Mesh; built: THREE.Matrix4; inverse: THREE.Matrix4; now: THREE.Matrix4; collider: RAPIER.Collider; sweep?: boolean }[] | null = null;
+  /**
+   * A folding intake part is pressing into the load harder than it can push it (balls sunk into it): the fold holds
+   * where it is until they move on (Robot.animateModel), the way a real intake stalls against a full hopper.
+   */
+  foldBlocked = false;
   private tick = 0;
   private lastPos = new THREE.Vector3();
   private lastQuat = new THREE.Quaternion();
@@ -85,6 +90,11 @@ export class StowBay {
   static readonly TRIANGLE_BUDGET = 120000;
   static MAX_HULLS = 48;
   static MAX_PART = 0.32;
+  /** Longest intake part (deployed, outside the hopper) given a collider: it sweeps the load in as the intake folds. */
+  static MAX_SWEEP_PART = 0.8;
+  /** Colliders built with the intake deployed (they are rebuilt once it has been out a moment; see update). */
+  private deployedBuild = false;
+  private enabledFor = 0;
   trianglesInUse = 0;
   /** Diagnostics: balls released over the rim / out of the cavity, intake pulls that timed out. */
   readonly stats = { released: 0, timeouts: 0, captured: 0 };
@@ -454,6 +464,14 @@ export class StowBay {
   /** Once per physics step, before the world steps. */
   update(dt: number): void {
     this.time += dt;
+    // Robots start with the intake stowed: once it has been out a moment, rebuild the model colliders with it deployed so
+    // the parts that fold back over the hopper are known.
+    this.enabledFor = this.robot.enabled ? this.enabledFor + dt : this.enabledFor;
+    if (!this.deployedBuild && this.enabledFor > 1.5 && this.cad) {
+      for (const c of this.cad) this.robot.physics.world.removeCollider(c.collider, false);
+      this.cad = null;
+      this.deployedBuild = true;
+    }
     this.carryTeleport();
     const cav = this.robot.fuelCavity();
     if (!cav) return;
@@ -545,11 +563,13 @@ export class StowBay {
     const lo = span ? span[0] - r : -Infinity, hi = span ? span[1] + r : Infinity;
     const p = new THREE.Vector3(), rel = new THREE.Vector3(), want = new THREE.Vector3();
     const lin = this.robot.body.linvel(), base = new THREE.Vector3(lin.x, lin.y, lin.z).applyQuaternion(this.qi);
+    // While feeding, the intake rollers keep turning too: a ball resting on one (on a folded intake) is rolled on in.
+    const rollers = agitate || !this.robot.hasRollerHooks ? [] : this.robot.intakeRollers().map(k => ({ ...k, on: true }));
     for (const i of this.stowed) {
       if (this.staging.has(i)) continue;
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
-      if (p.y > floor + r * 1.35 || p.x < lo || p.x > hi) continue;
+      if ((p.y > floor + r * 1.35 || p.x < lo || p.x > hi) && !(rollers.length && this.touchesRoller(p, rollers, this.radius))) continue;
       // A roller floor drives straight along the robot toward the entry line of a wide feeder, toward the lane of a
       // single one (converging every ball on one point only wedges the floor layer).
       // Real rollers are never perfectly square: a slight skew (alternating per ball) lets a ball pushed head-on into a
@@ -638,8 +658,26 @@ export class StowBay {
     this.robot.noteLaunch(i);
   }
 
+  /** After a step: is a sweeping intake part sunk into the load (more than 1 cm into two or more balls)? */
+  private checkFold(): void {
+    this.foldBlocked = false;
+    if (!this.cad || !this.stowed.size) return;
+    const world = this.robot.physics.world;
+    let pressed = 0;
+    for (const c of this.cad) {
+      if (!c.sweep) continue;
+      world.contactPairsWith(c.collider, other => {
+        world.contactPair(c.collider, other, m => {
+          for (let k = 0; k < m.numContacts(); k++) if (m.contactDist(k) < -0.01) { pressed++; break; }
+        });
+      });
+      if (pressed >= 2) { this.foldBlocked = true; return; }
+    }
+  }
+
   /** Called once per rendered frame, after the physics steps: undo any pop through a wall before it is drawn. */
   settle(): void {
+    this.checkFold();
     if (!this.stowed.size) return;
     this.cavity = this.robot.fuelCavity();
     if (this.cavity) { this.frame(); this.contain(this.cavity, new THREE.Vector3(), this.radius); }
@@ -721,21 +759,29 @@ export class StowBay {
     visual.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(visual.matrixWorld).invert();
     const zone = new THREE.Box3(cav.min.clone().subScalar(0.1), cav.max.clone().addScalar(0.1));
-    const candidates: { mesh: THREE.Mesh; rel: THREE.Matrix4; d: number; tris: number }[] = [];
+    const candidates: { mesh: THREE.Mesh; rel: THREE.Matrix4; d: number; tris: number; sweep: boolean }[] = [];
+    // The hopper proper: an intake part outside it (deployed) is what sweeps the load in as the intake folds.
+    const hopper = new THREE.Box3(cav.min.clone().addScalar(0.02), cav.max.clone().subScalar(0.02));
     visual.traverseVisible(o => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || mesh.userData.flowToken || mesh.userData.fuelNoContact) return;
       const g = mesh.geometry, pos = g.getAttribute('position');
       if (!pos) return;
       // Nets are soft roofs handled by the cavity (their hull would be a solid dome).
-      for (let q: THREE.Object3D | null = mesh; q && q !== visual; q = q.parent) if (q.userData.flowToken || q.userData.fuelNoContact || /net|fabric|mesh-roof/i.test(q.name)) return;
+      let intake = false;
+      for (let q: THREE.Object3D | null = mesh; q && q !== visual; q = q.parent) {
+        if (q.userData.flowToken || q.userData.fuelNoContact || /net|fabric|mesh-roof/i.test(q.name)) return;
+        if (/intake/i.test(q.name)) intake = true;
+      }
       g.computeBoundingBox();
       const rel = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
       const bounds = g.boundingBox!.clone().applyMatrix4(rel);
       if (!bounds.intersectsBox(zone)) return;
-      candidates.push({ mesh, rel, d: bounds.getCenter(new THREE.Vector3()).distanceTo(zone.getCenter(new THREE.Vector3())), tris: g.index ? g.index.count / 3 : pos.count / 3 });
+      const centre = bounds.getCenter(new THREE.Vector3());
+      candidates.push({ mesh, rel, d: centre.distanceTo(zone.getCenter(new THREE.Vector3())), tris: g.index ? g.index.count / 3 : pos.count / 3, sweep: intake && this.deployedBuild && !hopper.containsPoint(centre) });
     });
-    candidates.sort((a, b) => a.d - b.d);
+    // Sweeping intake parts first (they push the load to the indexer as the intake folds), then nearest first.
+    candidates.sort((a, b) => Number(b.sweep) - Number(a.sweep) || a.d - b.d);
     // Convex hulls of the compact parts only (pillars, rollers, brackets, shooter pods): a hull costs a few contact tests,
     // a CAD trimesh costs thousands. Large panels are covered by the cavity walls. Hollow shapes never get a hull.
     let count = 0;
@@ -744,14 +790,18 @@ export class StowBay {
       if (count >= StowBay.MAX_HULLS) break;
       const g = c.mesh.geometry, pos = g.getAttribute('position');
       g.boundingBox!.clone().applyMatrix4(c.rel).getSize(size);
-      if (Math.max(size.x, size.y, size.z) > StowBay.MAX_PART || Math.min(size.x, size.y, size.z) < 0.012) continue;
+      // Rollers, tubes and arms of a sweeping intake (long, thin across) are convex whatever their length (a 0.6 m drum);
+      // a bulky intake assembly's hull would be a solid wedge.
+      const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
+      const rodLike = c.sweep && dims[1] < 0.1 && dims[2] <= StowBay.MAX_SWEEP_PART;
+      if ((dims[2] > StowBay.MAX_PART && !rodLike) || dims[0] < 0.012) continue;
       const stride = Math.max(1, Math.floor(pos.count / 160));
       const points: number[] = [];
       for (let k = 0; k < pos.count; k += stride) { v.fromBufferAttribute(pos, k).applyMatrix4(c.rel); points.push(v.x, v.y, v.z); }
       const desc = R.ColliderDesc.convexHull(new Float32Array(points));
       if (!desc) continue;
       const collider = world.createCollider(desc.setMass(0).setFriction(0.45).setRestitution(0.15).setCollisionGroups(GROUPS.stowWall), robot.body);
-      this.cad.push({ mesh: c.mesh, built: c.rel.clone(), inverse: c.rel.clone().invert(), now: c.rel.clone(), collider });
+      this.cad.push({ mesh: c.mesh, built: c.rel.clone(), inverse: c.rel.clone().invert(), now: c.rel.clone(), collider, sweep: c.sweep });
       count++;
     }
     const budget = StowBay.TRIANGLE_BUDGET - count;
@@ -774,9 +824,10 @@ export class StowBay {
     }
   }
 
+  /** Robot-frame matrix of `o` from its nodes' live transforms (cached matrices are stale wherever nothing renders). */
   private relative(o: THREE.Object3D): THREE.Matrix4 {
-    const m = o.matrix.clone();
-    for (let p = o.parent; p && p !== this.robot.visual; p = p.parent) m.premultiply(p.matrix);
+    const m = new THREE.Matrix4(), t = new THREE.Matrix4();
+    for (let p: THREE.Object3D | null = o; p && p !== this.robot.visual; p = p.parent) m.premultiply(p.matrixAutoUpdate ? t.compose(p.position, p.quaternion, p.scale) : p.matrix);
     return m;
   }
 

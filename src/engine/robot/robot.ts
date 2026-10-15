@@ -864,6 +864,8 @@ export class Robot {
   static OVERHEAD_SPARE = 0.0127;
   /** Period of a turret robot's intake pulse while it shoots out the last 20% (s). */
   static PULSE_PERIOD = 1.4;
+  /** A dumper pulsing its intake to free the last balls (until it stops shooting). */
+  private pulsing = false;
   /** Enabled at some point this match (deployed mechanisms stay out while disabled between periods). */
   private everEnabled = false;
   /** How long the driver has been aiming / shooting (s), for the intake fold timing. */
@@ -1331,6 +1333,7 @@ export class Robot {
     // into every shot; a turret robot below 20% pulses it in and out to work the last balls over; and any shooter that
     // has balls left but none reaching the indexer folds it in.
     this.aimedFor = a.aiming ? this.aimedFor + a.dt : 0;
+    if (!a.aiming) this.pulsing = false;
     // Any chassis-aimed shooter folds in with the shot (a wide drum like 2910's or a dumper); turrets pulse when their
     // feed floor runs dry.
     const lc = this.config.launcher, dumper = !lc.turret;
@@ -1339,13 +1342,16 @@ export class Robot {
       // The separate-world mechanism hopper (`?hopper=mech`): progressive fold below the model's fill threshold.
       squeeze = clamp(((this.model?.mech?.squeezeBelow ?? 0.36) - a.fill) / 0.25, 0, 1);
     } else if (a.aiming && !a.intaking) {
-      if (dumper) squeeze = this.aimedFor > 0.5 ? 1 : 0;
+      // Folded and still starved (balls perched on the folded intake): pulse it out and back in to shake them loose.
+      if (dumper) squeeze = this.aimedFor <= 0.5 ? 0 : this.feedStarved && (a.squeeze ?? 0) > 0.95 || this.pulsing ? (this.pulsing = true, Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0.4) : 1;
       // A turret robot pulses its intake in and out once its feed floor runs dry (balls only left on the tray / pile),
       // and through the last 20% (rebuilt.firstroboticsim's squeeze-when-floor-empty with agitation).
       else if (a.fill < 0.2 || this.bay?.floorEmpty) squeeze = Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0;
       if (this.feedStarved && (dumper || a.fill >= 0.2)) squeeze = 1;
     }
-    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * (this.mech ? 0.9 : 1.6)) : squeeze;
+    // A folding intake slows against a load it can't move yet (its motor still pushes): it keeps closing as the balls give.
+    const foldRate = a.dt * (this.mech ? 0.9 : 1.6) * (this.bay?.foldBlocked ? 0.3 : 1);
+    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, foldRate) : squeeze;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress
