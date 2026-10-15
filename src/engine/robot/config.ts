@@ -138,6 +138,9 @@ export interface RobotConfig {
     ground?: boolean;
     /** Floor mouth yaw in robot coordinates; supports side-mounted CAD intakes. */
     groundYaw?: number;
+    /** Separate floor mouth for ALGAE (REEFSCAPE) when it is not on the CORAL ground intake's side. Default: same mouth as `groundYaw`/`groundSide`. */
+    algaeGroundYaw?: number;
+    algaeGroundSide?: 'front' | 'back';
     /**
      * Which face of the chassis the floor intake is on. Default 'back': the scoring mechanism (launcher, elevator,
      * arm) faces front, and real robots put the intake on the opposite face so they can collect with their back to

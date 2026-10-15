@@ -103,7 +103,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
       place(sim, 3);
       expect(sim.ctx.score.counter(a, 'coralL3')).toBe(0);
       sim.robot.resetTo(season.testing!.scoringSpots(a)[0]);
-      run(sim, 1.5, { ...IDLE_COMMAND, intake: true, scoringLevel: 3 });
+      run(sim, 1.5, { ...IDLE_COMMAND, intake: true, algaeMode: true, scoringLevel: 3 });
       expect(rules.reefAlgae(a, 0)).toBe(false);
       // The blocked attempt drops its CORAL; where it lands is chaotic (it can end up flat against the REEF base,
       // exactly where the robot parks). This test is about the ALGAE, so clear stray CORAL first.
@@ -242,7 +242,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     it(`lets a ${a} CORAL-only robot knock staged ALGAE onto the carpet`, () => {
       const sim = make(a, season.testing!.scoringSpots(a)[0], 2, preset('funnel-l4')); sim.rules.stage(); teleop(sim);
       const rules = rulesOf(sim), algae = 126 + (a === 'red' ? 0 : 6);
-      run(sim, 1.5, { ...IDLE_COMMAND, intake: true, scoringLevel: 3 });
+      run(sim, 1.5, { ...IDLE_COMMAND, intake: true, algaeMode: true, scoringLevel: 3 });
       expect(rules.reefAlgae(a, 0)).toBe(false);
       expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(0);
       run(sim, 2.5);
@@ -255,7 +255,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
       const other = a === 'blue' ? 'red' : 'blue';
       const sim = make(a, season.testing!.scoringSpots(other)[0], 2, preset('all-rounder')); sim.rules.stage(); teleop(sim);
       for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i);
-      run(sim, 2, { ...IDLE_COMMAND, intake: true });
+      run(sim, 2, { ...IDLE_COMMAND, intake: true, algaeMode: true });
       expect(rulesOf(sim).reefAlgae(other, 0)).toBe(false);
       expect(rulesOf(sim).reefAlgae(a, 0)).toBe(true);
       expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
@@ -287,6 +287,7 @@ describe('2025 REEFSCAPE manual implementation', () => {
     teleop(sim);
     for (const i of [0, 1, 126, 127]) sim.pool.placeField(i, 1.37, 2);
     run(sim, 0.2, { ...IDLE_COMMAND, intake: true });
+    run(sim, 0.2, { ...IDLE_COMMAND, intake: true, algaeMode: true });
     expect(sim.robot.held.filter((i) => i < 126)).toHaveLength(1);
     expect(sim.robot.held.filter((i) => i >= 126)).toHaveLength(1);
   });

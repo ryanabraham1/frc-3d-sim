@@ -95,7 +95,7 @@ describe('2025 top-EPA CAD rigs', () => {
 
 describe('2025 top-EPA rosters', () => {
   const make = (config: RobotConfig) => { const sim = new HeadlessSim(season, RAPIER, { robot: config, alliance: 'blue', pose: { x: 2, y: 2, yaw: 0 }, station: 2 }); sims.push(sim); return sim; };
-  const run = (sim: HeadlessSim, seconds: number) => { for (let n = 0; n < Math.round(seconds / sim.physics.dt); n++) sim.step({ ...IDLE_COMMAND, intake: true }); };
+  const run = (sim: HeadlessSim, seconds: number) => { for (let n = 0; n < Math.round(seconds / sim.physics.dt); n++) sim.step({ ...IDLE_COMMAND, intake: true, algaeMode: sim.pool.state[126] === "field" && sim.pool.state[0] !== "field" }); };
   const teleop = (sim: HeadlessSim) => { sim.rules.onPeriodChange(sim.ctx.clock.start()); for (const c of sim.ctx.clock.advance(18)) sim.rules.onPeriodChange(c); };
   const empty = (sim: HeadlessSim) => { for (const i of sim.robot.held.splice(0)) sim.pool.reserve(i); };
 

@@ -200,6 +200,8 @@ export class Game {
   private fpsAcc = 0;
   private fpsFrames = 0;
   private autoIntake: boolean;
+  /** REEFSCAPE: ALGAE mode (floor ALGAE + de-algae) instead of CORAL mode. */
+  private algaeMode = false;
   /** Driver's shot blocker toggle (F); only robots with config.shotBlocker act on it. */
   private blockerUp = false;
   /** Player was told their robot tipped over (reset once it is back on its wheels). */
@@ -249,6 +251,7 @@ export class Game {
         blocker: () => !!this.player && (!!this.player.config.shotBlocker || this.player.manualHopper),
         labels: season.touchLabels,
         climber: () => (this.player?.config.climber.maxLevel ?? 0) > 0,
+        algae: () => this.season.id === '2025-reefscape' && !!this.player?.config.options?.algaeGround,
       });
     }
 
@@ -643,7 +646,8 @@ export class Game {
     if (this.remote) this.remote.draw(now);
     else {
       for (const r of this.robots) {
-        r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= (this.season.endgameSeconds ?? 30);
+        // The climber only pops up while a climb is requested; the rest of ENDGAME it stays stowed so shooting looks normal.
+        r.climbReady = this.clock.started && !this.clock.finished && this.clock.current.mode === 'teleop' && this.clock.driveRemaining <= (this.season.endgameSeconds ?? 30) && r.lastCommand.climb !== null;
         r.syncVisual(undefined, this.role === 'client' && r !== this.player ? 1 : alpha);
       }
       if (predicting && this.player) this.applyPredictionOffset(this.player, dt);
@@ -746,6 +750,10 @@ export class Game {
       }
       if (this.aimChoice < 0 || this.visibleTargets().length) this.hud.toast(this.aimChoice < 0 ? 'Target: automatic' : `Target: ${targets.find((t) => t.id === this.aimChoice)!.label} · Z = automatic`, 'info', undefined, 'aim-target');
     }
+    if (inp.toggleAlgaeMode && this.season.id === '2025-reefscape') {
+      this.algaeMode = !this.algaeMode;
+      this.hud.toast(`${this.algaeMode ? 'ALGAE' : 'CORAL'} mode`, 'info', undefined, 'piece-mode');
+    }
     if (inp.toggleIntake) {
       this.autoIntake = !this.autoIntake;
       this.hud.toast(`Auto-intake ${this.autoIntake ? 'ON' : 'OFF'}`);
@@ -793,6 +801,7 @@ export class Game {
       // Shot blocker up (F) wins over the intake: they share the intake side and can't run together. Auto-intake rests
       // while shooting / passing so the intake can fold in to feed (holding the intake button still runs it).
       intake: (inp.intake || (this.autoIntake && !inp.shoot && !inp.pass)) && !(this.blockerUp && robot.config.shotBlocker),
+      ...(this.algaeMode ? { algaeMode: true } : {}),
       shoot: inp.shoot,
       pass: inp.pass,
       climb: inp.climb ? this.climbLevel : null,
@@ -1058,6 +1067,7 @@ export class Game {
           `<div>Camera: ${this.camera.label} <span class="dim">(V${this.camera.mode === 'chase' ? ' · T flips' : ''})</span></div>` +
           `<div>AUTO: ${rs.manualAuto ? 'you drive' : 'routine'}</div>` +
           `<div>Intake: ${this.autoIntake ? 'auto' : 'manual (J)'} <span class="dim">(I)</span></div>` +
+          (this.season.id === '2025-reefscape' ? `<div>Mode: ${this.algaeMode ? 'ALGAE' : 'CORAL'} <span class="dim">(L)</span></div>` : '') + +
           (p.manualHopper ? `<div>Hopper: ${p.hopperRaised ? 'UP' : 'down'} · ${p.held.length}/${p.hopperCapacity} FUEL <span class="dim">(F)</span></div>` : '') +
           (p.config.shotBlocker ? `<div>Shot blocker: ${this.blockerUp ? (p.blockerDeploy < 1 && p.overheadLimit < Infinity ? 'held down by TRENCH' : 'UP · intake off') : 'down'} <span class="dim">(F)</span></div>` : '') +
           (this.season.maxScoringLevel

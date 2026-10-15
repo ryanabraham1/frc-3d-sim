@@ -3,6 +3,7 @@ import { dist } from '@engine/ai/steering';
 import { TeamBrain } from '@engine/ai/team';
 import type { FieldPoint } from '@engine/coords';
 import type { AiChoice, SeasonContext } from '@engine/core/season';
+import { stationSideSign } from '@engine/robot/config';
 import { IDLE_COMMAND, type Robot, type RobotCommand } from '@engine/robot/robot';
 import { wrapAngle } from '@engine/units';
 import * as C from './constants';
@@ -84,6 +85,9 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
   const oppCages = [1, 2, 3].map((s) => ({ ...C.cage(opp, s), r: 0.35 + half }));
   const speed = () => Math.max(1, r.config.maxSpeed * bot.pace * 0.7);
 
+  /** Heading that points the robot's station funnel at a STATION whose opening faces `openingYaw` (field-out): back-funnel robots face away, front-funnel robots (2910's claw) face it. */
+  const stationYaw = (openingYaw: number) => (!r.config.intake.station ? openingYaw + Math.PI + r.intakeYawOffset : stationSideSign(r.config) > 0 ? openingYaw + Math.PI : openingYaw);
+
   /** CORAL STATION: split the two between teammates (closest free one), dock squarely at its mouth. */
   const supplyPose = () => {
     const sts = C.stations(r.alliance);
@@ -95,9 +99,8 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
       plan.stations.set(r.id, k);
     }
     const st = sts[k];
-    return { x: st.x + Math.cos(st.yaw) * dockDistance, y: st.y + Math.sin(st.yaw) * dockDistance, yaw: st.yaw };
+    return { x: st.x + Math.cos(st.yaw) * dockDistance, y: st.y + Math.sin(st.yaw) * dockDistance, yaw: stationYaw(st.yaw) };
   };
-
   const approach = (f: number, extra = 0.25): FieldPoint => {
     const yaw = C.sideYaw(r.alliance, f * Math.PI / 3);
     return { x: center.x + Math.cos(yaw) * (reef.r + extra), y: center.y + Math.sin(yaw) * (reef.r + extra) };
@@ -152,7 +155,7 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
       // Raise the elevator into the ALGAE until it falls (or is taken, with an ALGAE intake).
       const pose = rules.alignPose(r, target.level === 3 ? 4 : Math.min(maxLevel, 3)) ?? { ...approach(target.face, 0), yaw: C.sideYaw(r.alliance, target.face * Math.PI / 3) + Math.PI };
       const cmd = bot.driveTo(pose, pose.yaw);
-      cmd.intake = true;
+      cmd.algaeMode = true; cmd.intake = true;
       team.say(r, 'Clearing ALGAE off the REEF', `clear:${r.id}`, 20);
       return cmd;
     }
@@ -218,14 +221,17 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
       if (C.nearestFace(r.alliance, r.pose) !== f || dist(r.pose, center) > reef.r + 0.8) return bot.driveTo(approach(f), yaw + Math.PI);
       const goal = { x: center.x + Math.cos(yaw) * (C.REEF_APOTHEM + r.footprint.length / 2 + 0.05), y: center.y + Math.sin(yaw) * (C.REEF_APOTHEM + r.footprint.length / 2 + 0.05) };
       const cmd = bot.driveTo(goal, yaw + Math.PI);
+      cmd.algaeMode = true;
       cmd.intake = true;
       team.say(r, 'Pulling ALGAE off our REEF', `algae:${r.id}`, 25);
       return cmd;
     }
     const p = floorAlgae();
     if (p) {
-      const cmd = bot.driveTo(p, Math.atan2(p.y - r.pose.y, p.x - r.pose.x));
+      // Arrive with the ALGAE mouth (which can be on another face than the CORAL one) toward it.
+      const cmd = bot.driveTo(p, Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.algaeIntakeYawOffset);
       cmd.intake = true;
+      cmd.algaeMode = true;
       return cmd;
     }
     return null;
@@ -241,11 +247,17 @@ export function createReefscapeBot(ctx: SeasonContext, rules: ReefscapeRules, r:
     }
     return false;
   };
+  /** Our human player has no CORAL left to drop: station feeding is over, so only the carpet has any (checked twice a second). */
+  let dryAt = -1, dry = false;
+  const stationDry = (): boolean => {
+    if (now() >= dryAt) { dry = ctx.pool.countIn('reserve', `station:${r.alliance}`) === 0; dryAt = now() + 0.5; }
+    return dry;
+  };
   /** Nearest CORAL lying on the carpet on our side that a ground intake can reach (none without one). */
   const groundCoral = (): FieldPoint | null => {
     // Robots with a station intake are faster taking CORAL from the human player (benchmarks: chasing loose CORAL
-    // halved their AUTO); floor-pickup robots live off the carpet.
-    if (r.config.intake.ground === false || coralHeld() || stationIntake) return null;
+    // halved their AUTO), so they only live off the carpet once the station has nothing left to drop.
+    if (r.config.intake.ground === false || coralHeld() || (stationIntake && !stationDry())) return null;
     let best: FieldPoint | null = null, cost = Infinity;
     for (let i = 0; i < C.CORAL_COUNT; i++) {
       if (ctx.pool.state[i] !== 'field') continue;

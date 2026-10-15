@@ -28,6 +28,8 @@ export interface RobotCommand {
   vy: number;
   omega: number;
   intake: boolean;
+  /** REEFSCAPE ALGAE mode: floor ALGAE pickup and pulling ALGAE off the REEF are on (and CORAL pickup off); false = CORAL mode. */
+  algaeMode?: boolean;
   shoot: boolean;
   /** Launch toward the season's feed/pass target instead of the goal. */
   pass: boolean;
@@ -665,8 +667,10 @@ export class Robot {
     }
 
     // Floor intake (rubber) on the face opposite the scoring mechanism, funnel (station intake) on its own face.
-    const groundVisible = c.intake.enabled && (c.intake.ground !== false || !!c.options?.algaeGround);
-    if (groundVisible) this.buildGroundIntake(groundSideSign(c), dark);
+    const coralMouth = c.intake.enabled && c.intake.ground !== false, algaeMouth = c.intake.enabled && !!c.options?.algaeGround;
+    if (coralMouth) this.buildGroundIntake(groundSideSign(c), dark, c.intake.groundYaw);
+    // ALGAE floor mouth on a different face than the CORAL one (or the only floor mouth of an ALGAE-only robot).
+    if (algaeMouth && (!coralMouth || this.algaeMouthDiffers())) { const m = this.mouth('algae'); this.buildGroundIntake(m.side, dark, m.yaw); }
     if (c.intake.enabled && c.intake.station) this.buildFunnel(stationSideSign(c), alu);
     this.buildScoringFace(dark);
 
@@ -717,9 +721,8 @@ export class Robot {
   }
 
   /** Dark rubber rollers on the capture face; guide overlays remain optional. */
-  private buildGroundIntake(side: 1 | -1, dark: THREE.Material): void {
+  private buildGroundIntake(side: 1 | -1, dark: THREE.Material, yaw: number | undefined): void {
     const c = this.config;
-    const yaw=c.intake.groundYaw;
     const L = yaw===undefined?this.fp.length:Math.abs(Math.cos(yaw))*this.fp.length+Math.abs(Math.sin(yaw))*this.fp.width;
     const crossSpan=yaw===undefined?this.fp.width:Math.abs(Math.sin(yaw))*this.fp.length+Math.abs(Math.cos(yaw))*this.fp.width;
     const bt = c.bumperThickness;
@@ -1863,11 +1866,23 @@ export class Robot {
    * Plan-view test of the floor-intake mouth (the strip just outside the bumper on the intake face), without the
    * height check or the mechanism-enabled checks — for seasons with their own pickup rules.
    */
-  groundMouthContains(p: { x: number; y: number; z: number }, pieceRadius: number): boolean {
+  /** Floor mouth of a piece kind: CORAL uses `groundYaw`/`groundSide`; ALGAE may have its own (`algaeGroundYaw`/`algaeGroundSide`). */
+  mouth(kind: 'coral' | 'algae'): { yaw: number | undefined; side: 1 | -1 } {
+    const i = this.config.intake;
+    if (kind === 'coral') return { yaw: i.groundYaw, side: groundSideSign(this.config) };
+    const own = i.algaeGroundYaw !== undefined || i.algaeGroundSide !== undefined;
+    return own ? { yaw: i.algaeGroundYaw, side: (i.algaeGroundSide ?? i.groundSide) === 'front' ? 1 : -1 } : { yaw: i.groundYaw, side: groundSideSign(this.config) };
+  }
+  algaeMouthDiffers(): boolean {
+    const a = this.mouth('algae'), c = this.mouth('coral');
+    return a.yaw !== c.yaw || a.side !== c.side;
+  }
+
+  groundMouthContains(p: { x: number; y: number; z: number }, pieceRadius: number, kind: 'coral' | 'algae' = 'coral'): boolean {
     const c = this.config;
     const { f, l } = this.toLocal(p);
-    const yaw=c.intake.groundYaw;
-    const along=yaw===undefined?groundSideSign(c)*f:f*Math.cos(yaw)+l*Math.sin(yaw);
+    const m = this.mouth(kind), yaw = m.yaw;
+    const along=yaw===undefined?m.side*f:f*Math.cos(yaw)+l*Math.sin(yaw);
     const across=yaw===undefined?l:-f*Math.sin(yaw)+l*Math.cos(yaw);
     const edge=yaw===undefined?this.fp.length/2:(Math.abs(Math.cos(yaw))*this.fp.length+Math.abs(Math.sin(yaw))*this.fp.width)/2;
     const out=along-edge;
@@ -1878,6 +1893,12 @@ export class Robot {
    * Yaw offset (0 or π) from the direction of travel to the heading that points the floor intake along it: add it to
    * a "drive toward X" heading to arrive intake-first.
    */
+  /** Same as `intakeYawOffset` for the floor ALGAE mouth (it can sit on a different face than the CORAL one). */
+  get algaeIntakeYawOffset(): number {
+    const m = this.mouth('algae');
+    return m.yaw === undefined ? (m.side > 0 ? 0 : Math.PI) : -m.yaw;
+  }
+
   get intakeYawOffset(): number {
     return this.config.intake.groundYaw === undefined ? (groundSideSign(this.config) > 0 ? 0 : Math.PI) : -this.config.intake.groundYaw;
   }

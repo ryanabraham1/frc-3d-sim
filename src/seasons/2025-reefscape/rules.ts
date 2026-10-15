@@ -418,7 +418,7 @@ export class ReefscapeRules implements SeasonRules {
     // Empty CORAL-only robots can dislodge ALGAE, but carrying ALGAE blocks further removal.
     const canHold = robot.config.intake.secondary && robot.config.intake.enabled && algae === undefined && robot.capacityLeft > 0;
     const hasTool = robot.config.intake.secondary || mechanism.enabled;
-    const harvest = algae === undefined && cmd.intake && !cmd.shoot && hasTool && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && nearReef && this.reefAlgae(harvestAlliance, face);
+    const harvest = algae === undefined && cmd.intake && cmd.algaeMode && !cmd.shoot && hasTool && (face % 2 === 0 ? 3 : 2) <= mechanism.maxLevel && nearReef && this.reefAlgae(harvestAlliance, face);
     if (harvest && canHold) m.algae = true;
     if (harvest) desiredHeight = C.LEVEL_HEIGHTS[face % 2 === 0 ? 3 : 2] + 0.08;
     m.height += clamp(desiredHeight - m.height, -mechanism.liftSpeed * dt, mechanism.liftSpeed * dt);
@@ -441,7 +441,7 @@ export class ReefscapeRules implements SeasonRules {
         }
       }
     } else m.harvest = 0;
-    if (cmd.intake && robot.config.intake.enabled) this.intake(robot);
+    if (cmd.intake && robot.config.intake.enabled) this.intake(robot, !!cmd.algaeMode);
     if (cmd.shoot && coral !== undefined && robot.fireCooldown <= 0) {
       if (buffered) { this.tell(robot, 'Score ALGAE with G first · CORAL is waiting in its buffer'); return true; }
       if (!mechanism.enabled) { this.tell(robot, 'No CORAL scorer on this robot · G ejects held CORAL'); return true; }
@@ -526,7 +526,8 @@ export class ReefscapeRules implements SeasonRules {
   }
 
 
-  private intake(robot: Robot): void {
+  /** Floor CORAL (and the station funnel) in CORAL mode, floor ALGAE in ALGAE mode, each at its own mouth (possibly on different faces). */
+  private intake(robot: Robot, algaeMode = false): void {
     const { pool } = this.ctx;
     const placed = new Set(this.placements.map((p) => p.i));
     for (let i = 0; i < pool.count; i++) {
@@ -536,11 +537,13 @@ export class ReefscapeRules implements SeasonRules {
       if (launched?.robotId === robot.id && this.ctx.clock.elapsed - launched.at < 0.65) continue;
       const p = pool.position(i);
       let take = false, ground = false;
+      // CORAL mode picks up CORAL only; ALGAE mode picks up floor ALGAE only (and pulls it off the REEF).
+      if (isAlgae !== algaeMode) continue;
       if (!isAlgae && robot.config.intake.primary) {
         ground = p.y <= 0.35 && robot.config.intake.ground !== false && robot.groundMouthContains(p, C.CORAL_RADIUS);
         take = ground || robot.stationContains(p, C.CORAL_RADIUS);
       } else if (isAlgae && robot.config.intake.secondary && robot.config.options?.algaeGround) {
-        take = p.y <= 0.65 && robot.groundMouthContains(p, C.ALGAE_RADIUS);
+        take = p.y <= 0.65 && robot.groundMouthContains(p, C.ALGAE_RADIUS, 'algae');
       }
       if (!take) continue;
       pool.hold(i, robot.id); robot.held.push(i);

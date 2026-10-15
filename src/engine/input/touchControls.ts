@@ -14,6 +14,8 @@ export interface TouchOptions {
   levels: number;
   blocker: () => boolean;
   climber: () => boolean;
+  /** Show the CORAL/ALGAE mode button. */
+  algae?: () => boolean;
   labels?: { shoot?: string; pass?: string };
 }
 
@@ -70,6 +72,7 @@ export class TouchControls {
     const defs: ButtonDef[] = [
       { label: opts.labels?.shoot ?? 'SHOOT', mode: 'hold', action: 'shoot', size: 'big', pos: `right:${R(20)};bottom:${B(24)}` },
       { label: 'INTAKE', mode: 'hold', action: 'intake', size: 'big', pos: `right:${R(116)};bottom:${B(24)}` },
+      { label: 'ALGAE', mode: 'tap', action: 'toggleAlgaeMode', pos: `right:${R(212)};bottom:${B(24)}`, show: opts.algae },
       { label: opts.labels?.pass ?? 'PASS', mode: 'hold', action: 'pass', pos: `right:${R(20)};bottom:${B(120)}` },
       { label: 'CLIMB', mode: 'hold', action: 'climb', pos: `right:${R(80)};bottom:${B(120)}`, show: opts.climber },
       { label: 'DOWN', mode: 'hold', action: 'descend', pos: `right:${R(140)};bottom:${B(120)}`, show: opts.climber },

@@ -5,7 +5,7 @@
  */
 export type ActionId =
   | 'forward' | 'backward' | 'left' | 'right' | 'rotateLeft' | 'rotateRight' | 'precision'
-  | 'shoot' | 'pass' | 'intake' | 'toggleIntake' | 'climb' | 'descend' | 'toggleBlocker'
+  | 'shoot' | 'pass' | 'intake' | 'toggleAlgaeMode' | 'toggleIntake' | 'climb' | 'descend' | 'toggleBlocker'
   | 'humanPlayer' | 'humanPlayerB' | 'humanPlayerN' | 'humanPlayerM'
   | 'levelUp' | 'levelDown' | 'level1' | 'level2' | 'level3' | 'level4' | 'targetPrev' | 'targetNext' | 'targetAuto'
   | 'cameraNext' | 'cameraFlip' | 'pause' | 'restart' | 'toggleHelp';
@@ -32,6 +32,7 @@ export const ACTIONS: ActionDef[] = [
   def('shoot', 'Robot', 'Shoot / score (hold)', 'Space', 'KeyK'),
   def('pass', 'Robot', 'Feed / pass (hold)', 'KeyG'),
   def('intake', 'Robot', 'Intake (hold)', 'KeyJ'),
+  def('toggleAlgaeMode', 'Robot', 'CORAL / ALGAE mode (REEFSCAPE: ALGAE mode = floor ALGAE intake + de-algae)', 'KeyL'),
   def('toggleIntake', 'Robot', 'Toggle auto-intake', 'KeyI'),
   def('climb', 'Robot', 'Climb', 'KeyC'),
   def('descend', 'Robot', 'Descend', 'KeyX'),

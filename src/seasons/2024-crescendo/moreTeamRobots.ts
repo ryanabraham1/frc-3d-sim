@@ -368,7 +368,7 @@ export function moreCrescendoTeamRobots(): TeamRobot[] {
     { id: 'snoopy-6036', team: 6036, name: 'Snoopy',
       description: '6036 Peninsula Robotics. Turret-mounted pitching shooter with integrated chain hooks and TRAP blower. Published AMP and climb poses; drive speed and actuator timing are simulator estimates.',
       source: 'User-supplied 6036.glb; 6036 2024 technical binder and FRC-2024-Public code',
-      config: cfg(6036, 'snoopy-6036', { turret: true, speed: 5, accel: 10, climb: 2.5, height: 28, intake: 28, frame: [28,28] }, 2) },
+      config: cfg(6036, 'snoopy-6036', { turret: true, speed: 5, accel: 10, climb: 2.5, height: 27, intake: 28, frame: [28,28] }, 2) }, // 27 in: fits under the STAGE core (27.875 in clearance)
     { id: 'presto-6328', team: 6328, name: 'Presto',
       description: '6328 Mechanical Advantage. Rear floor intake, center-pivot belt shooter, AMP backpack and chain climber. Complete team CAD with the supplied intake; published arm/climb poses. Drive speed and actuator timing are simulator estimates.',
       source: 'User-supplied 6328 intake plus official RobotCode2024Public AdvantageScope CAD; 6328 build thread and TBA photos',

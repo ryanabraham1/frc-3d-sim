@@ -15,6 +15,8 @@ export interface DriverInput {
   /** Feed/pass toward our own zone. */
   pass: boolean;
   intake: boolean;
+  /** Edge: switch between CORAL and ALGAE mode (REEFSCAPE). */
+  toggleAlgaeMode: boolean;
   climb: boolean;
   descend: boolean;
   humanPlayer: boolean;
@@ -100,6 +102,8 @@ export class InputManager {
     let shoot = this.k('shoot');
     let pass = this.k('pass');
     let intake = this.k('intake');
+    const toggleAlgaeMode = this.edge('toggleAlgaeMode');
+    let algaeModeEdge = false;
     let climb = this.k('climb');
     let descend = this.k('descend');
     let humanPlayer = this.edge('humanPlayer');
@@ -146,6 +150,7 @@ export class InputManager {
       shoot ||= val(7) > 0.4;
       pass ||= btn(5);
       intake ||= val(6) > 0.4;
+      if (e(8)) algaeModeEdge = true;
       climb ||= btn(0);
       descend ||= btn(1);
       humanPlayer ||= e(2);
@@ -168,6 +173,7 @@ export class InputManager {
       shoot,
       pass,
       intake,
+      toggleAlgaeMode: toggleAlgaeMode || algaeModeEdge,
       climb,
       descend,
       humanPlayer,
@@ -195,7 +201,7 @@ export const DEFAULT_CONTROLS_HELP: [string, string][] = [
   ['Shift', 'Precision (slow) mode'],
   ['Space', 'Shoot at goal (hold)'],
   ['G', 'Feed / pass toward your alliance zone (hold)'],
-  ['I', 'Toggle auto-intake · J = hold intake'],
+  ['I', 'Toggle auto-intake · J = hold intake · L = CORAL / ALGAE mode (REEFSCAPE)'],
   ['C / X', 'Climb / descend'],
   ['1 2 3  or  [ ]', 'Select climb level'],
   ['H', 'Human player: release chute'],
