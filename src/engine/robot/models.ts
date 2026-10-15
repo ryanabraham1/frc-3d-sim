@@ -118,6 +118,8 @@ export interface HopperMechanism {
   slick?: THREE.Object3D[];
   /** Drawn parts FUEL passes through (subtrees). */
   ignore?: THREE.Object3D[];
+  /** Mechanism-hopper mode only: hopper fill (0–1) below which shooting folds the intake in (default 0.36). */
+  squeezeBelow?: number;
   /** Collider radius of held FUEL as a fraction of the real ball (default FUEL_PACK_RADIUS, foam squash under load). */
   packRadius?: number;
   /** Soft elastic roof (a stretching net): robot-frame height of the slack net and of the fully stretched net. */

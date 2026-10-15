@@ -1321,12 +1321,15 @@ export class Robot {
     this.aimedFor = a.aiming ? this.aimedFor + a.dt : 0;
     const lc = this.config.launcher, dumper = (lc.exits ?? 1) > 1 && !lc.turret;
     let squeeze = 0;
-    if (a.aiming && !a.intaking) {
+    if (a.aiming && !a.intaking && this.mech) {
+      // The separate-world mechanism hopper (`?hopper=mech`): progressive fold below the model's fill threshold.
+      squeeze = clamp(((this.model?.mech?.squeezeBelow ?? 0.36) - a.fill) / 0.25, 0, 1);
+    } else if (a.aiming && !a.intaking) {
       if (dumper) squeeze = this.aimedFor > 0.5 ? 1 : 0;
       else if (a.fill < 0.2) squeeze = Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0;
       if (this.feedStarved && (dumper || a.fill >= 0.2)) squeeze = 1;
     }
-    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * 1.6) : squeeze;
+    a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * (this.mech ? 0.9 : 1.6)) : squeeze;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)
       : this.climbPhase === 'align' ? 1 : this.climbPhase === 'rise' ? 1 - .75 * progress

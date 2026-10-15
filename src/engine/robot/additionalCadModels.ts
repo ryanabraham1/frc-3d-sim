@@ -238,6 +238,9 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     ],
     // Contact belongs to the flywheel shaft, not the hood hinge 97 mm above it. The source pivot is its left bearing,
     // so recenter the contact segment across the drum; rotation about z leaves this axis point unchanged.
+    // Mechanism-hopper mode: FUEL resting on the bumper and intake behind the roller floor only moves once the hopper
+    // compresses, so it starts folding at half full.
+    squeezeBelow:.5,
     shooter:[{node:flywheel,at:[0,0,.3309938],axis:'z',length:.62,radius:.142}],
     // A ball squashed to 0.9 r slips between the 17-18 mm feeder shafts and the intake drums; held FUEL in this roller
     // hopper is only lightly loaded, so it keeps more of its size.
