@@ -325,7 +325,9 @@ export class GamePiecePool {
     const b = this.bodies[i];
     if (!this.stowed[i]) {
       this.stowed[i] = true;
-      b.setLinearDamping(0.35);
+      // No world-frame damping: it would brake a carried ball against the chassis' own motion (StowBay damps the motion
+      // relative to the robot instead).
+      b.setLinearDamping(0);
       this.setColliderRadius(i, this.colliderRadius * scale);
       this.setColliderMass(i, this.specs[i].mass * GamePiecePool.STOWED_MASS);
     }

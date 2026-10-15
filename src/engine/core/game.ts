@@ -790,8 +790,9 @@ export class Game {
       vx,
       vy,
       omega,
-      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together.
-      intake: (this.autoIntake || inp.intake) && !(this.blockerUp && robot.config.shotBlocker),
+      // Shot blocker up (F) wins over the intake: they share the intake side and can't run together. Auto-intake rests
+      // while shooting / passing so the intake can fold in to feed (holding the intake button still runs it).
+      intake: (inp.intake || (this.autoIntake && !inp.shoot && !inp.pass)) && !(this.blockerUp && robot.config.shotBlocker),
       shoot: inp.shoot,
       pass: inp.pass,
       climb: inp.climb ? this.climbLevel : null,

@@ -9,6 +9,10 @@ import { clearFuelOutline, clearFuelKeepouts, clearHopperChamfer, type HopperCha
 export interface Cavity { min: THREE.Vector3; max: THREE.Vector3; open: boolean; keepouts?: readonly FuelKeepout[]; chamfer?:HopperChamfer; outline?:readonly [number,number][] }
 
 const WALL = 0.08; // thickness of each wall slab (outside the cavity): thick, so a sloshing load can't punch through a step
+/** Damping (1/s) of a held ball's horizontal motion relative to the chassis. */
+const RELATIVE_DAMPING = 0.6;
+/** Most a held ball is moved out of a mechanism envelope in one step (m). */
+const KEEPOUT_STEP = 0.04;
 /** How far a held ball may sink into a hopper face before it is put back on it (m). */
 const SKIN = 0.004;
 /** Intake roller pull speed (m/s) and the time after which a ball that never made it in is dropped straight inside. */
@@ -61,6 +65,8 @@ export class StowBay {
   /** How far the floor slab is raised over the cavity floor to stand in for the buried layers (m). */
   private floorLift = 0;
   private lastCheck = 0;
+  /** When the chassis was last jolted or turning (see update). */
+  private calmSince = 0;
   private lastVel = new THREE.Vector3();
   /** Simulated balls per hopper above which the deepest full layer is buried, and below which a layer is woken. */
   static ACTIVE_MAX = 26;
@@ -201,7 +207,9 @@ export class StowBay {
     // Skip mechanism space while packing; never preload a ball inside the shooter.
     for (;;) {
     const layer = Math.floor(slot / perLayer), k = slot % perLayer;
-    const j = Math.floor(k / perRow), c = k % perRow;
+    // Across the width first (a whole row at the indexer end), then back along the robot: the first balls a wide drum
+    // takes span its width instead of one corner.
+    const j = k % rows, c = Math.floor(k / rows);
     // Alternate row/layer offsets (A-B-A stacking); shifts are trimmed so every ball stays inside the walls.
     const shiftX = (((j + layer) % 2) * 0.5) * d, shiftZ = (layer % 2) * row / 3;
     this.v.set(
@@ -444,12 +452,17 @@ export class StowBay {
     this.syncWalls(cav);
     this.syncCad(cav);
     this.carryBuried();
+    // A hit, a hard start or stop, or a turn sloshes the whole pile: wake the buried layers at once, and don't bury
+    // again until the chassis has been calm for a while (burying mid-slosh makes balls pop back in at stale spots).
+    {
+      const v = this.robot.body.linvel(), w = this.robot.body.angvel();
+      const jolt = Math.hypot(v.x - this.lastVel.x, v.z - this.lastVel.z) / Math.max(dt, 1e-3) > 3 || Math.abs(w.y) > 0.8;
+      this.lastVel.set(v.x, v.y, v.z);
+      if (jolt) { this.calmSince = this.time; if (this.buried.size) this.wakeLayer(true); }
+    }
     if (++this.lastCheck >= 10) {
       this.lastCheck = 0;
-      // Rebalance only while the chassis is calm: a hit or a hard turn should slosh the whole pile.
-      const v = this.robot.body.linvel(), calm = Math.hypot(v.x - this.lastVel.x, v.z - this.lastVel.z) < 0.5;
-      this.lastVel.set(v.x, v.y, v.z);
-      if ((calm || !this.buried.size) && !this.feedingIndexer) this.rebalance();
+      if (this.time - this.calmSince > 1.5 && !this.feedingIndexer) this.rebalance();
     }
     // Feeding moves the bottom of the pile (the balls on the floor rollers and at the indexer): it all has to be live.
     if (this.feedingIndexer && this.buried.size) this.wakeLayer(true);
@@ -497,6 +510,7 @@ export class StowBay {
       const lin = this.robot.body.linvel();
       body.setLinvel({ x: lin.x + vel.x, y: lin.y + vel.y + 9.81 * dt, z: lin.z + vel.z }, true);
     }
+    this.dampRelative(dt);
     if (this.feedingIndexer) this.driveFloor(cav);
     // A ball that is over a wall's top edge (open hopper) is an ordinary field ball again. A ball that is merely outside
     // the walls below the rim was left there by a wall that moved in (retracting extension, lowered roof): it is pushed
@@ -557,6 +571,18 @@ export class StowBay {
     const a = pts[Math.max(0, k - 1)], b = pts[Math.min(k, pts.length - 1)], ab = new THREE.Vector3().subVectors(b, a);
     const t = THREE.MathUtils.clamp(new THREE.Vector3().subVectors(p, a).dot(ab) / Math.max(1e-6, ab.lengthSq()), 0, 1);
     return p.distanceTo(a.clone().addScaledVector(ab, t)) < r * 1.6;
+  }
+
+  /** Rolling resistance of foam FUEL in the hopper: its motion relative to the chassis dies away (not its motion with it). */
+  private dampRelative(dt: number): void {
+    const lin = this.robot.body.linvel(), k = Math.exp(-RELATIVE_DAMPING * dt);
+    for (const i of this.stowed) {
+      if (this.staging.has(i)) continue;
+      const b = this.pool.bodies[i];
+      if (b.isSleeping()) continue;
+      const v = b.linvel();
+      b.setLinvel({ x: lin.x + (v.x - lin.x) * k, y: v.y, z: lin.z + (v.z - lin.z) * k }, false);
+    }
   }
 
   /** Within grip of a running intake roller (robot frame). */
@@ -620,7 +646,15 @@ export class StowBay {
       const outX = Math.abs(p.x - cx) > hx + SKIN, outZ = Math.abs(p.z - cz) > hz + SKIN;
       const floor = cav.min.y + this.floorLift, outY = p.y < floor + rs - SKIN || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + SKIN); // covered: the whole ball stays under the roof / net
       const clipped=clearHopperChamfer(p,rs,cav.chamfer)||clearFuelOutline(p,rs,cav.outline);
-      const blocked = clearFuelKeepouts(p, rs, cav.keepouts ?? [], cav)||clipped;
+      // A ball in a mechanism envelope leaves it by the nearest side (the smallest move). Never more than KEEPOUT_STEP
+      // at once: a jump to the envelope's far side, with the pile pressing back, showed as a shake.
+      const beforeKeepout = this.v.copy(p);
+      const kept = clearFuelKeepouts(p, rs, cav.keepouts ?? [], cav);
+      if (kept) {
+        const dx = p.x - beforeKeepout.x, dz = p.z - beforeKeepout.z, m = Math.hypot(dx, dz);
+        if (m > KEEPOUT_STEP) { p.x = beforeKeepout.x + dx * KEEPOUT_STEP / m; p.z = beforeKeepout.z + dz * KEEPOUT_STEP / m; }
+      }
+      const blocked = kept || clipped;
       const inverted = 1-2*(this.q.x*this.q.x+this.q.z*this.q.z)<.2;
       const escaping = cav.open && ((beyondLip && p.y>cav.max.y-r*.5) || (inverted && p.y>cav.max.y+r*.5));
       if (!outX && !outZ && !outY && !blocked && !escaping) continue;
@@ -638,7 +672,6 @@ export class StowBay {
       const lin = this.robot.body.linvel();
       this.toWorld(p, this.v);
       body.setTranslation({ x: this.v.x, y: this.v.y, z: this.v.z }, true);
-      if (blocked) { body.setLinvel({ x: lin.x, y: lin.y, z: lin.z }, true); continue; }
       // Only the motion into the faces it was put back on stops (relative to the chassis); the rest of the slosh stays.
       const v = body.linvel(), rel = this.w.set(v.x - lin.x, v.y - lin.y, v.z - lin.z).applyQuaternion(this.qi);
       const push = old.sub(p); // from the face back to where the ball had got to: the outward direction per axis
