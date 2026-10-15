@@ -973,7 +973,8 @@ export class Robot {
    */
   intakeRollers(): { c: THREE.Vector3; u: THREE.Vector3; radius: number; length: number; capture: boolean; on: boolean }[] {
     const rollers = this.model?.mech?.rollers.filter(r => r.run !== 'feed') ?? [];
-    const on = this.enabled && this.lastCommand.intake;
+    const on = this.enabled && this.lastCommand.intake && this.climbPhase === 'none' && !this.tippedOver;
+    if (!rollers.length) return this.mouthRoller(on);
     const q = new THREE.Quaternion(), s = new THREE.Vector3(), t = new THREE.Vector3();
     return rollers.map(r => {
       const m = this.liveMatrix(r.node);
@@ -984,8 +985,33 @@ export class Robot {
     });
   }
 
-  /** FUEL comes in only by touching a running capture roller (the real-body hopper of a model with roller hooks). */
-  get capturesByContact(): boolean { return !!this.bay && !!this.model?.mech?.rollers.some(r => r.capture); }
+  /**
+   * A model without roller hooks: its floor intake's front roller, a bar across the intake width at the mouth (the
+   * strip `groundMouthContains` tests), at ball-centre height. Balls touching it are caught; the intake lane carries
+   * them from there (StowBay).
+   */
+  private mouthRoller(on: boolean): { c: THREE.Vector3; u: THREE.Vector3; radius: number; length: number; capture: boolean; on: boolean }[] {
+    const c = this.config;
+    if (!c.intake.enabled || c.intake.ground === false) return [];
+    const yaw = c.intake.groundYaw, side = groundSideSign(c), r = this._projectile.radius;
+    const along = yaw === undefined ? new THREE.Vector3(side, 0, 0) : new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const across = yaw === undefined ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const edge = yaw === undefined ? this.fp.length / 2 : (Math.abs(Math.cos(yaw)) * this.fp.length + Math.abs(Math.sin(yaw)) * this.fp.width) / 2;
+    const reach = c.intake.reach, grip = 0.015;
+    // The bar covers the mouth strip from just inside the bumper face (-6 cm) to the full reach.
+    const radius = Math.max(0.015, (reach + 0.06) / 2 - r - grip);
+    const height = r - this.body.translation().y;
+    return [{ c: along.multiplyScalar(edge + (reach - 0.06) / 2).setY(height), u: across, radius, length: c.intake.width, capture: true, on }];
+  }
+
+  /** The model declares its own roller positions (mechanism hooks). */
+  get hasRollerHooks(): boolean { return !!this.model?.mech?.rollers.some(r => r.run !== 'feed'); }
+
+  /** Floor FUEL comes in only by touching a running intake roller (every real-body hopper with a ground intake). */
+  get capturesByContact(): boolean { return !!this.bay && this.config.intake.enabled && this.config.intake.ground !== false; }
+
+  /** Shooting with balls left but none reaching the indexer for a moment: fold the intake / hopper in to push them over. */
+  get feedStarved(): boolean { return !!this.bay?.starved; }
 
   /** Robot-frame centre (x, z) and radius of the model's dye rotor floor, or null. */
   floorRotor(): { x: number; z: number; radius: number } | null {
@@ -1289,7 +1315,7 @@ export class Robot {
     // Shooting a nearly empty hopper, the intake folds in progressively and pushes the last FUEL toward the indexer
     // (2910's hopper compresses, 4414's tray slides back over the dye rotor). It deploys again to intake.
     const below = this.model?.mech?.squeezeBelow ?? Robot.SQUEEZE_BELOW;
-    const squeeze = a.aiming && !a.intaking ? clamp((below - a.fill) / 0.25, 0, 1) : 0;
+    const squeeze = a.aiming && !a.intaking ? Math.max(clamp((below - a.fill) / 0.25, 0, 1), this.feedStarved ? 1 : 0) : 0;
     a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * 0.9) : squeeze;
     const progress = this.netAct !== null ? (this.replicaClimbProgress ?? this.climbProgress) : this.climbProgress;
     const target = this.climbPhase === 'none' ? (this.climbReady && this.config.model !== 'spectre-2910' && this.config.climber.maxLevel > 0 ? 1 : 0)

@@ -156,12 +156,12 @@ export class HeadlessSim {
       }
     }
     robot.tickIntake(dt);
-    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0 && !robot.mech && !robot.capturesByContact) {
+    if (!rules.handlesIntake && cmd.intake && robot.intakeRoom > 0 && !robot.mech) {
       for (let i = 0; i < pool.count; i++) {
         if (pool.state[i] !== 'field') continue;
         const p = pool.position(i);
         if (robot.justLaunched(i)) continue;
-        if ((p.y < 0.4 && robot.intakeContains(p, pool.radius)) || robot.stationContains(p, pool.radius)) {
+        if ((p.y < 0.4 && !robot.capturesByContact && robot.intakeContains(p, pool.radius)) || robot.stationContains(p, pool.radius)) {
           pool.hold(i, robot.id);
           robot.held.push(i);
           if (robot.intakeRoom <= 0) break;

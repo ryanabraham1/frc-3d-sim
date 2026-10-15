@@ -14,6 +14,8 @@ const PULL = 4.5;
 const FEED_TIMEOUT = 1.2;
 /** Surface speed of a driven hopper floor (roller floor / indexer belts) carrying FUEL to the indexer (m/s) [EST]. */
 const FLOOR_SPEED = 1.2;
+/** Rim speed of a dye rotor / spindexer floor (m/s) [EST: a ~0.3 m plate at ~150 rpm]. */
+const ROTOR_SPEED = 4.5;
 /** How long one "wants to fire" keeps the floor rollers running (s): covers the gaps between shots. */
 const FEED_HOLD = 0.25;
 /** Compliant intake tread: how far past the rigid roller a ball is still gripped (m). */
@@ -90,8 +92,12 @@ export class StowBay {
 
   private time = 0;
   private feedUntil = -1;
+  /** When a ball last reached the indexer (or the robot last started wanting to fire). */
+  private lastFed = 0;
+  /** Wanting to fire, balls left, and none has reached the indexer for a moment. */
+  get starved(): boolean { return this.feedingIndexer && this.occupied && this.time - this.lastFed > 0.35; }
   /** The robot wants to fire: run the floor rollers toward the indexer for a moment. */
-  demandFeed(): void { this.feedUntil = this.time + FEED_HOLD; }
+  demandFeed(): void { if (!this.feedingIndexer) this.lastFed = this.time; this.feedUntil = this.time + FEED_HOLD; }
   get feedingIndexer(): boolean { return this.time < this.feedUntil; }
 
   /** Indexer entry (robot frame): the model's feed path start, else just over the floor at the launcher end of the hopper. */
@@ -109,7 +115,9 @@ export class StowBay {
    */
   private atEntry(p: THREE.Vector3, entry: THREE.Vector3): boolean {
     const r = this.radius;
-    if (Math.abs(p.x - entry.x) > r * 1.6 || p.y > entry.y + r * 0.8) return false;
+    // Low enough: on the entry, or on the floor at it (a feed path may start a little above the floor balls).
+    const floor = (this.cavity?.min.y ?? -Infinity) + this.floorLift + r;
+    if (Math.abs(p.x - entry.x) > r * 1.6 || p.y > Math.max(entry.y, floor) + r * 0.8) return false;
     // A wide feeder (dumper) takes balls across the whole hopper; so does a generic robot with no drawn feed path (a
     // full-width roller indexer along the front of the floor).
     const wide = (this.robot.config.launcher.exits ?? 1) > 1 || !this.robot.feedEntry(0);
@@ -381,6 +389,7 @@ export class StowBay {
       const dist = p.distanceToSquared(entry);
       if (dist < d) { d = dist; best = i; }
     }
+    if (best >= 0) this.lastFed = this.time;
     return best;
   }
 
@@ -428,7 +437,9 @@ export class StowBay {
     this.frame();
     const r = this.radius, p = new THREE.Vector3(), target = new THREE.Vector3(), vel = new THREE.Vector3();
     // Balls being pulled in by the intake rollers along the model's own intake lane.
-    const rollers = this.robot.intakeRollers(), byContact = rollers.length > 0;
+    // Models with roller hooks: the drawn rollers carry the ball. Others: the intake lane does, but only while the ball is
+    // still on it (knocked off it, it is on its own).
+    const rollers = this.robot.intakeRollers(), hooks = !!this.robot.hasRollerHooks, byContact = true;
     for (const [i, f] of this.feeding) {
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
@@ -436,7 +447,7 @@ export class StowBay {
         && p.y > cav.min.y && p.y < cav.max.y + (cav.open ? 3 * r : 0);
       // Rollers carry a ball only while it touches one that is running (models with roller hooks); otherwise the
       // intake lane stands in for them up to the stow point.
-      const gripped = byContact ? this.touchesRoller(p, rollers, r) : f.k < f.pts.length - 1;
+      const gripped = hooks ? this.touchesRoller(p, rollers, r) : f.k < f.pts.length - 1 && this.onLane(p, f.pts, f.k, r);
       if (within && (byContact ? !gripped || p.y < cav.max.y : f.k >= f.pts.length - 1)) {
         this.feeding.delete(i);
         this.stowed.add(i);
@@ -480,8 +491,11 @@ export class StowBay {
   private driveFloor(cav: Cavity): void {
     if (!this.stowed.size) return;
     const r = this.radius * this.ballScale, floor = cav.min.y + this.floorLift;
-    const entry = this.entry(cav, new THREE.Vector3()), span = this.robot.drivenFloorSpan(), rotor = this.robot.floorRotor();
     const wide = (this.robot.config.launcher.exits ?? 1) > 1 || !this.robot.feedEntry(0);
+    // A single-lane feeder with no declared floor is a spindexer / rotor hopper (the REBUILT single-lane pattern): its
+    // floor turns about the hopper centre.
+    const entry = this.entry(cav, new THREE.Vector3()), span = this.robot.drivenFloorSpan();
+    const rotor = this.robot.floorRotor() ?? (!wide && !span ? { x: (cav.min.x + cav.max.x) / 2, z: (cav.min.z + cav.max.z) / 2, radius: Math.max(cav.max.x - cav.min.x, cav.max.z - cav.min.z) / 2 } : null);
     const lo = span ? span[0] - r : -Infinity, hi = span ? span[1] + r : Infinity;
     const p = new THREE.Vector3(), rel = new THREE.Vector3(), want = new THREE.Vector3();
     const lin = this.robot.body.linvel(), base = new THREE.Vector3(lin.x, lin.y, lin.z).applyQuaternion(this.qi);
@@ -498,18 +512,26 @@ export class StowBay {
       want.divideScalar(d);
       // A dye rotor carries the balls on it round its centre (the spiral fin walks them toward the throat as they go), so
       // a ball behind the centre column comes round to the throat instead of being shoved into the column.
-      if (rotor && Math.hypot(p.x - rotor.x, p.z - rotor.z) < rotor.radius + r) {
+      const onRotor = !!rotor && Math.hypot(p.x - rotor.x, p.z - rotor.z) < rotor.radius + r;
+      if (onRotor && rotor) {
         const tx = -(p.z - rotor.z), tz = p.x - rotor.x, tl = Math.hypot(tx, tz) || 1;
         want.x = want.x * 0.5 + tx / tl; want.z = want.z * 0.5 + tz / tl;
         want.normalize();
       }
-      want.multiplyScalar(FLOOR_SPEED);
+      want.multiplyScalar(onRotor ? ROTOR_SPEED * Math.min(1, Math.hypot(p.x - rotor!.x, p.z - rotor!.z) / rotor!.radius + 0.35) : FLOOR_SPEED);
       const v = body.linvel();
       rel.set(v.x, v.y, v.z).applyQuaternion(this.qi).sub(base);
       rel.x += (want.x - rel.x) * 0.3; rel.z += (want.z - rel.z) * 0.3;
       rel.add(base).applyQuaternion(this.q);
       body.setLinvel({ x: rel.x, y: rel.y, z: rel.z }, true);
     }
+  }
+
+  /** Still riding the intake lane: within a ball and a bit of the segment it is heading along (robot frame). */
+  private onLane(p: THREE.Vector3, pts: THREE.Vector3[], k: number, r: number): boolean {
+    const a = pts[Math.max(0, k - 1)], b = pts[Math.min(k, pts.length - 1)], ab = new THREE.Vector3().subVectors(b, a);
+    const t = THREE.MathUtils.clamp(new THREE.Vector3().subVectors(p, a).dot(ab) / Math.max(1e-6, ab.lengthSq()), 0, 1);
+    return p.distanceTo(a.clone().addScaledVector(ab, t)) < r * 1.6;
   }
 
   /** Within grip of a running intake roller (robot frame). */

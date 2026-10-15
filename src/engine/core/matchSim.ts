@@ -195,10 +195,11 @@ export class MatchSim {
       const zones: { r: Robot; z: IntakeZone }[] = [];
       for (const r of robots) {
         r.tickIntake(dt);
-        // Physical hoppers (MechHopper, and StowBay on a model with roller hooks) capture by roller contact; everyone
-        // else swallows from the capture zone.
-        const z = r.lastCommand.intake && r.intakeRoom > 0 && !r.mech && !r.capturesByContact ? r.intakeZone() : null;
-        if (z) zones.push({ r, z });
+        // Physical hoppers (MechHopper, StowBay) capture floor FUEL by roller contact; the rest swallow from the zone.
+        const z = r.lastCommand.intake && r.intakeRoom > 0 && !r.mech ? r.intakeZone() : null;
+        // A real-body hopper catches floor FUEL by roller contact (StowBay); only its station funnel is a zone.
+        if (z && r.capturesByContact) z.ground = null;
+        if (z && (z.ground || z.station)) zones.push({ r, z });
       }
       for (let i = 0; i < pool.count && zones.length; i++) {
         if (pool.state[i] !== 'field') continue;
