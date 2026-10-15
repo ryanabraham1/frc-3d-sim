@@ -156,25 +156,33 @@ describe('2026 REBUILT robot archetypes', () => {
       expect(launcherExitOffsets(preset('turret'))).toEqual([0]);
     });
 
-    it('shots leave from every exit in turn, in parallel streams', () => {
+    it('a wide drum launches each ball where it meets the drum: spread across its width, in parallel streams', () => {
       const sim = make('blue', { x: 2.4, y: 2.6, yaw: Math.PI / 2 }, preset('fixed'));
       sim.rules.stage();
       const r = sim.robot;
-      const off = launcherExitOffsets(r.config);
+      const off = launcherExitOffsets(r.config), half = Math.max(...off.map(Math.abs));
+      // A real-ball load packed across the hopper (preloads fill the indexer end across its width first).
+      sim.load(12);
+      sim.run(0.5);
       const lateral: number[] = [];
       const heading: number[] = [];
-      const q = new THREE.Quaternion(r.body.rotation().x, r.body.rotation().y, r.body.rotation().z, r.body.rotation().w).invert();
-      for (let k = 0; k < 8; k++) {
-        r.fireCooldown = 0;
-        const shot = r.launch(null, sim.ctx.rng)!;
-        const t = r.body.translation();
-        const local = shot.pos.clone().sub(new THREE.Vector3(t.x, t.y, t.z)).applyQuaternion(q);
-        lateral.push(-local.z); // robot left = +
-        heading.push(Math.atan2(shot.vel.z, shot.vel.x));
-      }
-      // Cycles through every exit, in order, and repeats.
-      expect(lateral.slice(0, 4).map((x) => +x.toFixed(3))).toEqual(off.map((x) => +x.toFixed(3)));
-      expect(lateral.slice(4).map((x) => +x.toFixed(3))).toEqual(lateral.slice(0, 4).map((x) => +x.toFixed(3)));
+      const launch = r.launch.bind(r);
+      r.launch = (target, rng) => {
+        const shot = launch(target, rng);
+        if (shot) {
+          const t = r.body.translation(), rot = r.body.rotation();
+          const q = new THREE.Quaternion(rot.x, rot.y, rot.z, rot.w).invert();
+          lateral.push(-shot.pos.clone().sub(new THREE.Vector3(t.x, t.y, t.z)).applyQuaternion(q).z); // robot left = +
+          const v = shot.vel.clone().applyQuaternion(q); // in the robot frame: the chassis turns while it aligns
+          heading.push(Math.atan2(v.z, v.x));
+        }
+        return shot;
+      };
+      sim.run(1.5, { ...IDLE_COMMAND, shoot: true });
+      expect(lateral.length).toBeGreaterThan(6);
+      // No fixed streams: the exits spread over the drum (several distinct points), never outside its span.
+      expect(new Set(lateral.map((x) => x.toFixed(2))).size).toBeGreaterThan(2);
+      for (const x of lateral) expect(Math.abs(x)).toBeLessThanOrEqual(half + 1e-3);
       // The streams are parallel (all along the robot heading), not converging on one point.
       expect(Math.max(...heading) - Math.min(...heading)).toBeLessThan(0.15);
     });

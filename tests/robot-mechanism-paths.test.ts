@@ -168,7 +168,8 @@ describe('CAD mechanism paths', () => {
         r.lastCommand = { ...IDLE_COMMAND, shoot:true };
         for (let n=0;n<120;n++) { r.aimTurretAt(null,sim.physics.dt); r.advanceScoringMechanisms(sim.physics.dt); }
         const rng = new Rng(7), a=r.launch(null,rng)!;
-        for (let tick=0; tick<Math.ceil(1/r.config.launcher.rate/sim.physics.dt)+1; tick++) { r.tick(sim.physics.dt); r.advanceScoringMechanisms(sim.physics.dt); }
+        // Uneven feed spaces shots 0.45-1.55 intervals apart: wait out the longest.
+        for (let tick=0; tick<Math.ceil(1.6/r.config.launcher.rate/sim.physics.dt)+1; tick++) { r.tick(sim.physics.dt); r.advanceScoringMechanisms(sim.physics.dt); }
         const b=r.launch(null,rng)!;
         expect(a).not.toBeNull(); expect(b).not.toBeNull();
         expect(a.pos.z-r.body.translation().z).toBeLessThan(0);
