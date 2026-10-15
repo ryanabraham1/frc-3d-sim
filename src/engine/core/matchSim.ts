@@ -223,6 +223,8 @@ export class MatchSim {
     rules.beforeStep(dt);
     pool.updateDamping();
     world.physics.step();
+    // Firm hopper faces after every step, so no step's push through a wall is ever drawn.
+    for (const r of robots) r.bay?.settle();
     rules.afterStep(dt);
     this.matchLog?.step();
     this.simTime += dt;

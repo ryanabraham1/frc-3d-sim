@@ -1021,7 +1021,7 @@ export class Robot {
 
   /** Robot-frame centre (x, z) and radius of the model's dye rotor floor, or null. */
   floorRotor(): { x: number; z: number; radius: number } | null {
-    const rotor = this.model?.mech?.rotor;
+    const rotor = this.model?.mech?.rotor ?? this.model?.floorRotor;
     if (!rotor) return null;
     const v = new THREE.Vector3().applyMatrix4(this.liveMatrix(rotor.node));
     return { x: v.x, z: v.z, radius: rotor.radius };
@@ -1325,7 +1325,8 @@ export class Robot {
     // into every shot; a turret robot below 20% pulses it in and out to work the last balls over; and any shooter that
     // has balls left but none reaching the indexer folds it in.
     this.aimedFor = a.aiming ? this.aimedFor + a.dt : 0;
-    // Any chassis-aimed shooter folds in with the shot (a wide drum like 2910's or a dumper); turrets pulse.
+    // Any chassis-aimed shooter folds in with the shot (a wide drum like 2910's or a dumper); turrets pulse when their
+    // feed floor runs dry.
     const lc = this.config.launcher, dumper = !lc.turret;
     let squeeze = 0;
     if (a.aiming && !a.intaking && this.mech) {
@@ -1333,7 +1334,9 @@ export class Robot {
       squeeze = clamp(((this.model?.mech?.squeezeBelow ?? 0.36) - a.fill) / 0.25, 0, 1);
     } else if (a.aiming && !a.intaking) {
       if (dumper) squeeze = this.aimedFor > 0.5 ? 1 : 0;
-      else if (a.fill < 0.2) squeeze = Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0;
+      // A turret robot pulses its intake in and out once its feed floor runs dry (balls only left on the tray / pile),
+      // and through the last 20% (rebuilt.firstroboticsim's squeeze-when-floor-empty with agitation).
+      else if (a.fill < 0.2 || this.bay?.floorEmpty) squeeze = Math.sin(this.aimedFor * Math.PI * 2 / Robot.PULSE_PERIOD) > 0 ? 1 : 0;
       if (this.feedStarved && (dumper || a.fill >= 0.2)) squeeze = 1;
     }
     a.squeeze = a.dt > 0 ? (a.squeeze ?? 0) + clamp(squeeze - (a.squeeze ?? 0), -a.dt * 2.5, a.dt * (this.mech ? 0.9 : 1.6)) : squeeze;

@@ -169,6 +169,11 @@ export interface RobotModel {
   handoffStyle?: 'fold' | 'conveyor' | 'direct' | 'toss';
   /** Status light position (robot frame), on top of the model's structure. */
   lightAt?: [number, number, number];
+  /**
+   * A spinning hopper floor (spindexer / dye rotor) for the real-ball hopper: the drawn plate (turning about its local y,
+   * centred on its origin) and its radius. Models with `mech.rotor` don't need it.
+   */
+  floorRotor?: { node: THREE.Object3D; radius: number };
   /** Physical hopper hooks: FUEL is carried by these rollers and launched only at the shooter (robot/mechHopper.ts). */
   mech?: HopperMechanism;
   /**

@@ -199,6 +199,7 @@ registerRobotModel('hailstorm-1778', (k: ModelKit) => {
   return {
     replaces: ['chassis', 'launcher', 'hopper', 'intakeRollers', 'climber', 'funnel'],
     lightAt: [-side * L * 0.38, H - 0.01, W * 0.38],
+    floorRotor: { node: drum.floor, radius: R },
     flow: {
       intake: overBumperIntake(k, intake.tip, FUEL_R),
       stow: pile.stow,

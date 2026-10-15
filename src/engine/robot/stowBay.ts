@@ -8,14 +8,16 @@ import { clearFuelOutline, clearFuelKeepouts, clearHopperChamfer, type HopperCha
 /** Box (robot frame: x forward, y up, z right) a FUEL hopper holds its balls in. */
 export interface Cavity { min: THREE.Vector3; max: THREE.Vector3; open: boolean; keepouts?: readonly FuelKeepout[]; chamfer?:HopperChamfer; outline?:readonly [number,number][] }
 
-const WALL = 0.05; // half-thickness of each wall slab (outside the cavity)
+const WALL = 0.08; // thickness of each wall slab (outside the cavity): thick, so a sloshing load can't punch through a step
+/** How far a held ball may sink into a hopper face before it is put back on it (m). */
+const SKIN = 0.004;
 /** Intake roller pull speed (m/s) and the time after which a ball that never made it in is dropped straight inside. */
 const PULL = 4.5;
 const FEED_TIMEOUT = 1.2;
 /** Surface speed of a driven hopper floor (roller floor / indexer belts) carrying FUEL to the indexer (m/s) [EST]. */
 const FLOOR_SPEED = 1.2;
 /** Rim speed of a dye rotor / spindexer floor (m/s) [EST: a ~0.3 m plate at ~150 rpm]. */
-const ROTOR_SPEED = 4.5;
+const ROTOR_SPEED = 6;
 /** How long one "wants to fire" keeps the floor rollers running (s): covers the gaps between shots. */
 const FEED_HOLD = 0.25;
 /** Compliant intake tread: how far past the rigid roller a ball is still gripped (m). */
@@ -94,6 +96,25 @@ export class StowBay {
   private feedUntil = -1;
   /** When a ball last reached the indexer (or the robot last started wanting to fire). */
   private lastFed = 0;
+  /**
+   * The driven floor (rotor plate / roller floor) has at most two balls on it while more are held elsewhere (on the
+   * intake tray, up the pile): the moment to fold the intake in and push them onto it.
+   */
+  get floorEmpty(): boolean {
+    const cav = this.cavity;
+    if (!cav || !this.occupied) return false;
+    this.frame();
+    const r = this.radius * this.ballScale, floor = cav.min.y + this.floorLift + r * 1.35;
+    const rotor = this.robot.floorRotor(), span = this.robot.drivenFloorSpan(), p = new THREE.Vector3();
+    let n = 0;
+    for (const i of this.stowed) {
+      this.toLocal(this.pool.bodies[i].translation(), p);
+      if (p.y > floor) continue;
+      const on = rotor ? Math.hypot(p.x - rotor.x, p.z - rotor.z) < rotor.radius : span ? p.x > span[0] - r && p.x < span[1] + r : true;
+      if (on && ++n > 2) return false;
+    }
+    return true;
+  }
   /** Wanting to fire, balls left, and none has reached the indexer for a moment. */
   get starved(): boolean { return this.feedingIndexer && this.occupied && this.time - this.lastFed > 0.35; }
   /** The robot wants to fire: run the floor rollers toward the indexer for a moment. */
@@ -506,7 +527,9 @@ export class StowBay {
       if (p.y > floor + r * 1.35 || p.x < lo || p.x > hi) continue;
       // A roller floor drives straight along the robot toward the entry line of a wide feeder, toward the lane of a
       // single one (converging every ball on one point only wedges the floor layer).
-      want.set(entry.x - p.x, 0, wide ? 0 : entry.z - p.z);
+      // Real rollers are never perfectly square: a slight skew (alternating per ball) lets a ball pushed head-on into a
+      // post slide round it instead of balancing there.
+      want.set(entry.x - p.x, 0, wide ? Math.abs(entry.x - p.x) * (i % 2 ? 0.15 : -0.15) : entry.z - p.z);
       const d = want.length();
       if (d < r * 0.5) continue;
       want.divideScalar(d);
@@ -515,7 +538,9 @@ export class StowBay {
       const onRotor = !!rotor && Math.hypot(p.x - rotor.x, p.z - rotor.z) < rotor.radius + r;
       if (onRotor && rotor) {
         const tx = -(p.z - rotor.z), tz = p.x - rotor.x, tl = Math.hypot(tx, tz) || 1;
-        want.x = want.x * 0.5 + tx / tl; want.z = want.z * 0.5 + tz / tl;
+        // Near the throat the fin's spiral funnels the ball into it.
+        const pull = d < 0.3 ? 1.6 : 0.5;
+        want.x = want.x * pull + tx / tl; want.z = want.z * pull + tz / tl;
         want.normalize();
       }
       want.multiplyScalar(onRotor ? ROTOR_SPEED * Math.min(1, Math.hypot(p.x - rotor!.x, p.z - rotor!.z) / rotor!.radius + 0.35) : FLOOR_SPEED);
@@ -590,8 +615,10 @@ export class StowBay {
       const body = this.pool.bodies[i];
       this.toLocal(body.translation(), p);
       const beyondLip = p.x < cav.min.x-r*.2 || p.x > cav.max.x+r*.2 || p.z < cav.min.z-r*.2 || p.z > cav.max.z+r*.2;
-      const outX = Math.abs(p.x - cx) > hx + 0.01, outZ = Math.abs(p.z - cz) > hz + 0.01;
-      const floor = cav.min.y + this.floorLift, outY = p.y < floor - 0.02 || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + 0.01); // covered: the whole ball stays under the roof / net
+      // Firm faces (as rebuilt.firstroboticsim does): any ball more than a 4 mm skin into a side wall, the floor or a
+      // roof is put back on the face.
+      const outX = Math.abs(p.x - cx) > hx + SKIN, outZ = Math.abs(p.z - cz) > hz + SKIN;
+      const floor = cav.min.y + this.floorLift, outY = p.y < floor + rs - SKIN || p.y > (cav.open ? cav.max.y + 0.6 : cav.max.y - rs + SKIN); // covered: the whole ball stays under the roof / net
       const clipped=clearHopperChamfer(p,rs,cav.chamfer)||clearFuelOutline(p,rs,cav.outline);
       const blocked = clearFuelKeepouts(p, rs, cav.keepouts ?? [], cav)||clipped;
       const inverted = 1-2*(this.q.x*this.q.x+this.q.z*this.q.z)<.2;
@@ -606,11 +633,20 @@ export class StowBay {
         this.robot.noteLaunch(i);
         continue;
       }
-      p.set(cx + THREE.MathUtils.clamp(p.x - cx, -hx, hx), THREE.MathUtils.clamp(p.y, Math.min(floor + r, cav.max.y - r), cav.max.y - r), cz + THREE.MathUtils.clamp(p.z - cz, -hz, hz));
+      const old = p.clone();
+      p.set(cx + THREE.MathUtils.clamp(p.x - cx, -hx, hx), THREE.MathUtils.clamp(p.y, Math.min(floor + rs, cav.max.y - rs), cav.open ? Infinity : cav.max.y - rs), cz + THREE.MathUtils.clamp(p.z - cz, -hz, hz));
       const lin = this.robot.body.linvel();
       this.toWorld(p, this.v);
       body.setTranslation({ x: this.v.x, y: this.v.y, z: this.v.z }, true);
-      body.setLinvel({ x: lin.x, y: lin.y, z: lin.z }, true);
+      if (blocked) { body.setLinvel({ x: lin.x, y: lin.y, z: lin.z }, true); continue; }
+      // Only the motion into the faces it was put back on stops (relative to the chassis); the rest of the slosh stays.
+      const v = body.linvel(), rel = this.w.set(v.x - lin.x, v.y - lin.y, v.z - lin.z).applyQuaternion(this.qi);
+      const push = old.sub(p); // from the face back to where the ball had got to: the outward direction per axis
+      if (push.x * rel.x > 0) rel.x = 0;
+      if (push.y * rel.y > 0) rel.y = 0;
+      if (push.z * rel.z > 0) rel.z = 0;
+      rel.applyQuaternion(this.q);
+      body.setLinvel({ x: lin.x + rel.x, y: lin.y + rel.y, z: lin.z + rel.z }, true);
     }
   }
 
@@ -645,7 +681,8 @@ export class StowBay {
       if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || mesh.userData.flowToken || mesh.userData.fuelNoContact) return;
       const g = mesh.geometry, pos = g.getAttribute('position');
       if (!pos) return;
-      for (let q: THREE.Object3D | null = mesh; q && q !== visual; q = q.parent) if (q.userData.flowToken || q.userData.fuelNoContact) return;
+      // Nets are soft roofs handled by the cavity (their hull would be a solid dome).
+      for (let q: THREE.Object3D | null = mesh; q && q !== visual; q = q.parent) if (q.userData.flowToken || q.userData.fuelNoContact || /net|fabric|mesh-roof/i.test(q.name)) return;
       g.computeBoundingBox();
       const rel = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
       const bounds = g.boundingBox!.clone().applyMatrix4(rel);

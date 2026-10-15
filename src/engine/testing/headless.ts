@@ -171,6 +171,7 @@ export class HeadlessSim {
     rules.beforeStep(dt);
     pool.updateDamping();
     physics.step();
+    for (const r of this.ctx.robots) r.bay?.settle();
     rules.afterStep(dt);
     this.log?.step();
   }

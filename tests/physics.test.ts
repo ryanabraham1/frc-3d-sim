@@ -32,14 +32,15 @@ function idealShooter(cfg: RobotConfig, season: SeasonDefinition): RobotConfig {
   return cfg;
 }
 
-type Variant = { name: string; mod: (c: RobotConfig, s: SeasonDefinition) => void; faceGoal?: boolean; minRate: number };
+type Variant = { name: string; mod: (c: RobotConfig, s: SeasonDefinition) => void; faceGoal?: boolean; minRate: number; shots?: number };
 
 /** Robot designs a user can build from the menu — including the extremes. */
 const VARIANTS: Variant[] = [
   { name: 'season default', mod: () => {}, minRate: 0.95 },
   { name: 'tallest legal + 80 capacity', mod: (c, s) => ((c.height = s.maxRobotHeight), (c.hopperCapacity = 80)), minRate: 0.95 },
   { name: 'short (12in)', mod: (c) => (c.height = inch(12)), minRate: 0.93 },
-  { name: 'tiny (18x18, 10in)', mod: (c) => ((c.frameLength = inch(18)), (c.frameWidth = inch(18)), (c.height = inch(10))), minRate: 0.93 },
+  // A robot this small physically holds about four FUEL (more heap above its rim and roll off as it moves).
+  { name: 'tiny (18x18, 10in)', mod: (c) => ((c.frameLength = inch(18)), (c.frameWidth = inch(18)), (c.height = inch(10))), minRate: 0.93, shots: 4 },
   { name: 'max frame (36x36)', mod: (c) => ((c.frameLength = inch(36)), (c.frameWidth = inch(36))), minRate: 0.95 },
   { name: 'no turret, chassis-aimed', mod: (c) => ((c.launcher.turret = false), (c.aimAssist = 'speed')), faceGoal: true, minRate: 0.95 },
   { name: '20 shots/s', mod: (c) => (c.launcher.rate = 20), minRate: 0.9 },
@@ -67,12 +68,13 @@ for (const season of SEASONS) {
             const g = T.goalCenter(alliance);
             // A turretless robot is driven up facing the goal (chassis auto-align finishes the aim).
             const pose = v.faceGoal || !cfg.launcher.turret ? { ...spot, yaw: Math.atan2(g.y - spot.y, g.x - spot.x) } : spot;
-            const r = runShotTrial(season, RAPIER, { label: v.name, robot: cfg, alliance, pose, shots: 8 });
+            const shots = v.shots ?? 8;
+            const r = runShotTrial(season, RAPIER, { label: v.name, robot: cfg, alliance, pose, shots });
             // A launched piece must never start inside the robot that fired it.
             expect(r.spawnGap, `spawn overlaps robot at ${alliance} (${spot.x.toFixed(2)},${spot.y.toFixed(2)})`).toBeGreaterThanOrEqual(0);
             // Every legal scoring spot must have a trajectory that clears the goal geometry.
             expect(r.allClear, `no clear shot from ${alliance} (${spot.x.toFixed(2)},${spot.y.toFixed(2)})`).toBe(true);
-            expect(r.fired).toBe(8);
+            expect(r.fired).toBe(shots);
             fired += r.fired;
             entered += r.entered;
             if (r.entered < r.fired * 0.6) worst.push(`${alliance} (${spot.x.toFixed(2)},${spot.y.toFixed(2)}) ${r.entered}/${r.fired}`);
