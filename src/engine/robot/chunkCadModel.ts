@@ -65,7 +65,7 @@ export function build7769Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       },
     },
     update(s) {
-      deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
+      deploy = ease(deploy, s.enabled || s.deployed || s.fill > .5 ? 1 : 0, s.dt);
       pile.update(s.fill, deploy);
       if (!isAnimated()) return;
       // Racks run the intake out; while firing they shuffle it (team's anti-jam "truffle shuffle").

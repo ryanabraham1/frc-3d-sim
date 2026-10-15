@@ -21,7 +21,7 @@ registerRobotModel('ctrl-alt-defeat-9470',(k:ModelKit)=>{
   const extension=slidingHopper(k,{wall:clear,frame:k.mats.alu,length:.22});
   const pile=fillBlock(k.visual,{x:-.03,y0:.17,length:.59,width:.61,height:.37,color:0xf2c200,capacity:k.config.hopperCapacity});
   return {replaces:['chassis','launcher','hopper','intakeRollers'],intakeAnchor:intake.tip,
-    update(s){db.update(s);const deploy=s.enabled?1:0;intake.update(s,deploy);extension.set(deploy,s.fill);pile.set(s.fill);wheel.rotation.z+=s.enabled?45*s.dt:0;}};
+    update(s){db.update(s);const deploy=s.enabled||s.deployed?1:0;intake.update(s,deploy);extension.set(deploy,s.fill);pile.set(s.fill);wheel.rotation.z+=s.enabled?45*s.dt:0;}};
 });
 registerRobotModel('downpour-6800',(k:ModelKit)=>{
   const db=drivebase(k),dark=mat(0x15191f),gold=mat(0xc79a30,{metal:.4});
@@ -34,7 +34,7 @@ registerRobotModel('downpour-6800',(k:ModelKit)=>{
   box(k.visual,.05,.025,.61,gold,.07,.59,0);
   const intake=deployableIntake(k,{reach:.23,rollers:4,frame:gold,rollerMaterial:dark});
   return {replaces:['chassis','launcher','hopper','intakeRollers'],intakeAnchor:intake.tip,
-    update(s){db.update(s);intake.update(s,s.enabled?1:0);wheel.rotation.z+=s.enabled?45*s.dt:0;}};
+    update(s){db.update(s);intake.update(s,s.enabled||s.deployed?1:0);wheel.rotation.z+=s.enabled?45*s.dt:0;}};
 });
 function config(team:number,id:string,capacity:number,rate:number,height:number,net?:{startCount:number;fullHeight:number}) {
   const c=build({intake:'both',aim:'align',dumper:true,hopper:capacity,tall:false,rate,climb:0});

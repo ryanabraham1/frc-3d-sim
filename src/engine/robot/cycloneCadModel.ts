@@ -53,7 +53,7 @@ export function build1987Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       feed: () => [point(k, rotor, -.15, .08), point(k, rotor, -.06, .2), new THREE.Vector3(AXIS_X, .40, 0), point(k, flywheel, .06, .02), point(k, flywheel, -.02, .11)],
     },
     update(s) {
-      deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
+      deploy = ease(deploy, s.enabled || s.deployed || s.fill > .5 ? 1 : 0, s.dt);
       pile.update(s.fill, deploy);
       if (!isAnimated()) return;
       intake.position.x = (1 - deploy) * CYCLONE_TRAVEL;

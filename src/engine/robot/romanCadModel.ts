@@ -74,7 +74,7 @@ export function build6329Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       },
     },
     update(s) {
-      deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
+      deploy = ease(deploy, s.enabled || s.deployed || s.fill > .5 ? 1 : 0, s.dt);
       pile.update(s.fill, deploy);
       if (!isAnimated()) return;
       pose(deploy);

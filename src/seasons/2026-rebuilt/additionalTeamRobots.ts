@@ -80,7 +80,7 @@ registerRobotModel('limestone-1678', (k: ModelKit) => {
     },
     update(s) {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
-      deploy = approach(deploy, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
+      deploy = approach(deploy, !(s.enabled || s.deployed) ? 0 : s.firing > 0 ? 0.35 : 1, 6, s.dt); { const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       {
         // The driver toggle controls the same raised envelope as collision/routing.
         const e = c.hopperExpansion!;
@@ -157,7 +157,7 @@ registerRobotModel('reblitz-2910', (k: ModelKit) => {
     flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
       feed:(shot=0)=>{const exits=launcherExitOffsets(c),z=-exits[shot%exits.length];return [new THREE.Vector3(-L*.35,bt+.04+r,z),new THREE.Vector3(L*.22,bt+.12+r,z),flowAt(k,cadShooter?.flywheel ?? fly,-.09,-.02,z),flowAt(k,cadShooter?.flywheel ?? fly,.02,.04,z)];}},
     update(s){cadShooter?.update(s);db.update(s);fill.set(s.fill);pile.setFill(s.fill);
-      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
+      deploy=approach(deploy,!(s.enabled||s.deployed)?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       angle=scoringApproach(angle,hoodLive(s)?hoodFor(s.hood):-.35,5,s.dt);hood.rotation.z=angle;
       for(const wheel of [fly,overspeed,...conveyor])spin(wheel,s.enabled?40+60*s.firing:0,s.dt);
     }};
@@ -201,7 +201,7 @@ registerRobotModel('mixtape-971', (k: ModelKit) => {
     flow:{intake:overBumperIntake(k,intake.tip,r),stow:pile.stow,
       feed:(shot=0)=>{const i=shot%heads.length,z=heads[i].position.z;return [new THREE.Vector3(-L*.2,bt+.04+r,z),new THREE.Vector3(L*.1,bt+.05+r,z),flowAt(k,wheels[i],-.08,-.02,0),flowAt(k,wheels[i],.02,.04,0)];}},
     update(s){db.update(s);fill.set(s.fill);pile.setFill(s.fill);
-      deploy=approach(deploy,!s.enabled?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
+      deploy=approach(deploy,!(s.enabled||s.deployed)?0:s.firing>0?.35:1,6,s.dt);{ const dv = deploy; intake.update(s, dv); slide.set(dv, s.fill); }
       angle=scoringApproach(angle,hoodLive(s)?hoodFor(s.hood):-.35,5,s.dt);
       for(const head of heads)head.rotation.y=k.turret.rotation.y;
       for(const hood of hoods)hood.rotation.z=angle;

@@ -358,7 +358,7 @@ registerRobotModel('overload-254', (k: ModelKit) => {
       db.update(s);
       pile.setFill(s.fill);
       // Out to collect; pulled back in while shooting so it squeezes FUEL toward the shooter.
-      out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.3 : 1, 5, s.dt);
+      out = approach(out, !(s.enabled || s.deployed) ? 0 : s.firing > 0 ? 0.3 : 1, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
       hop.set(out, s.fill);
       beltSpin = s.enabled && (s.intaking || s.firing > 0) ? 24 : 0;
@@ -808,7 +808,7 @@ registerRobotModel('sandspit-3476', (k: ModelKit) => {
     update(s) {
       db.update(s);
       pile.setFill(s.fill);
-      out = approach(out, !s.enabled ? 0 : s.firing > 0 ? 0.35 : 1, 5, s.dt);
+      out = approach(out, !(s.enabled || s.deployed) ? 0 : s.firing > 0 ? 0.35 : 1, 5, s.dt);
       { const dv = out; intake.update(s, dv); slide.set(dv, s.fill); }
       fill.set(s.fill);
       const fs = flywheelSpeed(s);

@@ -60,7 +60,7 @@ export function buildAimbotCad(root: THREE.Group, k: ModelKit, isAnimated: () =>
         point(k, flywheel, -.05, .07, 0), point(k, flywheel, .07, .09, 0)],
     },
     update(s) {
-      deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
+      deploy = ease(deploy, s.enabled || s.deployed || s.fill > .5 ? 1 : 0, s.dt);
       pile.update(s.fill, deploy);
       if (!isAnimated()) return;
       // Slapdown: the CAD is deployed; folding rotates the plates up and in about the pivot axle, and the hopper walls it

@@ -77,7 +77,7 @@ export function build1114Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     flow:{intake:()=>[point(k,tip,0,.075),new THREE.Vector3(-.30,.22,0),new THREE.Vector3(-.24,.30,0)],stow:pile.stow,
       feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.15,.32,z),
         ...feeds.map(r=>point(k,r,-.035,.055,z)),point(k,drum,-.035,.08,z)];}},
-    update(s){db.update(s);deploy=ease(deploy,s.enabled||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);
+    update(s){db.update(s);deploy=ease(deploy,s.enabled||s.deployed||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return;
       intake.position.x=-.36*deploy;
       for(const rail of rails){rail.scale.x=.025+.36*deploy;rail.position.x=-.147-.18*deploy;}
@@ -108,7 +108,7 @@ export function build9470Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   return {replaces,lightAt:[0,.56,.28],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.28,.24,0)],stow:pile.stow,feed:(shot=0)=>{
       const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.2,.24,z),new THREE.Vector3(.07,.33,z),point(k,wheel,-.05,0,z),point(k,wheel,.025,.07,z)];}},
-    update(s){deploy=ease(deploy,s.enabled?1:0,s.dt);pile.update(s.fill,deploy);
+    update(s){deploy=ease(deploy,s.enabled||s.deployed?1:0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return; intake.position.x=(1-deploy)*.22;
       extension.position.x=slideRoof.position.x=intake.position.x;
       angle=scoringEase(angle,hoodLive(s)?THREE.MathUtils.clamp(s.hood,.5,HOOD_SHOT_MAX)-1.43:0,s.dt);hood.rotation.z=angle;
@@ -137,7 +137,7 @@ export function build6800Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
   return {replaces,lightAt:[0,.55,.3],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip,-.02,-.06),new THREE.Vector3(-.35,.25,0)],stow:pile.stow,feed:(shot=0)=>{
       const z=((shot%4)-1.5)*.14;return [new THREE.Vector3(-.3,.24,z),new THREE.Vector3(.05,.3,z),point(k,wheel,-.055,.015,z),point(k,wheel,.03,.06,z)];}},
-    update(s){deploy=ease(deploy,s.enabled||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);if(!isAnimated())return;
+    update(s){deploy=ease(deploy,s.enabled||s.deployed||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);if(!isAnimated())return;
       // Source is extended. 7.5 in travel matches the binder's 13.5 → 21 in hopper.
       intake.position.x=(1-deploy)*.1905;if(slide)slide.position.x=intake.position.x;
       roof.position.x=-.63+intake.position.x;roof.scale.x=.025-roof.position.x;
@@ -163,7 +163,7 @@ export function build971Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean):
   return {replaces,lightAt:[0,.6,.32],intakeAnchor:tip,
     flow:{intake:()=>[point(k,tip),new THREE.Vector3(-.28,.28,0)],stow:pile.stow,feed:(shot=0)=>{
       const head=wheels[shot%2];return [new THREE.Vector3(-.2,.3,0),point(k,head,-.08,-.12),point(k,head,-.035,0),point(k,head,.035,.05)];}},
-    update(s){deploy=ease(deploy,s.enabled||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);if(!isAnimated())return;
+    update(s){deploy=ease(deploy,s.enabled||s.deployed||s.fill>.5?1:0,s.dt);pile.update(s.fill,deploy);if(!isAnimated())return;
       intake.rotation.z=-(1-deploy)*2.0;
       heads.forEach((head,i)=>{
         head.rotation.y=k.turret.rotation.y-(i===1?Math.PI/3:0);
@@ -250,7 +250,7 @@ export function build2910Cad(root:THREE.Group,k:ModelKit,isAnimated:()=>boolean)
     flow:{intake:()=>[point(k,tip,-.025,-.01),new THREE.Vector3(-.26,.25,0),new THREE.Vector3(-.12,.27,0)],
       stow:pile.stow,feed:(shot=0)=>{const z=((shot%4)-1.5)*.14;
         return [new THREE.Vector3(-.20,.27,z),new THREE.Vector3(.05,.29,z),new THREE.Vector3(.24,.36,z),point(k,hood,.037,-.028,z)];}},
-    update(s){deploy=ease(deploy,s.enabled?1-.75*(s.squeeze??0):0,s.dt);pile.update(s.fill,deploy);
+    update(s){deploy=ease(deploy,s.enabled||s.deployed?1-.75*(s.squeeze??0):0,s.dt);pile.update(s.fill,deploy);
       if(!isAnimated())return;
       // Source pickup is deployed. Fold upward and inward about its real bearing.
       intake.rotation.z=-(1-deploy)*2.65;

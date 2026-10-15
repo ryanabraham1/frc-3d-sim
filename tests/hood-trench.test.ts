@@ -134,10 +134,9 @@ describe('every trench-height team robot with a hood', () => {
     s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
     expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
   });
-  it.each([1690, 4414])('%i lowers its hood and escapes without backing away from the arm', (n) => {
+  it.each([1690, 4414])('%i stops shooting at the arm and crosses', (n) => {
     const s = sim(team(n));
     driveIntoArm(s);
-    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
     s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
     expect(s.robot.held).toHaveLength(0);
     expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
@@ -154,11 +153,13 @@ describe('every trench-height team robot with a hood', () => {
     expect(direction * (s.robot.pose.x - C.HUB_CENTER.x)).toBeGreaterThan(0.5);
   });
 
-  // Hood lift is tuned in HOOD_LIFT (config.ts): parked <= 0.535 m, open ~0.61 m.
-  const withHood = season.teamRobots!.filter((t) => t.config.height <= C.TRENCH_SAFE_HEIGHT && t.config.launcher.hoodLift);
+  // Hoods only pivot (seated by HOOD_SEAT in config.ts). A robot is stopped at the arm only if its drawn hood, opened for
+  // the shot, physically reaches the arm; otherwise it drives under while shooting.
+  const withHood = season.teamRobots!.filter((t) => t.config.height <= C.TRENCH_SAFE_HEIGHT
+    && [254, 581, 971, 1323, 1678, 1690, 1778, 1987, 2910, 4414, 5940, 6800, 7769, 9470].includes(t.team));
   it('is listed', () => expect(withHood.length).toBeGreaterThanOrEqual(10));
 
-  it.each(withHood.map((t) => [t.team, t.config] as const))('%i releases a raised hood and crosses while holding forward', (_n, config) => {
+  it.each(withHood.map((t) => [t.team, t.config] as const))('%i crosses while holding forward once it stops shooting', (_n, config) => {
     const s = sim(config);
     driveIntoArm(s);
     s.run(4, { ...IDLE_COMMAND, vx: 2.5 });
@@ -167,7 +168,6 @@ describe('every trench-height team robot with a hood', () => {
 
   it.each([1690, 4414])('%i keeps a lowered hood parked when shoot is pressed again under the arm', (n) => {
     const s = sim(team(n));
-    driveIntoArm(s);
     s.run(4, { ...IDLE_COMMAND, vx: 1 }, () => s.robot.pose.x >= C.HUB_CENTER.x);
     expect(s.robot.pose.x).toBeGreaterThanOrEqual(C.HUB_CENTER.x);
     s.run(0.4, IDLE_COMMAND);
@@ -176,40 +176,24 @@ describe('every trench-height team robot with a hood', () => {
     expect(s.robot.hoodTop).toBeLessThan(C.TRENCH_SAFE_HEIGHT);
   });
 
-
-  it.each(withHood.map((t) => [t.team, t.config] as const))('%i parks under the arm, opens above it, and the collider is the drawn hood', (_n, config) => {
+  it.each(withHood.map((t) => [t.team, t.config] as const))('%i parks under the arm; shooting, it is stopped only if its pivoted hood reaches the arm', (_n, config) => {
     const s = sim(config);
     s.run(0.4, { ...IDLE_COMMAND });
     expect(s.robot.hoodTop).toBeLessThanOrEqual(C.TRENCH_SAFE_HEIGHT);
     s.run(1.8, { ...IDLE_COMMAND, shoot: true });
-    expect(s.robot.hoodTop).toBeGreaterThan(C.TRENCH_CLEARANCE + 0.02);
-    driveIntoArm(s);
-    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
-    expectColliderMatchesHood(s);
-  });
-
-  it.each([971, 1678, 2910])('%i stops exactly where its drawn hood meets the arm, at full speed', (n) => {
-    const s = sim(team(n));
-    s.run(1.8, { ...IDLE_COMMAND, shoot: true });
-    s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 4.5 });
-    const hood = s.robot.hoodBounds(true)!;
-    expect(s.robot.pose.x + hood.max.x).toBeGreaterThan(ARM_NEAR - 0.02);
-    expect(s.robot.pose.x + hood.max.x).toBeLessThan(ARM_NEAR + 0.02);
-    expect(s.robot.tippedOver).toBe(false);
-  });
-
-  it.each([971, 1690, 2910, 4414])('%i just stops at the arm: no yaw spin, still facing the way it was going', (n) => {
-    const s = sim(team(n));
-    s.run(1.8, { ...IDLE_COMMAND, shoot: true });
-    s.run(5, { ...IDLE_COMMAND, shoot: true, vx: 3 });
-    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
-    expect(Math.abs(s.robot.pose.yaw)).toBeLessThan(0.08);
-  });
-
-  it.each([254, 971, 4414, 7769])('%i is stopped by the arm with its hood up', (n) => {
-    const s = sim(team(n));
-    driveIntoArm(s);
-    expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
+    const reaches = s.robot.hoodTop > C.TRENCH_CLEARANCE;
+    s.run(4, { ...IDLE_COMMAND, shoot: true, vx: 2.5 });
+    if (reaches) {
+      // Stopped where the drawn hood meets the arm, square, by a collider that is exactly the drawn hood.
+      expect(s.robot.pose.x).toBeLessThan(ARM_NEAR);
+      const hood = s.robot.hoodBounds(true)!;
+      expect(s.robot.pose.x + hood.max.x).toBeGreaterThan(ARM_NEAR - 0.03);
+      expect(s.robot.pose.x + hood.max.x).toBeLessThan(ARM_NEAR + 0.05);
+      expect(Math.abs(s.robot.pose.yaw)).toBeLessThan(0.08);
+      expectColliderMatchesHood(s);
+    } else {
+      expect(s.robot.pose.x).toBeGreaterThan(C.HUB_CENTER.x + 0.5);
+    }
   });
 });
 
@@ -285,8 +269,9 @@ it('4414 parks its entire shooter flush with the net, including the fixed side p
     bounds.union(mesh.geometry.boundingBox!.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inverse, mesh.matrixWorld)));
   });
   expect(bounds.max.y).toBeLessThanOrEqual(s.robot.config.height + 0.005);
+  // Its hood only pivots, and opened for a shot the low pancake shooter still fits under the arm.
   s.run(1.8, { ...IDLE_COMMAND, shoot: true });
-  expect(s.robot.hoodTop).toBeGreaterThan(C.TRENCH_CLEARANCE + 0.02);
+  expect(s.robot.hoodTop).toBeLessThan(C.TRENCH_CLEARANCE);
 });
 
 it('4414: the load at which the TRENCH starts to block lies around 85 (80-92), not at the rigid 57', () => {

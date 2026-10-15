@@ -327,7 +327,7 @@ registerRobotModel('chunk-7769', (k: ModelKit) => {
       db.update(s); fill.set(s.fill); pile.setFill(s.fill);
       // Out to collect, jostled in and out while shooting ("truffle shuffle" keeps the hopper from jamming).
       const shuffle = s.firing > 0 ? 0.35 + 0.15 * Math.sin(s.time * 9) : 1;
-      out = approach(out, !s.enabled ? 0 : shuffle, 5, s.dt);
+      out = approach(out, !(s.enabled || s.deployed) ? 0 : shuffle, 5, s.dt);
       slide.position.x = side * (out - 1) * 0.12;
       hop.set(out, s.fill);
       for (const r of rollers) spin(r, -side * (s.enabled && (s.intaking || s.firing > 0) ? 24 : 0), s.dt);

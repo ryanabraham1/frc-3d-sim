@@ -51,7 +51,7 @@ export function build9496Cad(root: THREE.Group, k: ModelKit, isAnimated: () => b
       },
     },
     update(s) {
-      deploy = ease(deploy, s.enabled || s.fill > .5 ? 1 : 0, s.dt);
+      deploy = ease(deploy, s.enabled || s.deployed || s.fill > .5 ? 1 : 0, s.dt);
       pile.update(s.fill, deploy);
       if (!isAnimated()) return;
       intake.rotation.z = -(1 - deploy) * MATTERHORN_STOW;

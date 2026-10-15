@@ -857,8 +857,12 @@ export class Robot {
     this.wireFuelPiles();
   }
 
+  /** How far below a low overhead's real underside the season's `overheadLimit` is set (half an inch, Rapier's spare). */
+  static OVERHEAD_SPARE = 0.0127;
   /** Period of a turret robot's intake pulse while it shoots out the last 20% (s). */
   static PULSE_PERIOD = 1.4;
+  /** Enabled at some point this match (deployed mechanisms stay out while disabled between periods). */
+  private everEnabled = false;
   /** How long the driver has been aiming / shooting (s), for the intake fold timing. */
   private aimedFor = 0;
 
@@ -1295,6 +1299,8 @@ export class Robot {
     this.lastFrame = now;
     a.time += a.dt;
     a.enabled = this.enabled;
+    if (this.enabled) this.everEnabled = true;
+    a.deployed = this.everEnabled;
     const act = this.netAct ?? this.actBits();
     if (this.netAct !== null && this.manualHopper) this.hopperRaised = (act & 4) !== 0;
     a.intaking = (act & 1) !== 0 && this.blockerDeploy === 0;
@@ -1319,7 +1325,8 @@ export class Robot {
     // into every shot; a turret robot below 20% pulses it in and out to work the last balls over; and any shooter that
     // has balls left but none reaching the indexer folds it in.
     this.aimedFor = a.aiming ? this.aimedFor + a.dt : 0;
-    const lc = this.config.launcher, dumper = (lc.exits ?? 1) > 1 && !lc.turret;
+    // Any chassis-aimed shooter folds in with the shot (a wide drum like 2910's or a dumper); turrets pulse.
+    const lc = this.config.launcher, dumper = !lc.turret;
     let squeeze = 0;
     if (a.aiming && !a.intaking && this.mech) {
       // The separate-world mechanism hopper (`?hopper=mech`): progressive fold below the model's fill threshold.
@@ -1350,7 +1357,6 @@ export class Robot {
     else if (this.hoodLatched) a.hood = this.hoodLatchPitch; // hood already up against the arm: it stays where it is
     if (simulation) this.scoringModelReady = collectScoringReadiness(() => model?.update(a));
     else model?.update(a);
-    this.applyHoodLift(a.dt);
     if (!simulation) {
       this.distributeFuel();
       for (const animate of this.fuelAnimations) animate(a);
@@ -2052,21 +2058,9 @@ export class Robot {
       });
     });
     this.hoodParts = parts;
-    this.hoodRotors = [...new Set(this.hoodRoots.map((o) => (o.userData.hoodRotor as THREE.Object3D | undefined) ?? o))];
-    this.hoodBaseY = this.hoodRotors.map((r) => r.position.y);
-    this.applyHoodLift(0);
-  }
-  private hoodRotors: THREE.Object3D[] = [];
-  private hoodBaseY: number[] = [];
-  private hoodFrac = 0;
-  /** Slide the hood assembly between its parked and open heights (`launcher.hoodLift`) as it opens for a shot. */
-  private applyHoodLift(dt: number): void {
-    const lift = this.config.launcher.hoodLift;
-    if (!lift || !this.hoodRotors.length) return;
-    const a = this.anim, want = a.aiming || a.firing > 0 ? 1 : 0;
-    this.hoodFrac += clamp(want - this.hoodFrac, -dt * 6, dt * 6);
-    const y = lift.rest + (lift.open - lift.rest) * this.hoodFrac;
-    this.hoodRotors.forEach((r, i) => { r.position.y = this.hoodBaseY[i] + y; });
+    // Seat the hood assembly where the real one sits (a fixed offset; it only ever pivots from there).
+    const seat = this.config.launcher.hoodSeat;
+    if (seat) for (const o of new Set(this.hoodRoots.map((h) => (h.userData.hoodRotor as THREE.Object3D | undefined) ?? h))) o.position.y += seat;
   }
 
   /** Bounds of the drawn hood in the chassis frame (null when the robot has none). Refreshed when the hood has moved. */
@@ -2124,7 +2118,9 @@ export class Robot {
     const b = this.hoodBounds();
     if (!b) { if (col.isEnabled()) col.setEnabled(false); return; }
     const frameTop = this.config.height;
-    const on = this.overheadLimit < Infinity && b.max.y > Math.max(frameTop + 0.01, this.overheadLimit);
+    // Only a hood that physically reaches the arm's underside is stopped by it (the season's `overheadLimit` keeps
+    // OVERHEAD_SPARE below that underside for the bodies that do collide with the arm itself).
+    const on = this.overheadLimit < Infinity && b.max.y > Math.max(frameTop + 0.01, this.overheadLimit + Robot.OVERHEAD_SPARE);
     if (!on) { if (col.isEnabled()) { col.setEnabled(false); this.body.setSoftCcdPrediction(0); } return; }
     // Speculative contacts (soft CCD) while the hood can hit the arm, so a robot driven at it at full speed stops where
     // the drawn hood touches instead of sinking a step's travel into it.
@@ -2624,9 +2620,9 @@ export class Robot {
     return 0;
   }
 
-  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
+  recoveryState(): RecoveryFields { return captureFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' ')); }
   restoreRecovery(state: RecoveryFields): void {
-    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised hoodFrac overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
+    restoreFields(this, 'held enabled turretYaw fireCooldown climbReady climbPhase climbLevel climbTargetLevel climbSlot climbT climbDur climbFrom climbTo blockerDeploy hopperRaised overheadLimit intakeBudget lastHeldCount grounded traction wheelsDown tippedTime wheelsSlipping alignError burstTime shooterPitch aimSolveIn exitIndex lastShotExit lastShotAngle lastShotClear launchedRecently pendingLift ampDeploy'.split(' '), state);
     this.replicaClimbProgress = null;
     this.netAct = null;
     this.lastCommand = { ...IDLE_COMMAND };

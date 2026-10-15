@@ -178,12 +178,8 @@ export interface RobotConfig {
     maxSpeed: number;
     /** Exit height above floor. */
     height: number;
-    /**
-     * Height (m) the whole drawn hood assembly sits above (+) or below (-) where the model draws it, when parked (`rest`)
-     * and when open for a shot (`open`); it slides between them as the hood opens. Seasons use it so a stowed hood clears
-     * a low overhead and an open one rises clearly above it, like the real robot's hood lift.
-     */
-    hoodLift?: { rest: number; open: number };
+    /** Fixed height offset (m) of the drawn hood assembly from where the model draws it (see seasons' HOOD_SEAT). */
+    hoodSeat?: number;
     /** True = turret can yaw independently of the drivetrain. */
     turret: boolean;
     /**

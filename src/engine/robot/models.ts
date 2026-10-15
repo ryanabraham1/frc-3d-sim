@@ -69,6 +69,11 @@ export interface RobotAnimState {
    * a nearly empty hopper (see Robot.animateModel). Models with a retracting intake fold it by this much.
    */
   squeeze?: number;
+  /**
+   * The robot has been enabled this match: a deployed intake / extended hopper stays out while it is disabled between
+   * periods (motors stop, mechanisms don't fold). False before the match starts, so robots set up stowed.
+   */
+  deployed?: boolean;
 }
 
 /**
