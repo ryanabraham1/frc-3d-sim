@@ -12,11 +12,13 @@ import { Rng } from '../random';
 import { sanitizeConfig } from '../robot/config';
 import { Robot } from '../robot/robot';
 import type { GameSettings, SeasonContext, SeasonDefinition, SeasonRules, ToastKind } from './season';
+import type { HubImpact } from '../audio/gameplayAudio';
 
 /** How the world talks back to whoever runs it (a view, a host, or a worker posting to a view). */
 export interface WorldHooks {
   toast(msg: string, kind: ToastKind, alliance?: Alliance, robot?: Robot): void;
   cue(robot: Robot, text: string, cls?: string): void;
+  hubImpact?(hit: HubImpact): void;
   humanPlayerIsAuto(alliance: Alliance): boolean;
 }
 
@@ -116,6 +118,7 @@ export class MatchWorld {
       playerRobot: this.player,
       toast: (msg: string, kind: ToastKind = 'info', alliance?: Alliance, robot?: Robot) => hooks.toast(msg, kind, alliance, robot),
       cue: (robot: Robot, text: string, cls?: string) => hooks.cue(robot, text, cls),
+      hubImpact: hooks.hubImpact,
       humanPlayerIsAuto: (a: Alliance) => hooks.humanPlayerIsAuto(a),
     };
     season.buildField(this.ctx);

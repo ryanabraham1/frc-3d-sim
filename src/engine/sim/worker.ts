@@ -84,6 +84,7 @@ async function init(m: Extract<ToWorker, { t: 'init' }>): Promise<void> {
     }, {
       toast: (msg, kind, alliance, robot) => events.push({ k: 'toast', msg, kind, alliance, robot: robot?.id }),
       cue: (robot, text, cls) => events.push({ k: 'cue', robot: robot.id, text, cls }),
+      hubImpact: (hit) => events.push({ k: 'hubImpact', hit }),
       humanPlayerIsAuto: (a) => !player || a !== player.alliance || settings.autoHumanPlayer,
     });
     player = world.player;

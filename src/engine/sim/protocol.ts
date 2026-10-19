@@ -5,6 +5,7 @@ import type { MatchSetup, NetGameState, RobotNetState } from '../net/protocol';
 import type { RadioMessage } from '../ai/team';
 import type { RobotCommand } from '../robot/robot';
 import type { RobotVisualFrame } from './robotMirror';
+import type { HubImpact } from '../audio/gameplayAudio';
 
 /** Per piece in a frame: drawn (0/1), position (3), quaternion (4). */
 export const PIECE_STRIDE = 8;
@@ -35,6 +36,7 @@ export type ToWorker =
   | { t: 'finishLog'; totals?: Record<string, number> };
 
 export type SimEvent =
+  | { k: 'hubImpact'; hit: HubImpact }
   | { k: 'toast'; msg: string; kind: ToastKind; alliance?: Alliance; robot?: number }
   | { k: 'cue'; robot: number; text: string; cls?: string }
   | { k: 'period'; ch: PeriodChange }

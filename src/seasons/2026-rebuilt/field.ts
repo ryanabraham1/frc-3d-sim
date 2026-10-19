@@ -19,6 +19,8 @@ export const sideYaw = (alliance: Alliance, yaw: number): number => (alliance ==
 export const dir = (alliance: Alliance): number => (alliance === 'blue' ? 1 : -1);
 
 export interface HubRefs {
+  /** Exact CAD surfaces that make the hub contact sound (excludes carpet, robots, and other balls). */
+  impactColliders?: Set<number>;
   center: FieldPoint;
   lights: THREE.MeshStandardMaterial;
   /** Flexible nets behind the opening (rear, then side wings). */
@@ -184,14 +186,14 @@ function buildHub(b: FieldBuilder, a: Alliance): HubRefs {
   const col = C.COLORS[a];
   // [M 5.4; CAD: FE-2026 REBUILT field] Collision is the official field CAD: shell, funnel, internal walls and ramps, so a
   // scored ball rolls through the HUB and out of its exit slot as the same ball (hubCad.ts).
-  addHubCadColliders(b, a, c);
+  const impactColliders = addHubCadColliders(b, a, c);
   // [M Table 5-3] The DMX lights shine through the diffusers that cap the body: white plastic glowing in alliance colour.
   const lights = new THREE.MeshStandardMaterial({ color: 0xe9eef1, emissive: col, emissiveIntensity: 0.1, roughness: 0.5, transparent: true, opacity: 0.9 });
   if (!addHubCadVisual(b, a, c, lights)) drawHubStandIn(b, a, c, lights);
   addHubBannerVisual(b, a, c);
   // [CAD GE-26318] The net behind the opening, flexible (NetSheet) on the CAD net's own rectangle.
   const nets = [new NetSheet(b.frame, b.root, { ...hubCadNet(a, c), nu: 15, nv: 15, cordSpacing: inch(2), name: `hub-${a}-net` })];
-  return { center: c, lights, nets };
+  return { center: c, lights, nets, impactColliders };
 }
 
 /** Drawn approximation of the HUB (no collision), shown only if the CAD asset could not load. */
