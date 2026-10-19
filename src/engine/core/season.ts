@@ -12,7 +12,6 @@ import type { Rng } from '../random';
 import type { RobotConfig } from '../robot/config';
 import type { AimTarget, Robot, RobotCommand } from '../robot/robot';
 import type { StartArea, StartSpot } from '../startPose';
-import type { HubImpact } from '../audio/gameplayAudio';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -109,8 +108,6 @@ export interface SeasonContext {
    * fades if not refreshed within a moment. `cls` styles it ('pin', 'pin danger').
    */
   cue?(robot: Robot, text: string, cls?: string): void;
-  /** Transient physical hub contact, forwarded by the authority to listening views. */
-  hubImpact?(hit: HubImpact): void;
   /** Should this alliance's human player act automatically (vs. a driver pressing the HP button)? */
   humanPlayerIsAuto(alliance: Alliance): boolean;
 }

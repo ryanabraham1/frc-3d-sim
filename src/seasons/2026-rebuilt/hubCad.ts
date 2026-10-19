@@ -111,8 +111,7 @@ export function hubToField(a: Alliance, c: { x: number; y: number }, x: number, 
  * Static colliders for one hub. FUEL collides with the CAD itself (shell, funnel, ramps, counter). Robots meet a solid box
  * the size of the body instead: a thin CAD panel can be pushed through by a shoving robot, a solid block can't.
  */
-export function addHubCadColliders(b: FieldBuilder, a: Alliance, c: { x: number; y: number }): Set<number> {
-  const handles = new Set<number>();
+export function addHubCadColliders(b: FieldBuilder, a: Alliance, c: { x: number; y: number }): void {
   const size = 47 * 0.0254;
   b.box([c.x, c.y, HUB_CAD.bodyTop / 2], [size, size, HUB_CAD.bodyTop], { visible: false, collide: 'robots', friction: 0.4, restitution: 0.1 });
   for (const part of HUB_CAD_PARTS) {
@@ -121,10 +120,8 @@ export function addHubCadColliders(b: FieldBuilder, a: Alliance, c: { x: number;
       const [x, y, z] = hubToField(a, c, part.vertices[i], part.vertices[i + 1], part.vertices[i + 2]);
       v[i] = x; v[i + 1] = y; v[i + 2] = z;
     }
-    const collider = b.trimesh(v, part.indices, { collide: 'pieces', friction: 0.4, restitution: 0.25 });
-    if (collider) handles.add(collider.handle);
+    b.trimesh(v, part.indices, { collide: 'pieces', friction: 0.4, restitution: 0.25 });
   }
-  return handles;
 }
 
 /**

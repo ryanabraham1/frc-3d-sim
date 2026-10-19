@@ -183,7 +183,6 @@ export type HostMsg =
   | { t: 'resume'; setup: MatchSetup }
   | { t: 'toast'; msg: string; kind: ToastKind; alliance?: Alliance }
   | { t: 'cue'; text: string; cls?: string }
-  | { t: 'hubImpact'; hit: import('../audio/gameplayAudio').HubImpact }
   | { t: 'to-lobby' }
   | { t: 'notice'; message: string };
 

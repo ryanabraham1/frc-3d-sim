@@ -232,8 +232,6 @@ export class Robot {
   private readonly intakeGuide: THREE.Object3D[] = [];
   /** Replicated mechanism bits (1 intake, 2 pass, 4 shot blocker out) on multiplayer clients; null = read lastCommand. */
   private netAct: number | null = null;
-  /** Actual mechanism activity, including worker and network replicas. */
-  get mechanismActivity(): number { return this.netAct ?? this.actBits(); }
   /** Placement-season end effector pose for team models (set by the season each frame). */
   placeAnim: PlaceAnim | null = null;
   /** Set by CRESCENDO rules; null keeps other seasons independent. */

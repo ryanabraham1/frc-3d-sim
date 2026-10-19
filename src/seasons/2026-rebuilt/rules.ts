@@ -1,7 +1,6 @@
 import { captureFields, restoreFields } from '@engine/net/recovery';
 import { fuelCrossedHubFunnel } from './hubStructure';
 import { HUB_CAD } from './hubCad';
-import { HubContactAudio } from './hubContactAudio';
 import * as THREE from 'three';
 import { Alliance, ALLIANCES, opponent } from '@engine/coords';
 import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/season';
@@ -58,7 +57,6 @@ interface InHub {
  * with grace windows, TOWER climbing + assessment, human player CHUTE/CORRAL, fouls G403 & G407.
  */
 export class RebuiltRules implements SeasonRules {
-  private readonly contactAudio = new HubContactAudio();
   recoveryState() {
     return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
       ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
@@ -263,7 +261,6 @@ export class RebuiltRules implements SeasonRules {
   // ─────────────────────────── SeasonRules ───────────────────────────
 
   stage(): void {
-    this.contactAudio.reset();
     const { pool, robots, rng } = this.ctx;
     this.pins.reset();
     this.ref.reset();
@@ -373,7 +370,6 @@ export class RebuiltRules implements SeasonRules {
   }
 
   afterStep(dt: number): void {
-    if (this.ctx.hubImpact) this.contactAudio.update(this.ctx.pool, [this.refs.hubs.blue, this.refs.hubs.red], this.now, this.ctx.hubImpact);
     const { pool, frame, score, clock, robots, toast } = this.ctx;
     const t = this.now;
     const pid = this.periodId;

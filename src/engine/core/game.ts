@@ -3,7 +3,6 @@ import { CameraRig } from '../camera/cameras';
 import { Alliance, FieldFrame } from '../coords';
 import { Hud } from '../hud/hud';
 import { cueFor, Sfx } from '../audio/sfx';
-import { GameplayAudio, type HubImpact } from '../audio/gameplayAudio';
 import { TouchControls, isTouchDevice } from '../input/touchControls';
 import { DEFAULT_CONTROLS_HELP, DriverInput, InputManager } from '../input/input';
 import type { MatchClock, PeriodChange } from '../match/clock';
@@ -274,7 +273,6 @@ export class Game {
     }, {
       toast: (msg, kind, alliance, robot) => self.toast(msg, kind, alliance, robot),
       cue: (robot, text, cls) => self.cue(robot, text, cls),
-      hubImpact: (hit) => self.onHubImpact(hit),
       humanPlayerIsAuto(a: Alliance) {
         if (self.role === 'local') return !self.player || a !== self.player.alliance || self.settings.autoHumanPlayer;
         return self.setup.autoHumanPlayer || !self.setup.robots.some((r) => r.alliance === a && !r.bot);
@@ -311,7 +309,6 @@ export class Game {
           const m = data as HostMsg;
           if (m?.t === 'toast') this.hud.toast(m.msg, m.kind, m.alliance);
           if (m?.t === 'cue') this.hud.showBanner(m.text, CUE_SECONDS, m.cls);
-          if (m?.t === 'hubImpact') this.gameplayAudio.hubImpact(m.hit);
           if (m?.t === 'notice') this.hud.toast(m.message, 'warn');
         }),
       );
@@ -436,7 +433,6 @@ export class Game {
     const p = this.player;
     if (e.k === 'toast') { if (e.robot === undefined || e.robot === p?.id) this.hud.toast(e.msg, e.kind, e.alliance); }
     else if (e.k === 'cue') { if (e.robot === p?.id) this.hud.showBanner(e.text, CUE_SECONDS, e.cls); }
-    else if (e.k === 'hubImpact') this.onHubImpact(e.hit);
     else if (e.k === 'period') this.onPeriodChange(e.ch);
     else if (e.k === 'results') { this.remoteResults = e.res; this.showResults(e.res); }
     else if (e.k === 'radio') radioFor(this.ctx).messages.push(e.m);
@@ -660,7 +656,6 @@ export class Game {
     }
     this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
     this.camera.update(dt, this.player?.visualPose ?? null, undefined, this.player?.visual.position.y ?? 0);
-    this.updateGameplayAudio();
     const fadeStart = performance.now();
     this.updateFader(dt);
     this.timings.faderMs += (performance.now() - fadeStart - this.timings.faderMs) * 0.05;
@@ -1035,20 +1030,6 @@ export class Game {
 
   private radioSeq = 0;
   private readonly sfx = new Sfx();
-  private readonly gameplayAudio = new GameplayAudio();
-
-  private onHubImpact(hit: HubImpact): void {
-    this.gameplayAudio.hubImpact(hit);
-    this.hostSync?.send({ t: 'hubImpact', hit });
-  }
-
-  private updateGameplayAudio(): void {
-    const p = this.player;
-    const running = this.state === 'running' && !document.hidden && !(this.role === 'client' && this.clientModal === 'local');
-    const position = p?.visual.position ?? this.renderer.camera.position;
-    const bits = p?.enabled ? p.mechanismActivity : 0;
-    this.gameplayAudio.update(running, this.sfx.muted, !!(bits & 8) && !!p?.config.launcher.enabled, position);
-  }
   /** Multiplayer client: period seen at the last clock snapshot (for sound cues). */
   private lastPeriod: { id: string; mode: string } | null = null;
 
@@ -1245,7 +1226,6 @@ export class Game {
     this.fader.clear();
     this.hud.dispose();
     this.sfx.dispose();
-    this.gameplayAudio.dispose();
     this.renderer.dispose();
     this.world.free();
   }
