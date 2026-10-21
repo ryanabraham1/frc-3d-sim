@@ -24,7 +24,17 @@ let game: Game | null = null;
 let generation = 0;
 /** The multiplayer lobby lives across menu ↔ match. */
 const lobby = new LobbyController();
-startPresence();
+startPresence({
+  lobby,
+  isPlaying: () => !!game,
+  showLobby: () => menu('multiplayer'),
+  join: async (room, name) => {
+    stopGame();
+    lobby.leave();
+    menu('multiplayer');
+    await lobby.join(room, name);
+  },
+});
 
 function stopGame(): void {
   generation++;

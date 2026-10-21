@@ -57,6 +57,8 @@ export interface RoomListing {
   ranked?: boolean;
 }
 
+export interface OnlinePlayer { id: string; name: string }
+
 export type RelayRequest =
   /** `client` is a per-tab id: a new join from the same tab replaces any ghost the old page left behind. */
   | { op: 'create'; name: string; meta?: RoomMeta; client?: string }
@@ -68,7 +70,9 @@ export type RelayRequest =
   /** Ask for the public room list. */
   | { op: 'list' }
   /** Anonymous site presence, shared across this browser's tabs. */
-  | { op: 'presence'; client: string }
+  | { op: 'presence'; client: string; name?: string }
+  | { op: 'invite'; to: string; room: string; token: string }
+  | { op: 'invite-answer'; id: string; accept: boolean }
   /** WebRTC signaling, restricted to the room's host/client links. */
   | { op: 'signal'; to: string; data: unknown }
   /** Host: skip relay snapshots for peers currently receiving direct snapshots. */
@@ -126,7 +130,13 @@ export interface RankedRosterEntry {
 }
 
 export type RelayEvent =
-  | { op: 'presence'; count: number }
+  | { op: 'presence'; count: number; players?: OnlinePlayer[]; self?: string }
+  | { op: 'lobby-invite'; id: string; from: string; room: string; expires: number }
+  | { op: 'invite-sent'; to: string }
+  | { op: 'invite-result'; to: string; accepted: boolean }
+  | { op: 'invite-error'; message: string }
+  | { op: 'invite-dismissed'; id: string }
+  | { op: 'invite-accepted'; room: string }
   | { op: 'created'; room: string; peerId: string; token: string }
   | { op: 'joined'; room: string; peerId: string; hostId: string; token: string; resumed?: boolean }
   | { op: 'rooms'; rooms: RoomListing[] }

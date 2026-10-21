@@ -307,6 +307,11 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.finish('Connection lost');
   }
 
+  /** Proof of this socket's room membership, sent only to the relay when inviting someone. */
+  get inviteProof(): { room: string; token: string } | null {
+    return this.connected ? { room: this.room!, token: this.token } : null;
+  }
+
   async create(name: string, meta?: RoomMeta): Promise<void> {
     const ev = await this.request({ op: 'create', name, meta, client: this.clientId });
     if (ev.op !== 'created') throw new Error('Unexpected relay reply');

@@ -54,6 +54,29 @@ async function peer() {
 }
 
 describe('relay', () => {
+  it('invites through site sockets using real private room membership, then joins on acceptance', async () => {
+    const hostGame = await peer();
+    hostGame.send({ op: 'create', name: 'Host', meta: { visibility: 'private' } });
+    const room = await hostGame.next('created');
+    const hostSite = await peer();
+    hostSite.send({ op: 'presence', client: 'site-host-aaaaaaaaaaaa', name: 'Host' });
+    await hostSite.next('presence');
+    const guestSite = await peer();
+    guestSite.send({ op: 'presence', client: 'site-guest-bbbbbbbbbbb', name: 'Guest' });
+    const roster = await guestSite.next('presence');
+    expect(JSON.stringify(roster)).not.toContain(room.room);
+    hostSite.send({ op: 'invite', to: roster.self!, room: room.room, token: 'invalid' });
+    expect((await hostSite.next('invite-error')).message).toContain('open casual lobby');
+    hostSite.send({ op: 'invite', to: roster.self!, room: room.room, token: room.token });
+    const invite = await guestSite.next('lobby-invite');
+    expect(invite.room).toBe(room.room);
+    guestSite.send({ op: 'invite-answer', id: invite.id, accept: true });
+    const accepted = await guestSite.next('invite-accepted');
+    const guestGame = await peer();
+    guestGame.send({ op: 'join', room: accepted.room, name: 'Guest' });
+    expect((await guestGame.next('joined')).room).toBe(room.room);
+  });
+
   it('counts site presence across tabs without counting probes or multiplayer sockets twice', async () => {
     const a = await peer();
     a.send({ op: 'presence', client: 'browser-aaaaaaaaaaaa' });

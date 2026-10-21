@@ -52,6 +52,13 @@ Use a Vite project, `npm run build`, and output directory `dist` (already in `ve
 Redeploy after changing this value: Vite embeds it at build time. Share the Vercel production URL,
 not the Worker URL. Frontend and relay releases are separate; updating one does not deploy the other.
 
+The top-bar online directory uses a separate presence socket so browsing and solo play count too.
+Tabs in the same browser share one entry. Lobby invitations require proof of current casual-room
+membership, are delivered privately as Accept/Decline popups, and expire after one minute.
+Deploy the relay before pushing frontend changes to this protocol, then verify a production
+`presence` reply includes `players` and test an invitation. A frontend-only push leaves old relays
+unable to answer new operations; the badge times out after ten seconds and retries automatically.
+
 ## Local checks and fallback diagnostics
 
 ```sh

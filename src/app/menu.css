@@ -1,5 +1,6 @@
 /* ═════════════ Menu (dark, purple accent) ═════════════ */
-.shell {
+.shell,
+.presence-layer {
   --bg: #08080b;
   --surface: #121217;
   --surface-2: #17171e;
@@ -15,6 +16,8 @@
   --blue: #4f8cff;
   --display: 'Barlow Condensed', 'Space Grotesk', Impact, sans-serif;
   --gutter: clamp(16px, 4.5vw, 96px);
+}
+.shell {
   position: fixed;
   inset: 0;
   display: flex;
@@ -1508,3 +1511,48 @@ button.team-chip:hover:not(:disabled) {
 @media (max-width: 700px) {
   .online-count { padding: 6px 8px; font-size: 11px; }
 }
+
+button.online-count { cursor: pointer; font-family: inherit; }
+button.online-count:hover,
+button.online-count[aria-expanded="true"] { border-color: var(--accent); color: var(--text); }
+.online-panel,
+.invite-toast {
+  background: var(--surface, #17171d);
+  border: 1px solid var(--border-strong, #37373f);
+  border-radius: 16px;
+  box-shadow: 0 16px 60px #0008;
+  color: var(--text, #f3f3f5);
+  font-family: var(--body, 'Space Grotesk', sans-serif);
+}
+.online-panel {
+  position: fixed;
+  z-index: 110;
+  top: 70px;
+  right: max(16px, env(safe-area-inset-right));
+  width: min(390px, calc(100vw - 32px));
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  padding: 20px;
+}
+.online-panel[hidden] { display: none; }
+.online-panel header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.online-panel h2 { font-family: var(--display); font-size: 26px; margin: 0; }
+.online-close { border: none; background: transparent; color: inherit; font-size: 26px; min-width: 44px; min-height: 44px; cursor: pointer; }
+.online-panel form { display: flex; align-items: flex-end; gap: 8px; margin-top: 16px; }
+.online-panel label { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); }
+.online-panel input { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2); color: var(--text); padding: 10px; font: inherit; font-size: 14px; }
+.online-help, .online-notice { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.online-notice:not(:empty) { color: var(--text); }
+.online-person { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.online-person > span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.online-person b { overflow-wrap: anywhere; font-size: 14px; }
+.online-person small { font-size: 11px; color: var(--muted); }
+.online-person i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #34d399; }
+.online-panel .bbtn, .invite-toast .bbtn { min-height: 40px; padding: 0 12px; flex: none; font-size: 13px; }
+.invite-toasts { position: fixed; top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); z-index: 120; display: grid; gap: 12px; width: min(350px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; pointer-events: none; }
+.invite-toast { padding: 20px; pointer-events: auto; border-color: var(--accent, #8b70ef); }
+.invite-toast-heading { color: var(--accent, #8b70ef); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 10px; }
+.invite-toast > b { font-size: 18px; overflow-wrap: anywhere; }
+.invite-toast p { color: var(--muted, #a0a0ac); font-size: 13px; line-height: 1.6; margin: 8px 0 16px; }
+.invite-toast > div:last-of-type { display: flex; flex-wrap: wrap; gap: 8px; }
+.invite-toast > small { display: block; color: var(--muted, #a0a0ac); font-size: 10px; margin-top: 12px; }
