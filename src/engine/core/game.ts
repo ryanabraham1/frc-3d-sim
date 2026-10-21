@@ -1,5 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
 import { CameraRig } from '../camera/cameras';
+import { SPECTATOR_VIEWS, SPECTATOR_LABELS, type SpectatorView } from '../camera/spectator';
 import { Alliance, FieldFrame } from '../coords';
 import { Hud } from '../hud/hud';
 import { cueFor, Sfx } from '../audio/sfx';
@@ -143,6 +144,8 @@ export class Game {
   get ctx(): SeasonContext { return this.world.ctx; }
   private get robotSetups(): Map<number, RobotSetup> { return this.world.robotSetups; }
   readonly camera: CameraRig;
+  private spectatorRobot = 0;
+  private spectatorControls: HTMLElement | null = null;
   /** Fades field elements that hide the player's robot from the camera. */
   private fader!: OcclusionFader;
   private readonly fadeTargets = [new Vector3(), new Vector3()];
@@ -245,16 +248,6 @@ export class Game {
     });
     this.hud = new Hud(container, season.controlsHelp ?? DEFAULT_CONTROLS_HELP);
     this.autoIntake = settings.autoIntake;
-    if (isTouchDevice()) {
-      this.touch = new TouchControls(container, this.input, {
-        humanPlayerButtons: season.humanPlayerButtons ?? 1,
-        levels: season.maxScoringLevel ?? season.maxClimbLevel,
-        blocker: () => !!this.player && (!!this.player.config.shotBlocker || this.player.manualHopper),
-        labels: season.touchLabels,
-        climber: () => (this.player?.config.climber.maxLevel ?? 0) > 0,
-        algae: () => this.season.id === '2025-reefscape' && !!this.player?.config.options?.algaeGround,
-      });
-    }
 
     // Local AI fills the other stations; network matches retain their human drivers.
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
@@ -279,6 +272,16 @@ export class Game {
       },
     });
     this.player = this.world.player;
+    if (this.player && isTouchDevice()) {
+      this.touch = new TouchControls(container, this.input, {
+        humanPlayerButtons: season.humanPlayerButtons ?? 1,
+        levels: season.maxScoringLevel ?? season.maxClimbLevel,
+        blocker: () => !!this.player && (!!this.player.config.shotBlocker || this.player.manualHopper),
+        labels: season.touchLabels,
+        climber: () => (this.player?.config.climber.maxLevel ?? 0) > 0,
+        algae: () => this.season.id === '2025-reefscape' && !!this.player?.config.options?.algaeGround,
+      });
+    }
     this.player?.showIntakeGuide(true);
     this.scoringLevel = Math.min(this.scoringLevel, this.player?.config.placement?.maxLevel ?? this.scoringLevel);
     this.climbLevel = Math.min(season.maxClimbLevel, this.player?.config.climber.maxLevel ?? season.maxClimbLevel);
@@ -373,10 +376,43 @@ export class Game {
     const eye = this.player ?? this.robots[0];
     const eyePos = eye ? season.driverEye(eye.alliance, eye.station) : season.driverEye(settings.alliance, settings.station);
     this.camera = new CameraRig(this.renderer.camera, this.renderer.renderer.domElement, this.frame, eyePos);
-    this.camera.setMode(this.player ? (settings.camera ?? 'driver') : 'overhead');
+    if (this.player) this.camera.setMode(settings.camera ?? 'driver');
+    else {
+      this.camera.setSpectatorView('broadcast');
+      this.mountSpectatorControls();
+    }
     this.fader = new OcclusionFader(this.ctx.builder.root);
     this.seasonHud = season.createHud(this.ctx, this.rules, this.hud.slots);
 
+  }
+
+  private mountSpectatorControls(): void {
+    const controls = document.createElement('section');
+    controls.className = 'spectator-controls';
+    controls.setAttribute('aria-label', 'Spectator camera');
+    controls.innerHTML = `<span class="spectator-caption">SPECTATING</span><div class="spectator-views">${SPECTATOR_VIEWS.map(view => `<button type="button" data-view="${view}" aria-pressed="false">${SPECTATOR_LABELS[view]}</button>`).join('')}</div><label class="spectator-follow" hidden>Follow<select aria-label="Follow robot"></select></label><small data-view-hint></small>`;
+    const select = controls.querySelector('select')!;
+    this.robots.forEach((robot, i) => {
+      const option = document.createElement('option');
+      option.value = String(i);
+      option.textContent = `${robot.alliance === 'blue' ? 'Blue' : 'Red'} ${robot.station} · Team ${robot.config.teamNumber}`;
+      select.append(option);
+    });
+    select.onchange = () => { this.spectatorRobot = Number(select.value); this.camera.setSpectatorView('follow'); this.syncSpectatorControls(); };
+    controls.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button => {
+      button.onclick = () => { this.camera.setSpectatorView(button.dataset.view as SpectatorView); this.syncSpectatorControls(); };
+    });
+    this.spectatorControls = controls;
+    this.hud.root.append(controls);
+    this.syncSpectatorControls();
+  }
+
+  private syncSpectatorControls(): void {
+    const controls = this.spectatorControls;
+    if (!controls) return;
+    controls.querySelectorAll<HTMLElement>('[data-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.view === this.camera.spectatorView)));
+    controls.querySelector<HTMLElement>('.spectator-follow')!.hidden = this.camera.spectatorView !== 'follow';
+    controls.querySelector<HTMLElement>('[data-view-hint]')!.textContent = this.camera.spectatorView === 'orbit' ? 'Drag to orbit · scroll or pinch to zoom · V changes view' : 'V changes view';
   }
 
   private get logging(): boolean {
@@ -654,8 +690,9 @@ export class Game {
       if (predicting && this.player) this.applyPredictionOffset(this.player, dt);
       this.pool.syncVisuals(alpha);
     }
-    this.camera.chaseIntakeOffset = this.player?.intakeYawOffset ?? 0;
-    this.camera.update(dt, this.player?.visualPose ?? null, undefined, this.player?.visual.position.y ?? 0);
+    const cameraRobot = this.player ?? (this.camera.spectatorView === 'follow' ? this.robots[this.spectatorRobot] : null);
+    this.camera.chaseIntakeOffset = cameraRobot?.intakeYawOffset ?? 0;
+    this.camera.update(dt, cameraRobot?.visualPose ?? null, undefined, cameraRobot?.visual.position.y ?? 0);
     const fadeStart = performance.now();
     this.updateFader(dt);
     this.timings.faderMs += (performance.now() - fadeStart - this.timings.faderMs) * 0.05;
@@ -700,7 +737,7 @@ export class Game {
 
   /** See-through whatever field element is between the camera and the player's robot, in every view. */
   private updateFader(dt: number): void {
-    const robot = this.player;
+    const robot = this.player ?? (this.camera.spectatorView === 'follow' ? this.robots[this.spectatorRobot] : null);
     if (robot) {
       const [low, high] = this.fadeTargets;
       low.copy(robot.visual.position).y += 0.25;
@@ -713,9 +750,10 @@ export class Game {
     if (inp.toggleHelp) this.hud.toggleHelp();
     if (inp.cameraNext) {
       this.camera.next();
+      this.syncSpectatorControls();
       this.hud.toast(`Camera: ${this.camera.label}`);
     }
-    if (inp.cameraFlip && this.camera.mode === 'chase') {
+    if (inp.cameraFlip && this.camera.mode === 'chase' && this.player) {
       this.camera.toggleChaseFacing();
       this.hud.toast(`Camera: ${this.camera.label}`);
     }
@@ -1078,7 +1116,7 @@ export class Game {
           `<div class="dim">? for controls</div>`,
       );
     } else {
-      this.hud.setInfo(`<div><b>Spectating</b></div>${net}<div>Camera: ${this.camera.label} <span class="dim">(V${this.camera.mode === 'chase' ? ' · T flips' : ''})</span></div>`);
+      this.hud.setInfo(`<div><b>Spectating</b></div>${net}<div>Camera: ${this.camera.label} <span class="dim">(V)</span></div>`);
     }
     this.seasonHud.update();
   }

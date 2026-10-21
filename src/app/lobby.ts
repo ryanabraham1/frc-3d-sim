@@ -128,6 +128,16 @@ export class LobbyController {
   private lastMeta = '';
   private lastChatAt = new Map<string, number>();
 
+  private readonly chatListeners = new Set<(chat: readonly ChatLine[]) => void>();
+  subscribeChat(listener: (chat: readonly ChatLine[]) => void): () => void {
+    this.chatListeners.add(listener);
+    listener(this.lobby?.chat ?? []);
+    return () => { this.chatListeners.delete(listener); };
+  }
+  private notifyChat(): void {
+    for (const listener of this.chatListeners) listener(this.lobby?.chat ?? []);
+  }
+
   onChange: () => void = () => {};
   /** Public room list changed (so the page can refresh just that list). */
   onRooms: (rooms: RoomListing[]) => void = () => {};
@@ -1020,6 +1030,7 @@ export class LobbyController {
     const lobby = this.lobby;
     if (!lobby) return;
     lobby.chat = [...(lobby.chat ?? []), line].slice(-CHAT_HISTORY);
+    this.notifyChat();
   }
 
   private hostChat(from: string, raw: unknown): void {
@@ -1156,6 +1167,7 @@ export class LobbyController {
         // A host broadcast must not yank the robot out of my hand mid-drag.
         const dragged = placementDragging() ? this.me?.spot : undefined;
         this.lobby = m.lobby;
+        this.notifyChat();
         if (dragged && this.me) this.me.spot = dragged;
         this.onChange();
         break;

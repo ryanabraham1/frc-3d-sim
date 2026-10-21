@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FieldFrame, FieldPoint, FieldPose } from '../coords';
 import { clamp, wrapAngle } from '../units';
+import { spectatorFraming, SPECTATOR_VIEWS, SPECTATOR_LABELS, type SpectatorView } from './spectator';
 
 export type CameraMode = 'driver' | 'follow' | 'chase' | 'overhead' | 'orbit';
 export const CAMERA_MODES: CameraMode[] = ['driver', 'follow', 'chase', 'overhead', 'orbit'];
@@ -33,6 +34,9 @@ const FOLLOW_WALL_OVERHANG = 0.8;
  */
 export class CameraRig {
   mode: CameraMode = 'driver';
+  spectatorView: SpectatorView | null = null;
+  private spectatorAspect = 0;
+  private spectatorFov = 0;
   private orbit: OrbitControls;
   private readonly lookAt = new THREE.Vector3();
   private readonly desiredPos = new THREE.Vector3();
@@ -62,6 +66,7 @@ export class CameraRig {
 
   setMode(mode: CameraMode): void {
     if (!CAMERA_MODES.includes(mode)) mode = 'follow';
+    this.spectatorView = null;
     this.mode = mode;
     this.orbit.enabled = mode === 'orbit';
     if (mode === 'orbit') {
@@ -69,6 +74,20 @@ export class CameraRig {
       this.orbit.update();
     }
     this.initialized = false;
+  }
+
+  setSpectatorView(view: SpectatorView): void {
+    this.setMode(view === 'orbit' ? 'orbit' : view === 'follow' ? 'chase' : 'overhead');
+    this.spectatorView = view;
+    this.spectatorAspect = 0;
+    if (view === 'orbit') {
+      const fitted = spectatorFraming(this.frame, 'broadcast', this.camera.fov, this.camera.aspect);
+      this.camera.position.copy(fitted.position);
+      this.lookAt.copy(fitted.look);
+      this.orbit.target.copy(fitted.look);
+      this.orbit.maxDistance = Math.max(40, this.camera.position.distanceTo(fitted.look) * 2);
+      this.orbit.update();
+    }
   }
 
   /** Swing the chase view between the intake side and the shooter side. */
@@ -79,11 +98,16 @@ export class CameraRig {
 
   /** Display name of the current view (chase says which end it is looking along). */
   get label(): string {
+    if (this.spectatorView) return SPECTATOR_LABELS[this.spectatorView];
     if (this.mode !== 'chase') return CAMERA_LABELS[this.mode];
     return `Chase (${this.chaseFacing === 'intake' ? 'intake view' : 'shooter view'})`;
   }
 
   next(): CameraMode {
+    if (this.spectatorView) {
+      this.setSpectatorView(SPECTATOR_VIEWS[(SPECTATOR_VIEWS.indexOf(this.spectatorView) + 1) % SPECTATOR_VIEWS.length]);
+      return this.mode;
+    }
     const i = CAMERA_MODES.indexOf(this.mode);
     this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
     return this.mode;
@@ -100,6 +124,18 @@ export class CameraRig {
     const f = this.frame;
     const t = target ?? { x: f.length / 2, y: f.width / 2, yaw: 0 };
     const k = this.initialized ? 1 - Math.exp(-dt * 6) : 1;
+    if (this.spectatorView && this.spectatorView !== 'follow' && this.spectatorView !== 'orbit') {
+      if (!this.initialized || this.spectatorAspect !== this.camera.aspect || this.spectatorFov !== this.camera.fov) {
+        const fitted = spectatorFraming(f, this.spectatorView, this.camera.fov, this.camera.aspect);
+        this.camera.position.copy(fitted.position);
+        this.lookAt.copy(fitted.look);
+        this.camera.lookAt(this.lookAt);
+        this.spectatorAspect = this.camera.aspect;
+        this.spectatorFov = this.camera.fov;
+        this.initialized = true;
+      }
+      return;
+    }
     switch (this.mode) {
       case 'driver': {
         const e = this.driverEye;

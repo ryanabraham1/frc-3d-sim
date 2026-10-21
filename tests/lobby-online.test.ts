@@ -96,6 +96,34 @@ describe('online lobbies', () => {
     watcher.close();
   });
 
+  it('streams match chat between drivers and late spectators and unsubscribes cleanly', async () => {
+    // Each controller represents a separate browser tab, not Node's shared sessionStorage.
+    vi.stubGlobal('sessionStorage', { getItem: () => null, setItem() {} });
+    const host = player();
+    await host.create('Host');
+    const driver = player();
+    await driver.join(host.client.room, 'Driver');
+    await until(() => driver.lobby?.players.length === 2);
+    host.startMatch();
+    expect(host.lobby!.inMatch).toBe(true);
+    const spectator = player();
+    await spectator.join(host.client.room, 'Watcher');
+    await until(() => spectator.lobby?.players.length === 3);
+    expect(spectator.me?.slot).toBeNull();
+    const hostMessages: string[] = [];
+    const guestMessages: string[] = [];
+    const offHost = host.subscribeChat(chat => hostMessages.push(chat.at(-1)?.text ?? ''));
+    const offGuest = spectator.subscribeChat(chat => guestMessages.push(chat.at(-1)?.text ?? ''));
+    spectator.sendChat('Watching the blue end');
+    await until(() => hostMessages.includes('Watching the blue end') && guestMessages.includes('Watching the blue end'));
+    offGuest();
+    host.sendChat('Welcome to the live match');
+    await until(() => driver.lobby!.chat!.some(c => c.text === 'Welcome to the live match'));
+    expect(guestMessages).not.toContain('Welcome to the live match');
+    expect(hostMessages).toContain('Welcome to the live match');
+    offHost();
+  });
+
   it('host chat reaches everyone, trimmed and rate limited', async () => {
     const a = player();
     await a.create('Ann');

@@ -5,6 +5,7 @@ import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
 import { startPresence } from './app/presence';
+import { MatchChat } from './app/matchChat';
 import { prepareCadModels } from '@engine/robot/cadModels';
 import { discardSimulationWorker, warmSimulationWorker } from '@engine/sim/workerBoot';
 import { inject } from '@vercel/analytics';
@@ -20,6 +21,7 @@ window.addEventListener('pageshow', (event) => {
 
 const app = document.getElementById('app')!;
 let game: Game | null = null;
+let matchChat: MatchChat | null = null;
 /** Bumped on every start/stop so a slow load can't install a stale match. */
 let generation = 0;
 /** The multiplayer lobby lives across menu ↔ match. */
@@ -39,6 +41,8 @@ startPresence({
 function stopGame(): void {
   generation++;
   discardSimulationWorker();
+  matchChat?.dispose();
+  matchChat = null;
   game?.dispose();
   game = null;
   app.innerHTML = '';
@@ -192,6 +196,7 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client', recovery
     { role, client: lobby.client, setup, recovering: !!recovery, onCheckpoint: state => lobby.updateRecovery(state) },
   );
   if (recovery) game.restoreRecovery(recovery);
+  matchChat = new MatchChat(game.hud.root, lobby, game.input);
   game.start();
   (window as unknown as { game: Game }).game = game;
 }

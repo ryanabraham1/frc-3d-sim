@@ -124,3 +124,49 @@ describe('occlusion fader', () => {
     expect(wall.material).not.toBe(shared);
   });
 });
+
+describe('spectator camera framing', () => {
+  for (const aspect of [16 / 9, 4 / 3, 9 / 16]) for (const view of ['broadcast', 'overhead', 'blue', 'red'] as const) {
+    it(`fits the full field in ${view} at aspect ${aspect}`, () => {
+      const { r, cam, frame } = rig();
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+      r.setSpectatorView(view);
+      r.update(1 / 60, null);
+      cam.updateMatrixWorld(true);
+      for (const x of [0, 16]) for (const y of [0, 8]) for (const z of [0, 4]) {
+        const projected = frame.toWorld(x, y, z).project(cam);
+        expect(Math.abs(projected.x)).toBeLessThanOrEqual(.79);
+        expect(Math.abs(projected.y)).toBeLessThanOrEqual(.79);
+        expect(projected.z).toBeLessThan(1);
+      }
+      r.dispose();
+    });
+  }
+  it('refits on viewport changes and cycles spectator views instead of driver cameras', () => {
+    const { r, cam, frame } = rig();
+    r.setSpectatorView('broadcast');
+    r.update(1 / 60, null);
+    cam.aspect = .5;
+    cam.updateProjectionMatrix();
+    r.update(1 / 60, null);
+    cam.updateMatrixWorld(true);
+    expect(Math.abs(frame.toWorld(16, 8, 0).project(cam).x)).toBeLessThan(.79);
+    r.next();
+    expect(r.spectatorView).toBe('overhead');
+    r.setSpectatorView('orbit');
+    expect(cam.position.length()).toBeGreaterThan(5);
+    r.next();
+    expect(r.spectatorView).toBe('broadcast');
+    r.dispose();
+  });
+  it('follows a chosen robot instead of the center of the field', () => {
+    const { r, cam } = rig();
+    r.setSpectatorView('follow');
+    settle(r, { x: 3, y: 2, yaw: 0 });
+    const first = cam.position.clone();
+    settle(r, { x: 9, y: 2, yaw: 0 });
+    expect(cam.position.x - first.x).toBeCloseTo(6, 2);
+    r.dispose();
+  });
+});

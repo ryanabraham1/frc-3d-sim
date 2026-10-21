@@ -51,6 +51,17 @@ export class InputManager {
   private prevPad = new Map<number, boolean>();
   private padEdges = new Set<number>();
   enabled = true;
+  private typing = false;
+
+  /** Release held controls when a chat field takes focus; never resume a stale drive/shoot key. */
+  setTyping(active: boolean): void {
+    this.typing = active;
+    this.keys.clear();
+    this.pressed.clear();
+    this.virtual.held.clear();
+    this.virtual.pressed.clear();
+    this.virtual.forward = this.virtual.left = 0;
+  }
   /** On-screen controls (touch devices) feed these: held actions, one-shot presses, and analog drive. */
   readonly virtual = {
     held: new Set<ActionId>(),
@@ -60,7 +71,7 @@ export class InputManager {
   };
 
   private readonly down = (e: KeyboardEvent) => {
-    if (!this.enabled) return;
+    if (!this.enabled || this.typing) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
     if (!this.keys.has(e.code)) this.pressed.add(e.code);
@@ -96,6 +107,14 @@ export class InputManager {
 
   /** Read and consume edge events. Call once per rendered frame. */
   read(): DriverInput {
+    if (this.typing) return {
+      forward: 0, left: 0, rotate: 0, shoot: false, pass: false, intake: false,
+      toggleAlgaeMode: false, climb: false, descend: false, humanPlayer: false,
+      humanPlayerAlt: 0, precision: false, levelUp: false, levelDown: false,
+      setLevel: null, targetStep: 0, targetAuto: false, cameraNext: false,
+      cameraFlip: false, pause: false, restart: false, toggleIntake: false,
+      toggleBlocker: false, toggleHelp: false,
+    };
     let forward = (this.k('forward') ? 1 : 0) - (this.k('backward') ? 1 : 0);
     let left = (this.k('left') ? 1 : 0) - (this.k('right') ? 1 : 0);
     let rotate = (this.k('rotateLeft') ? 1 : 0) - (this.k('rotateRight') ? 1 : 0);

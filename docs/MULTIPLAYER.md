@@ -315,3 +315,17 @@ The indexer takes an entry ball first, otherwise draws the nearest ball from the
 retract or pulse intakes, and auto-intake keeps running while shooting. Solo real-ball hoppers retain roller-contact
 pickup and driven floors; multiplayer uses the existing count-based held-load path. Use `?perf` to inspect
 `realHoppers: 0`, `shadows: 0`, `hostSimLoad`, and guest snapshot/prediction counters during a room test.
+
+
+## Watching and chatting during a match
+
+Spectators start in a fitted broadcast view. The camera strip offers Broadcast, Overhead, Blue end,
+Red end, Follow robot, and Free orbit; V cycles these same views. Follow robot lets the viewer pick
+any driver or bot by alliance, station, and team. Whole-field views refit when the viewport changes.
+Free orbit supports dragging and wheel/pinch zoom. Spectators do not see driving touch controls.
+
+The bottom-right Match chat panel uses the existing host-relayed lobby chat, including its history,
+filtering, and rate limit. Drivers and spectators can keep chatting while the match runs. Enter opens
+and focuses chat; Escape releases focus back to the game. Driving controls are suspended while the
+panel has keyboard focus, and held inputs are cleared on return. Collapse the panel for more room;
+new messages show an unread badge. On touch devices it starts collapsed and stays above the controls.

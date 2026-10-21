@@ -21,3 +21,26 @@ describe('virtual (touch) input', () => {
     im.dispose();
   });
 });
+
+it('suspends driving and shooting while typing, then clears stale controls on return', () => {
+  const im = new InputManager();
+  im.virtual.forward = 1;
+  im.virtual.held.add('shoot');
+  im.virtual.pressed.add('pause');
+  im.setTyping(true);
+  // A held controller/touch action must not move the robot while entering a message.
+  im.virtual.forward = 1;
+  im.virtual.held.add('shoot');
+  im.virtual.pressed.add('cameraNext');
+  const typing = im.read();
+  expect(typing.forward).toBe(0);
+  expect(typing.shoot).toBe(false);
+  expect(typing.pause).toBe(false);
+  expect(typing.cameraNext).toBe(false);
+  im.setTyping(false);
+  const returned = im.read();
+  expect(returned.forward).toBe(0);
+  expect(returned.shoot).toBe(false);
+  expect(returned.cameraNext).toBe(false);
+  im.dispose();
+});
