@@ -1480,3 +1480,31 @@ button.team-chip:hover:not(:disabled) {
 }
 
 .home-intro h1 { font-size: clamp(54px, 7vw, 100px); margin-bottom: 48px; }
+
+.online-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.online-count i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.online-count.is-live i {
+  background: #34d399;
+  box-shadow: 0 0 7px #34d39955;
+}
+@media (max-width: 700px) {
+  .online-count { padding: 6px 8px; font-size: 11px; }
+}

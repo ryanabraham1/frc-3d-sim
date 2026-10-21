@@ -54,6 +54,31 @@ async function peer() {
 }
 
 describe('relay', () => {
+  it('counts site presence across tabs without counting probes or multiplayer sockets twice', async () => {
+    const a = await peer();
+    a.send({ op: 'presence', client: 'browser-aaaaaaaaaaaa' });
+    expect((await a.next('presence')).count).toBe(1);
+    const tab = await peer();
+    tab.send({ op: 'presence', client: 'browser-aaaaaaaaaaaa' });
+    expect((await tab.next('presence')).count).toBe(1);
+    const game = await peer();
+    game.send({ op: 'create', name: 'Host' });
+    await game.next('created');
+    expect(await NetClient.probe(url, 1000)).toBe(true);
+    const b = await peer();
+    b.send({ op: 'presence', client: 'browser-bbbbbbbbbbbb' });
+    expect((await a.next('presence')).count).toBe(2);
+    expect((await tab.next('presence')).count).toBe(2);
+    expect((await b.next('presence')).count).toBe(2);
+    a.ws.close();
+    await new Promise(r => a.ws.once('close', r));
+    tab.send({ op: 'presence', client: 'browser-aaaaaaaaaaaa' });
+    expect((await tab.next('presence')).count).toBe(2);
+    tab.ws.close();
+    expect((await b.next('presence')).count).toBe(1);
+    expect(relay.roomCount()).toBe(1);
+  });
+
   it('probes readiness over WebSocket without creating a room', async () => {
     expect(await NetClient.probe(url, 1000)).toBe(true);
     expect(relay.roomCount()).toBe(0);

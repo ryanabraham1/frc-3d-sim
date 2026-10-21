@@ -4,6 +4,7 @@ import type { GameSettings } from '@engine/core/season';
 import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
+import { startPresence } from './app/presence';
 import { prepareCadModels } from '@engine/robot/cadModels';
 import { discardSimulationWorker, warmSimulationWorker } from '@engine/sim/workerBoot';
 import { inject } from '@vercel/analytics';
@@ -23,6 +24,7 @@ let game: Game | null = null;
 let generation = 0;
 /** The multiplayer lobby lives across menu ↔ match. */
 const lobby = new LobbyController();
+startPresence();
 
 function stopGame(): void {
   generation++;

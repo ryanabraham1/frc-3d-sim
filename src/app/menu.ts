@@ -16,6 +16,7 @@ import { bindHeadingControls, bindPlacementMap, placementDragging, headingContro
 import type { LobbyController } from './lobby';
 import { bindMultiplayer, multiplayerPage } from './multiplayer';
 import './menu.css';
+import { presenceMarkup } from './presence';
 
 /** Newtons per pound-force. */
 const LBF = 4.4482216;
@@ -744,6 +745,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         <label class="season-pick"><select data-k="season" aria-label="Game season" ${lobby?.lobby && (!lobby.isHost || lobby.lobby.inMatch || lobby.lobby.ranked) ? 'disabled' : ''}>${SEASONS.map((x) => `<option value="${x.id}" ${x.id === season.id ? 'selected' : ''}>${esc(seasonLabel(x))}</option>`).join('')}</select></label>
         <nav class="nav" aria-label="Main">${modeNav}<span class="nav-sep"></span>${nav('controls', 'Controls')}${nav('rules', 'Rules')}${nav('settings', 'Settings')}</nav>
         ${act && act.page !== page ? `<button class="live-chip" data-page="${act.page}"><span class="mp-dot on"></span>${esc(act.label)}</button>` : ''}
+        ${presenceMarkup()}
         <button class="team-chip" data-page="garage" ${locked ? 'disabled' : ''} title="Change your robot in the Garage"><i>${esc(String(s.robot.teamNumber).slice(0, 1))}</i><span>Team ${s.robot.teamNumber}<small>${esc(robotName())}</small></span></button>
       </header>
       <main class="main ${page === 'home' ? 'is-home' : ''}">

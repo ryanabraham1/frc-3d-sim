@@ -67,6 +67,8 @@ export type RelayRequest =
   | { op: 'rejoin'; room: string; token: string }
   /** Ask for the public room list. */
   | { op: 'list' }
+  /** Anonymous site presence, shared across this browser's tabs. */
+  | { op: 'presence'; client: string }
   /** WebRTC signaling, restricted to the room's host/client links. */
   | { op: 'signal'; to: string; data: unknown }
   /** Host: skip relay snapshots for peers currently receiving direct snapshots. */
@@ -124,6 +126,7 @@ export interface RankedRosterEntry {
 }
 
 export type RelayEvent =
+  | { op: 'presence'; count: number }
   | { op: 'created'; room: string; peerId: string; token: string }
   | { op: 'joined'; room: string; peerId: string; hostId: string; token: string; resumed?: boolean }
   | { op: 'rooms'; rooms: RoomListing[] }

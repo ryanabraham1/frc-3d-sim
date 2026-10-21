@@ -120,6 +120,13 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
   const limits: RelayLimits = { ...DEFAULT_LIMITS, ...opts.limits };
   const rooms = new Map<string, Room>();
   let nextPeer = 1;
+  // Separate from room peers: browsing and solo play count, probes and game sockets do not.
+  const presence = new Map<WebSocket, { client: string; seen: number }>();
+  const presenceCount = () => new Set([...presence.values()].map(p => p.client)).size;
+  const broadcastPresence = () => {
+    const text = JSON.stringify({ op: 'presence', count: presenceCount() });
+    for (const ws of presence.keys()) if (ws.readyState === OPEN) ws.send(text);
+  };
 
   // Sliding one-minute counters per IP.
   const hits = { creates: new Map<string, number[]>(), badJoins: new Map<string, number[]>(), ranked: new Map<string, number[]>(), rankedReads: new Map<string, number[]>() };
@@ -330,6 +337,14 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
       }
       if (!req || typeof req !== 'object') return;
       switch (req.op) {
+        case 'presence': {
+          if (typeof req.client !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(req.client)) break;
+          const before = presenceCount();
+          presence.set(ws, { client: req.client, seen: Date.now() });
+          if (before !== presenceCount()) broadcastPresence();
+          else send(peer, { op: 'presence', count: before });
+          break;
+        }
         case 'ping':
           if (typeof req.id === 'number' && Number.isFinite(req.id)) send(peer, { op: 'pong', id: req.id });
           break;
@@ -474,6 +489,9 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
     });
 
     ws.on('close', (code: number) => {
+      const before = presenceCount();
+      presence.delete(ws);
+      if (before !== presenceCount()) broadcastPresence();
       if (peer.ws !== ws) return; // superseded by a rejoin
       ranked.peerGone(peer.id);
       if (code === CLOSE_LEAVE) leave(peer, 'host left');
@@ -484,6 +502,12 @@ export function createRelayCore(wss: WebSocketServer, opts: RelayOptions = {}): 
   });
 
   const ping = setInterval(() => {
+    const before = presenceCount();
+    for (const [ws, p] of presence) {
+      // Background tabs can throttle timers to a minute; allow two missed heartbeats.
+      if (ws.readyState !== OPEN || Date.now() - p.seen > 150_000) presence.delete(ws);
+    }
+    if (before !== presenceCount()) broadcastPresence();
     for (const ws of opts.serverPings === false ? [] : wss.clients) {
       const w = ws as WebSocket & { __alive?: boolean };
       if (w.__alive === false) {
