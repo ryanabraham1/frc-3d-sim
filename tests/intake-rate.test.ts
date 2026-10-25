@@ -26,22 +26,22 @@ function swallowed(rate: number | undefined, seconds: number): number {
 }
 
 it('a robot with an intake rate takes in roughly that many FUEL per second', () => {
-  const n = swallowed(30, 5);
-  expect(n).toBeGreaterThan(30 * 5 - 2);
-  expect(n).toBeLessThan(30 * 5 + 6); // the small start-up burst
+  const n = swallowed(40, 5);
+  expect(n).toBeGreaterThan(40 * 5 - 2);
+  expect(n).toBeLessThan(40 * 5 + 6); // the small start-up burst
 });
 
 it('a faster intake loads more FUEL than a slower one, and none means unlimited', () => {
-  expect(swallowed(40, 3)).toBeGreaterThan(swallowed(30, 3));
+  expect(swallowed(50, 3)).toBeGreaterThan(swallowed(40, 3));
   expect(swallowed(undefined, 1)).toBe(500);
 });
 
 it('every 2026 team robot declares an intake rate and the faster loaders are the wide, uninterrupted ones', () => {
   const byTeam = new Map(season.teamRobots!.map((t) => [t.team, t.config.intake.rate]));
-  for (const [team, rate] of byTeam) expect(rate, `${team}`).toBeGreaterThanOrEqual(27);
+  for (const [team, rate] of byTeam) expect(rate, `${team}`).toBeGreaterThanOrEqual(37);
   expect(byTeam.get(4414)!).toBeGreaterThan(byTeam.get(971)!);
 });
 
-it('no intake is slower than 27 FUEL/s, even a saved slower setting', () => {
-  expect(swallowed(10, 5)).toBeGreaterThan(27 * 5 - 2);
+it('no intake is slower than 37 FUEL/s, even a saved slower setting', () => {
+  expect(swallowed(10, 5)).toBeGreaterThan(37 * 5 - 2);
 });

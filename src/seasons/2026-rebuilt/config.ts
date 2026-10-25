@@ -92,9 +92,11 @@ export const rebuiltShotAccuracy = {
 export const REBUILT_ROBOT_MASS = lb(150);
 
 /** FUEL/s a stock robot's floor intake can swallow [EST]; real teams override it (INTAKE_RATE in teamRobots.ts). */
-export const DEFAULT_INTAKE_RATE = 27;
-/** Slowest floor intake any robot gets, FUEL/s (user decision 2026-10-15). */
-export const MIN_INTAKE_RATE = 27;
+export const DEFAULT_INTAKE_RATE = 37;
+/** Slowest floor intake any robot gets, FUEL/s (user decision 2026-10-15; +10/s on 2026-10-25). */
+export const MIN_INTAKE_RATE = 37;
+/** Flat FUEL/s added to every real team robot's boosted INTAKE_RATE (user decision 2026-10-25). */
+export const INTAKE_RATE_BONUS = 10;
 
 /** Boost applied to every real team robot's INTAKE_RATE (user decision 2026-10-05: intakes felt too weak). */
 export const INTAKE_RATE_BOOST = 1.7;
@@ -281,8 +283,8 @@ export const rebuiltRobotOptions: RobotOption[] = [
   opt('rate', 'Shooter', [['8', '8/s'], ['12', '12/s'], ['16', '16/s'], ['20', '20/s'], ['25', '25/s'], ['30', '30/s'], ['33', '33/s'], ['35', '35/s']],
     (c) => String([8, 12, 16, 20, 25, 30, 33, 35].reduce((b, x) => (Math.abs(x - c.launcher.rate) < Math.abs(b - c.launcher.rate) ? x : b), 8)),
     (c, v) => { c.launcher.rate = Number(v); }),
-  opt('intakeRate', 'Intake speed', [['27', '27/s'], ['30', '30/s'], ['35', '35/s'], ['40', '40/s']],
-    (c) => String([27, 30, 35, 40].reduce((b, x) => (Math.abs(x - (c.intake.rate ?? 27)) < Math.abs(b - (c.intake.rate ?? 27)) ? x : b), 27)),
+  opt('intakeRate', 'Intake speed', [['37', '37/s'], ['40', '40/s'], ['45', '45/s'], ['50', '50/s']],
+    (c) => String([37, 40, 45, 50].reduce((b, x) => (Math.abs(x - (c.intake.rate ?? 37)) < Math.abs(b - (c.intake.rate ?? 37)) ? x : b), 37)),
     (c, v) => { c.intake.rate = Number(v); },
     'FUEL the floor intake can swallow per second; faster refills mean less time stopped.'),
   opt('climb', 'TOWER climb', [['0', 'None'], ['1', 'LEVEL 1'], ['2', 'LEVEL 2'], ['3', 'LEVEL 3']],
