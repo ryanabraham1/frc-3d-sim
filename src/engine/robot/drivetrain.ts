@@ -120,6 +120,24 @@ export function limitWheelForce(w: WheelModel, fx: number, fz: number, vx: numbe
 }
 
 /**
+ * Share of the robot's weight carried by each of four corner wheels (shares sum to 1). Static split follows where the
+ * center of mass sits; acceleration moves weight onto the wheels at the back (forward accel), the outside of a turn
+ * and so on by `height · a / g` — so a tall, top-heavy robot loses front-wheel grip when launching and a low one
+ * barely changes.
+ *
+ * `cx`/`cz`: center of mass offset from the wheel rectangle's center (m; x forward, z right). `height`: center of
+ * mass above the wheel contacts. `ax`/`az`: chassis acceleration forward / right (m/s²). `halfL`/`halfW`: half the
+ * wheel spacing. Wheel `sx`/`sz` are ±1 (front/right = +1). Shares are clamped so no wheel unloads completely.
+ */
+export function wheelLoadShares(corners: readonly { sx: number; sz: number }[], halfL: number, halfW: number,
+  cx: number, cz: number, height: number, ax: number, az: number): number[] {
+  const lim = (f: number) => Math.min(0.9, Math.max(0.1, f));
+  const front = lim(0.5 + (cx - (ax * height) / 9.81) / (2 * halfL));
+  const right = lim(0.5 + (cz - (az * height) / 9.81) / (2 * halfW));
+  return corners.map((k) => (k.sx > 0 ? front : 1 - front) * (k.sz > 0 ? right : 1 - right));
+}
+
+/**
  * Inverse swerve kinematics in world x/z coordinates: each module needs
  * v + omega × r. Uniform desaturation preserves the requested path curvature
  * when translation plus rotation exceeds a drive wheel's attainable speed.

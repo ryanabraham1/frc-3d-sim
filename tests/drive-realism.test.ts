@@ -14,7 +14,7 @@ import { SEASONS, getSeason } from '../src/seasons';
 import { FUEL_MASS } from '../src/seasons/2026-rebuilt/constants';
 import { HeadlessSim } from '../src/engine/testing/headless';
 
-import { swerveSpeedScale } from '../src/engine/robot/drivetrain';
+import { swerveSpeedScale, wheelLoadShares } from '../src/engine/robot/drivetrain';
 
 const FT = 0.3048;
 
@@ -181,5 +181,31 @@ describe('swerve kinematics', () => {
     const fast = spin(cfg.maxSpeed);
     expect(slow).toBeGreaterThan(cfg.maxOmega * .85);
     expect(slow).toBeGreaterThan(fast * 1.3);
+  });
+});
+
+describe('weight transfer', () => {
+  const corners = [{ sx: 1, sz: 1 }, { sx: 1, sz: -1 }, { sx: -1, sz: 1 }, { sx: -1, sz: -1 }];
+  const sum = (a: number[]) => a.reduce((s, x) => s + x, 0);
+  it('splits evenly for a centered, unaccelerated robot and always sums to 1', () => {
+    const s = wheelLoadShares(corners, 0.3, 0.3, 0, 0, 0.2, 0, 0);
+    for (const x of s) expect(x).toBeCloseTo(0.25, 6);
+    expect(sum(wheelLoadShares(corners, 0.3, 0.3, 0.05, -0.02, 0.2, 6, -3))).toBeCloseTo(1, 6);
+  });
+  it('unloads the front wheels when launching forward and loads them when braking', () => {
+    const launch = wheelLoadShares(corners, 0.3, 0.3, 0, 0, 0.25, 8, 0);
+    const brake = wheelLoadShares(corners, 0.3, 0.3, 0, 0, 0.25, -8, 0);
+    expect(launch[0]).toBeLessThan(0.25);
+    expect(launch[2]).toBeGreaterThan(0.25);
+    expect(brake[0]).toBeGreaterThan(0.25);
+  });
+  it('transfers more weight for a higher center of mass, and never fully unloads a wheel', () => {
+    const low = wheelLoadShares(corners, 0.3, 0.3, 0, 0, 0.1, 8, 0)[0];
+    const high = wheelLoadShares(corners, 0.3, 0.3, 0, 0, 0.3, 8, 0)[0];
+    expect(high).toBeLessThan(low);
+    expect(wheelLoadShares(corners, 0.3, 0.3, 0, 0, 2, 20, 20).every((x) => x > 0)).toBe(true);
+  });
+  it('a center of mass toward the front loads the front wheels', () => {
+    expect(wheelLoadShares(corners, 0.3, 0.3, 0.1, 0, 0.2, 0, 0)[0]).toBeGreaterThan(0.25);
   });
 });

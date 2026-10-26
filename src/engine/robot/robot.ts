@@ -8,7 +8,7 @@ import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
 import { DEFAULT_WHEEL_COF, FUEL_PACK_RADIUS, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
-import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
+import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, wheelLoadShares, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
 import { CLIMB_PHASES, type RobotNetState } from '../net/protocol';
 import type { ClimbGrip } from '../field/climbGrip';
@@ -1563,7 +1563,7 @@ export class Robot {
   readonly slopeTractionColliders = new Set<number>();
   private static readonly WHEEL_RADIUS = 0.05;
   private readonly wheelShape: RAPIER.Shape;
-  private readonly wheelHits: { x: number; y: number; z: number; grip: number; nx: number; ny: number; nz: number; ramp:boolean }[] = [];
+  private readonly wheelHits: { x: number; y: number; z: number; grip: number; nx: number; ny: number; nz: number; ramp:boolean; sx: number; sz: number }[] = [];
   private readonly q = new THREE.Quaternion();
 
   /** Vertical component of the chassis up axis: 1 = level, 0 = on its side, < 0 = upside down. */
@@ -1623,7 +1623,7 @@ export class Robot {
       const p = hit.witness1;
       const n = hit.normal1;
       // World.castShape returns the hit surface normal in world coordinates.
-      this.wheelHits.push({ x: p.x, y: p.y, z: p.z, grip: g, nx: n.x, ny: n.y, nz: n.z, ramp });
+      this.wheelHits.push({ x: p.x, y: p.y, z: p.z, grip: g, nx: n.x, ny: n.y, nz: n.z, ramp, sx: Math.sign(a), sz: Math.sign(b) });
       grip += g;
       if (onField) down++;
     }
@@ -1644,6 +1644,25 @@ export class Robot {
   /** Forget last step's drive (call after teleporting the body or setting its velocity, so it isn't read as a shove). */
   resetDriveState(): void {
     this.driven = null;
+    this.lastVel = null;
+    this.accelX = this.accelZ = 0;
+  }
+
+  /** Velocity at the previous drive() call and the smoothed world acceleration (x, z) derived from it, for weight transfer. */
+  private lastVel: { x: number; z: number } | null = null;
+  private accelX = 0;
+  private accelZ = 0;
+  /** Smoothing time of the acceleration estimate (s): ignores single-step contact spikes, follows real launches and stops. [EST] */
+  private static readonly ACCEL_SMOOTH_S = 0.08;
+
+  private updateAccel(dt: number): void {
+    const v = this.body.linvel();
+    if (this.lastVel && dt > 0) {
+      const k = Math.min(1, dt / Robot.ACCEL_SMOOTH_S);
+      this.accelX += (((v.x - this.lastVel.x) / dt) - this.accelX) * k;
+      this.accelZ += (((v.z - this.lastVel.z) / dt) - this.accelZ) * k;
+    }
+    if (this.lastVel) { this.lastVel.x = v.x; this.lastVel.z = v.z; } else this.lastVel = { x: v.x, z: v.z };
   }
 
   /**
@@ -1681,6 +1700,7 @@ export class Robot {
       cmd = { ...cmd, ...this.grip.driveCommand() };
     }
     this.updateWheels();
+    this.updateAccel(dt);
     this.wheelsSlipping = 0;
     const prev = this.driven;
     this.driven = null;
@@ -1758,10 +1778,24 @@ export class Robot {
     this.tankAxis.x = Math.cos(yaw);
     this.tankAxis.z = -Math.sin(yaw);
     const mu = c.wheelCOF ?? DEFAULT_WHEEL_COF;
-    for (const h of this.wheelHits) {
+    // With all four wheels down the weight splits by where the center of mass sits and shifts with acceleration
+    // (launching unloads the front wheels, braking loads them); otherwise it rides evenly on the wheels that touch.
+    let shares: number[] | null = null;
+    if (this.wheelHits.length === 4) {
+      const hl = c.frameLength / 2 - .06, hw = c.frameWidth / 2 - .06;
+      const rot = this.body.rotation(), pos = this.body.translation();
+      const rel = this.tmp.set(com.x - pos.x, com.y - pos.y, com.z - pos.z).applyQuaternion(this.q.set(rot.x, rot.y, rot.z, rot.w).invert());
+      let floor = 0;
+      for (const h of this.wheelHits) floor += h.y / 4;
+      const fwdX = Math.cos(yaw), fwdZ = -Math.sin(yaw); // forward and right (= chassis +z) in world x/z
+      shares = wheelLoadShares(this.wheelHits, hl, hw, rel.x, rel.z, Math.max(0, com.y - floor),
+        this.accelX * fwdX + this.accelZ * fwdZ, this.accelX * -fwdZ + this.accelZ * fwdX);
+    }
+    for (let i = 0; i < this.wheelHits.length; i++) {
+      const h = this.wheelHits[i];
       // The weight rides on the wheels that touch something (a robot rocked up on two wheels presses them down
       // twice as hard); one resting on a game piece grips less.
-      const load = (m * G) / this.wheelHits.length;
+      const load = shares ? m * G * shares[i] : (m * G) / this.wheelHits.length;
       wm.traction = mu * load * h.grip;
       const rx = h.x - com.x;
       const rz = h.z - com.z;
