@@ -32,3 +32,27 @@ it.each(['player', 'bot'] as const)('assigns a loaded hunter past an empty teamm
     else expect(Math.abs(command.vy)).toBeLessThan(0.1);
   } finally { sim.dispose(); }
 });
+
+it('a loaded 1323 hunting the driver raises its shot blocker between them and their HUB', () => {
+  const season = SEASONS.find(s => s.id === '2026-rebuilt')!;
+  const config = season.botRobotConfig!('hard');
+  const madtown = season.teamRobots!.find(r => r.config.model === 'madtown-2026-1323')!.config;
+  const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', station: 2, pose: { x: 2.7, y: C.HUB_CENTER.y, yaw: 0 },
+    extraRobots: [{ config: madtown, alliance: 'red', id: 1, station: 2, pose: { x: 3.4, y: C.HUB_CENTER.y + 0.9, yaw: Math.PI } }] });
+  try {
+    sim.ctx.settings.aiOpponent = { skill: 'einstein' };
+    sim.robot.controller = 'player';
+    sim.rules.stage();
+    sim.rules.onPeriodChange(sim.ctx.clock.start());
+    for (const change of sim.ctx.clock.advance(33.5)) sim.rules.onPeriodChange(change);
+    (sim.rules as RebuiltRules).firstInactive = 'red';
+    const blocker = sim.ctx.robots[1];
+    for (const i of blocker.held.splice(0)) sim.pool.reserve(i);
+    for (const i of sim.pool.indices('reserve').slice(0, blocker.config.hopperCapacity)) { sim.pool.hold(i, blocker.id); blocker.held.push(i); }
+    const pilot = season.createBotPilot!(sim.ctx, sim.rules, blocker);
+    const command = pilot.update(sim.physics.dt);
+    expect(command.block).toBe(true);
+    // It heads for the HUB side of the driver (blue HUB is at larger x than the driver here).
+    expect(command.vx).toBeGreaterThan(0);
+  } finally { sim.dispose(); }
+});

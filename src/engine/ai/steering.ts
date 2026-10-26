@@ -8,7 +8,8 @@ import { clamp, wrapAngle } from '../units';
 export interface BarrierBand {
   xMin: number;
   xMax: number;
-  gaps: { yMin: number; yMax: number; maxRobotHeight?: number; name?: string }[];
+  /** `penalty`: extra route cost (m) of crossing through this gap, e.g. a BUMP that slows a robot down. */
+  gaps: { yMin: number; yMax: number; maxRobotHeight?: number; name?: string; penalty?: number }[];
 }
 
 export interface Circle extends FieldPoint {
@@ -75,7 +76,7 @@ export function routeThroughBands(from: FieldPoint, to: FieldPoint, bands: Barri
       const hi = g.yMax - robotHalfWidth - margin;
       if (lo > hi) continue;
       const gy = centerLanes ? (lo + hi) / 2 : clamp((from.y + to.y) / 2, lo, hi);
-      const cost = Math.abs(from.y - gy) + Math.abs(to.y - gy);
+      const cost = Math.abs(from.y - gy) + Math.abs(to.y - gy) + (g.penalty ?? 0);
       if (!best || cost < best.cost) best = { y: gy, cost };
     }
     if (!best) continue;

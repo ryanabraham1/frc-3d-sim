@@ -170,8 +170,45 @@ export class CycleBot implements AutoPilot {
   private intent = 0;
   private escapes = 0;
 
+  /**
+   * Get out of the human driver's way. A teammate parked at a stance, staged at the line or sweeping FUEL steps aside
+   * when the driver is about to come through, instead of waiting for bumper contact: slide off the driver's predicted
+   * path (the side we're already on) and stop pushing toward them.
+   */
+  private clearDriverLane(cmd: RobotCommand): RobotCommand {
+    if (!this.strategy.yieldToDriver) return cmd;
+    const r = this.robot, p = r.pose;
+    for (const other of this.ctx.robots) {
+      if (other === r || other.controller !== 'player' || other.alliance !== r.alliance || other.isClimbing) continue;
+      const q = other.pose, v = other.fieldVelocity, speed = Math.hypot(v.vx, v.vy);
+      const clearance = (Math.hypot(other.footprint.width, other.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + 0.45;
+      const dx = p.x - q.x, dy = p.y - q.y, d = Math.hypot(dx, dy);
+      if (d > clearance + Math.max(1, speed * 1.2)) continue;
+      // Closest approach along the driver's next ~1.2 s of travel (or where they sit when stopped).
+      let ax = dx, ay = dy, along = 0;
+      if (speed > 0.4) {
+        const ux = v.vx / speed, uy = v.vy / speed;
+        along = clamp(dx * ux + dy * uy, 0, speed * 1.2);
+        ax = dx - ux * along; ay = dy - uy * along;
+      }
+      const miss = Math.hypot(ax, ay);
+      if (miss > clearance) continue;
+      // Sideways out of the lane, harder the sooner and closer they arrive.
+      const nx = miss > 0.02 ? ax / miss : (speed > 0.4 ? -v.vy / speed : dx / (d || 1)), ny = miss > 0.02 ? ay / miss : (speed > 0.4 ? v.vx / speed : dy / (d || 1));
+      const urgency = clamp((clearance - miss) / clearance, 0, 1) * clamp(1.4 - along / Math.max(0.5, speed * 1.2), 0.4, 1);
+      const push = r.config.maxSpeed * this.pace * 0.75 * urgency;
+      // Drop any velocity toward the driver, then add the sidestep.
+      const toward = cmd.vx * -dx / (d || 1) + cmd.vy * -dy / (d || 1);
+      if (toward > 0) { cmd = { ...cmd, vx: cmd.vx + toward * dx / (d || 1), vy: cmd.vy + toward * dy / (d || 1) }; }
+      cmd = { ...cmd, vx: cmd.vx + nx * push, vy: cmd.vy + ny * push };
+      const s = Math.hypot(cmd.vx, cmd.vy), limit = r.config.maxSpeed * this.pace;
+      if (s > limit) cmd = { ...cmd, vx: cmd.vx * limit / s, vy: cmd.vy * limit / s };
+    }
+    return cmd;
+  }
+
   private recover(cmd: RobotCommand, dt: number): RobotCommand {
-    cmd = this.antiPin(cmd, dt);
+    cmd = this.clearDriverLane(this.antiPin(cmd, dt));
     const r = this.robot, now = this.ctx.clock.elapsed;
     if (this.escape && now < this.escape.until) {
       this.previous = r.pose;
@@ -224,16 +261,19 @@ export class CycleBot implements AutoPilot {
     for (const other of this.ctx.robots) {
       if (!this.strategy.yieldToDriver || other === r || other === engage || other.controller !== 'player' || other.alliance !== r.alliance) continue;
       const q = other.pose, velocity = other.fieldVelocity;
-      const radius = (Math.hypot(other.footprint.width, other.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + 0.3;
-      const detour = aroundCircles(p, waypoint, [{ x: q.x + velocity.vx * 0.3, y: q.y + velocity.vy * 0.3, r: radius }]);
+      const radius = (Math.hypot(other.footprint.width, other.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + 0.5;
+      // Where the driver is now and where they will be in a moment: both have to stay clear.
+      const circles = [0.35, 0.8].map((t) => ({ x: q.x + velocity.vx * t, y: q.y + velocity.vy * t, r: radius }));
+      const detour = aroundCircles(p, waypoint, [{ x: q.x, y: q.y, r: radius }, ...circles]);
       if (detour !== waypoint) waypoint = this.strategy.route?.(detour) ?? detour;
     }
     this.distanceToGoal = dist(p, goal);
-    const v = arrive(p, waypoint, r.config.maxSpeed * this.pace, waypoint === goal ? slowRadius : 0.85);
+    // Lane entries and detours are pass-through points: brake only for the real goal.
+    const v = arrive(p, waypoint, r.config.maxSpeed * this.pace, waypoint === goal ? slowRadius : 0.45);
     const near = dist(p, goal) < 0.35 && waypoint === goal;
     // Opponents it would be a foul to touch right now (protected zones) get a much wider berth.
     const obstacles = this.ctx.robots.filter((o) => o !== r && o !== engage).map((o) => ({ ...o.pose,
-      r: (Math.hypot(o.footprint.width, o.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + (this.strategy.yieldToDriver && o.alliance === r.alliance && o.controller === 'player' ? 0.3 : o.alliance !== r.alliance && this.strategy.cautious?.(o) ? 0.75 : 0.08) }));
+      r: (Math.hypot(o.footprint.width, o.footprint.length) + Math.hypot(r.footprint.width, r.footprint.length)) / 2 + (this.strategy.yieldToDriver && o.alliance === r.alliance && o.controller === 'player' ? 0.55 : o.alliance !== r.alliance && this.strategy.cautious?.(o) ? 0.75 : 0.08) }));
     const repulsion = avoid(p, obstacles, 0.45, r.config.maxSpeed * 0.55);
     let vx = v.vx + repulsion.vx, vy = v.vy + repulsion.vy;
     // Circulate clockwise around an approaching teammate. Radial repulsion alone leaves two robots

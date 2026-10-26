@@ -143,6 +143,15 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const t = side(a, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
     return Math.abs(p.x - t.x) < C.TOWER_DEPTH / 2 + 0.35 && Math.abs(p.y - t.y) < C.TOWER_WIDTH / 2 + 0.35;
   });
+  // The human driver on our alliance: FUEL around them and ahead of them is theirs, and a teammate that goes after it
+  // ends up bumper to bumper with them.
+  const driver = () => team.members.find((o) => o !== r && o.controller === 'player' && !o.isClimbing);
+  const driversFuel = (p: FieldPoint): boolean => {
+    const d = driver();
+    if (!d) return false;
+    const q = d.pose, v = d.fieldVelocity, reach = Math.hypot(d.footprint.length, d.footprint.width) / 2 + 0.8;
+    return dist(q, p) < reach || dist({ x: q.x + v.vx * 0.8, y: q.y + v.vy * 0.8 }, p) < reach;
+  };
   // FUEL we chased without getting closer (wedged against a wall, under a robot) is skipped for a while.
   const blocked: { p: FieldPoint; until: number }[] = [];
   let chase: { p: FieldPoint; best: number; since: number } | null = null;
@@ -160,11 +169,11 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const raidable = (p: FieldPoint) => !bot.hunter && raidWindow > (dist(me, p) + dist(p, spot)) / raidSpeed + 8;
     let best: FieldPoint | null = null, cost = maxCost;
     const teammates = team.members.filter(mate => mate !== r).map(mate => ({
-      pose: mate.pose, radius: Math.hypot(mate.footprint.length, mate.footprint.width) / 2 + (mate.controller === 'player' ? 0.55 : 0.1),
+      pose: mate.pose, radius: Math.hypot(mate.footprint.length, mate.footprint.width) / 2 + 0.1,
     }));
     const candidates = scanFuel().filter(({ p }) => filter(p) &&
       (fromWall(p.x) <= C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 || raidable(p)) && !isBlocked(p) && !nearTower(p) &&
-      !teammates.some(mate => dist(mate.pose, p) < mate.radius));
+      !teammates.some(mate => dist(mate.pose, p) < mate.radius) && !driversFuel(p));
     const density=clusterCounts(candidates.map(({p})=>p),1.2);
     for (const [idx,{p}] of candidates.entries()) {
       // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
@@ -213,7 +222,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   };
   const planSweep = (allowed: (q: FieldPoint) => boolean): Sweep | null => {
     const room = Math.max(1, r.capacityLeft);
-    const pts = scanFuel().map(({ p }) => p).filter((q) => allowed(q) && !isBlocked(q) && !nearTower(q));
+    const pts = scanFuel().map(({ p }) => p).filter((q) => allowed(q) && !isBlocked(q) && !nearTower(q) && !driversFuel(q));
     if (pts.length < 4) return null;
     const mates = [...sweepClaims.entries()].filter(([id, sw]) => id !== r.id && ctx.clock.elapsed - sw.since < 8).map(([, sw]) => sw);
     const stride = Math.max(1, Math.floor(pts.length / 110));
@@ -261,7 +270,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   let levelStance: FieldPoint | null = null;
   const stanceSpot = (): FieldPoint => {
     if (levelStance) {
-      const taken = team.members.some((o) => o !== r && dist(o.pose, levelStance!) < Math.max(o.footprint.length, o.footprint.width) + 0.15);
+      const taken = team.members.some((o) => o !== r && dist(o.pose, levelStance!) < Math.max(o.footprint.length, o.footprint.width) + (o.controller === 'player' ? 1.2 : 0.15));
       if (!taken) return levelStance;
       levelStance = null;
     }
@@ -277,7 +286,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     };
     for (let k = 0; k < 3; k++) {
       const p = spotAt(a);
-      const taken = team.members.some((o) => o !== r && dist(o.pose, p) < Math.max(o.footprint.length, o.footprint.width) + 0.15);
+      const taken = team.members.some((o) => o !== r && dist(o.pose, p) < Math.max(o.footprint.length, o.footprint.width) + (o.controller === 'player' ? 1.2 : 0.15));
       if (!taken) return levelStance = p;
       a = towardWall + clamp(off(a) + (off(a) >= 0 ? -0.55 : 0.55) * (k + 1) * (k % 2 ? -1 : 1), -0.8, 0.8);
     }
@@ -348,16 +357,29 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     if (!target) return null;
     team.say(r, `Defending ${team.label(target).replace('You', 'the driver')}`, `defend:${r.id}:${target.id}`, 15);
     const p = target.pose, v = target.fieldVelocity;
-    if (dist(myPose(), p) < 1.25) defending += dt; else defending = Math.max(0, defending - dt);
+    // A shot blocker stands off instead of pushing, so it never builds toward a pin count.
+    if (dist(myPose(), p) < 1.25 && !r.config.shotBlocker) defending += dt; else defending = Math.max(0, defending - dt);
     // Break contact before a 5-count pin (G418) and come back.
     if (defending > 1.8) { retreatUntil = ctx.clock.elapsed + 1.6; defending = 0; }
     if (ctx.clock.elapsed < retreatUntil) {
       const away = Math.atan2(myPose().y - p.y, myPose().x - p.x);
       return bot.driveTo({ x: myPose().x + Math.cos(away) * 1.5, y: clamp(myPose().y + Math.sin(away) * 1.5, 0.8, C.FIELD_WIDTH - 0.8) });
     }
+    const hub = rules.hubCenter(enemy);
+    // A shot blocker (1323) doesn't need to shove: park it between the shooter and its HUB, panel raised and facing the
+    // shooter, and move with it. FUEL fired into the panel drops short. The panel is on the intake side.
+    if (r.config.shotBlocker) {
+      const toHub = Math.atan2(hub.y - p.y, hub.x - p.x);
+      // Right against its bumper: shots climb fast, so the panel only catches them close to the launcher.
+      const gap = (Math.max(target.footprint.length, target.footprint.width) + Math.max(r.footprint.length, r.footprint.width)) / 2 + 0.06;
+      const spot = { x: p.x + Math.cos(toHub) * gap + v.vx * 0.3, y: clamp(p.y + Math.sin(toHub) * gap + v.vy * 0.3, half + 0.1, C.FIELD_WIDTH - half - 0.1) };
+      const cmd = bot.driveTo(spot, Math.atan2(p.y - myPose().y, p.x - myPose().x) + r.intakeYawOffset, target, 0.4);
+      cmd.block = dist(myPose(), spot) < 1.6 && !rules.nearTrenchArm(r, 0.6);
+      cmd.intake = false;
+      return cmd;
+    }
     team.pushing(r);
     // Get between the shooter and its HUB, then lean on it.
-    const hub = rules.hubCenter(enemy);
     const k = dist(myPose(), p) > 2 ? 0.35 : 0;
     const goal = { x: p.x + (hub.x - p.x) * k + v.vx * 0.3, y: p.y + (hub.y - p.y) * k + v.vy * 0.3 };
     return bot.driveTo(goal, Math.atan2(p.y - myPose().y, p.x - myPose().x), target);
@@ -383,6 +405,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     // Hard and up, G408: no intake while FUEL the HUB just released is falling within reach. Normal bots still catch it
     // and give the foul away; benchmarked, Hard bots gave up ~9 fouls a match to it (docs/AI-STRATEGY.md).
     if (bot.hard && cmd.intake && hubFuelNear(CATCH_RADIUS)) cmd.intake = false;
+    // Telescoping hopper (1678): stay trench-height while the small load has room, extend it to keep collecting (the
+    // robot then routes over a BUMP), and let it drop again once the load fits below the rim.
+    if (r.manualHopper) cmd.block = r.held.length >= r.config.hopperExpansion!.startCount - 1;
     return cmd;
   };
   const decide = (dt: number): RobotCommand => {
@@ -415,15 +440,16 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       }
     }
 
+    const human = bot.hunter ? ctx.robots.find((o) => o.alliance === enemy && o.controller === 'player') : undefined;
     // Einstein: while our HUB is off, the best-placed loaded robot hounds the human driver
-    // whenever their HUB is (about to be) live; it breaks off in time to be back for our own shift.
-    if (bot.hunter && r.held.length >= r.config.hopperCapacity * 0.8 && !active && untilActive > toSpot + 2 && remaining > 25) {
-      const human = ctx.robots.find((o) => o.alliance === enemy && o.controller === 'player');
+    // whenever their HUB is (about to be) live; it breaks off in time to be back for our own shift. A robot with a shot
+    // blocker (1323) gets the job first: it raises the panel in the driver's face instead of shoving (defendCommand).
+    if (human && r.held.length >= r.config.hopperCapacity * 0.6 && !active && untilActive > toSpot + 2 && remaining > 25) {
       if (human && !human.isClimbing && (rules.hubActive(enemy) || rules.secondsUntilActive(enemy) < 4)) {
         // Only robots that have finished their refill compete for the job; an empty nearby teammate must not
         // win the assignment and then decline to hunt. Two loaded robots can pressure a large human load.
-        const free = team.members.filter((m) => !m.isClimbing && !m.tippedOver && m.held.length >= m.config.hopperCapacity * 0.8);
-        const cost = (m: Robot) => dist(m.pose, human.pose) - (m.capacityLeft === 0 ? 3 : 0);
+        const free = team.members.filter((m) => !m.isClimbing && !m.tippedOver && m.held.length >= m.config.hopperCapacity * 0.6);
+        const cost = (m: Robot) => dist(m.pose, human.pose) - (m.capacityLeft === 0 ? 3 : 0) - (m.config.shotBlocker ? 3 : 0);
         const hunters = free.sort((a, b) => cost(a) - cost(b)).slice(0, human.held.length > 20 && free.filter((m) => m.capacityLeft === 0).length >= 2 ? 2 : 1);
         if (hunters.includes(r)) {
           team.say(r, `Hunting ${team.label(human).replace('You', 'the driver')}`, `hunt:${r.id}`, 20);

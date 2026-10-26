@@ -18,12 +18,16 @@ export const AUTO_ROUTINES = [
 ];
 
 /** Robots cross each hub row only over the BUMPs or under the TRENCHes. */
+/** Route cost (m) of a BUMP crossing over a TRENCH one; robots too tall for the TRENCH only have the BUMPs. */
+const BUMP_PENALTY = 2.5;
 export const BANDS: BarrierBand[] = (() => {
   const hs = C.HUB_SIZE / 2;
   const gaps = [
     { yMin: 0, yMax: C.TRENCH_OPENING_CENTER_Y * 2, maxRobotHeight: C.TRENCH_CLEARANCE },
-    { yMin: C.HUB_CENTER.y - hs - C.BUMP_WIDTH, yMax: C.HUB_CENTER.y - hs },
-    { yMin: C.HUB_CENTER.y + hs, yMax: C.HUB_CENTER.y + hs + C.BUMP_WIDTH },
+    // Climbing a BUMP costs speed and risks a tip: drivers whose robot fits under the TRENCH take it unless the BUMP
+    // saves well over this much driving.
+    { yMin: C.HUB_CENTER.y - hs - C.BUMP_WIDTH, yMax: C.HUB_CENTER.y - hs, penalty: BUMP_PENALTY },
+    { yMin: C.HUB_CENTER.y + hs, yMax: C.HUB_CENTER.y + hs + C.BUMP_WIDTH, penalty: BUMP_PENALTY },
     { yMin: C.FIELD_WIDTH - C.TRENCH_OPENING_CENTER_Y * 2, yMax: C.FIELD_WIDTH, maxRobotHeight: C.TRENCH_CLEARANCE },
   ];
   const half = hs + 0.05;
