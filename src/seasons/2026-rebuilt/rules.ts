@@ -58,13 +58,13 @@ interface InHub {
  */
 export class RebuiltRules implements SeasonRules {
   recoveryState() {
-    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' ')),
+    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches passingAt'.split(' ')),
       ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
   }
   restoreRecovery(state: unknown): void {
     const s = state as ReturnType<RebuiltRules['recoveryState']>;
     this.applyNetState(s.visible);
-    restoreFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches'.split(' '), s.fields);
+    restoreFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches passingAt'.split(' '), s.fields);
     this.ref.restoreRecovery(s.ref);
     this.pins.restoreRecovery(s.pins);
   }
@@ -78,12 +78,17 @@ export class RebuiltRules implements SeasonRules {
   private inHub = new Map<number, InHub>();
   /** Each FUEL's height (field z) last step, for the funnel crossing test. */
   private lastZ = new Float32Array(0);
-  /** Recently launched FUEL → who launched it and whether from outside their ALLIANCE ZONE (for G407). */
-  private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; t: number; team: number }>();
+  /** Recently launched FUEL → who launched it, whether from outside their ALLIANCE ZONE and whether it was a FEED pass (for G407). */
+  private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; pass?: boolean; t: number; team: number }>();
   private g407Cooldown = new Map<number, number>();
   private g403Called = new Set<number>();
-  /** G418: 3-count on PINS. */
-  private readonly pins = new PinTracker({ rule: 'G418', countSeconds: 3, separation: PIN_SEPARATION });
+  /** Last time each robot was commanded to FEED (pass). */
+  private passingAt = new Map<number, number>();
+  /**
+   * G418: 3-count on PINS, enforced strictly: inside its own ALLIANCE ZONE a robot an opponent is touching that can't
+   * move is pinned (no need to be boxed in), and a count only clears once the robots are 6 ft apart.
+   */
+  private readonly pins = new PinTracker({ rule: 'G418', countSeconds: 3, separation: PIN_SEPARATION, strictZones: true });
   private climbHintAt = -99;
   private towerAuto: Record<Alliance, number> = { red: 0, blue: 0 };
   private towerTeleop: Record<Alliance, number> = { red: 0, blue: 0 };
@@ -94,8 +99,8 @@ export class RebuiltRules implements SeasonRules {
   private readonly g420Award = new Set<number>();
   /** G403: opponent contacts already called after a robot crossed the CENTER LINE in AUTO. */
   private g403Contacts = new Set<string>();
-  /** G408: FUEL the HUB just released that nothing has touched yet. */
-  private hubDrops = new Map<number, { t: number; grounded: boolean }>();
+  /** G408: FUEL the HUB just released that nothing has touched yet, and whether it was last seen dropping into a hopper. */
+  private hubDrops = new Map<number, { t: number; grounded: boolean; into?: number }>();
   /** G408: pool indices of FUEL the HUB released moments ago that has not yet touched the carpet (bots keep clear of it). */
   freshHubFuel(): number[] {
     const out: number[] = [];
@@ -107,6 +112,7 @@ export class RebuiltRules implements SeasonRules {
   private strategicCatches = new Map<number, number>();
   private readonly tmp = new THREE.Vector3();
   private readonly tmp2 = new THREE.Vector3();
+  private readonly tmpQ = new THREE.Quaternion();
 
   constructor(
     private readonly ctx: SeasonContext,
@@ -221,6 +227,11 @@ export class RebuiltRules implements SeasonRules {
     return this.pins.countFor(robotId);
   }
 
+  /** Opponents this robot has an open G418 count against: it has to get 6 ft away from each to clear it. */
+  pinnedBy(robotId: number): number[] {
+    return this.pins.pinnedBy(robotId);
+  }
+
   hubCenter(a: Alliance): { x: number; y: number } {
     return this.refs.hubs[a].center;
   }
@@ -265,7 +276,7 @@ export class RebuiltRules implements SeasonRules {
     this.pins.reset();
     this.ref.reset();
     this.g420Live.clear(); this.g420Award.clear(); this.g403Contacts.clear();
-    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear(); this.inHub.clear();
+    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear(); this.inHub.clear(); this.passingAt.clear();
     const st = stageFuel(
       robots.map((r) => Math.min(r.config.preload, r.config.hopperCapacity)),
       rng,
@@ -428,9 +439,10 @@ export class RebuiltRules implements SeasonRules {
         toast(`MAJOR FOUL G403 — ${r.config.teamNumber} crossed the CENTER LINE in AUTO`, 'foul', r.alliance);
       }
     }
+    for (const r of robots) if (r.lastCommand.pass && !r.lastCommand.shoot) this.passingAt.set(r.id, t);
     this.ref.update(dt);
     if (clock.started && clock.mode !== 'disabled') this.callFouls(dt);
-    if (clock.started && clock.mode !== 'disabled') reportPins(this.pins.updateRobots(dt, robots, this.ctx.physics), this.ctx, t);
+    if (clock.started && clock.mode !== 'disabled') reportPins(this.pins.updateRobots(dt, robots, this.ctx.physics, (r) => this.inAllianceZone(r)), this.ctx, t);
     for (const [id, cd] of this.g407Cooldown) this.g407Cooldown.set(id, cd - dt);
     for (const [idx, l] of this.launches) if (pool.state[idx] !== 'field' || t - l.t > 8) this.launches.delete(idx);
   }
@@ -497,16 +509,20 @@ export class RebuiltRules implements SeasonRules {
     }
 
     // G408: FUEL released by the HUB may not be caught (more than MOMENTARY control) before anything else touches it.
+    // Only a ball that falls straight out of the HUB into a robot's open hopper is a catch; one the intake picks up
+    // as it rolls out of an exit is not.
     for (const [idx, d] of this.hubDrops) {
       const age = t - d.t;
       if (pool.state[idx] === 'held') {
         this.hubDrops.delete(idx);
         const owner = robots.find((r) => r.id === pool.owner[idx]);
-        if (owner && !d.grounded && age < 0.8) this.catchFuel(owner, t);
+        if (owner && !d.grounded && age < 0.8 && d.into === owner.id) this.catchFuel(owner, t);
         continue;
       }
       if (pool.state[idx] !== 'field' || age > 1.5) { this.hubDrops.delete(idx); continue; }
-      if (pool.position(idx).y < pool.radius * 1.3) d.grounded = true;
+      const p = pool.position(idx);
+      if (p.y < pool.radius * 1.3) d.grounded = true;
+      d.into = pool.velocity(idx).y < 0 ? robots.find((r) => this.overHopper(r, p))?.id : undefined;
     }
     for (const [rid, c] of this.catches) {
       if (t - c.last <= 1.2) continue;
@@ -514,6 +530,14 @@ export class RebuiltRules implements SeasonRules {
       const r = robots.find((x) => x.id === rid);
       if (r && !c.called) this.ref.call({ rule: 'G408', kind: 'minor', robot: r, note: 'caught FUEL released by the HUB' });
     }
+  }
+
+  /** A ball (world position) above the robot's bumpers and inside its frame perimeter: dropping into its hopper. */
+  private overHopper(r: Robot, p: { x: number; y: number; z: number }): boolean {
+    const t = r.body.translation(), q = r.body.rotation();
+    const local = this.tmp.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(this.tmpQ.set(-q.x, -q.y, -q.z, q.w));
+    const c = r.config;
+    return local.y > c.bumperTop && Math.abs(local.x) < c.frameLength / 2 && Math.abs(local.z) < c.frameWidth / 2;
   }
 
   /** One FUEL from the HUB went straight into a robot. A run of 3+ is strategic (sitting under the HUB). */
@@ -532,10 +556,11 @@ export class RebuiltRules implements SeasonRules {
 
   private scoreFuel(a: Alliance, idx: number): void {
     const { score } = this.ctx;
-    // G407: FUEL launched into your own HUB while your bumpers were outside your ALLIANCE ZONE.
+    // G407: FUEL launched into your own HUB while your bumpers were outside your ALLIANCE ZONE. A FEED pass lobbed
+    // toward the ALLIANCE ZONE that happens to drop in wasn't launched into the HUB: not called.
     const l = this.launches.get(idx);
     this.launches.delete(idx);
-    if (l && l.outside && l.alliance === a && (this.g407Cooldown.get(l.robotId) ?? 0) <= 0) {
+    if (l && l.outside && !l.pass && l.alliance === a && (this.g407Cooldown.get(l.robotId) ?? 0) <= 0) {
       this.g407Cooldown.set(l.robotId, 2.5);
       score.foul({ t: this.now, alliance: a, kind: 'major', rule: 'G407', robotId: l.robotId, note: 'launched into HUB from outside ALLIANCE ZONE' });
       this.ctx.toast(`MAJOR FOUL G407 — ${l.team} launched into its HUB from outside its ALLIANCE ZONE`, 'foul', a);
@@ -611,12 +636,15 @@ export class RebuiltRules implements SeasonRules {
   onLaunch(robot: Robot, pieceIndex: number): void {
     // Launching anywhere is legal; G407 is assessed if this FUEL ends up in our HUB (see scoreFuel).
     this.ctx.score.tally(robot.id, 'shots');
-    const target = robot.lastCommand.pass && !robot.lastCommand.shoot ? this.passTarget(robot) : this.aimTarget(robot);
+    // A ball still on its way to the flywheel when the driver lets go of FEED is part of the same pass.
+    const pass = !robot.lastCommand.shoot && (robot.lastCommand.pass || this.now - (this.passingAt.get(robot.id) ?? -99) < 0.5);
+    const target = pass ? this.passTarget(robot) : this.aimTarget(robot);
     this.ref.launched(robot, pieceIndex, target?.point ?? null);
     this.launches.set(pieceIndex, {
       robotId: robot.id,
       alliance: robot.alliance,
       outside: !this.inAllianceZone(robot),
+      pass,
       t: this.now,
       team: robot.config.teamNumber,
     });

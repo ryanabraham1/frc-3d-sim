@@ -193,15 +193,19 @@ describe('2026 G417 tipping', () => {
 describe('2026 FUEL calls', () => {
   it('G408: one FUEL caught is a MINOR FOUL; sitting under the HUB for 3+ is MAJOR, then MAJOR + YELLOW', () => {
     const s = scene('shift2', { x: 8.27, y: 2, yaw: 0 }, { x: 8.27, y: 6, yaw: 0 });
-    const drops = (s.rules as unknown as { hubDrops: Map<number, { t: number; grounded: boolean }> }).hubDrops;
-    const take = (n: number) => {
+    const drops = (s.rules as unknown as { hubDrops: Map<number, { t: number; grounded: boolean; into?: number }> }).hubDrops;
+    const take = (n: number, into = s.blue.id) => {
       for (const i of s.sim.pool.indices('reserve').slice(0, n)) {
-        drops.set(i, { t: s.sim.ctx.clock.elapsed, grounded: false });
+        drops.set(i, { t: s.sim.ctx.clock.elapsed, grounded: false, into });
         s.sim.pool.hold(i, s.blue.id);
         s.blue.held.push(i);
       }
       s.run(0.05, IDLE_COMMAND);
     };
+    // Picked up by the intake as it rolls out of an exit (not dropping into the hopper): not a catch.
+    take(3, -1);
+    s.run(1.5, IDLE_COMMAND);
+    expect(s.fouls('G408')).toHaveLength(0);
     take(1);
     s.run(1.5, IDLE_COMMAND);
     expect(s.fouls('G408').map((f) => f.kind)).toEqual(['minor']);
@@ -211,6 +215,21 @@ describe('2026 FUEL calls', () => {
     s.run(2, IDLE_COMMAND);
     take(3);
     expect(s.fouls('G408')[2]).toMatchObject({ kind: 'major', card: 'yellow' });
+  });
+});
+
+describe('2026 G407', () => {
+  it('calls a shot into the HUB from outside the ALLIANCE ZONE, not a FEED pass that drops in', () => {
+    const s = scene('shift2', { x: 8.27, y: 2, yaw: 0 }, { x: 8.27, y: 6, yaw: 0 });
+    const rules = s.rules as unknown as { launches: Map<number, object>; scoreFuel(a: string, i: number): void };
+    const [a, b] = s.sim.pool.indices('reserve');
+    const launch = (i: number, pass: boolean) => rules.launches.set(i, { robotId: s.blue.id, alliance: 'blue', outside: true, pass, t: s.sim.ctx.clock.elapsed, team: 1 });
+    launch(a, true);
+    rules.scoreFuel('blue', a);
+    expect(s.fouls('G407')).toHaveLength(0);
+    launch(b, false);
+    rules.scoreFuel('blue', b);
+    expect(s.fouls('G407')).toHaveLength(1);
   });
 });
 

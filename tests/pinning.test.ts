@@ -195,6 +195,48 @@ describe('reportPins', () => {
   });
 });
 
+describe('PinTracker — strict enforcement (2026 G418)', () => {
+  const g418 = () => new PinTracker({ rule: 'G418', countSeconds: 3, separation: PIN_SEPARATION, strictZones: true });
+  const ONE_SIDE = () => [{ nx: 0, ny: 1 }];
+
+  it('in its own ALLIANCE ZONE a robot held still by an opponent is pinned without being boxed in', () => {
+    expect(runPins(g418(), 3.2, pair({ protectedZone: true, contacts: ONE_SIDE })).fouls.map((f) => f.kind)).toEqual(['minor']);
+    // Outside it, the same contact is a shove: it could back away.
+    expect(runPins(g418(), 8, pair({ protectedZone: false, contacts: ONE_SIDE })).fouls).toHaveLength(0);
+    // Still has to look like it can't move: a robot driving away isn't pinned.
+    expect(runPins(g418(), 8, pair({ protectedZone: true, contacts: ONE_SIDE, speed: 1.2 })).fouls).toHaveLength(0);
+  });
+
+  it('a started count only clears once the robots are 6 ft apart', () => {
+    const [pinner, pinned] = pair({ protectedZone: true });
+    const held = () => { pinner.y = 6; return [pinner, pinned]; };
+    const t = g418();
+    runPins(t, 2, held);
+    // Not touching, but still within 6 ft, for far longer than any grace: paused, not cleared.
+    const { cues } = runPins(t, PIN_RELEASE_GRACE + 4, () => { pinner.y = 7; return [pinner, pinned]; }, () => false);
+    expect(t.countFor(0)).toBeCloseTo(2, 1);
+    expect(t.pinnedBy(0)).toEqual([1]);
+    expect(cues.length).toBeGreaterThan(0);
+    expect(cues.every((c) => c.paused)).toBe(true);
+    expect(runPins(t, 1.1, held).fouls).toHaveLength(1); // 2 s + 1.1 s ≥ 3 s
+
+    const t2 = g418();
+    runPins(t2, 2, held);
+    runPins(t2, 0.05, () => { pinner.y = 5 + PIN_SEPARATION + 0.9 + 0.1; return [pinner, pinned]; }, () => false);
+    expect(t2.pinnedBy(0)).toEqual([]);
+    expect(t2.countFor(0)).toBe(0);
+  });
+
+  it('pushing the pinned robot 6 ft along together does not clear it', () => {
+    const [pinner, pinned] = pair({ protectedZone: true });
+    const t = g418();
+    runPins(t, 2, [pinner, pinned]);
+    pinned.x += PIN_SEPARATION + 0.1;
+    pinner.x += PIN_SEPARATION + 0.1;
+    expect(runPins(t, 1.1, [pinner, pinned]).fouls).toHaveLength(1);
+  });
+});
+
 // ───────────────────────── every season, through the real physics ─────────────────────────
 
 const sims: HeadlessSim[] = [];
@@ -303,5 +345,13 @@ describe.each(SEASONS)('$season.year pinning ($rule)', ({ season, rule, count, x
     s.run(count + 1);
     expect(s.pinFouls()).toHaveLength(0);
     expect(s.cues).toHaveLength(0);
+  });
+});
+
+describe('2026 strict G418 in the ALLIANCE ZONE, through the real physics', () => {
+  it('fouls a robot that holds an opponent still inside its own ALLIANCE ZONE, even away from the walls', () => {
+    const s = scenario(rebuilt2026, 'G418', rebuilt2026.fieldLength - 2.6, false);
+    s.run(3.6);
+    expect(s.pinFouls()).toEqual([expect.objectContaining({ alliance: 'blue', kind: 'minor', rule: 'G418', robotId: 0 })]);
   });
 });

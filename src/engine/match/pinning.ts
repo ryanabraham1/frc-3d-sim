@@ -19,6 +19,10 @@ import type { FoulKind } from './scoreboard';
  * contacts on roughly opposite sides (an opponent on one side, a wall / FIELD element / another robot on the other, or
  * two opponents). Once established, sliding or twisting while still boxed in does not interrupt the count.
  * A robot that can still back away from a single opponent is being blocked or shoved, not pinned.
+ *
+ * Stricter enforcement (2026 G418 as refs now call it, `strictZones`): a robot inside its own ALLIANCE ZONE that is
+ * touching an opponent and can't move counts as pinned without being boxed in, and once a count has started only the
+ * robots getting 6 ft apart clears it (no grace for a brief escape, no clearing by moving 6 ft together).
  */
 export interface PinRule {
   /** Manual rule id used on the foul, e.g. 'G420'. */
@@ -29,6 +33,11 @@ export interface PinRule {
   separation: number;
   /** Every pin foul is this kind (e.g. a TECHNICAL FOUL each time); default MINOR first, then MAJOR. */
   kind?: FoulKind;
+  /**
+   * Stricter enforcement: in a robot's protected zone (`PinAgent.protectedZone`) contact with an opponent while it
+   * can't move is a pin even when it isn't boxed in, and a started count only clears when the robots are 6 ft apart.
+   */
+  strictZones?: boolean;
 }
 
 /** 6 ft, the separation distance in all three manuals. */
@@ -79,6 +88,8 @@ export interface PinAgent {
   commandedTurn: number;
   /** Horizontal contact directions on this robot (only asked for when the robot is stopped, driven and touching). */
   contacts(): PinContact[];
+  /** Inside its own ALLIANCE ZONE, where `PinRule.strictZones` calls any held contact a pin. */
+  protectedZone?: boolean;
 }
 
 export interface PinFoul {
@@ -101,6 +112,8 @@ export interface PinCue {
   limit: number;
   /** Fouls already assessed for this pin. */
   fouls: number;
+  /** The count is paused (not touching) but not cleared: the robots still have to get 6 ft apart. */
+  paused?: boolean;
 }
 
 export interface PinResult {
@@ -133,6 +146,13 @@ export class PinTracker {
     this.records.clear();
   }
 
+  /** Robots `pinnerId` has an open count against (counting or paused, not yet cleared). */
+  pinnedBy(pinnerId: number): number[] {
+    const out: number[] = [];
+    for (const r of this.records.values()) if (r.pinnerId === pinnerId) out.push(r.pinnedId);
+    return out;
+  }
+
   /** Seconds currently counted against `pinnerId` for pinning (its longest pin), 0 if none. */
   countFor(pinnerId: number): number {
     let c = 0;
@@ -143,7 +163,7 @@ export class PinTracker {
   /** Advance every pin by `dt`. `touching(a, b)` reports real contact between two robots. */
   update(dt: number, agents: PinAgent[], touching: (a: PinAgent, b: PinAgent) => boolean): PinResult {
     const out: PinResult = { fouls: [], cues: [] };
-    const { countSeconds, separation, rule } = this.rule;
+    const { countSeconds, separation, rule, strictZones } = this.rule;
     const byId = new Map(agents.map((a) => [a.id, a]));
     const contact = new Map<string, boolean>();
     const isTouching = (a: PinAgent, b: PinAgent) => {
@@ -168,7 +188,8 @@ export class PinTracker {
         // Sliding or twisting inside the trap must not pause or reset the count.
         return this.records.has(`${r.id}:${o.id}`) || (o.speed < PIN_MAX_SPEED && o.turn < PIN_MAX_TURN);
       });
-      if (holders.length && boxedIn(o)) heldBy.set(o.id, holders);
+      // In its own ALLIANCE ZONE (strict enforcement) just being held still by an opponent is enough.
+      if (holders.length && ((strictZones && o.protectedZone) || boxedIn(o))) heldBy.set(o.id, holders);
     }
     // C: a robot that is itself pinned isn't pinning.
     const pinning = new Set<string>();
@@ -189,11 +210,23 @@ export class PinTracker {
       const now = pinning.has(k);
       rec.free = now ? 0 : rec.free + dt;
       // The pinning robot got pinned (C), or the pinned robot got away.
-      if (heldBy.has(r.id) || rec.free > PIN_RELEASE_GRACE) { this.records.delete(k); continue; }
+      if (heldBy.has(r.id) || (!strictZones && rec.free > PIN_RELEASE_GRACE)) { this.records.delete(k); continue; }
 
       const gap = Math.hypot(r.x - o.x, r.y - o.y) - r.halfLength - o.halfLength;
       const apart = gap >= separation;
-      const moved = Math.hypot(r.x - rec.start.pinner.x, r.y - rec.start.pinner.y) >= separation || Math.hypot(o.x - rec.start.pinned.x, o.y - rec.start.pinned.y) >= separation;
+      if (strictZones) {
+        // Only 6 ft of separation clears a started count; until then it pauses while they aren't in contact.
+        if (apart) { this.records.delete(k); continue; }
+        if (!now) {
+          rec.cueIn -= dt;
+          if (rec.cueIn <= 0 && rec.count >= PIN_CUE_AFTER) {
+            rec.cueIn = PIN_CUE_EVERY;
+            out.cues.push({ pinner: r, pinned: o, seconds: rec.count, limit: countSeconds, fouls: rec.fouls, paused: true });
+          }
+          continue;
+        }
+      }
+      const moved = !strictZones && (Math.hypot(r.x - rec.start.pinner.x, r.y - rec.start.pinner.y) >= separation || Math.hypot(o.x - rec.start.pinned.x, o.y - rec.start.pinned.y) >= separation);
       const paused = apart || moved;
       rec.away = paused ? rec.away + dt : 0;
       if (rec.away > countSeconds) { this.records.delete(k); continue; }
@@ -216,8 +249,8 @@ export class PinTracker {
   }
 
   /** Same as `update`, for real robots in a physics world. */
-  updateRobots(dt: number, robots: Robot[], physics: PhysicsWorld): PinResult {
-    const agents = robots.map((r) => pinAgent(r, robots, physics));
+  updateRobots(dt: number, robots: Robot[], physics: PhysicsWorld, protectedZone?: (r: Robot) => boolean): PinResult {
+    const agents = robots.map((r) => ({ ...pinAgent(r, robots, physics), protectedZone: protectedZone?.(r) ?? false }));
     const byId = new Map(robots.map((r) => [r.id, r]));
     return this.update(dt, agents, (a, b) => robotsTouching(physics, byId.get(a.id)!, byId.get(b.id)!));
   }
@@ -305,6 +338,7 @@ export function reportPins(res: PinResult, ctx: Pick<SeasonContext, 'score' | 't
   for (const c of res.cues) {
     const left = Math.max(0, c.limit - (c.seconds % c.limit));
     const danger = c.fouls > 0 || c.seconds >= c.limit * PIN_DANGER;
-    ctx.cue?.(robot(c.pinner), `PINNING ${c.pinned.team} · ${c.fouls > 0 ? 'FOUL · RELEASE NOW' : `${left.toFixed(1)} s · back off`}`, danger ? 'pin danger' : 'pin');
+    const msg = c.paused ? `${c.seconds.toFixed(1)} s counted · get 6 ft away to clear` : c.fouls > 0 ? 'FOUL · RELEASE NOW' : `${left.toFixed(1)} s · back off`;
+    ctx.cue?.(robot(c.pinner), `PINNING ${c.pinned.team} · ${msg}`, danger ? 'pin danger' : 'pin');
   }
 }

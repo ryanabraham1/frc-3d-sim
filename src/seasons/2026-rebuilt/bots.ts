@@ -357,15 +357,24 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     if (!target) return null;
     team.say(r, `Defending ${team.label(target).replace('You', 'the driver')}`, `defend:${r.id}:${target.id}`, 15);
     const p = target.pose, v = target.fieldVelocity;
+    const hub = rules.hubCenter(enemy);
+    // G418 is called strictly in the opponent's own ALLIANCE ZONE: any contact that holds it still is a pin, and the
+    // count only clears 6 ft apart. There, shadow it between it and its HUB a little off its bumpers, never touching.
+    if (rules.inAllianceZone(target) && !r.config.shotBlocker) {
+      defending = 0;
+      const toHub = Math.atan2(hub.y - p.y, hub.x - p.x);
+      const gap = (Math.max(target.footprint.length, target.footprint.width) + Math.max(r.footprint.length, r.footprint.width)) / 2 + 0.45;
+      const spot = { x: p.x + Math.cos(toHub) * gap + v.vx * 0.3, y: clamp(p.y + Math.sin(toHub) * gap + v.vy * 0.3, half + 0.1, C.FIELD_WIDTH - half - 0.1) };
+      return bot.driveTo(spot, Math.atan2(p.y - myPose().y, p.x - myPose().x), undefined, 0.4);
+    }
     // A shot blocker stands off instead of pushing, so it never builds toward a pin count.
     if (dist(myPose(), p) < 1.25 && !r.config.shotBlocker) defending += dt; else defending = Math.max(0, defending - dt);
-    // Break contact before a 5-count pin (G418) and come back.
-    if (defending > 1.8) { retreatUntil = ctx.clock.elapsed + 1.6; defending = 0; }
+    // Break contact well before a 3-count pin (G418) and come back.
+    if (defending > 1.2) { retreatUntil = ctx.clock.elapsed + 1.6; defending = 0; }
     if (ctx.clock.elapsed < retreatUntil) {
       const away = Math.atan2(myPose().y - p.y, myPose().x - p.x);
       return bot.driveTo({ x: myPose().x + Math.cos(away) * 1.5, y: clamp(myPose().y + Math.sin(away) * 1.5, 0.8, C.FIELD_WIDTH - 0.8) });
     }
-    const hub = rules.hubCenter(enemy);
     // A shot blocker (1323) doesn't need to shove: park it between the shooter and its HUB, panel raised and facing the
     // shooter, and move with it. FUEL fired into the panel drops short. The panel is on the intake side.
     if (r.config.shotBlocker) {
@@ -519,6 +528,27 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     return cmd;
   };
 
+  // G418: once a pin count has started against us it only clears 6 ft apart. Drop everything and open that gap, in the
+  // direction (of eight) that gets furthest from the robots we are counted against while staying on the carpet.
+  const clearPin = (): RobotCommand | null => {
+    const ids = rules.pinnedBy(r.id);
+    if (!ids.length) return null;
+    const others = ctx.robots.filter((o) => ids.includes(o.id));
+    const me = myPose();
+    let goal: { x: number; y: number } = me, best = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const g = { x: clamp(me.x + Math.cos(a) * 2.5, half + 0.2, C.FIELD_LENGTH - half - 0.2), y: clamp(me.y + Math.sin(a) * 2.5, half + 0.2, C.FIELD_WIDTH - half - 0.2) };
+      const score = Math.min(...others.map((o) => dist(g, o.pose)));
+      if (score > best) { best = score; goal = g; }
+    }
+    team.say(r, 'Pin count on us — backing off 6 ft', `pinclear:${r.id}`, 10);
+    const cmd = bot.driveTo(goal);
+    cmd.intake = r.capacityLeft > 0;
+    cmd.shoot = inZone() && rules.hubActive(r.alliance) && r.held.length > 0;
+    return cmd;
+  };
+
   // A raised shooter hood blocks the robot at a TRENCH arm: drivers stow it (stop shooting) before rolling through.
   const stowNearTrench = (cmd: RobotCommand): RobotCommand => {
     // Only while rolling: a robot planted at a stance beside an arm keeps shooting.
@@ -529,7 +559,9 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     batch: Infinity,
     yieldToDriver: true,
     // Every decision is made by `think`; the generic collector is only the fallback.
-    tactics: (dt) => stowNearTrench(think(dt)),
+    tactics: (dt) => stowNearTrench(clearPin() ?? think(dt)),
+    // Touching an opponent inside its own ALLIANCE ZONE draws a strict G418 pin count: give it room.
+    cautious: (o) => rules.inAllianceZone(o),
     accepts: (_i, p) => fromWall(p.x) < C.CENTER_X,
     supply: () => ({ ...side(r.alliance, 1.1, C.OUTPOST_AREA_WIDTH / 2), yaw: r.alliance === 'blue' ? 0 : Math.PI }),
     onStuck: () => { if (chase) blocked.push({ p: chase.p, until: ctx.clock.elapsed + 8 }); chase = null; },
