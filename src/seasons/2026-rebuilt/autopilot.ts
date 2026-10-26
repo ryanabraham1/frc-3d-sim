@@ -2,6 +2,7 @@ import type { FieldPoint } from '@engine/coords';
 import { aiOrders } from '@engine/ai/team';
 import type { AutoPilot, SeasonContext } from '@engine/core/season';
 import { arrive, avoid, BarrierBand, dist, routeThroughBands, turnToward } from '@engine/ai/steering';
+import { clusterCounts } from '@engine/ai/cycleBot';
 import { IDLE_COMMAND, Robot, RobotCommand } from '@engine/robot/robot';
 import * as C from './constants';
 import { dir, side } from './field';
@@ -9,7 +10,7 @@ import type { RebuiltRules } from './rules';
 import { routeRebuiltTraffic } from './traffic';
 
 export const AUTO_ROUTINES = [
-  { id: 'shoot-collect', label: 'Shoot preload + collect neutral', description: 'Score the preload, gather FUEL on our side of the NEUTRAL ZONE, return and score.' },
+  { id: 'shoot-collect', label: 'Rush neutral + score', description: 'Beeline for the NEUTRAL ZONE before the opponents clear it, gather FUEL on our side, then return and score it with the preload (a turret fires the preload on the way out).' },
   { id: 'shoot-depot', label: 'Shoot preload + depot', description: 'Score the preload, collect from our DEPOT, score again.' },
   { id: 'depot-climb', label: 'Preload + depot + climb L1', description: 'Score the preload, collect and score the DEPOT, then climb the TOWER to LEVEL 1 (15 pts).' },
   { id: 'shoot-climb', label: 'Shoot preload + climb L1', description: 'Score the preload then climb the TOWER to LEVEL 1 (15 pts).' },
@@ -72,7 +73,12 @@ export class RebuiltAutoPilot implements AutoPilot {
     this.shootSpot = routine === 'shoot-only' || routine === 'none'
       ? { x: p.x, y: p.y } : side(robot.alliance, 2.7, C.HUB_CENTER.y + (robot.station - 2) * 1.1);
     if (routine === 'none') this.phase = 'idle';
+    // The NEUTRAL ZONE supply goes to whoever gets there first: run the first cycle straight away, preload aboard.
+    if (this.routine === 'shoot-collect' && robot.config.intake.ground !== false) this.phase = 'collect';
   }
+
+  /** Where each robot's AUTO is collecting, so partners split the NEUTRAL ZONE instead of chasing the same pile. */
+  private static readonly claims = new WeakMap<SeasonContext, Map<number, FieldPoint>>();
 
   update(dt: number): RobotCommand {
     const r = this.robot;
@@ -104,6 +110,8 @@ export class RebuiltAutoPilot implements AutoPilot {
         const face = dist(r.pose, p) < 2.5 ? Math.atan2(p.y - r.pose.y, p.x - r.pose.x) + r.intakeYawOffset : null; // intake face leads
         this.steer(cmd, p, face);
       }
+      // A turret empties the preload into the HUB while it drives out, without slowing down.
+      if (r.config.launcher.turret && this.rules.inAllianceZone(r) && r.held.length > 0) cmd.shoot = true;
       return cmd;
     }
 
@@ -146,22 +154,39 @@ export class RebuiltAutoPilot implements AutoPilot {
       if (f.z < 0.25 && this.allowed(f) && (this.blocked.get(this.targetPiece) ?? 0) <= this.ctx.clock.elapsed) return f;
     }
     this.retarget = 0.6;
-    const me = this.robot.pose;
+    const r = this.robot, me = r.pose;
     let best: FieldPoint | null = null;
     let bestCost = Infinity;
     this.targetPiece = -1;
+    const cand: { i: number; f: FieldPoint }[] = [];
     for (let i = 0; i < pool.count; i++) {
       if (pool.state[i] !== 'field' || (this.blocked.get(i) ?? 0) > this.ctx.clock.elapsed) continue;
       const f = frame.toField(pool.position(i));
       if (f.z > 0.25 || f.x < 0.2 || f.x > C.FIELD_LENGTH - 0.2 || f.y < 0.5 || f.y > C.FIELD_WIDTH - 0.5 || !this.allowed(f)) continue;
-      let cost = Math.hypot(f.x - me.x, f.y - me.y);
-      if (routeThroughBands(me, f, BANDS, this.robot.footprint.width / 2, this.robot.clearanceHeight) !== f) cost += 1.2;
+      cand.push({ i, f });
+    }
+    // Go for big piles (FUEL per second of driving), not the nearest ball; skip FUEL an opponent will reach first,
+    // and leave piles a partner already claimed.
+    const density = clusterCounts(cand.map((c) => c.f), 1.0);
+    let claims = RebuiltAutoPilot.claims.get(this.ctx);
+    if (!claims) RebuiltAutoPilot.claims.set(this.ctx, claims = new Map());
+    const mates = [...claims].filter(([id]) => id !== r.id && this.ctx.robots.some((o) => o.id === id && o.alliance === r.alliance)).map(([, q]) => q);
+    const opps = this.ctx.robots.filter((o) => o.alliance !== r.alliance).map((o) => o.pose);
+    const room = Math.max(1, r.capacityLeft);
+    cand.forEach(({ i, f }, k) => {
+      const d = Math.hypot(f.x - me.x, f.y - me.y);
+      let time = d / Math.max(1, r.config.maxSpeed * 0.8) + 0.4;
+      if (routeThroughBands(me, f, BANDS, r.footprint.width / 2, r.clearanceHeight) !== f) time += 0.8;
+      if (opps.some((o) => dist(o, f) < d * 0.6 && dist(o, f) < 2.5)) time += 3;
+      if (mates.some((q) => dist(q, f) < 1.8)) time += 2.5;
+      const cost = time / Math.min(density[k], room, 20) ** 0.8;
       if (cost < bestCost) {
         bestCost = cost;
         best = f;
         this.targetPiece = i;
       }
-    }
+    });
+    if (best) claims.set(r.id, best); else claims.delete(r.id);
     return best;
   }
 

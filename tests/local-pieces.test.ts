@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { netPair, drive } from './helpers/netPair';
+import { getSeason } from '../src/seasons';
 import { footprint } from '../src/engine/robot/config';
 import type { RobotCommand } from '../src/engine/robot/robot';
 
@@ -101,9 +102,16 @@ function scenario(opts: Parameters<typeof netPair>[0], steps: number, cmd: (k: n
 describe('client-side game pieces near the predicted robot', () => {
   // A robot whose bumpers ride 8 cm off the carpet beaches on FUEL (the stock 1.5 in bumpers push it instead).
   const beachingRobot = { pose: { x: 6.2, y: 4.0, yaw: 0 }, config: (c: { bumperBottom: number; bumperTop: number }) => { c.bumperBottom = 0.08; c.bumperTop = Math.max(c.bumperTop, 0.18); } };
+  // 2026 FUEL is crushed out from under a chassis (rebuilt-fuel-squash.test.ts), so nothing beaches on it any more.
+  // These exercise the net code for pieces that do hold a robot up: FUEL made rigid for the test.
+  const rigid = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
+    const g = getSeason('2026-rebuilt').gamePiece;
+    g.crushedUnderRobots = false;
+    try { fn(...a); } finally { g.crushedUnderRobots = true; }
+  };
   const intoThePile = (k: number) => (k < 130 ? drive(2.5, 0.6) : k < 190 ? drive(0, 0) : drive(-2, 0.5));
 
-  it('shows a non-host driver beaching on FUEL when the host does (it used to drive straight through)', () => {
+  it('shows a non-host driver beaching on FUEL when the host does (it used to drive straight through)', rigid(() => {
     const old = scenario({ latencyMs: 100, local: false, ...beachingRobot }, 280, intoThePile);
     const now = scenario({ latencyMs: 100, local: true, ...beachingRobot }, 280, intoThePile);
     try {
@@ -126,7 +134,7 @@ describe('client-side game pieces near the predicted robot', () => {
       old.p.dispose();
       now.p.dispose();
     }
-  });
+  }));
 
   it('predicts FUEL contacts and robot motion through a pile, then releases collision proxies', () => {
     const plow = (k: number) => (k < 160 ? drive(3, 1.5) : k < 220 ? drive(0, 0) : drive(-2, 2));
@@ -211,7 +219,7 @@ describe('client-side game pieces near the predicted robot', () => {
     }
   });
 
-  it.each([40, 100, 150])('restores support after prediction releases pieces under a stopped robot at %i ms latency', (latencyMs) => {
+  it.each([40, 100, 150])('restores support after prediction releases pieces under a stopped robot at %i ms latency', rigid((latencyMs: number) => {
     const p = netPair({ latencyMs, local: true, ...beachingRobot });
     try {
       p.hostSim.rules.stage();
@@ -233,7 +241,7 @@ describe('client-side game pieces near the predicted robot', () => {
     } finally {
       p.dispose();
     }
-  });
+  }));
 
   it('leaves intake captures to the host and settles with it after intaking', () => {
     const run = scenario({ latencyMs: 60, local: true, pose: { x: 10.2, y: 4.0, yaw: 0 } }, 220, (k) => drive(k < 150 ? -2 : 0, 0.4 * Math.sin(k / 20), { intake: true }));

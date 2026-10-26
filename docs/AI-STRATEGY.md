@@ -87,6 +87,33 @@ now fields three high-volume scorers (4414, 1323, 2910) and hunts with whichever
 that is already full, shadowing the driver even when empty and sending two when the driver carries 20+ FUEL and two
 of ours are full.
 
+### Adaptive plans, AUTO rush and stricter G418 (2026-10-26)
+
+Changes, all 2026: Einstein fields 254 Overload in place of 1323; AUTO `shoot-collect` beelines for the NEUTRAL ZONE
+with the preload aboard (turrets fire it on the way out) and picks piles by FUEL per second of driving, skipping FUEL
+an opponent will reach first and piles a partner claimed; TELEOP pile choice uses the same idea. Turrets intake and
+shoot at once in the zone; chassis-aimed robots (2910, 254) fill a real batch before returning to their stance; shot
+spots and stances follow where the robot already is (turrets 1.9–4.6 m from the HUB, stances 1.8–3.3 m). One robot
+defends at a time, drops defense that isn't slowing its target (6+ FUEL in 6 s), shadows shooters in their own
+ALLIANCE ZONE without touching (strict G418) and backs off 6 ft as soon as a pin count starts. Full robots with a long
+wait feed the zone instead of idling. FUEL under a chassis is crushed and squeezed out, which ended bots wedging in
+the TRENCH on FUEL.
+
+**Adaptive** picks the plan from how the opponents play, kept at least 15 s: Einstein Shift control / Normal-Hard Press
+by default; Lockdown on the human driver when they score over 55% of their alliance's points and we are 20+ behind;
+Press when 30+ behind; back to scoring when our defense isn't working. A first version that also switched to Stockpile
+(feeder) against defense and after failed defense cost Einstein ~165 points a match (it benched 4414 as the feeder).
+
+All-AI, red Einstein vs blue Hard + player-bot, seeds 5-7 (both runs with the FUEL squash and the new lineup):
+
+| Bots | Blue | Red |
+|---|---:|---:|
+| Before | 602 | 753 |
+| **After** (shipped) | 670 | 889 |
+
+Fouls stayed at 0-1 a match. Single-change ablations (seeds 5-7) put feed-while-full and turret shoot-on-the-move
+within noise; kept because they are how real teams play.
+
 ## 2024 CRESCENDO
 
 Strategy, blue vs red on Amplify cycles (6 seeds):

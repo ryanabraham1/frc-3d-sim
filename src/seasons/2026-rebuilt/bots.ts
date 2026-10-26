@@ -12,7 +12,7 @@ import type { RebuiltRules } from './rules';
 import { routeRebuiltTraffic } from './traffic';
 
 export const REBUILT_AI_STRATEGIES: AiChoice[] = [
-  { id: 'auto', label: 'Adaptive', description: 'Einstein prioritizes collection and active scoring windows. Normal and Hard use Press: full robots contest opponents between their own shifts.' },
+  { id: 'auto', label: 'Adaptive', description: 'Reads how the opponents (you) play and counters it: a defender on you when you are carrying your alliance past them, Press when they fall behind, otherwise everyone scores (Einstein: Shift control, Normal/Hard: Press). Drops defense that is not working.' },
   { id: 'shift', label: 'Shift control', description: 'Everyone scores: fill hoppers while your HUB is inactive, stage at the zone line, dump the moment it lights up, then climb as high as possible.' },
   { id: 'press', label: 'Press', description: 'Shift control, but a robot that is already full while your HUB is inactive goes and contests the opponents’ best shooter until it is time to come back.' },
   { id: 'stockpile', label: 'Stockpile', description: 'A dedicated feeder stays in the NEUTRAL ZONE lobbing FUEL into your zone all match; scorers shoot from the pile.' },
@@ -49,13 +49,47 @@ function planRoles(team: TeamBrain): Map<number, string> {
   return roles;
 }
 
-/** Einstein prioritizes scoring cycles; Normal/Hard retain Press and explicit strategy orders remain available. */
+/**
+ * The plan follows how the other alliance (usually the human driver) is playing, re-read every couple of seconds from
+ * the scout: a driver who defends us gets a feeder so our scorers stay home, a driver carrying their alliance gets a
+ * defender on them (unless our defense has been failing), and an alliance falling behind presses harder. A pick is kept
+ * at least 15 s so the robots aren't thrashing between plans.
+ */
 function adaptRebuilt(team: TeamBrain): { id: string; reason: string } | null {
-  if (team.skill === 'einstein') return { id: 'shift', reason: 'fill up and stage for our scoring window before committing to defense' };
-  const top = team.scout.topScorer();
-  const target = top ? team.label(top).replace('You', 'the driver') : 'their best shooter';
-  return { id: 'press', reason: `full robots hound ${target} while our HUB is off` };
+  const memo = team.memo('adapt', () => ({ id: '', at: -99 }));
+  const now = team.ctx.clock.elapsed;
+  const pick = choosePlan(team);
+  if (memo.id && pick.id !== memo.id && now - memo.at < 15) return null;
+  if (pick.id !== memo.id) { memo.id = pick.id; memo.at = now; }
+  return pick;
 }
+
+function choosePlan(team: TeamBrain): { id: string; reason: string } {
+  const { score } = team.ctx;
+  const them = team.alliance === 'blue' ? 'red' : 'blue';
+  const pts = (r: Robot) => Object.values(score.robots[r.id]?.points ?? {}).reduce((a, b) => a + b, 0);
+  const driver = team.opponents.find((o) => o.controller === 'player');
+  const name = (r: Robot) => team.label(r).replace('You', 'the driver');
+  const failing = team.memo('defenseFailing', () => ({ until: -1 })).until > team.ctx.clock.elapsed;
+  const early = team.ctx.clock.elapsed < 35;
+  const margin = team.scout.margin();
+  // Benchmarked (all-AI, seeds 5-7): every robot scoring beats a feeder or a dedicated defender by ~150 points, so
+  // scoring is the default and defense is only worth it against one robot carrying an alliance that is beating us.
+  if (failing) return { id: 'shift', reason: 'our defense isn\'t slowing them down: out-score them instead' };
+  const carrier = driver && pts(driver) / Math.max(1, score.total(them)) > 0.55 && pts(driver) > 25 ? driver : null;
+  if (!early && carrier && margin < -20 && team.members.length >= 3) {
+    return { id: 'defense', reason: `${name(carrier)} is carrying their alliance: one of us shadows them during their shifts` };
+  }
+  if (!early && margin < -30) return { id: 'press', reason: 'behind: full robots contest their shooters while our HUB is off' };
+  if (team.skill === 'einstein') return { id: 'shift', reason: 'everyone fills up and dumps in our windows; full robots feed the zone' };
+  const top = team.scout.topScorer();
+  return { id: 'press', reason: `full robots hound ${top ? name(top) : 'their best shooter'} while our HUB is off` };
+}
+
+/** Turrets shoot from anywhere in the zone this far from the HUB center (m) [EST: steep close-in shots clip the rim; far ones scatter]. */
+const SHOT_MIN = 1.9, SHOT_MAX = 4.6;
+/** Chassis-aimed stances: anywhere on this ring around the HUB, nearest to where the robot already is (m). */
+const STANCE_MIN = 1.8, STANCE_MAX = 3.3;
 
 /** Fresh HUB FUEL closer than this (m) turns a Hard bot's intake off (G408). 2.6 m (the stance check) cost ~65 FUEL a match. */
 const CATCH_RADIUS = 1.2;
@@ -79,12 +113,22 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   const speed = () => r.config.maxSpeed * bot.pace * 0.8;
   const laneY = (k: number) => [1.35, C.FIELD_WIDTH - 1.35, C.FIELD_WIDTH / 2 + 1.75][k % 3];
   const myLane = () => laneY(r.station - 1);
-  // Shooting spot inside the ALLIANCE ZONE, ~2-3 m from the HUB (best accuracy), on our own lane when far away.
+  // Shooting spot: the nearest point inside the ALLIANCE ZONE that is within shooting range of the HUB. A turret fires
+  // from wherever it already is in that range (accuracy falls off with distance by itself, see config.ts); from outside
+  // the zone it only drives as far as it must, on our own lane when it is far away.
   const shootSpot = (): FieldPoint => {
     if (chassisAim) return stanceSpot();
     const p = myPose();
-    const y = bot.hunter ? side(r.alliance, 0, C.HUB_CENTER.y + (r.station - 2) * 1.1).y : clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
-    return { x: side(r.alliance, bot.hard ? 2.4 : 2.7, 0).x, y };
+    const y = bot.hunter && fromWall(p.x) > C.ALLIANCE_ZONE_DEPTH ? side(r.alliance, 0, C.HUB_CENTER.y + (r.station - 2) * 1.1).y : clamp(fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH + 1.5 ? p.y : myLane(), 1.0, C.FIELD_WIDTH - 1.0);
+    return inShotRange({ x: side(r.alliance, clamp(fromWall(p.x), 1.6, C.ALLIANCE_ZONE_DEPTH - half - 0.3), 0).x, y });
+  };
+  /** Move `q` along the line from the HUB until it is SHOT_MIN..SHOT_MAX from it, staying inside the zone. */
+  const inShotRange = (q: FieldPoint): FieldPoint => {
+    const dx = q.x - hubP.x, dy = q.y - hubP.y, d = Math.hypot(dx, dy) || 1;
+    const want = clamp(d, SHOT_MIN, SHOT_MAX);
+    if (want === d) return q;
+    const out = { x: hubP.x + dx / d * want, y: clamp(hubP.y + dy / d * want, 1.0, C.FIELD_WIDTH - 1.0) };
+    return { x: side(r.alliance, clamp(fromWall(out.x), 1.6, C.ALLIANCE_ZONE_DEPTH - half - 0.3), 0).x, y: out.y };
   };
   const towerCenter = side(r.alliance, C.TOWER_DEPTH / 2, C.TOWER_CENTER_Y);
   const tower = { ...towerCenter, r: Math.hypot(C.TOWER_DEPTH, C.TOWER_WIDTH) / 2 + half * 0.7 };
@@ -175,13 +219,19 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       (fromWall(p.x) <= C.FIELD_LENGTH - C.ALLIANCE_ZONE_DEPTH - 0.3 || raidable(p)) && !isBlocked(p) && !nearTower(p) &&
       !teammates.some(mate => dist(mate.pose, p) < mate.radius) && !driversFuel(p));
     const density=clusterCounts(candidates.map(({p})=>p),1.2);
+    const opps = ctx.robots.filter((o) => o.alliance !== r.alliance && !o.isClimbing && o.capacityLeft > 0).map((o) => o.pose);
     for (const [idx,{p}] of candidates.entries()) {
       // Stay off the HUB/BUMP/TRENCH row: fuel there is slow to reach.
       const inRow = Math.abs(fromWall(p.x) - C.HUB_CENTER.x) < C.HUB_SIZE / 2 + 0.3;
       if (!bot.hard && inTrench(p)) continue; // FUEL under a TRENCH jams robots that go in after it
       const mine = dist(me, p);
-      // Hard and up (benchmarked, docs/AI-STRATEGY.md): chase the densest pile, don't shun the HUB row, and keep teammates on separate patches.
-      let c = mine + (inRow && !bot.hard ? 1.5 : 0) - (bot.hard ? .8 : .4)*Math.min(density[idx]-1,r.capacityLeft-1,bot.hard ? 20 : 12);
+      if (mine > maxCost + 4) continue;
+      // Value a pile by FUEL per second of driving, not by how close its nearest ball is: a big pile a few metres
+      // further beats a lone ball. Hard and up also chase it harder and keep teammates on separate patches.
+      const pile = Math.min(density[idx], Math.max(1, r.capacityLeft), bot.hard ? 20 : 12);
+      let c = mine + (inRow && !bot.hard ? 1.5 : 0) - (bot.hard ? 1.0 : 0.7) * (pile - 1);
+      // An opponent much closer to it gets there first: it won't be there when we arrive.
+      if (opps.some((o) => dist(o, p) < Math.min(2.5, mine * 0.5))) c += 3;
       // Keep sweeping a patch intake-first instead of turning around for every ball behind us.
       if (bot.hunter && r.speed > 0.5 && mine < 3) {
         const heading = myPose().yaw - r.intakeYawOffset;
@@ -281,7 +331,8 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     const spotAt = (ang: number) => {
       // Far enough that the whole bumper stays inside the ALLIANCE ZONE (the HUB straddles the zone line).
       const minD = (C.ALLIANCE_ZONE_DEPTH - C.HUB_CENTER.x) * -1 + half + 0.12;
-      const d = Math.max(bot.hard ? 2.9 : 1.8, minD / Math.max(0.35, Math.abs(Math.cos(ang - towardWall))));
+      const now = clamp(dist(myPose(), hubP), STANCE_MIN, STANCE_MAX);
+      const d = Math.max(now, minD / Math.max(0.35, Math.abs(Math.cos(ang - towardWall))));
       return { x: hubP.x + Math.cos(ang) * d, y: clamp(hubP.y + Math.sin(ang) * d, half + 0.3, C.FIELD_WIDTH - half - 0.3) };
     };
     for (let k = 0; k < 3; k++) {
@@ -323,8 +374,21 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     }
     // Hard and up: FUEL is the scarce resource, not fire time (a robot shoots ~15% of an active shift), so every ball is worth
     // its best shot. A turret firing on the move hit ~55%; planted and level it hits far more (docs/AI-STRATEGY.md).
+    // A turret's point is intaking and shooting at once: in the zone with FUEL lying around, sweep it up while firing,
+    // a little slower than flat out so the shots on the move stay accurate.
+    if (r.held.length > 0 && inZone()) {
+      const zf = r.capacityLeft > 0 ? nearestFuel((p) => fromWall(p.x) < C.ALLIANCE_ZONE_DEPTH - 0.45 && fromWall(p.x) > 0.7 && Math.hypot(p.x - hubP.x, p.y - hubP.y) > SHOT_MIN - 0.4, 4) : null;
+      if (zf) {
+        const c = collect(zf);
+        const sp = Math.hypot(c.vx, c.vy), cap = r.config.maxSpeed * 0.55;
+        if (sp > cap) { c.vx *= cap / sp; c.vy *= cap / sp; }
+        c.intake = r.capacityLeft > 0 && !hubFuelNear();
+        c.shoot = active;
+        return c;
+      }
+    }
     if (bot.hard && r.held.length > 0) {
-      const planted = bot.driveTo(!bot.hunter && insideZone() && inZone() ? myPose() : shootSpot());
+      const planted = bot.driveTo(shootSpot());
       if (insideZone()) { planted.vx *= 0.3; planted.vy *= 0.3; }
       planted.intake = r.capacityLeft > 0 && !hubFuelNear();
       planted.shoot = inZone() && active && r.speed < 0.6 && r.uprightness >= 0.995;
@@ -350,11 +414,33 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
   };
 
   let defending = 0, retreatUntil = 0;
-  const defendCommand = (dt: number, prefer?: Robot | null): RobotCommand | null => {
+  // One robot on defense at a time (a dedicated defender, a hunter or a presser): the others are worth more scoring or
+  // feeding. Claims expire half a second after the robot stops defending.
+  const defenseClaims = team.memo('defenseClaims', () => new Map<number, number>());
+  const othersDefending = () => [...defenseClaims].filter(([id, until]) => id !== r.id && until > ctx.clock.elapsed).length;
+  // Defense that isn't working (the target keeps scoring through it) is dropped until our next window.
+  let guard: { target: number; since: number; scored: number } | null = null;
+  let giveUpUntil = -1;
+  const defendCommand = (dt: number, prefer?: Robot | null, maxDefenders = 1): RobotCommand | null => {
+    if (ctx.clock.elapsed < giveUpUntil || othersDefending() >= maxDefenders) return null;
     const targets = ctx.robots.filter((o) => o.alliance === enemy && !o.isClimbing && !o.tippedOver && o.held.length > 0);
     targets.sort((a, b) => Number(b === prefer) - Number(a === prefer) || Number(b.lastCommand.shoot) - Number(a.lastCommand.shoot) || b.held.length * b.config.launcher.rate - a.held.length * a.config.launcher.rate || dist(myPose(), a.pose) - dist(myPose(), b.pose));
     const target = targets[0];
     if (!target) return null;
+    const scored = ctx.score.robotCounter(target.id, 'scored');
+    if (!guard || guard.target !== target.id) guard = { target: target.id, since: ctx.clock.elapsed, scored };
+    // About 1 FUEL/s still going in after 6 s on it: we aren't slowing it down. Go score or feed instead.
+    if (ctx.clock.elapsed - guard.since > 6) {
+      if (scored - guard.scored >= 6) {
+        giveUpUntil = ctx.clock.elapsed + Math.max(8, rules.secondsUntilActive(r.alliance));
+        team.memo('defenseFailing', () => ({ until: -1 })).until = ctx.clock.elapsed + 40;
+        guard = null;
+        team.say(r, `Defense on ${team.label(target).replace('You', 'the driver')} isn't working — back to FUEL`, `defquit:${r.id}`, 15);
+        return null;
+      }
+      guard = { target: target.id, since: ctx.clock.elapsed, scored };
+    }
+    defenseClaims.set(r.id, ctx.clock.elapsed + 0.5);
     team.say(r, `Defending ${team.label(target).replace('You', 'the driver')}`, `defend:${r.id}:${target.id}`, 15);
     const p = target.pose, v = target.fieldVelocity;
     const hub = rules.hubCenter(enemy);
@@ -462,7 +548,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
         const hunters = free.sort((a, b) => cost(a) - cost(b)).slice(0, human.held.length > 20 && free.filter((m) => m.capacityLeft === 0).length >= 2 ? 2 : 1);
         if (hunters.includes(r)) {
           team.say(r, `Hunting ${team.label(human).replace('You', 'the driver')}`, `hunt:${r.id}`, 20);
-          const d = human.held.length === 0 ? bot.defend(human, rules.hubCenter(enemy)) : defendCommand(dt, human);
+          const d = human.held.length === 0 ? bot.defend(human, rules.hubCenter(enemy)) : defendCommand(dt, human, hunters.length);
           if (d) { d.intake = r.capacityLeft > 0; return d; }
         }
       }
@@ -484,7 +570,7 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
     if (role === 'feeder' && ctx.clock.current.id !== 'endgame') return feedCommand(active ? 0 : 6);
 
     if (role === 'defender' && !active && rules.hubActive(enemy) && bot.smart && team.members.length > 1 && remaining > 30) {
-      const d = defendCommand(dt);
+      const d = defendCommand(dt, team.scout.topScorer());
       if (d) { d.intake = r.capacityLeft > 0; return d; }
     }
 
@@ -494,7 +580,10 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       // hopper is empty before the shift ends instead of carrying FUEL through 25 s of an inactive HUB.
       const enough = bot.hard ? Math.min(r.config.hopperCapacity * (bot.hunter ? 0.8 : 0.5), bot.hunter ? 64 : 24) : Math.min(r.config.hopperCapacity, 48);
       const margin = bot.hard ? 3.5 : 1;
-      if (r.held.length > 0 && (inZone() || r.capacityLeft === 0 || r.held.length >= enough || activeLeft < toSpot + r.held.length / r.config.launcher.rate + margin || !active)) {
+      // A turret empties as it goes (it shoots while it intakes). A chassis-aimed robot has to stop and square up for
+      // every volley, so it doesn't run back to its stance for a handful: it fills a real batch first (zone, then neutral).
+      const batch = chassisAim ? Math.min(r.config.hopperCapacity * 0.5, 25) : 1;
+      if (r.held.length > 0 && ((inZone() && (r.held.length >= batch || levelStance !== null && dist(myPose(), levelStance) < 0.6)) || r.capacityLeft === 0 || r.held.length >= enough || activeLeft < toSpot + r.held.length / r.config.launcher.rate + margin || !active)) {
         return shootingCommand(live);
       }
       // Empty (or nearly): refill nearby; head back before the shift runs out.
@@ -521,8 +610,15 @@ export function createRebuiltBot(ctx: SeasonContext, rules: RebuiltRules, r: Rob
       const d = defendCommand(dt, team.scout.topScorer());
       if (d) return d;
     }
-    // Otherwise wait at the line, ready (benchmarks: conveyor-feeding while full scores less than being ready).
-    if (r.capacityLeft === 0) team.say(r, `Full (${r.held.length}) — staged at the line`, `full:${r.id}`, 25);
+    // Full with a long wait: don't sit idle. Lob part of the load into our zone (a stockpile for the shift) and refill,
+    // then be back at the line, full, in time for the HUB.
+    if (r.capacityLeft === 0 || r.held.length >= r.config.hopperCapacity - 2) {
+      if (ctx.clock.current.id !== 'endgame' && remaining > 30 && untilActive > toSpot + 7 && r.config.launcher.enabled) {
+        team.say(r, `Full (${r.held.length}) — feeding the zone until our shift`, `feedfull:${r.id}`, 25);
+        return feedCommand(Math.max(0, r.config.hopperCapacity - 12));
+      }
+      team.say(r, `Full (${r.held.length}) — staged at the line`, `full:${r.id}`, 25);
+    }
     const cmd = bot.driveTo(spot);
     cmd.intake = r.capacityLeft > 0;
     return cmd;

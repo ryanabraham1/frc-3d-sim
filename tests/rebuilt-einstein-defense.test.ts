@@ -4,6 +4,7 @@ import { HeadlessSim } from '../src/engine/testing/headless';
 import { SEASONS } from '../src/seasons';
 import type { RebuiltRules } from '../src/seasons/2026-rebuilt/rules';
 import * as C from '../src/seasons/2026-rebuilt/constants';
+import { radioFor } from '../src/engine/ai/team';
 let R: RapierModule;
 beforeAll(async () => { R = await loadRapier(); });
 
@@ -27,9 +28,11 @@ it.each(['player', 'bot'] as const)('assigns a loaded hunter past an empty teamm
     for (const i of sim.pool.indices('reserve').slice(0, hunter.config.hopperCapacity)) { sim.pool.hold(i, hunter.id); hunter.held.push(i); }
     const pilot = season.createBotPilot!(sim.ctx, sim.rules, hunter);
     const command = pilot.update(sim.physics.dt);
-    // A hunter heads into a barrier lane toward the human; with no human, the scorer stages straight home.
-    if (controller === 'player') expect(Math.abs(command.vy)).toBeGreaterThan(0.5);
-    else expect(Math.abs(command.vy)).toBeLessThan(0.1);
+    // A hunter heads into a barrier lane toward the human; with no human, nobody is hunted (the full scorer feeds the
+    // zone until its shift instead).
+    const hunting = radioFor(sim.ctx).messages.some((m) => m.text.startsWith('Hunting'));
+    if (controller === 'player') { expect(Math.abs(command.vy)).toBeGreaterThan(0.5); expect(hunting).toBe(true); }
+    else expect(hunting).toBe(false);
   } finally { sim.dispose(); }
 });
 

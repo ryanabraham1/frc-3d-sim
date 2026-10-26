@@ -15,6 +15,8 @@ it('six loaded multiplayer robots use no hopper bodies, keep field physics and c
   const season = getSeason('2026-rebuilt');
   const settings = { ...defaultSettings(season), aiOpponents: true };
   const setup = localSetup(settings, season);
+  // Everyone fires its preload in place (the default AUTO rushes the NEUTRAL ZONE first).
+  for (const r of setup.robots) r.autoRoutine = 'shoot-only';
   const scene = new THREE.Scene();
   const world = new MatchWorld(RAPIER, season, setup, {
     scene, playerId: 0, realHopper: () => true, lightweight: true,

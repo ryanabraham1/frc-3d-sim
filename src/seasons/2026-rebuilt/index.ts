@@ -62,6 +62,7 @@ export const rebuilt2026: SeasonDefinition = {
     name: 'FUEL',
     radius: C.FUEL_DIAMETER / 2,
     colliderScale: 0.98,
+    crushedUnderRobots: true,
     mass: C.FUEL_MASS,
     restitution: 0.35,
     friction: 0.7,
@@ -122,7 +123,7 @@ export const rebuilt2026: SeasonDefinition = {
     // Real 2026 robots; station 3 (the Hard defender) gets 1690's spiked-tread pusher. Einstein fields three high-volume
     // scorers instead (benchmarked vs Hard, docs/AI-STRATEGY.md): its hunting doesn't need a dedicated pusher.
     // Benchmarked (seeds 5-7): Hard averaged 1040 points, Normal 515.
-    const lineups: Record<string, string[]> = { normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'madtown-2026-1323', 'reblitz-2910'] };
+    const lineups: Record<string, string[]> = { normal: ['overload-254', 'limestone-1678', 'sandspit-3476'], hard: ['ripcurrent-4414', 'mixtape-971', 'kepler-1690'], einstein: ['ripcurrent-4414', 'overload-254', 'reblitz-2910'] };
     return lineups[difficulty][(station - 1) % 3];
   },
   botRobotConfig(difficulty) {

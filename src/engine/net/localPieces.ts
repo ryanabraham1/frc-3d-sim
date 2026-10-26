@@ -179,7 +179,9 @@ export class LocalPieces {
       // interpolation delay. Releasing as soon as a pushed ball leaves the bubble pulls it back to its pre-push pose.
       const caughtUp = localMs / 1000 - this.nearAt[i] > rtt + clientSync.delay + 0.1;
       const hostGap = this.gap(s);
-      if ((gap > RELEASE_GAP && caughtUp && hostGap > RELEASE_GAP) || contested(others, p, CONTEST_RELEASE) || (stranded && this.under(p)) || this.inMouth(p)) {
+      // Foam the host crushes and squeezes out from under the chassis: never something to ride up on here either.
+      const crushed = pool.specAt(i).crushedUnderRobots && this.under(p) && this.robot.toLocal(p).h < this.robot.config.bumperBottom + this.radius;
+      if ((gap > RELEASE_GAP && caughtUp && hostGap > RELEASE_GAP) || contested(others, p, CONTEST_RELEASE) || ((stranded || crushed) && this.under(p)) || this.inMouth(p)) {
         this.drop(k);
         continue;
       }

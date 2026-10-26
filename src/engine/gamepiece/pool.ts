@@ -27,6 +27,11 @@ export interface GamePieceSpec {
   radius: number;
   /** Collider radius as a fraction of visual radius (<1 models squishy foam, allows tight staging). */
   colliderScale?: number;
+  /**
+   * Soft foam that a robot's chassis crushes flat and squeezes out rather than riding up on (2026 FUEL). The season's
+   * rules squash it on the host; a multiplayer client hands such a piece under its predicted chassis back to the host.
+   */
+  crushedUnderRobots?: boolean;
   mass: number;
   restitution: number;
   friction: number;

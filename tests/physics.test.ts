@@ -156,6 +156,11 @@ for (const season of SEASONS) {
     it('a robot beached on game pieces can drive itself off (never stranded with zero traction)', () => {
       // Regression: a robot tossed onto loose pieces (e.g. landing off a BUMP onto FUEL) once rested level on
       // them with every wheel in the air and no traction forever. Now it rocks onto some wheels and drives off.
+      // (2026 FUEL is crushed out from under a chassis instead, see rebuilt-fuel-squash.test.ts: the wheel model is
+      // tested here with the pieces made rigid.)
+      const crush = season.gamePiece.crushedUnderRobots;
+      season.gamePiece.crushedUnderRobots = false;
+      try {
       const lane = T.traversals()[0];
       const cfg = cloneConfig(season.robotDefaults);
       // Drive back from the lane start, away from the lane's structure (the robot rides high while beached).
@@ -180,6 +185,7 @@ for (const season of SEASONS) {
       sim.run(6, { ...IDLE_COMMAND, vx: Math.cos(heading) * speed, vy: Math.sin(heading) * speed }, off);
       expect(off(), `still beached (elevation ${sim.robot.elevation.toFixed(3)} m, ${sim.robot.wheelsDown} wheels down)`).toBe(true);
       sim.dispose();
+      } finally { season.gamePiece.crushedUnderRobots = crush; }
     });
 
     it('a tipped-over robot is set back on its wheels after 5 s (and is helpless until then)', () => {

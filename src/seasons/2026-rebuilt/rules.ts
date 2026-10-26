@@ -29,6 +29,13 @@ const CHUTE_TAG = (a: Alliance) => `chute-${a}`;
 /** FUEL that left the FIELD is put back on the carpet this far inside the edge it crossed (m, [EST]). */
 const OUT_OF_BOUNDS_INSET = 0.35;
 const HP_RELEASE_INTERVAL = 0.14;
+/**
+ * FUEL is foam: a ball that ends up under a robot's belly pan is crushed nearly flat by ~60 kg of robot and squeezed out
+ * past the bumpers, instead of holding the robot up like a rigid 6 in stilt (which beached robots on every pile, at the
+ * DEPOT, at the TOWER and wedged them under a TRENCH). [EST: squashed to 30% of its radius, squirts out at 1.6 m/s]
+ */
+const UNDER_ROBOT_SQUASH = 0.3;
+const UNDER_ROBOT_SQUIRT = 1.6;
 
 /** What multiplayer clients need from the rules (score/clock are synced by the engine). */
 export interface RebuiltNetState {
@@ -58,13 +65,13 @@ interface InHub {
  */
 export class RebuiltRules implements SeasonRules {
   recoveryState() {
-    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches passingAt'.split(' ')),
+    return { visible: this.netState(), fields: captureFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches passingAt underRobot'.split(' ')),
       ref: this.ref.recoveryState(), pins: this.pins.recoveryState() };
   }
   restoreRecovery(state: unknown): void {
     const s = state as ReturnType<RebuiltRules['recoveryState']>;
     this.applyNetState(s.visible);
-    restoreFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches passingAt'.split(' '), s.fields);
+    restoreFields(this, 'releaseTimer lastHpOpen inHub launches g407Cooldown g403Called climbHintAt towerAuto towerTeleop g420Live g420Award g403Contacts hubDrops catches strategicCatches passingAt underRobot'.split(' '), s.fields);
     this.ref.restoreRecovery(s.ref);
     this.pins.restoreRecovery(s.pins);
   }
@@ -82,6 +89,8 @@ export class RebuiltRules implements SeasonRules {
   private launches = new Map<number, { robotId: number; alliance: Alliance; outside: boolean; pass?: boolean; t: number; team: number }>();
   private g407Cooldown = new Map<number, number>();
   private g403Called = new Set<number>();
+  /** FUEL squashed under a robot's chassis (pool index → robot id), restored once it is out from under. */
+  private underRobot = new Map<number, number>();
   /** Last time each robot was commanded to FEED (pass). */
   private passingAt = new Map<number, number>();
   /**
@@ -276,7 +285,7 @@ export class RebuiltRules implements SeasonRules {
     this.pins.reset();
     this.ref.reset();
     this.g420Live.clear(); this.g420Award.clear(); this.g403Contacts.clear();
-    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear(); this.inHub.clear(); this.passingAt.clear();
+    this.hubDrops.clear(); this.catches.clear(); this.strategicCatches.clear(); this.inHub.clear(); this.passingAt.clear(); this.underRobot.clear();
     const st = stageFuel(
       robots.map((r) => Math.min(r.config.preload, r.config.hopperCapacity)),
       rng,
@@ -350,6 +359,7 @@ export class RebuiltRules implements SeasonRules {
   beforeStep(dt: number): void {
     const { pool, frame, rng, clock } = this.ctx;
     const t = this.now;
+    this.squashUnderRobots();
     for (const a of ALLIANCES) for (const net of this.refs.hubs[a].nets) net.step(dt, pool);
 
     // Human players: automatic ones open the CHUTE when it has stock and their hub is (about to be) active.
@@ -530,6 +540,46 @@ export class RebuiltRules implements SeasonRules {
       const r = robots.find((x) => x.id === rid);
       if (r && !c.called) this.ref.call({ rule: 'G408', kind: 'minor', robot: r, note: 'caught FUEL released by the HUB' });
     }
+  }
+
+  /** FUEL under a chassis is crushed flat and squeezed out to the nearest side; it pops back to full size once clear. */
+  private squashUnderRobots(): void {
+    const { pool, robots } = this.ctx;
+    const r0 = pool.radius;
+    for (const [i, rid] of this.underRobot) {
+      const r = robots.find((x) => x.id === rid);
+      if (pool.state[i] === 'field' && r && this.underChassis(r, pool.position(i), r0)) continue;
+      if (pool.state[i] === 'field' && !this.inHub.has(i)) pool.squeeze(i, 1);
+      this.underRobot.delete(i);
+    }
+    for (const r of robots) {
+      if (r.isClimbing || r.tippedOver) continue;
+      const t = r.body.translation(), reach = Math.hypot(r.footprint.length, r.footprint.width) / 2 + 0.3;
+      for (let i = 0; i < pool.count; i++) {
+        if (pool.state[i] !== 'field' || this.inHub.has(i) || !pool.specAt(i).crushedUnderRobots) continue;
+        const p = pool.position(i);
+        if (Math.abs(p.x - t.x) > reach || Math.abs(p.z - t.z) > reach) continue;
+        const local = this.underChassis(r, p, r0);
+        if (!local) continue;
+        if (!this.underRobot.has(i)) { pool.squeeze(i, UNDER_ROBOT_SQUASH); this.underRobot.set(i, r.id); }
+        // Out the nearer side (robot frame), riding along with the chassis.
+        const q = r.body.rotation();
+        const sideX = r.footprint.length / 2 - Math.abs(local.x), sideZ = r.footprint.width / 2 - Math.abs(local.z);
+        this.tmp2.set(sideX < sideZ ? Math.sign(local.x) || 1 : 0, 0, sideX < sideZ ? 0 : Math.sign(local.z) || 1)
+          .applyQuaternion(this.tmpQ.set(q.x, q.y, q.z, q.w));
+        const v = r.body.linvel(), b = pool.bodies[i];
+        b.setLinvel({ x: v.x + this.tmp2.x * UNDER_ROBOT_SQUIRT, y: Math.min(0, b.linvel().y), z: v.z + this.tmp2.z * UNDER_ROBOT_SQUIRT }, true);
+      }
+    }
+  }
+
+  /** Robot-frame position of a ball (world) that is under this robot's chassis, below its bumpers; null otherwise. */
+  private underChassis(r: Robot, p: { x: number; y: number; z: number }, radius: number): THREE.Vector3 | null {
+    const t = r.body.translation(), q = r.body.rotation(), c = r.config, fp = r.footprint;
+    const local = this.tmp.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(this.tmpQ.set(-q.x, -q.y, -q.z, q.w));
+    // Under the bumpers too, until it is far enough out to re-inflate beside them without lifting the robot.
+    if (local.y > c.bumperBottom + radius || Math.abs(local.x) > fp.length / 2 + radius * 0.5 || Math.abs(local.z) > fp.width / 2 + radius * 0.5) return null;
+    return local;
   }
 
   /** A ball (world position) above the robot's bumpers and inside its frame perimeter: dropping into its hopper. */
