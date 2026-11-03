@@ -43,8 +43,14 @@ export interface GamePieceSpec {
    * and a big light ball (ALGAE) slows far more than a small dense one. Robots aim with the same model.
    */
   dragCoefficient?: number;
-  /** Linear damping while touching the floor (models carpet rolling resistance). */
+  /** Linear damping while touching the floor: the speed-dependent part of carpet drag (pile brushing the piece). */
   groundDamping?: number;
+  /**
+   * Rolling resistance coefficient on carpet (Crr): a rolling piece on the floor loses Crr·g of speed per second
+   * whatever its speed, so a hard-hit ball rolls far (distance grows with v²) and then stops crisply instead of
+   * creeping. Foam and soft balls deform on the pile and lose a lot; a firm inflated ball much less.
+   */
+  rollingResistance?: number;
   angularDamping?: number;
   color: THREE.ColorRepresentation;
   count: number;
@@ -562,6 +568,20 @@ export class GamePiecePool {
     if (inAir !== this.airborne[i]) {
       this.airborne[i] = inAir;
       b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
+    }
+    const rr = s.rollingResistance ?? 0;
+    if (!inAir && rr > 0) {
+      const v = b.linvel(), sp = Math.hypot(v.x, v.z);
+      if (sp > 1e-4) {
+        // Coulomb-like: take Crr·g·dt off the ground speed, never reversing it. Spin about horizontal axes slows by the
+        // same factor so the ball keeps rolling without slipping (friction would otherwise spin it back up).
+        const f = Math.max(0, 1 - (rr * 9.81 * this.physics.dt) / sp);
+        v.x *= f; v.z *= f;
+        b.setLinvel(v, false);
+        const w = b.angvel();
+        w.x *= f; w.z *= f;
+        b.setAngvel(w, false);
+      }
     }
     const k = this.dragK[i];
     if (inAir && k > 0) {

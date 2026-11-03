@@ -70,7 +70,11 @@ export const rebuilt2026: SeasonDefinition = {
     // Re ≈ 1.5e5, Cd ≈ 0.47] The linear term is left for what the quadratic model misses (seams, spin).
     airDamping: 0.01,
     dragCoefficient: 0.47,
-    groundDamping: 0.9,
+    // Rolling on carpet: dense foam squashes into the pile, so a FUEL loses ≈ 1.1 m/s every second whatever its speed
+    // and stops crisply (a 2 m/s nudge rolls ≈ 1.2 m, a 4 m/s kick ≈ 4 m). [EST: Crr ≈ 0.12] plus a little pile drag.
+    // angularDamping also steadies the heap in a hopper; on carpet it adds ≈ 0.35/s of rolling loss on its own.
+    groundDamping: 0.1,
+    rollingResistance: 0.11,
     angularDamping: 1.2,
     color: C.COLORS.fuel,
     count: C.FUEL_TOTAL,
