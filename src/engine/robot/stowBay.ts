@@ -377,13 +377,15 @@ export class StowBay {
   }
 
   /** Prefer a ball at the entry, otherwise draw the nearest unstaged ball from anywhere in the hopper. */
-  private nearestForFeed(entry: THREE.Vector3): number {
+  private nearestForFeed(entry: THREE.Vector3, acrossOnly = false): number {
     let best = -1, distance = Infinity, atEntry = false;
     const p = new THREE.Vector3();
     for (const i of this.stowed) {
       if (this.staging.has(i)) continue;
       this.toLocal(this.pool.bodies[i].translation(), p);
-      const ready = this.atEntry(p, entry), d = p.distanceToSquared(entry);
+      // A wide drum ranks the balls already on its rollers by how close they sit to this shot's lane, so a pile slumped
+      // to one side doesn't hand the drum the same edge ball every shot.
+      const ready = this.atEntry(p, entry), d = ready && acrossOnly ? (p.z - entry.z) ** 2 : p.distanceToSquared(entry);
       if ((ready && !atEntry) || (ready === atEntry && d < distance)) {
         best = i; distance = d; atEntry = ready;
       }
@@ -402,8 +404,9 @@ export class StowBay {
     // A wide drum takes balls all across its width: aim for the lane this shot leaves from, not the feed path's first
     // lane, or the side nearest that one empties first and the whole load leaves as one stream.
     const entry = this.entry(cav, new THREE.Vector3());
-    if ((this.robot.config.launcher.exits ?? 1) > 1 && !this.robot.config.launcher.turret) entry.z = exit.z;
-    return this.nearestForFeed(entry);
+    const wide = (this.robot.config.launcher.exits ?? 1) > 1 && !this.robot.config.launcher.turret;
+    if (wide) entry.z = exit.z;
+    return this.nearestForFeed(entry, wide);
   }
 
   /**

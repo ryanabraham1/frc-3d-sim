@@ -2534,13 +2534,13 @@ export class Robot {
       if (pick < 0 && this.bay.occupied) return null;
       const k = pick >= 0 ? this.held.lastIndexOf(pick) : -1;
       if (k >= 0) { this.held.splice(k, 1); this.held.push(pick); }
-      // A wide shooter (dumper) launches each ball where it reaches the rollers across their width: the floor carries it
-      // straight forward, so that is where it lies in the hopper. No fixed streams.
+      // A wide shooter (dumper) launches each ball within this shot's (randomly chosen) lane, nudged toward where the
+      // ball lies across the rollers but never past the lane's share of the drum. Launching from wherever the ball lay let
+      // a load slumped against one wall stream out of the edge of the drum, where it missed.
       const wide = launcherExitOffsets(c0);
       if (pick >= 0 && !c.turret && wide.length > 1) {
-        // The ball drawn for this shot's lane leaves from that lane; one the floor brought from elsewhere leaves where it is.
-        const half = Math.max(...wide.map(Math.abs)), z = this.bay.localOf(pick)?.z, lane = exit.side;
-        if (z !== undefined) ballSide = Math.abs(-z - lane) < 2 * this._projectile.radius ? lane : THREE.MathUtils.clamp(-z, -half, half);
+        const halfLane = Math.abs(wide[1] - wide[0]) / 2, z = this.bay.localOf(pick)?.z, lane = exit.side;
+        if (z !== undefined) ballSide = lane + THREE.MathUtils.clamp(-z - lane, -halfLane * 0.5, halfLane * 0.5);
       }
     }
     const rv = this.body.linvel();
