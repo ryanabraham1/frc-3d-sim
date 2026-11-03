@@ -4,7 +4,7 @@ import type { Alliance, FieldPose } from '../coords';
 import { FieldFrame } from '../coords';
 import type { GameSettings, SeasonContext, SeasonDefinition, SeasonRules } from '../core/season';
 import { FieldBuilder } from '../field/builder';
-import { GamePiecePool } from '../gamepiece/pool';
+import { GamePiecePool, projectileOf } from '../gamepiece/pool';
 import type { Hud } from '../hud/hud';
 import { MatchClock } from '../match/clock';
 import { Scoreboard } from '../match/scoreboard';
@@ -52,7 +52,7 @@ export class HeadlessSim {
     this.pool = new GamePiecePool(this.physics, scene, this.frame, season.gamePiece);
     const cfg = season.normalizeRobotConfig?.(opts.robot) ?? sanitizeConfig(opts.robot, season.maxRobotHeight, season.maxRobotPerimeter);
     this.robot = new Robot(this.physics, scene, this.frame, cfg, opts.alliance, 0, opts.station ?? 1, opts.pose);
-    this.robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+    this.robot.projectile = projectileOf(season.gamePiece);
     this.robot.pieceMass = season.gamePiece.mass;
     this.robot.shootWhileTracking = false; // settled-aim shots; game.ts enables shoot-while-tracking for REBUILT, tests opt in
     this.robot.controller = 'player';
@@ -91,7 +91,7 @@ export class HeadlessSim {
     for (const extra of opts.extraRobots ?? []) {
       const config = season.normalizeRobotConfig?.(extra.config) ?? sanitizeConfig(extra.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, scene, this.frame, config, extra.alliance, extra.id, extra.station, extra.pose);
-      robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.projectile = projectileOf(season.gamePiece);
       robot.pieceMass = season.gamePiece.mass;
       robot.shootWhileTracking = false;
       robot.controller = 'bot';

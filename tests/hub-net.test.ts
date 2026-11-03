@@ -30,7 +30,9 @@ for (const alliance of ['blue', 'red'] as const) it(`${alliance} hub's rear net 
       sim.step();
       deepest = Math.max(deepest, rear.bulge);
       const f = sim.frame.toField(sim.pool.bodies[idx].translation());
-      minX = Math.min(minX, (rearPlane - f.x) * d);
+      // Through the net = past it while at net height; a caught ball that slid off the bottom and drops behind the HUB
+      // doesn't count.
+      if (f.z > C.HUB_RIM_HEIGHT) minX = Math.min(minX, (rearPlane - f.x) * d);
     }
     // It pushed the net back several centimetres, never went through it, and lost its speed instead of rebounding hard.
     expect(deepest).toBeGreaterThan(0.04);

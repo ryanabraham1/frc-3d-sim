@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Alliance } from '../coords';
 import { FieldFrame } from '../coords';
 import { FieldBuilder } from '../field/builder';
-import { GamePiecePool } from '../gamepiece/pool';
+import { GamePiecePool, projectileOf } from '../gamepiece/pool';
 import type { Hud } from '../hud/hud';
 import { MatchClock } from '../match/clock';
 import { Scoreboard } from '../match/scoreboard';
@@ -76,7 +76,7 @@ export class MatchWorld {
     for (const rs of setup.robots) {
       const cfg = season.normalizeRobotConfig?.(rs.config) ?? sanitizeConfig(rs.config, season.maxRobotHeight, season.maxRobotPerimeter);
       const robot = new Robot(this.physics, scene, this.frame, cfg, rs.alliance, rs.id, rs.station, rs.start ?? season.startPose(rs.alliance, rs.station));
-      robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+      robot.projectile = projectileOf(season.gamePiece);
       robot.pieceMass = season.gamePiece.mass;
       robot.shootWhileTracking = season.id === '2026-rebuilt';
       robot.controller = rs.bot ? 'bot' : 'player';

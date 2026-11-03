@@ -28,7 +28,7 @@ export const reefscape2025: SeasonDefinition = {
   gamePiece: { name: 'CORAL + ALGAE', shape: 'tube', hollow: true, colliderInnerRadius: C.CORAL_COLLIDER_INNER, radius: C.CORAL_RADIUS, innerRadius: C.CORAL_INNER_RADIUS, length: C.CORAL_LENGTH,
     mass: 0.65, restitution: 0.15, friction: 0.35, color: C.COLORS.coral, count: C.CORAL_COUNT + C.ALGAE_COUNT,
     groundDamping: 1.3, angularDamping: 1.1, airDamping: 0.02,
-    variants: [{ start: C.CORAL_COUNT, spec: { name: 'ALGAE', radius: C.ALGAE_RADIUS, mass: 0.45, restitution: 0.35, friction: 0.7, color: C.COLORS.algae, count: C.ALGAE_COUNT, groundDamping: 0.9, airDamping: 0.02, angularDamping: 1.0 } }],
+    variants: [{ start: C.CORAL_COUNT, spec: { name: 'ALGAE', radius: C.ALGAE_RADIUS, mass: 0.45, restitution: 0.35, friction: 0.7, color: C.COLORS.algae, count: C.ALGAE_COUNT, groundDamping: 0.9, airDamping: 0.005, dragCoefficient: 0.47 /* [EST] 16¼ in inflated ball: big and light, so drag matters */, angularDamping: 1.0 } }],
   },
   robotDefaults: reefscapeRobotDefaults(), maxClimbLevel: 2, maxScoringLevel: 4,
   climberLabels: ['None', 'Shallow cage', 'Deep cage'], robotLimits: { capacity: 2, preload: 1 },

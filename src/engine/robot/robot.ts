@@ -2313,16 +2313,17 @@ export class Robot {
 
   /**
    * Game-piece flight model the shot solver mirrors. Set from the season's GamePieceSpec when the robot
-   * is created (`robot.projectile = { radius, airDamping }`); defaults are close to a typical ball.
+   * is created (`robot.projectile = projectileOf(season.gamePiece)`); defaults are close to a typical ball. `drag` is the
+   * quadratic air-drag factor (1/m, see `quadraticDrag`).
    */
-  get projectile(): { radius: number; airDamping: number; halfHeight?: number } {
+  get projectile(): { radius: number; airDamping: number; drag?: number; halfHeight?: number } {
     return this._projectile;
   }
-  set projectile(p: { radius: number; airDamping: number; halfHeight?: number }) {
+  set projectile(p: { radius: number; airDamping: number; drag?: number; halfHeight?: number }) {
     this._projectile = p;
     this.projectileSet = true;
   }
-  private _projectile: { radius: number; airDamping: number; halfHeight?: number } = { radius: 0.075, airDamping: 0.02 };
+  private _projectile: { radius: number; airDamping: number; drag?: number; halfHeight?: number } = { radius: 0.075, airDamping: 0.02 };
   private projectileSet = false;
   private static warnedProjectile = false;
 
@@ -2351,12 +2352,13 @@ export class Robot {
 
   /**
    * Height of a projectile after travelling `dists` (ascending, horizontal meters), integrated the same
-   * way as the physics step (gravity, Rapier-style linear damping, then position). Also returns the
+   * way as the physics step (quadratic air drag, gravity, Rapier-style linear damping, then position). Also returns the
    * vertical velocity there. null = never got that far (fell below the floor first).
    */
   simulateFlight(fromY: number, angle: number, speed: number, dists: number[]): ({ y: number; vy: number; vx: number } | null)[] {
     const dt = this.physics.dt;
     const k = 1 / (1 + dt * this._projectile.airDamping);
+    const q = this._projectile.drag ?? 0;
     let x = 0;
     let y = fromY;
     let vx = speed * Math.cos(angle);
@@ -2366,6 +2368,11 @@ export class Robot {
     for (let i = 0; i < 3000 && j < dists.length; i++) {
       const px = x;
       const py = y;
+      if (q > 0) {
+        const f = 1 / (1 + q * Math.hypot(vx, vy) * dt);
+        vx *= f;
+        vy *= f;
+      }
       vy -= G * dt;
       vx *= k;
       vy *= k;
@@ -2384,6 +2391,7 @@ export class Robot {
   private flightHeightAt(fromY: number, angle: number, speed: number, d: number): number | null {
     const dt = this.physics.dt;
     const k = 1 / (1 + dt * this._projectile.airDamping);
+    const q = this._projectile.drag ?? 0;
     let x = 0;
     let y = fromY;
     let vx = speed * Math.cos(angle);
@@ -2391,6 +2399,11 @@ export class Robot {
     for (let i = 0; i < 3000; i++) {
       const px = x;
       const py = y;
+      if (q > 0) {
+        const f = 1 / (1 + q * Math.hypot(vx, vy) * dt);
+        vx *= f;
+        vy *= f;
+      }
       vy -= G * dt;
       vx *= k;
       vy *= k;
@@ -2405,7 +2418,7 @@ export class Robot {
   /**
    * Solve launch speed + hood angle so the piece passes through target.point, clears every obstacle
    * (`clearHeight` at `clearRadius` before the target, plus `clearances`) and is DESCENDING at the
-   * target. Uses the same integration as the physics engine (incl. air damping), refined by a secant
+   * target. Uses the same integration as the physics engine (incl. air drag), refined by a secant
    * search. `clear` is false when nothing clears everything — the result is then a best effort.
    */
   solveShot(from: THREE.Vector3, target: AimTarget): { speed: number; angle: number; clear: boolean } | null {
@@ -2425,7 +2438,11 @@ export class Robot {
       const denom = 2 * Math.cos(angle) ** 2 * (d * Math.tan(angle) - h);
       if (denom <= 0) return null;
       let v0 = Math.sqrt((G * d * d) / denom);
-      let f0 = errAt(angle, v0);
+      // The vacuum speed falls short under air drag (most at steep angles): raise it until the piece gets that far, or
+      // the secant search starts on a flat "never arrived" error and gives up.
+      let h0 = this.flightHeightAt(from.y, angle, v0, d);
+      for (let i = 0; i < 12 && h0 === null && v0 < c.maxSpeed * 1.5; i++) h0 = this.flightHeightAt(from.y, angle, (v0 *= 1.1), d);
+      let f0 = (h0 ?? -10) - target.point.y;
       let v1 = v0 * 1.04;
       let f1 = errAt(angle, v1);
       for (let i = 0; i < 8 && Math.abs(f1) > 0.004; i++) {
@@ -2478,7 +2495,7 @@ export class Robot {
     // moves between steps): reuse the answer when every input is identical.
     const key = [pos.x, pos.y, pos.z, target.point.x, target.point.y, target.point.z, rv.x, rv.z, target.clearHeight ?? NaN, target.clearRadius ?? NaN,
       target.minEntryAngle ?? NaN, target.preferredAngle ?? NaN, target.allowRising ? 1 : 0, c.minAngle, c.maxAngle, c.minSpeed, c.maxSpeed, c.manualSpeed, c.angle,
-      this._projectile.airDamping, this.physics.dt, target.clearances?.length ?? -1, target.ceilings?.length ?? -1];
+      this._projectile.airDamping, this._projectile.drag ?? 0, this.physics.dt, target.clearances?.length ?? -1, target.ceilings?.length ?? -1];
     for (const q of target.clearances ?? []) key.push(q.distance, q.height);
     for (const q of target.ceilings ?? []) key.push(q.distance, q.height);
     const hit = this.movingShotCache;

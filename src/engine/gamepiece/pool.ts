@@ -37,6 +37,12 @@ export interface GamePieceSpec {
   friction: number;
   /** Linear damping while airborne (keep low so ballistic aim math stays accurate). */
   airDamping?: number;
+  /**
+   * Aerodynamic drag coefficient on the frontal area (a sphere at shot speeds ≈ 0.47). Set it and an airborne piece
+   * feels real quadratic air drag, ½ρ·Cd·A·v², on top of `airDamping`: a fast shot loses speed much faster than a lob,
+   * and a big light ball (ALGAE) slows far more than a small dense one. Robots aim with the same model.
+   */
+  dragCoefficient?: number;
   /** Linear damping while touching the floor (models carpet rolling resistance). */
   groundDamping?: number;
   angularDamping?: number;
@@ -52,6 +58,63 @@ export interface GamePieceSpec {
 export type PieceState = 'field' | 'held' | 'reserve';
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+
+/** Sea-level air density (kg/m³) at ≈ 20 °C. */
+export const AIR_DENSITY = 1.204;
+
+/**
+ * Quadratic drag factor k (1/m) of a piece: its drag deceleration is k·v². 0 when the spec sets no `dragCoefficient`.
+ */
+export function quadraticDrag(s: Omit<GamePieceSpec, 'variants'>): number {
+  if (!s.dragCoefficient) return 0;
+  return (AIR_DENSITY * s.dragCoefficient * Math.PI * s.radius * s.radius) / (2 * s.mass);
+}
+
+/**
+ * Air drag acts only above this speed (m/s). The shot solver applies drag at every speed: below this it is under 2 % of g,
+ * so the two agree to millimetres while the solver's speed search stays smooth.
+ */
+export const DRAG_MIN_SPEED = 3;
+
+/**
+ * Launch velocity (world frame) that carries a piece from `from` to `to` in `flight` seconds through the real air: the
+ * vacuum answer, corrected until the same integration as a physics step (quadratic drag, gravity, air damping) arrives.
+ * For throws that aren't aimed by a robot's shot solver, such as a human player's.
+ */
+export function throwVelocity(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }, flight: number,
+  s: Omit<GamePieceSpec, 'variants'>, dt: number, gravity = 9.81): THREE.Vector3 {
+  const v0 = new THREE.Vector3((to.x - from.x) / flight, (to.y - from.y + 0.5 * gravity * flight * flight) / flight, (to.z - from.z) / flight);
+  const k = quadraticDrag(s), lin = 1 / (1 + dt * (s.airDamping ?? 0.02)), steps = Math.round(flight / dt);
+  const v = { x: 0, y: 0, z: 0 };
+  for (let iter = 0; iter < 8; iter++) {
+    let px = from.x, py = from.y, pz = from.z;
+    v.x = v0.x; v.y = v0.y; v.z = v0.z;
+    for (let n = 0; n < steps; n++) {
+      if (k > 0 && v.x * v.x + v.y * v.y + v.z * v.z > DRAG_MIN_SPEED * DRAG_MIN_SPEED) applyQuadraticDrag(v, k, dt);
+      v.y -= gravity * dt;
+      v.x *= lin; v.y *= lin; v.z *= lin;
+      px += v.x * dt; py += v.y * dt; pz += v.z * dt;
+    }
+    const ex = to.x - px, ey = to.y - py, ez = to.z - pz;
+    if (ex * ex + ey * ey + ez * ez < 1e-6) break;
+    v0.x += ex / flight; v0.y += ey / flight; v0.z += ez / flight;
+  }
+  return v0;
+}
+
+/** The flight model a robot's shot solver mirrors for this game piece (`robot.projectile`). */
+export function projectileOf(s: GamePieceSpec): { radius: number; airDamping: number; drag: number } {
+  return { radius: s.radius, airDamping: s.airDamping ?? 0.02, drag: quadraticDrag(s) };
+}
+
+/**
+ * One step of quadratic air drag on a velocity, in place: v ← v / (1 + k·|v|·dt). Implicit in the speed, so it never
+ * reverses the motion however large the step; the shot solver applies exactly this before gravity.
+ */
+export function applyQuadraticDrag(v: { x: number; y: number; z: number }, k: number, dt: number): void {
+  const f = 1 / (1 + k * Math.hypot(v.x, v.y, v.z) * dt);
+  v.x *= f; v.y *= f; v.z *= f;
+}
 
 function ringHalfHeight(s: Omit<GamePieceSpec, 'variants'>): number {
   return (s.length ?? s.radius * 0.28) / 2;
@@ -115,6 +178,8 @@ export class GamePiecePool {
   readonly colliderRadius: number;
   readonly meshes: THREE.InstancedMesh[] = [];
   private readonly specs: GamePieceSpec[] = [];
+  /** Quadratic air-drag factor of each piece (see quadraticDrag). */
+  private readonly dragK: number[] = [];
   private readonly meshIndex: number[] = [];
   private readonly tmpM = new THREE.Matrix4();
   private readonly tmpQ = new THREE.Quaternion();
@@ -166,6 +231,7 @@ export class GamePiecePool {
       const type = types.reduce((last, t, k) => i >= t.start ? k : last, 0);
       const piece = types[type].spec;
       this.specs.push(piece);
+      this.dragK.push(quadraticDrag(piece));
       this.meshIndex.push(type);
       const body = physics.world.createRigidBody(
         R.RigidBodyDesc.dynamic()
@@ -496,6 +562,16 @@ export class GamePiecePool {
     if (inAir !== this.airborne[i]) {
       this.airborne[i] = inAir;
       b.setLinearDamping(inAir ? (s.airDamping ?? 0.02) : (s.groundDamping ?? 0.5));
+    }
+    const k = this.dragK[i];
+    if (inAir && k > 0) {
+      const v = b.linvel();
+      // Only flights: below DRAG_MIN_SPEED drag is under 2 % of g, and a ball shoved or rolled by a robot is left to the
+      // contact solver untouched.
+      if (v.x * v.x + v.y * v.y + v.z * v.z > DRAG_MIN_SPEED * DRAG_MIN_SPEED) {
+        applyQuadraticDrag(v, k, this.physics.dt);
+        b.setLinvel(v, false);
+      }
     }
   }
 

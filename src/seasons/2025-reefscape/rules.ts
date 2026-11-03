@@ -8,6 +8,7 @@ import type { MatchResults, SeasonContext, SeasonRules } from '@engine/core/seas
 import type { PeriodChange } from '@engine/match/clock';
 import { PIN_SEPARATION, PinTracker, reportPins } from '@engine/match/pinning';
 import { Referee } from '@engine/match/referee';
+import { throwVelocity } from '@engine/gamepiece/pool';
 import { groundSideSign, stationSideSign, toolLateral } from '@engine/robot/config';
 import { animateAlgaeGrip } from './algaeVisual';
 import { blendCoralPose, coralReleasePose, coralTransferPose, ejectTravel, pickupTravel, PICKUP_SECONDS } from './transferVisual';
@@ -930,7 +931,8 @@ export class ReefscapeRules implements SeasonRules {
     const from = frame.toWorld(source.x, source.y + (source.y === 0 ? 0.08 : -0.08), 1.6);
     const to = frame.toWorld(n.x, n.y, C.NET_HEIGHT + C.ALGAE_RADIUS + 0.02);
     const flight = 1.35;
-    pool.placeWorld(i, from, new THREE.Vector3((to.x - from.x) / flight, (to.y - from.y + 4.905 * flight * flight) / flight, (to.z - from.z) / flight));
+    // The human player throws for where the ball really goes: a big light ALGAE slows a lot in the air.
+    pool.placeWorld(i, from, throwVelocity(from, to, flight, pool.specAt(i), this.ctx.physics.dt));
   }
 
   private wantsCoral(r: Robot): boolean {

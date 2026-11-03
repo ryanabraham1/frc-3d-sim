@@ -66,7 +66,10 @@ export const rebuilt2026: SeasonDefinition = {
     mass: C.FUEL_MASS,
     restitution: 0.35,
     friction: 0.7,
-    airDamping: 0.03,
+    // Real air drag on a 5.91 in foam ball: a 15 m/s shot decelerates ≈ 5 m/s² at launch. [EST: smooth sphere at
+    // Re ≈ 1.5e5, Cd ≈ 0.47] The linear term is left for what the quadratic model misses (seams, spin).
+    airDamping: 0.01,
+    dragCoefficient: 0.47,
     groundDamping: 0.9,
     angularDamping: 1.2,
     color: C.COLORS.fuel,

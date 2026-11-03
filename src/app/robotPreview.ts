@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { SeasonDefinition } from '@engine/core/season';
 import { FieldFrame } from '@engine/coords';
 import { PhysicsWorld, loadRapier } from '@engine/physics/world';
+import { projectileOf } from '@engine/gamepiece/pool';
 import { cloneConfig, type RobotConfig } from '@engine/robot/config';
 import { IDLE_COMMAND, Robot } from '@engine/robot/robot';
 import { setRobotEnvironment } from '@engine/robot/models';
@@ -63,7 +64,7 @@ function build(season: SeasonDefinition, config: RobotConfig, alliance: 'red' | 
   scene.add(shadow);
   const physics = new PhysicsWorld(rapier!);
   const robot = new Robot(physics, scene, new FieldFrame(0, 0), cloneConfig(config), alliance, 0, 1, { x: 0, y: 0, yaw: 0 });
-  robot.projectile = { radius: season.gamePiece.radius, airDamping: season.gamePiece.airDamping ?? 0.02 };
+  robot.projectile = projectileOf(season.gamePiece);
   season.configureRobot?.(robot);
   robot.enabled = false;
   robot.syncVisual(0.016);
