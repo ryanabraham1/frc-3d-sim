@@ -16,6 +16,33 @@ interface Env {
   ALLOWED_ORIGINS?: string;
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_KEY?: string;
+  /** Cloudflare Realtime TURN key (dashboard → Realtime → TURN): `wrangler secret put TURN_KEY_ID` / `TURN_KEY_API_TOKEN`. */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
+}
+
+const STUN_ONLY = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+/** TURN credentials last this long; the page fetches them once per relay connection. */
+const TURN_TTL_S = 6 * 3600;
+let turnCache: { at: number; body: string } | null = null;
+
+/**
+ * ICE servers for direct host/client links. With a TURN key, players behind NATs that block STUN-only connections
+ * (symmetric NAT, school / carrier networks) still get a UDP path instead of the TCP relay.
+ */
+async function iceServers(env: Env): Promise<WorkerResponse> {
+  const headers = { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' };
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return new Response(JSON.stringify({ iceServers: STUN_ONLY }), { headers });
+  if (!turnCache || Date.now() - turnCache.at > (TURN_TTL_S / 2) * 1000) {
+    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ ttl: TURN_TTL_S }),
+    });
+    if (!res.ok) return new Response(JSON.stringify({ iceServers: STUN_ONLY }), { headers });
+    turnCache = { at: Date.now(), body: await res.text() };
+  }
+  return new Response(turnCache.body, { headers });
 }
 
 /** Adapt the Workers socket to the small ws interface used by the shared relay. */
@@ -57,7 +84,7 @@ export class RelayCoordinator extends DurableObject<Env> {
 
   async fetch(request: Request): Promise<WorkerResponse> {
     const path = new URL(request.url).pathname;
-    if (path === '/healthz') return Response.json({ ok: true, rooms: this.relay?.roomCount() ?? 0, peers: this.hub?.clients.size ?? 0 });
+    if (path === '/healthz') return Response.json({ ok: true, rooms: this.relay?.roomCount() ?? 0, peers: this.hub?.clients.size ?? 0, colo: await this.colo() });
     if (path === '/api/match-logs') return this.matchLog(request);
     if (path !== '/ws') return new Response('Not found', { status: 404 });
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket required', { status: 426 });
@@ -96,6 +123,19 @@ export class RelayCoordinator extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
 
+  private coloName: string | null = null;
+  /** Data center this Durable Object runs in (every relayed packet passes through it). */
+  private async colo(): Promise<string> {
+    if (this.coloName) return this.coloName;
+    try {
+      const trace = await (await fetch('https://cloudflare.com/cdn-cgi/trace')).text();
+      this.coloName = /colo=(\w+)/.exec(trace)?.[1] ?? 'unknown';
+    } catch {
+      return 'unknown';
+    }
+    return this.coloName;
+  }
+
   /** Browsers upload finished match logs here (docs/MATCH-LOGS.md); stored in Supabase like on the Node server. */
   private async matchLog(request: Request): Promise<WorkerResponse> {
     const { SUPABASE_URL: url, SUPABASE_SERVICE_KEY: key } = this.env;
@@ -110,6 +150,7 @@ export class RelayCoordinator extends DurableObject<Env> {
 
 export default {
   fetch(request: Request, env: Env): Promise<WorkerResponse> {
+    if (new URL(request.url).pathname === '/ice') return iceServers(env);
     return env.RELAY.get(env.RELAY.idFromName('public-relay-v1')).fetch(request);
   },
 };

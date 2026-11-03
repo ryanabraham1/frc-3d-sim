@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NetClient } from '../src/engine/net/netClient';
+import { iceUrl, NetClient } from '../src/engine/net/netClient';
 
 class Socket {
   static OPEN = 1;
@@ -25,6 +25,7 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', Socket);
   vi.stubGlobal('sessionStorage', undefined);
   vi.stubGlobal('location', { search: '' });
+  vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')));
   Socket.instances = [];
   client = new NetClient();
 });
@@ -118,4 +119,84 @@ it('measures both directions of the artificial latency in relay RTT', async () =
   ws.message({ op: 'pong', id: 1 });
   await vi.advanceTimersByTimeAsync(100);
   expect(client.rttMs).toBe(200);
+});
+
+class Channel {
+  readyState = 'connecting';
+  binaryType = '';
+  bufferedAmount = 0;
+  onopen: (() => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  send() {}
+  close() { this.readyState = 'closed'; }
+  open() { this.readyState = 'open'; this.onopen?.(); }
+}
+class PC {
+  static instances: PC[] = [];
+  connectionState = 'new';
+  localDescription: { toJSON: () => unknown } | null = null;
+  onicecandidate: unknown = null;
+  onconnectionstatechange: (() => void) | null = null;
+  ondatachannel: unknown = null;
+  channels: Channel[] = [];
+  constructor(public config: RTCConfiguration) { PC.instances.push(this); }
+  createDataChannel() { const c = new Channel(); this.channels.push(c); return c; }
+  async createOffer() { return { type: 'offer', sdp: 'x' }; }
+  async setLocalDescription(d: unknown) { this.localDescription = { toJSON: () => d }; }
+  close() { this.connectionState = 'closed'; }
+  state(s: string) { this.connectionState = s; this.onconnectionstatechange?.(); }
+}
+
+describe('direct links', () => {
+  beforeEach(() => { PC.instances = []; vi.stubGlobal('RTCPeerConnection', PC); });
+
+  it('maps the relay socket to its ICE endpoint', () => {
+    expect(iceUrl('wss://relay.example.dev/ws')).toBe('https://relay.example.dev/ice');
+    expect(iceUrl('ws://localhost:5173/ws?x=1')).toBe('http://localhost:5173/ice');
+  });
+
+  it('host offers again with backoff after a direct link fails, and rides out a brief disconnect', async () => {
+    client = new NetClient();
+    const ws = await seated();
+    // The relay stays alive throughout (its heartbeat closes a silent socket after 10 s).
+    const wait = async (ms: number) => { for (; ms > 0; ms -= 1000) { ws.message({ op: 'pong', id: -1 }); await vi.advanceTimersByTimeAsync(Math.min(1000, ms)); } };
+    ws.message({ op: 'peer-joined', peerId: 'guest', name: 'G' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(PC.instances).toHaveLength(1);
+    const first = PC.instances[0];
+    first.channels.forEach(c => c.open());
+    expect(client.directPeerCount).toBe(1);
+    // Wi-Fi blip: 'disconnected' that recovers keeps the link.
+    first.state('disconnected');
+    await wait(3000);
+    first.state('connected');
+    await wait(10000);
+    expect(client.directPeerCount).toBe(1);
+    expect(PC.instances).toHaveLength(1);
+    // A real failure drops to the relay, then the host tries direct again instead of staying on the relay.
+    first.state('failed');
+    expect(client.directPeerCount).toBe(0);
+    await wait(2000);
+    expect(PC.instances).toHaveLength(2);
+    // That one never connects (15 s negotiation timeout): the next try waits longer.
+    await wait(15000);
+    await wait(3900);
+    expect(PC.instances).toHaveLength(2);
+    await wait(200);
+    expect(PC.instances).toHaveLength(3);
+  });
+
+  it('uses TURN servers from the relay for new links', async () => {
+    vi.stubGlobal('fetch', async () => ({ ok: true, json: async () => ({ iceServers: [{ urls: 'turn:turn.example:3478', username: 'u', credential: 'c' }] }) }));
+    client = new NetClient();
+    const ws = await seated();
+    await vi.advanceTimersByTimeAsync(0);
+    ws.message({ op: 'peer-joined', peerId: 'guest', name: 'G' });
+    await vi.advanceTimersByTimeAsync(0);
+    const urls = (PC.instances[0].config.iceServers ?? []).flatMap(s => s.urls);
+    expect(urls).toContain('turn:turn.example:3478');
+    expect(urls).toContain('stun:stun.cloudflare.com:3478');
+  });
 });

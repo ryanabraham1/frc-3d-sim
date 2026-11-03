@@ -1,4 +1,4 @@
-import { DirectTransport } from './directTransport';
+import { DEFAULT_ICE_SERVERS, DirectTransport } from './directTransport';
 import { Emitter } from '../core/events';
 import type { Outcome, RankedMode } from './ranked';
 import { cleanClientId, CLOSE_LEAVE, RECONNECT_GRACE_MS, RELAY_PATH, type RelayEvent, type RelayRequest, type RoomListing, type RoomMeta } from './relayProtocol';
@@ -43,6 +43,23 @@ export interface NetClientEvents {
 /** Thrown for an answer from the relay (as opposed to a network failure). */
 class RelayError extends Error {}
 
+/** Host: first retry of a failed or dropped direct link (ms), doubling up to DIRECT_RETRY_MAX_MS. */
+const DIRECT_RETRY_MS = 2000;
+const DIRECT_RETRY_MAX_MS = 30000;
+
+/** The relay's ICE endpoint (TURN credentials when configured): wss://relay/ws → https://relay/ice. */
+export function iceUrl(relayUrl: string): string | null {
+  try {
+    const u = new URL(relayUrl);
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = '/ice';
+    u.search = '';
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Browser WebSocket client for the relay (server/relay.ts). One instance lives across menu ↔ match so
  * a lobby survives between matches. A dropped connection is resumed automatically (same peer id) for up
@@ -68,17 +85,60 @@ export class NetClient extends Emitter<NetClientEvents> {
         } catch { /* malformed direct message */ }
       }
     },
-    () => {
+    (peer) => {
       if (this.room && !this.isHost) this.raw({ op: 'send', data: { t: 'resync' } });
+      if (this.isHost) this.scheduleDirectRetry(peer);
       this.emit('transport', { directPeers: this.direct.peers.length });
     },
   );
+  private readonly directRetries = new Map<string, { attempts: number; timer: ReturnType<typeof setTimeout> | null }>();
+  private iceLoadedFor = '';
+
+  /**
+   * Host: a direct link that failed to negotiate or dropped mid-match is offered again with backoff, instead of leaving
+   * that player on the relay (TCP: every lost packet stalls the stream) for the rest of the session.
+   */
+  private scheduleDirectRetry(peer: string): void {
+    const r = this.directRetries.get(peer) ?? { attempts: 0, timer: null };
+    this.directRetries.set(peer, r);
+    if (this.direct.isOpen(peer)) {
+      r.attempts = 0;
+      return;
+    }
+    if (r.timer || !this.direct.available) return;
+    const delay = Math.min(DIRECT_RETRY_MAX_MS, DIRECT_RETRY_MS * 2 ** r.attempts);
+    r.attempts++;
+    r.timer = setTimeout(() => {
+      r.timer = null;
+      if (this.isHost && this.connected && this.peers.has(peer) && !this.direct.has(peer)) void this.direct.offer(peer);
+    }, delay);
+  }
+
+  private clearDirectRetries(): void {
+    for (const r of this.directRetries.values()) if (r.timer) clearTimeout(r.timer);
+    this.directRetries.clear();
+  }
+
+  /** TURN lets players behind strict NATs connect directly; without it (or if the fetch fails) STUN only. */
+  private async loadIceServers(relayUrl: string): Promise<void> {
+    const url = iceUrl(relayUrl);
+    if (!url || this.iceLoadedFor === url || typeof fetch === 'undefined') return;
+    this.iceLoadedFor = url;
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      const body = res.ok ? (await res.json()) as { iceServers?: RTCIceServer[] } : null;
+      if (Array.isArray(body?.iceServers) && body.iceServers.length) this.direct.setIceServers([...body.iceServers, ...DEFAULT_ICE_SERVERS]);
+    } catch {
+      this.iceLoadedFor = '';
+    }
+  }
 
   /** Number of direct host/client links; zero means game traffic uses the relay. */
   get directPeerCount(): number { return this.direct.peers.length; }
   get directSupported(): boolean { return this.direct.available; }
 
   private resetDirect(): void {
+    this.clearDirectRetries();
     this.direct.close();
     this.peers.clear();
     this.snapshotRoute = '';
@@ -187,6 +247,7 @@ export class NetClient extends Emitter<NetClientEvents> {
     this.close();
     this.closedReason = null;
     this.url = url;
+    void this.loadIceServers(url);
     await this.openSocket(url, timeoutMs);
     this.flushForget();
   }

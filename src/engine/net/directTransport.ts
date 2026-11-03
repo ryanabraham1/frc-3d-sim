@@ -13,6 +13,10 @@ const GAME_CHANNEL = 'frc-game';
  * bursts on lossy Wi-Fi). Clients recover lost deltas with a keyframe.
  */
 const SNAPSHOT_CHANNEL = 'frc-snap';
+/** Free public STUN; TURN comes from the relay's /ice endpoint when it has a key (see `setIceServers`). */
+export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+/** Wi-Fi roaming and brief outages show as 'disconnected' and usually recover: wait this long before giving up (ms). */
+const DISCONNECT_GRACE_MS = 5000;
 
 interface Link {
   session: string;
@@ -20,6 +24,7 @@ interface Link {
   channel: RTCDataChannel | null;
   snapshots: RTCDataChannel | null;
   timer: ReturnType<typeof setTimeout>;
+  grace: ReturnType<typeof setTimeout> | null;
   advertised: boolean;
   candidates: RTCIceCandidateInit[];
 }
@@ -35,7 +40,7 @@ export class DirectTransport {
     private readonly signal: (peer: string, signal: DirectSignal) => void,
     private readonly receive: (peer: string, data: string | ArrayBuffer) => void,
     private readonly changed: (peer: string) => void,
-    private readonly iceServers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }],
+    private iceServers: RTCIceServer[] = DEFAULT_ICE_SERVERS,
   ) {
     this.available = typeof RTCPeerConnection !== 'undefined' &&
       import.meta.env.VITE_DIRECT_CONNECTIONS !== 'false' &&
@@ -44,11 +49,15 @@ export class DirectTransport {
 
   get peers(): string[] { return [...this.links].filter(([, l]) => l.channel?.readyState === 'open').map(([p]) => p); }
   isOpen(peer: string): boolean { return this.links.get(peer)?.channel?.readyState === 'open'; }
+  /** A link to `peer` exists (open or still negotiating). */
+  has(peer: string): boolean { return this.links.has(peer); }
+  /** Used by links negotiated from now on. */
+  setIceServers(servers: RTCIceServer[]): void { this.iceServers = servers; }
 
   private make(peer: string, session: string): Link {
     this.drop(peer);
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
-    const link: Link = { session, pc, channel: null, snapshots: null, advertised: false, candidates: [], timer: setTimeout(() => {
+    const link: Link = { session, pc, channel: null, snapshots: null, grace: null, advertised: false, candidates: [], timer: setTimeout(() => {
       if (import.meta.env.DEV) console.debug('Direct connection timed out; using relay', pc.connectionState, pc.iceConnectionState);
       this.drop(peer);
     }, 15000) };
@@ -60,7 +69,11 @@ export class DirectTransport {
       else link.candidates.push(candidate);
     };
     pc.onconnectionstatechange = () => {
-      if (this.links.get(peer) === link && ['failed', 'closed', 'disconnected'].includes(pc.connectionState)) this.drop(peer);
+      if (this.links.get(peer) !== link) return;
+      const state = pc.connectionState;
+      if (state === 'failed' || state === 'closed') this.drop(peer);
+      else if (state === 'disconnected') link.grace ??= setTimeout(() => { if (this.links.get(peer) === link) this.drop(peer); }, DISCONNECT_GRACE_MS);
+      else if (link.grace) { clearTimeout(link.grace); link.grace = null; }
     };
     pc.ondatachannel = e => {
       if (e.channel.label === SNAPSHOT_CHANNEL && !link.snapshots) this.attachSnapshots(peer, link, e.channel);
@@ -184,6 +197,7 @@ export class DirectTransport {
     if (!link) return;
     this.links.delete(peer);
     clearTimeout(link.timer);
+    if (link.grace) clearTimeout(link.grace);
     link.pc.onconnectionstatechange = null;
     for (const channel of [link.channel, link.snapshots]) {
       if (!channel) continue;
