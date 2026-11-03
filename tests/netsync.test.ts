@@ -457,6 +457,40 @@ describe('ClientSync', () => {
     expect(cs.delay).toBeLessThanOrEqual(MAX_INTERP_DELAY);
     p.dispose();
   });
+
+  it('covers periodic Wi-Fi stalls (a run of snapshots ~100 ms late every half second) instead of running past them', () => {
+    const p = pair('2026-rebuilt');
+    const { h, cs } = p;
+    for (let k = 0; k < 600; k++) h.hs.sendSnapshot(k / 30);
+    // Measured on a real Wi-Fi link through the relay: every 15th snapshot stalls up to ~130 ms, the next few arrive in a burst.
+    const late = (k: number) => Math.max(0, 130 - (k % 15) * 33);
+    let worst = 0;
+    let next = 0;
+    for (let ms = 0; ms < 20000; ms += 1000 / 120) {
+      while (next < 600 && (next * 1000) / 30 + late(next) <= ms) cs.onBinary(h.frames[next++], ms);
+      // Each drawn frame, render time stays behind the newest snapshot that has arrived (no freeze-then-jump).
+      if (next > 300 && next < 600) worst = Math.max(worst, cs.hostNow(ms) - cs.delay - (next - 1) / 30);
+    }
+    expect(cs.spike).toBeGreaterThan(0.06);
+    expect(worst).toBeLessThan(0.002);
+    expect(cs.delay).toBeLessThanOrEqual(MAX_INTERP_DELAY);
+    p.dispose();
+  });
+
+  it('resends the held command every 50 ms over a direct link (unreliable copies get lost), every 250 ms over the relay', () => {
+    const p = pair('2026-rebuilt');
+    const cmd = { vx: 1, vy: 0, omega: 0, intake: false, shoot: false, pass: false, climb: null, descend: false };
+    const count = (direct: number) => {
+      const t = fakeNet();
+      Object.assign(t.net, { directPeerCount: direct });
+      const cs = new ClientSync(t.client, { pool: p.clientSim.pool, robots: [p.clientSim.robot], clock: p.clientSim.ctx.clock, score: p.clientSim.ctx.score, rules: p.clientSim.rules });
+      for (let ms = 0; ms < 1000; ms += 1000 / 120) cs.sendCommand(cmd, ms);
+      return t.sent.filter((m) => (m as ClientMsg).t === 'cmd').length;
+    };
+    expect(count(1)).toBeGreaterThanOrEqual(19);
+    expect(count(0)).toBeLessThanOrEqual(5);
+    p.dispose();
+  });
 });
 
 describe('pieces are where the host has them (regression: invisible FUEL that "spawned in" and beached robots)', () => {

@@ -8,7 +8,7 @@ export interface DirectSignal {
 /** Reliable, ordered: commands and anything that must arrive. */
 const GAME_CHANNEL = 'frc-game';
 /**
- * Unreliable, unordered: host snapshots. Each snapshot supersedes the last, so a lost packet must not hold
+ * Unreliable, unordered: host snapshots (and a duplicate of each driver command, see `sendUnreliable`). Each snapshot supersedes the last, so a lost packet must not hold
  * back the ones behind it until it is retransmitted (head-of-line blocking showed up as stalls followed by
  * bursts on lossy Wi-Fi). Clients recover lost deltas with a keyframe.
  */
@@ -93,7 +93,7 @@ export class DirectTransport {
     channel.onclose = channel.onerror = () => { if (link.snapshots === channel) link.snapshots = null; };
     channel.onmessage = e => {
       if (this.links.get(peer) !== link || link.snapshots !== channel) return;
-      if (e.data instanceof ArrayBuffer && e.data.byteLength <= MAX_FRAME_BYTES) this.receive(peer, e.data);
+      if (e.data instanceof ArrayBuffer ? e.data.byteLength <= MAX_FRAME_BYTES : typeof e.data === 'string' && e.data.length <= MAX_FRAME_BYTES) this.receive(peer, e.data);
     };
   }
 
@@ -159,6 +159,22 @@ export class DirectTransport {
     } catch {
       if (channel === snapshots) link.snapshots = null; // this frame goes by relay, later ones by the game channel
       else this.drop(peer);
+      return false;
+    }
+  }
+
+  /**
+   * Superseding text (driver commands) on the unreliable channel: a lost packet is replaced by the next one instead of
+   * holding every later command back until SCTP retransmits it (hundreds of ms on lossy Wi-Fi). False = not sent.
+   */
+  sendUnreliable(peer: string, data: string): boolean {
+    const link = this.links.get(peer);
+    const channel = link?.channel?.readyState === 'open' && link.snapshots?.readyState === 'open' ? link.snapshots : null;
+    if (!channel || channel.bufferedAmount > MAX_BINARY_BACKLOG) return false;
+    try {
+      channel.send(data);
+      return true;
+    } catch {
       return false;
     }
   }

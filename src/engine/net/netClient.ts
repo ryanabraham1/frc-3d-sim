@@ -373,8 +373,14 @@ export class NetClient extends Emitter<NetClientEvents> {
 
   /** Client → host, or host → `to` (all clients when omitted). */
   send(data: unknown, to?: string): void {
-    // Room/lobby events stay ordered on the relay; only frequent driver controls go direct.
-    if (!this.isHost && data && typeof data === 'object' && (data as { t?: string }).t === 'cmd' && this.direct.send(this.hostId, JSON.stringify(data))) return;
+    // Room/lobby events stay ordered on the relay; only frequent driver controls go direct. Each command goes on the
+    // unreliable channel (fresh, never stuck behind a lost packet) and the reliable one (always arrives); the host keeps
+    // only the newest sequence number, so the copy that comes second is dropped.
+    if (!this.isHost && data && typeof data === 'object' && (data as { t?: string }).t === 'cmd') {
+      const json = JSON.stringify(data);
+      this.direct.sendUnreliable(this.hostId, json);
+      if (this.direct.send(this.hostId, json)) return;
+    }
     this.raw({ op: 'send', data, to });
   }
 

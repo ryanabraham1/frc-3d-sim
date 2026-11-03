@@ -28,6 +28,13 @@ const MAX_OFFSET_STEP = 0.1;
 const MAX_REWIND = 0.3;
 const LATE_RESET = 0.5;
 const LATE_RESET_RUN = 15;
+/** Half-life of the remembered worst late arrival (s of host time). Wi-Fi stalls packets for ~100 ms every second
+ * or so; an average-jitter delay ran past them, froze everything, then jumped when the burst arrived. */
+const SPIKE_HALF_LIFE = 4;
+/** While direct (WebRTC) to the host, resend the current command this often (ms) so a lost one is replaced at once. */
+const RESEND_DIRECT_MS = 50;
+/** Keep-alive over the relay (ms). */
+const RESEND_RELAY_MS = 250;
 
 export interface HostPieceSample {
   x: number;
@@ -73,6 +80,8 @@ export class ClientSync {
   delay = INTERP_DELAY;
   /** Smoothed arrival jitter (s). */
   jitter = 0;
+  /** Recent worst late arrival (s), decaying with SPIKE_HALF_LIFE. */
+  spike = 0;
 
   private lastRt = -Infinity;
   private lastRtAt = 0;
@@ -156,8 +165,8 @@ export class ClientSync {
     this.requestResync(localMs);
     this.lastSeq = s.seq;
     this.updateClock(s.time, localMs);
-    // Enough delay for two snapshots plus the arrival jitter; eased so the view never jumps.
-    const want = Math.min(MAX_INTERP_DELAY, Math.max(MIN_INTERP_DELAY, SNAP_DT * 1.5 + this.jitter * 2.5));
+    // Enough delay for two snapshots plus the arrival jitter and the recent stalls; eased so the view never jumps.
+    const want = Math.min(MAX_INTERP_DELAY, Math.max(MIN_INTERP_DELAY, SNAP_DT * 1.5 + this.jitter * 2.5, SNAP_DT + this.spike));
     this.delay += (want - this.delay) * 0.05;
 
     const { pool, clock, score, rules } = this.target;
@@ -244,9 +253,12 @@ export class ClientSync {
     if (this.offset === null || hostTime < this.latestTime - 1 || err > LATE_RESET || this.lateRun >= LATE_RESET_RUN) {
       this.offset = sample;
       this.jitter = 0;
+      this.spike = 0;
       this.lateRun = 0;
       return;
     }
+    this.spike *= Math.pow(0.5, Math.max(0, hostTime - this.latestTime) / SPIKE_HALF_LIFE);
+    this.spike = Math.max(this.spike, Math.min(-err, MAX_INTERP_DELAY));
     this.offset += Math.max(-MAX_OFFSET_STEP, Math.min(MAX_OFFSET_STEP, err)) * 0.05;
     this.jitter += (Math.min(Math.abs(err), MAX_INTERP_DELAY) - this.jitter) * 0.05;
   }
@@ -349,14 +361,18 @@ export class ClientSync {
     }
   }
 
-  /** Send the local driver's command: immediately on button changes, else ≤30 Hz, plus a 4 Hz keep-alive. */
+  /**
+   * Send the local driver's command: immediately on button changes, else ≤30 Hz, plus a keep-alive (20 Hz over a direct
+   * link, where commands also go unreliable and a lost one must be replaced quickly; 4 Hz over the relay).
+   */
   sendCommand(cmd: RobotCommand, localMs: number): number | null {
     if (!this.client.connected || this.client.buffered > 16 * 1024) return null;
     const packed = packCommand(cmd);
     const key = packed.join(',');
     const buttons = `${packed[3]},${packed[4]},${packed[5] ?? ''}`;
     const since = localMs - this.lastSentAt;
-    if (buttons === this.lastButtons && !(key !== this.lastKey && since >= 33) && since < 250) return null;
+    const resend = this.client.directPeerCount > 0 ? RESEND_DIRECT_MS : RESEND_RELAY_MS;
+    if (buttons === this.lastButtons && !(key !== this.lastKey && since >= 33) && since < resend) return null;
     this.lastKey = key;
     this.lastButtons = buttons;
     this.lastSentAt = localMs;

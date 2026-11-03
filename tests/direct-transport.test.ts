@@ -122,6 +122,20 @@ describe('direct host connections', () => {
     expect(pc.channel.sent).toHaveLength(2);
   });
 
+  it('duplicates driver commands on the unreliable channel, and the host accepts them there', async () => {
+    await transport.offer('guest');
+    const pc = PC.instances[0];
+    expect(transport.sendUnreliable('guest', 'cmd')).toBe(false); // not open yet: reliable path / relay only
+    pc.channel.open();
+    pc.snapshots!.open();
+    expect(transport.sendUnreliable('guest', 'cmd')).toBe(true);
+    expect(pc.snapshots!.sent).toEqual(['cmd']);
+    pc.snapshots!.bufferedAmount = 1 << 20;
+    expect(transport.sendUnreliable('guest', 'cmd2')).toBe(false);
+    pc.snapshots!.onmessage?.({ data: '{"t":"cmd"}' });
+    expect(received).toEqual([{ peer: 'guest', data: '{"t":"cmd"}' }]);
+  });
+
   it('accepts the host snapshot channel as a client', async () => {
     transport.handleSignal('host', { session: 's', description: { type: 'offer', sdp: 'sdp' } }, true);
     await vi.advanceTimersByTimeAsync(0);
