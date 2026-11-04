@@ -197,7 +197,11 @@ export class RebuiltRules implements SeasonRules {
     // taken). A shot blocker that is up or being raised turns the intake off, and a driver-raised telescoping hopper
     // (1678) only grows on command, so for those only the arm actually overhead counts.
     const blocking = !!blocker && (robot.blockerDeploy > 0 || !!robot.lastCommand.block);
-    const margin = robot.config.hopperExpansion && !robot.manualHopper && !blocking ? 0.6 + (C.TRENCH_DEPTH - C.TRENCH_ARM_DEPTH) / 2 : 0;
+    const lookahead = robot.config.hopperExpansion && !robot.manualHopper && !blocking ? 0.6 + (C.TRENCH_DEPTH - C.TRENCH_ARM_DEPTH) / 2 : 0;
+    // The lookahead only matters while rolling toward an arm. Parked or driving along/away from it, the intake keeps
+    // working at full capacity instead of cutting out ~1 m from every TRENCH.
+    const vel = lookahead ? robot.fieldVelocity : null;
+    const px = lookahead ? robot.pose.x : 0;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const p of robot.corners()) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
@@ -206,6 +210,7 @@ export class RebuiltRules implements SeasonRules {
     // Only the arm is overhead (the pedestal beside the opening is not driven under); see buildBumpsAndTrenches.
     const reach = Math.min(C.TRENCH_WIDTH, C.HUB_CENTER.y - C.HUB_SIZE / 2 - C.BUMP_WIDTH);
     for (const hubX of [C.HUB_CENTER.x, C.FIELD_LENGTH - C.HUB_CENTER.x]) {
+      const margin = vel && Math.abs(vel.vx) > 0.4 && vel.vx * (hubX - px) > 0 ? lookahead : 0;
       if (maxX < hubX - C.TRENCH_ARM_DEPTH / 2 - margin || minX > hubX + C.TRENCH_ARM_DEPTH / 2 + margin) continue;
       if (minY < reach + margin || maxY > C.FIELD_WIDTH - reach - margin) return C.TRENCH_SAFE_HEIGHT;
     }
