@@ -397,6 +397,7 @@ export class RebuiltRules implements SeasonRules {
 
   afterStep(dt: number): void {
     const { pool, frame, score, clock, robots, toast } = this.ctx;
+    this.nudgeCrestFuel(dt);
     const t = this.now;
     const pid = this.periodId;
     if (pid && pid !== 'done') this.grace.update(t, pid, this.firstInactive);
@@ -547,6 +548,33 @@ export class RebuiltRules implements SeasonRules {
     }
   }
 
+  private crestCheckAt = 0;
+  /**
+   * A FUEL balanced exactly on a BUMP's sharp ridge is an unstable equilibrium the solver happily holds (and sleeps). On
+   * the real carpet-and-plastic field the slightest vibration rolls it down a ramp, so give a still one a tiny push.
+   */
+  private nudgeCrestFuel(dt: number): void {
+    this.crestCheckAt -= dt;
+    if (this.crestCheckAt > 0) return;
+    this.crestCheckAt = 0.5;
+    const { pool, frame, rng } = this.ctx;
+    const hs = C.HUB_SIZE / 2, bumpRise = C.BUMP_HEIGHT + pool.radius * 2 + 0.05;
+    for (let i = 0; i < pool.count; i++) {
+      if (pool.state[i] !== 'field') continue;
+      const f = frame.toField(pool.position(i));
+      if (f.z < 0.1 || f.z > bumpRise) continue;
+      const dy = Math.abs(f.y - C.HUB_CENTER.y), inBumpY = dy > hs && dy < hs + C.BUMP_WIDTH;
+      if (!inBumpY) continue;
+      const nearRidge = [C.HUB_CENTER.x, C.FIELD_LENGTH - C.HUB_CENTER.x].some((x) => Math.abs(f.x - x) < 0.05);
+      if (!nearRidge) continue;
+      const v = pool.velocity(i);
+      if (Math.hypot(v.x, v.y, v.z) > 0.15) continue;
+      const b = pool.bodies[i];
+      frame.velToWorld(rng.range(-1, 1) < 0 ? -0.35 : 0.35, 0, 0, this.tmp2);
+      b.applyImpulse({ x: b.mass() * this.tmp2.x, y: 0, z: b.mass() * this.tmp2.z }, true);
+    }
+  }
+
   /** FUEL under a chassis is crushed flat and squeezed out to the nearest side; it pops back to full size once clear. */
   private squashUnderRobots(): void {
     const { pool, robots } = this.ctx;
@@ -645,6 +673,11 @@ export class RebuiltRules implements SeasonRules {
       if (h.squeezed) pool.squeeze(i, 1);
       this.inHub.delete(i);
       this.hubDrops.set(i, { t: this.now, grounded: false });
+      // Out of the slot a ball rolls off at its own pace and fans out: stream-fed balls pop out at different speeds and
+      // angles instead of every lane dropping into one heap in front of the exit [EST: spread values].
+      const b = pool.bodies[i], m = b.mass();
+      this.ctx.frame.velToWorld(d * this.ctx.rng.range(0.2, 1.4), this.ctx.rng.range(-1.1, 1.1), 0, this.tmp2);
+      b.applyImpulse({ x: m * this.tmp2.x, y: 0, z: m * this.tmp2.z }, true);
       return;
     }
     // Anywhere else outside the body (bounced back out of the funnel): an ordinary ball again.
