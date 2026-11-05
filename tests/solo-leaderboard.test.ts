@@ -69,7 +69,7 @@ describe('ghost format', () => {
 });
 
 describe('which robots have a board', () => {
-  it('every stock robot has exactly its own board, with an id the relay accepts', () => {
+  it('every team robot has exactly its own board, with an id the relay accepts', () => {
     for (const season of SEASONS) {
       const robots = boardRobots(season);
       expect(new Set(robots.map((r) => r.id)).size).toBe(robots.length);
@@ -87,6 +87,13 @@ describe('which robots have a board', () => {
       const seconds = season.timeline.reduce((a, p) => a + p.duration, 0);
       expect(seconds).toBeGreaterThan(60);
       expect(seconds).toBeLessThan(400);
+    }
+  });
+
+  it('archetypes have no board', () => {
+    for (const season of SEASONS) {
+      expect(boardRobots(season).length).toBe(season.teamRobots?.length ?? 0);
+      for (const preset of season.robotPresets ?? []) expect(boardRobots(season).some((b) => b.id === preset.id)).toBe(false);
     }
   });
 
@@ -163,6 +170,19 @@ describe('/api/solo-scores', () => {
     const broken = new SupabaseSoloScoreStore('https://x.supabase.co', 'k', (async () => new Response('down', { status: 500 })) as typeof fetch);
     const res = await handleSoloScoreRequest(new Request('http://relay/api/solo-scores?season=2026-rebuilt'), broken, new UploadLimiter(), 'ip');
     expect(res.status).toBe(502);
+  });
+
+  it('a board read never asks Postgres for a score too big for its integer column', async () => {
+    const urls: string[] = [];
+    const store = new SupabaseSoloScoreStore('https://x.supabase.co', 'k', (async (url: string, init?: RequestInit) => {
+      urls.push(url);
+      const big = /score=gt\.(\d+)/.exec(url);
+      if (big && Number(big[1]) > 2147483647) return new Response('out of range', { status: 400 });
+      return new Response(init?.method === 'HEAD' ? null : '[]', { status: 200, headers: { 'content-range': '*/0' } });
+    }) as typeof fetch);
+    const res = await handleSoloScoreRequest(new Request('http://relay/api/solo-scores?season=2026-rebuilt&robot=x'), store, new UploadLimiter(), 'ip');
+    expect(res.status).toBe(200);
+    expect(urls.some((u) => u.includes('score=gt.'))).toBe(true);
   });
 
   it('asks Supabase for a board without the ghost column, and upserts on the driver', async () => {

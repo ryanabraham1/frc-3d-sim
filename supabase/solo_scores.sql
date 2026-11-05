@@ -5,7 +5,7 @@
 create table if not exists public.solo_scores (
   id         uuid primary key default gen_random_uuid(),
   season     text not null,
-  robot      text not null,                -- SeasonDefinition robotPresets / teamRobots id
+  robot      text not null,                -- SeasonDefinition teamRobots id
   player_id  text not null,                -- hash of the device secret, the same identity as ranked
   name       text not null,
   score      integer not null,

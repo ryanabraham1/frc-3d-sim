@@ -10,7 +10,7 @@
  *   POST {rename: true, name, secret}                  change your name on every board
  */
 import { cleanName } from '../src/engine/net/relayProtocol.ts';
-import { decodeGhost, ghostProblem, MAX_GHOST_CHARS } from '../src/engine/ghost/format.ts';
+import { decodeGhost, ghostProblem, MAX_GHOST_CHARS, MAX_SCORE } from '../src/engine/ghost/format.ts';
 import { UploadLimiter } from './matchLogCore.ts';
 import { playerIdFor } from './ranked.ts';
 
@@ -174,7 +174,8 @@ async function read(request: Request, store: SoloScoreStore): Promise<Response> 
   const secret = request.headers.get('x-solo-secret');
   const me = secret && SECRET.test(secret) ? playerIdFor(secret) : null;
   const [rows, mine] = await Promise.all([store.top(season, robot, BOARD_SIZE), me ? store.mine(season, robot, me) : null]);
-  const standing = await store.standing(season, robot, mine?.score ?? Number.MAX_SAFE_INTEGER);
+  // No run of your own: ask for the total with a score nobody can have (it must still fit Postgres `integer`).
+  const standing = await store.standing(season, robot, mine?.score ?? MAX_SCORE);
   return reply(200, {
     total: standing.total,
     entries: rows.map((r) => ({ id: r.id, name: cleanName(r.name), score: r.score, at: r.at, mine: r.playerId === me })),

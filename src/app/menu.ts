@@ -490,7 +490,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings, ghos
         <div class="panel-head"><span>Match setup</span><span class="dim">${esc(seasonLabel(season))} · ${formatClock(matchLength())} match</span></div>
         <div class="settings-grid">
           ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
-          ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, s.aiOpponents !== false ? '3 vs 3 adds two AI teammates and three opponents who collect and score.' : boardRobotFor(season, s.robot) ? 'Your score goes on this robot\u2019s leaderboard.' : 'Custom builds aren\u2019t ranked: pick a stock robot in the Garage to go on the leaderboard.')}
+          ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, s.aiOpponents !== false ? '3 vs 3 adds two AI teammates and three opponents who collect and score.' : boardRobotFor(season, s.robot) ? 'Your score goes on this robot\u2019s leaderboard.' : 'Only real team robots are ranked: pick one in the Garage to go on the leaderboard.')}
           ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, '', 'wide')}
           ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
           ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
@@ -731,7 +731,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings, ghos
     const titles: Record<Page, { h1: string; sub: string }> = {
       home: { h1: '', sub: '' },
       solo: { h1: 'Solo match', sub: 'Set up your match, then press Start.' },
-      leaderboard: { h1: 'Leaderboard', sub: `Best Solo practice scores in ${season.name}, one board per robot. Race anyone's ghost.` },
+      leaderboard: { h1: 'Leaderboard', sub: `Best Solo practice scores in ${season.name}, one board per team robot. Race anyone's ghost.` },
       garage: { h1: 'Garage', sub: 'Build the robot you drive.' },
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
       rules: { h1: `${season.name} rules`, sub: season.summary },

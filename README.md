@@ -172,7 +172,7 @@ referee-judgement rules are not enforced.
 
 ## Solo leaderboards
 
-Every stock robot has its own leaderboard for each game. Play Solo practice on it and your best score goes up with a
+Every real team robot has its own leaderboard. Play Solo practice on it and your best score goes up with a
 ghost: on the Leaderboard page, pick up to three ghosts to race, or race your own best automatically. See
 [docs/LEADERBOARD.md](docs/LEADERBOARD.md).
 

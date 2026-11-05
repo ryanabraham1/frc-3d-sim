@@ -1,14 +1,14 @@
 # Solo leaderboards and ghosts
 
-One leaderboard per season and stock robot: every `robotPresets` archetype and `teamRobots` robot (`boardRobots` in
-`src/engine/ghost/board.ts`). Each driver keeps their best score on each board, with a ghost anyone can race.
+One leaderboard per real team robot in a season: every `teamRobots` entry (`boardRobots` in
+`src/engine/ghost/board.ts`). Archetypes have no boards. Each driver keeps their best score on each board, with a ghost anyone can race.
 
 ## What counts
 
-A run is a full **Solo practice** match (AI opponents off) on a stock robot. Its score is the driver's alliance total.
+A run is a full **Solo practice** match (AI opponents off) on a team robot. Its score is the driver's alliance total.
 Nothing else is on the field, so the score comes down to the driver and the robot.
 
-These don't count: 3 v 3 matches, custom builds (`boardRobotFor` compares the build, ignoring team number), matches
+These don't count: 3 v 3 matches, archetypes and custom builds (`boardRobotFor` compares the build, ignoring team number), matches
 where the practice boost was switched on, `?speed=` runs, and matches abandoned before the buzzer. The Solo page says
 whether the current setup is ranked.
 

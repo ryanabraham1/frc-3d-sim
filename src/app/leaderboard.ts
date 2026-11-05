@@ -7,7 +7,7 @@ import type { RobotConfig } from '@engine/robot/config';
 import { icon } from './icons';
 import { autoBestGhost, driverName, fetchBoard, fetchGhost, fetchSummary, flushBests, localBests, localGhost, renameDriver, setAutoBestGhost, type Board, type LocalBest, type RobotSummary, type RunOutcome } from './soloScores';
 
-/** Leaderboard page (one board per stock robot) and the results-card outcome. See docs/LEADERBOARD.md. */
+/** Leaderboard page (one board per real team robot) and the results-card outcome. See docs/LEADERBOARD.md. */
 
 const MAX_GHOSTS = 3;
 const LOCAL_ID = 'local';
@@ -82,18 +82,21 @@ export function invalidateLeaderboard(): void {
 
 export function leaderboardPage(ctx: LeaderboardContext): { body: string; footer: string } {
   open(ctx);
-  const robots = boardRobots(ctx.season);
-  const selected = robots.find((r) => r.id === view.robotId) ?? robots[0];
   const summaryOf = (id: string) => view.summary?.find((s) => s.robot === id);
   const localOf = (id: string) => view.locals.find((b) => b.robot === id);
+  // Highest score first; robots nobody has played keep their Garage order at the bottom.
+  const best = (r: BoardRobot) => Math.max(summaryOf(r.id)?.top ?? -1, localOf(r.id)?.score ?? -1);
+  const robots = boardRobots(ctx.season).sort((a, b) => best(b) - best(a));
+  const selected = robots.find((r) => r.id === view.robotId) ?? robots[0];
   const row = (r: BoardRobot) => {
     const top = summaryOf(r.id), pb = localOf(r.id);
     const hidden = !shown(r, view.query, view.mine, !!pb);
     return `<button class="lb-robot ${r.id === view.robotId ? 'on' : ''}" data-lb-robot="${esc(r.id)}" ${hidden ? 'hidden' : ''}>
-      <span class="lb-robot-name">${esc(r.label)}<small>${top ? `${esc(top.name)} · ${top.drivers} driver${top.drivers === 1 ? '' : 's'}` : r.kind === 'archetype' ? 'Archetype' : 'No runs yet'}</small></span>
+      <span class="lb-robot-name">${esc(r.label)}<small>${top ? `${esc(top.name)} · ${top.drivers} driver${top.drivers === 1 ? '' : 's'}` : 'No runs yet'}</small></span>
       <span class="lb-robot-score"><b>${top?.top ?? '—'}</b>${pb ? `<small>You ${pb.score}</small>` : ''}</span>
     </button>`;
   };
+  if (!robots.length) return { body: `<section class="panel"><div class="lb-empty">${esc(ctx.season.name)} has no real team robots yet, so it has no leaderboards.</div></section>`, footer: '<button class="bbtn" data-page="home"><kbd>Esc</kbd>Back</button><span class="spacer"></span>' };
   const offline = view.summary === null;
   const body = `<div class="lb">
     <section class="panel lb-robots">
