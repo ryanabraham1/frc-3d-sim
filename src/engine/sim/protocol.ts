@@ -5,6 +5,7 @@ import type { MatchSetup, NetGameState, RobotNetState } from '../net/protocol';
 import type { RadioMessage } from '../ai/team';
 import type { RobotCommand } from '../robot/robot';
 import type { RobotVisualFrame } from './robotMirror';
+import type { GhostRun } from '../ghost/format';
 
 /** Per piece in a frame: drawn (0/1), position (3), quaternion (4). */
 export const PIECE_STRIDE = 8;
@@ -27,6 +28,8 @@ export type ToWorker =
       /** StowBay.ACTIVE_MAX for this device. */
       activeMax: number;
       log: boolean;
+      /** Record the driver for the solo leaderboard. */
+      ghost: boolean;
       speed: number;
     }
   | { t: 'input'; cmd: RobotCommand; hp: number[]; boost?: boolean }
@@ -38,6 +41,7 @@ export type SimEvent =
   | { k: 'toast'; msg: string; kind: ToastKind; alliance?: Alliance; robot?: number }
   | { k: 'cue'; robot: number; text: string; cls?: string }
   | { k: 'period'; ch: PeriodChange }
+  | { k: 'ghost'; run: GhostRun }
   | { k: 'results'; res: MatchResults }
   | { k: 'radio'; m: RadioMessage };
 

@@ -1,11 +1,15 @@
 import './app/styles.css';
-import type { Game, GameRecovery } from '@engine/core/game';
+import type { Game, GameRecovery, SoloRun } from '@engine/core/game';
+import type { GhostRace } from '@engine/ghost/ghostLayer';
+import { boardRobotForMatch } from '@engine/ghost/board';
 import type { GameSettings } from '@engine/core/season';
 import type { MatchSetup } from '@engine/net/protocol';
 import { LobbyController } from './app/lobby';
 import { showMenu } from './app/menu';
 import { startPresence } from './app/presence';
 import { MatchChat } from './app/matchChat';
+import { autoBestGhost, localGhost, recordRun } from './app/soloScores';
+import { showRunOutcome } from './app/leaderboard';
 import { prepareCadModels } from '@engine/robot/cadModels';
 import { discardSimulationWorker, warmSimulationWorker } from '@engine/sim/workerBoot';
 import { inject } from '@vercel/analytics';
@@ -140,7 +144,19 @@ function mountStage(): HTMLElement {
   return stage;
 }
 
-async function startGame(settings: GameSettings): Promise<void> {
+/** Leaderboard run setup for a solo match: the ghosts picked on the leaderboard, else the driver's own best. */
+async function soloRun(settings: GameSettings, season: ReturnType<EngineModules['getSeason']>, picked: GhostRace[] | undefined): Promise<SoloRun | undefined> {
+  const robot = boardRobotForMatch(season, settings);
+  if (!robot) return picked?.length ? { ghosts: picked, record: false, onRun: () => {} } : undefined;
+  const best = !picked?.length && autoBestGhost() ? await localGhost(season.id, robot.id) : null;
+  return {
+    ghosts: picked?.length ? picked : best ? [{ name: 'Your best', run: best }] : [],
+    record: true,
+    onRun: (run, slot) => void recordRun(season.id, robot.id, run, lobby.rankedSecret()).then((outcome) => showRunOutcome(slot, robot.label, outcome, lobby.rankedSecret())),
+  };
+}
+
+async function startGame(settings: GameSettings, ghosts?: GhostRace[]): Promise<void> {
   stopGame();
   if (lobby.client.connected) lobby.leave();
   const gen = generation;
@@ -149,15 +165,17 @@ async function startGame(settings: GameSettings): Promise<void> {
   try {
     engine = await loadEngine(settings, undefined, (t) => { loading.textContent = t; });
   } catch (err) {
-    if (gen === generation) showLoadError(err, () => void startGame(settings));
+    if (gen === generation) showLoadError(err, () => void startGame(settings, ghosts));
     return;
   }
   if (gen !== generation) return;
   const { R, Game, getSeason } = engine;
+  const solo = await soloRun(settings, getSeason(settings.seasonId), ghosts);
+  if (gen !== generation) return;
   game = new Game(mountStage(), R, getSeason(settings.seasonId), settings, {
     onExit: () => menu(),
-    onRestart: (s) => void startGame(s),
-  });
+    onRestart: (s) => void startGame(s, ghosts),
+  }, undefined, solo);
   game.start();
   // Handy for debugging in the console.
   (window as unknown as { game: Game }).game = game;
@@ -203,7 +221,7 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client', recovery
 
 function menu(page?: 'multiplayer' | 'ranked'): void {
   stopGame();
-  showMenu(app, (s) => void startGame(s), { lobby, page });
+  showMenu(app, (s, ghosts) => void startGame(s, ghosts), { lobby, page });
 }
 
 lobby.onStart = (setup, role) => void startNetGame(setup, role);

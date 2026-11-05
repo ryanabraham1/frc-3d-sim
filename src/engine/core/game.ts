@@ -39,6 +39,8 @@ import { FrameHealth } from '../render/frameHealth';
 import { WorkerSim } from '../sim/workerSim';
 import type { SimEvent } from '../sim/protocol';
 import { Mesh } from 'three';
+import type { GhostRun } from '../ghost/format';
+import { GhostLayer, type GhostRace } from '../ghost/ghostLayer';
 
 type GameState = NetGameState;
 
@@ -69,6 +71,16 @@ export interface GameCallbacks {
   onBackToLobby?: () => void;
   /** Multiplayer: the match ended (host and clients both call this once). Used to report ranked results. */
   onResults?: (res: MatchResults, scores: Record<Alliance, number>) => void;
+}
+
+/** A solo match that counts for the leaderboard (see docs/LEADERBOARD.md). */
+export interface SoloRun {
+  /** Runs to race in this match. */
+  ghosts: GhostRace[];
+  /** Is this a ranked run? Otherwise ghosts just play along. */
+  record: boolean;
+  /** The match finished clean: `slot` is a space in the results card for the outcome. */
+  onRun(run: GhostRun, slot: HTMLElement): void;
 }
 
 export { AI_SPEED, AI_AIM } from '../ai/matchSetup';
@@ -181,6 +193,9 @@ export class Game {
   private boostWanted: boolean | undefined;
   /** Worker mode: results already shown. */
   private remoteResults: MatchResults | null = null;
+  /** The finished leaderboard run, if this match recorded one. */
+  private ghostRun: GhostRun | null = null;
+  private ghosts: GhostLayer | null = null;
   private raf = 0;
   private last = 0;
   private lastDraw = 0;
@@ -231,6 +246,7 @@ export class Game {
     readonly settings: GameSettings,
     private readonly callbacks: GameCallbacks,
     net?: GameNet,
+    private readonly solo?: SoloRun,
   ) {
     this.net = net ?? null;
     this.role = net?.role ?? 'local';
@@ -272,6 +288,7 @@ export class Game {
       },
     });
     this.player = this.world.player;
+    if (this.player && solo?.ghosts.length) this.ghosts = new GhostLayer(R, this.renderer.scene, season, this.frame, this.player.config, solo.ghosts, this.player.alliance, this.hud.root);
     if (this.player && isTouchDevice()) {
       this.touch = new TouchControls(container, this.input, {
         humanPlayerButtons: season.humanPlayerButtons ?? 1,
@@ -415,6 +432,11 @@ export class Game {
     controls.querySelector<HTMLElement>('[data-view-hint]')!.textContent = this.camera.spectatorView === 'orbit' ? 'Drag to orbit · scroll or pinch to zoom · V changes view' : 'V changes view';
   }
 
+  /** Leaderboard runs play at real time: `?speed=` would change what a driver can do. */
+  private get recording(): boolean {
+    return !!this.solo?.record && this.simSpeed === 1;
+  }
+
   private get logging(): boolean {
     return new URLSearchParams(location.search).get('log') !== '0';
   }
@@ -424,7 +446,8 @@ export class Game {
     this.sim = new MatchSim(this.world, this.season, this.settings, {
       periodChange: (ch) => this.onPeriodChange(ch),
       results: (res) => this.showResults(res),
-    }, this.logging ? { log: { mode: this.role } } : {});
+      ghost: (run) => { this.ghostRun = run; },
+    }, { ...(this.logging ? { log: { mode: this.role } } : {}), ghost: this.recording });
     if (this.logging) installConsoleHelpers();
   }
 
@@ -441,7 +464,7 @@ export class Game {
     const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'mech' ? 'all' : this.quality.hopperWorker;
     const hopperMode = asked === 'mech' ? 'mech' as const : 'stowbay' as const;
     this.remote = new WorkerSim(this.world, {
-      settings: this.settings, setup: this.setup, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, speed: this.simSpeed,
+      settings: this.settings, setup: this.setup, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, ghost: this.recording, speed: this.simSpeed,
       cadDetail: new URLSearchParams(location.search).get('cadDetail') === 'full' ? 'full' : 'match',
     }, (e) => this.onSimEvent(e), (reason) => {
       if (this.disposed) return;
@@ -470,6 +493,7 @@ export class Game {
     if (e.k === 'toast') { if (e.robot === undefined || e.robot === p?.id) this.hud.toast(e.msg, e.kind, e.alliance); }
     else if (e.k === 'cue') { if (e.robot === p?.id) this.hud.showBanner(e.text, CUE_SECONDS, e.cls); }
     else if (e.k === 'period') this.onPeriodChange(e.ch);
+    else if (e.k === 'ghost') this.ghostRun = e.run;
     else if (e.k === 'results') { this.remoteResults = e.res; this.showResults(e.res); }
     else if (e.k === 'radio') radioFor(this.ctx).messages.push(e.m);
   }
@@ -696,6 +720,7 @@ export class Game {
     const fadeStart = performance.now();
     this.updateFader(dt);
     this.timings.faderMs += (performance.now() - fadeStart - this.timings.faderMs) * 0.05;
+    if (this.ghosts && this.player) this.ghosts.update(this.clock.started ? this.clock.elapsed : 0, this.score.total(this.player.alliance));
     this.updateHud(dt);
     const renderStart = performance.now();
     this.renderer.render();
@@ -1176,11 +1201,13 @@ export class Game {
       ] : [{ label: 'Leave', primary: true, onClick: () => this.callbacks.onExit() }, ...this.logButton()]);
       return;
     }
-    this.hud.showModal('Match Results', html, [
+    const run = this.ghostRun;
+    this.hud.showModal('Match Results', (run ? '<div class="solo-run" data-solo-run></div>' : '') + html, [
       { label: 'Play again', primary: true, onClick: () => this.callbacks.onRestart({ ...this.settings, seed: this.settings.seed + 1 }) },
       { label: 'Main menu', onClick: () => this.callbacks.onExit() },
       ...this.logButton(),
     ]);
+    if (run) this.solo?.onRun(run, this.hud.root.querySelector<HTMLElement>('[data-solo-run]')!);
   }
 
   /** Finish the match log and store it (once); also runs when a match is abandoned. */
@@ -1254,6 +1281,7 @@ export class Game {
       } else remote.dispose();
     }
     this.perfPanel?.remove();
+    this.ghosts?.dispose();
     cancelAnimationFrame(this.raf);
     this.ticker?.stop();
     for (const off of this.offs) off();

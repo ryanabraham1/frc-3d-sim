@@ -92,7 +92,8 @@ async function init(m: Extract<ToWorker, { t: 'init' }>): Promise<void> {
     sim = new MatchSim(world, season, settings, {
       periodChange: (ch) => events.push({ k: 'period', ch }),
       results: (res) => events.push({ k: 'results', res }),
-    }, m.log ? { log: { mode: 'local' } } : {});
+      ghost: (run) => events.push({ k: 'ghost', run }),
+    }, { ...(m.log ? { log: { mode: 'local' } } : {}), ghost: m.ghost });
     mirrors = world.robots.map((r) => new RobotMirror(r));
     post({ t: 'ready', shapes: mirrors.map((x) => x.shape) });
     // The view starts the countdown after its shaders and first GPU upload are ready.

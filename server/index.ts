@@ -11,6 +11,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import { attachRelay } from './relay.ts';
 import { createMatchLogStore, matchLogHandler } from './matchLogs.ts';
+import { soloScoreHandler } from './soloScoresNode.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -36,6 +37,7 @@ if (!existsSync(join(DIST, 'index.html'))) {
 
 const trustProxy = (process.env.TRUST_PROXY ?? (process.env.RENDER ? '1' : '0')) === '1';
 const matchLogs = matchLogHandler(createMatchLogStore(), { trustProxy, log: (m) => console.log(`[match-logs] ${m}`) });
+const soloScores = soloScoreHandler(undefined, { trustProxy, log: (m) => console.log(`[solo-scores] ${m}`) });
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
@@ -47,6 +49,10 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/api/match-logs') {
     matchLogs(req, res);
+    return;
+  }
+  if (url.pathname === '/api/solo-scores') {
+    soloScores(req, res);
     return;
   }
   let file = normalize(join(DIST, decodeURIComponent(url.pathname)));

@@ -45,6 +45,9 @@ with `VITE_`. With both secrets set, the same Supabase REST store and existing r
 used. Without them, the original development in-memory store is used and ratings reset on restart.
 No database migration is required.
 
+Solo leaderboards ([LEADERBOARD.md](LEADERBOARD.md)) use the same two secrets, plus one table: run
+`supabase/solo_scores.sql` once in that project.
+
 ## Deploy the frontend on Vercel
 
 Use a Vite project, `npm run build`, and output directory `dist` (already in `vercel.json`). Set

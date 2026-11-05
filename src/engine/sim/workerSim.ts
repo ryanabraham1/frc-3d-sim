@@ -27,6 +27,7 @@ export interface WorkerSimInit {
   hopperMode?: 'mech' | 'stowbay';
   activeMax: number;
   log: boolean;
+  ghost: boolean;
   speed: number;
 }
 

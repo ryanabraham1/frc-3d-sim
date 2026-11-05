@@ -1378,3 +1378,89 @@ body.touch-ui .match-chat-log { height: min(130px, calc(100dvh - 260px)); }
   .hud:has(.spectator-controls) > .match-chat { bottom: max(154px, calc(env(safe-area-inset-bottom) + 142px)); }
   .match-chat-log { height: min(110px, calc(100dvh - 350px)); }
 }
+
+/* Solo leaderboard: ghosts in a match and the result of a run. */
+/* Radio callouts sit here in AI matches; ghosts only race in Solo practice, which has none. */
+.ghost-race {
+  position: absolute;
+  left: 12px;
+  bottom: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+.ghost-race-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 170px;
+  padding: 5px 10px;
+  border-left: 3px solid var(--ghost);
+  border-radius: 6px;
+  background: rgba(8, 13, 23, 0.72);
+  color: #fff;
+  font-size: 14px;
+}
+.ghost-race-row span {
+  max-width: 130px;
+  overflow: hidden;
+  color: var(--ghost);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ghost-race-row b {
+  font-variant-numeric: tabular-nums;
+}
+.ghost-race-row b.ahead { color: #5fe08f; }
+.ghost-race-row b.behind { color: #ff7a7a; }
+.solo-run {
+  margin-bottom: 14px;
+}
+.solo-run:empty {
+  display: none;
+}
+.solo-run-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+}
+.solo-run-card.best {
+  border-color: #f4c542;
+  background: rgba(244, 197, 66, 0.1);
+}
+.solo-run-card > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.solo-run-card small {
+  opacity: 0.7;
+  font-size: 13px;
+}
+.solo-run-place {
+  align-items: flex-end;
+}
+.solo-run-place b {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.solo-run-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.solo-run-name input {
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font: inherit;
+}

@@ -9,6 +9,8 @@ import { drainSpilled } from '../robot/spill';
 import { aiOrders } from '../ai/team';
 import { describeArchetype } from '../telemetry/archetype';
 import { MatchLogger, SRC } from '../telemetry/matchLogger';
+import type { GhostRun } from '../ghost/format';
+import { GhostRecorder } from '../ghost/recorder';
 import type { MatchWorld } from './matchWorld';
 import type { AutoPilot, GameSettings, MatchResults, SeasonDefinition } from './season';
 
@@ -19,6 +21,8 @@ export interface SimEvents {
   periodChange(ch: PeriodChange): void;
   /** The match ended; `results` is final. */
   results(results: MatchResults): void;
+  /** A recorded leaderboard run, sent just before `results` (never after the practice boost was used). */
+  ghost?(run: GhostRun): void;
 }
 
 export interface SimStepInput {
@@ -49,6 +53,10 @@ export class MatchSim {
   readonly botPilots = new Map<number, AutoPilot>();
   /** Records the humans' commands and the world for imitation learning. */
   matchLog: MatchLogger | null = null;
+  /** Records the driver for the solo leaderboard. */
+  private ghost: GhostRecorder | null = null;
+  /** The practice boost was on at some point: this match can't be a leaderboard run. */
+  private boosted = false;
   private boostOn = false;
   private boostBase: { cap: number; rate: number; spread: number; speedError: number; intake: number | undefined } | null = null;
 
@@ -57,9 +65,10 @@ export class MatchSim {
     readonly season: SeasonDefinition,
     readonly settings: GameSettings,
     private readonly events: SimEvents,
-    opts: { log?: { mode: string } } = {},
+    opts: { log?: { mode: string }; ghost?: boolean } = {},
   ) {
     const { ctx, rules, robots, robotSetups } = world;
+    if (opts.ghost && world.player) this.ghost = new GhostRecorder(world.player.alliance);
     if (opts.log) {
       const aiSettings = botSettings(world.setup, settings);
       this.matchLog = new MatchLogger(
@@ -91,6 +100,7 @@ export class MatchSim {
     const c = player?.config;
     if (!c || this.season.id !== '2026-rebuilt') return;
     this.boostOn = on;
+    if (on) this.boosted = true;
     if (on && !this.boostBase) {
       this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate, spread: c.launcher.spread, speedError: c.launcher.speedError, intake: c.intake.rate };
       c.hopperCapacity = this.boostBase.cap * 3;
@@ -186,6 +196,7 @@ export class MatchSim {
           r.noteLaunch(idx);
           rules.onLaunch(r, idx);
           this.matchLog?.launch(r, idx, shot.vel);
+          if (r === world.player) this.ghost?.shot(this.clock.elapsed, shot.pos, shot.vel);
         }
       }
     }
@@ -227,6 +238,10 @@ export class MatchSim {
     for (const r of robots) r.bay?.settle();
     rules.afterStep(dt);
     this.matchLog?.step();
+    if (this.ghost && this.state === 'running' && this.ghost.due(this.clock.elapsed)) {
+      const p = world.player!;
+      this.ghost.sample(p.body.translation(), p.body.rotation(), world.score.total(p.alliance), this.clock.elapsed);
+    }
     this.simTime += dt;
   }
 
@@ -242,6 +257,7 @@ export class MatchSim {
     const res = rules.results();
     Object.assign(res, buildPlayerResults(res, score, setup.robots.map((rs) => ({ id: rs.id, alliance: rs.alliance, name: rs.name, team: rs.config.teamNumber })), this.season.foulValues, 'Game pieces'));
     this.results = res;
+    if (this.ghost && !this.boosted) this.events.ghost?.(this.ghost.finish(this.clock.elapsed, score.total(this.world.player!.alliance)));
     this.events.results(res);
   }
 

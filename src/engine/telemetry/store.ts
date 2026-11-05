@@ -41,10 +41,13 @@ export function logFileName(seasonId: string, createdAt: string): string {
 }
 
 /** The relay's HTTP origin: VITE_RELAY_URL (ws[s]://host/ws) when the site is hosted apart from it, else this page. */
-function uploadUrl(id: string): string {
+export function relayHttpBase(): string {
   const ws = NetClient.defaultUrl();
-  const base = ws.startsWith('ws') ? ws.replace(/^ws/, 'http').replace(/\/ws\/?$/, '') : '';
-  return `${base}/api/match-logs?name=${encodeURIComponent(id + '.gz')}`;
+  return ws.startsWith('ws') ? ws.replace(/^ws/, 'http').replace(/\/ws\/?$/, '') : '';
+}
+
+function uploadUrl(id: string): string {
+  return `${relayHttpBase()}/api/match-logs?name=${encodeURIComponent(id + '.gz')}`;
 }
 
 async function gzip(text: string): Promise<Blob> {

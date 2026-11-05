@@ -17,6 +17,9 @@ import type { LobbyController } from './lobby';
 import { bindMultiplayer, multiplayerPage } from './multiplayer';
 import './menu.css';
 import { presenceMarkup } from './presence';
+import { boardRobotFor } from '@engine/ghost/board';
+import type { GhostRace } from '@engine/ghost/ghostLayer';
+import { bindLeaderboard, invalidateLeaderboard, leaderboardPage, type LeaderboardContext } from './leaderboard';
 
 /** Newtons per pound-force. */
 const LBF = 4.4482216;
@@ -24,11 +27,11 @@ const STORAGE_KEY = 'frc-sim-settings-v1';
 const ROBOT_STORAGE_KEY = 'frc-sim-season-robots-v1';
 const FT = 0.3048;
 
-type Page = 'home' | 'solo' | 'garage' | 'controls' | 'rules' | 'settings' | 'multiplayer' | 'ranked';
+type Page = 'home' | 'solo' | 'leaderboard' | 'garage' | 'controls' | 'rules' | 'settings' | 'multiplayer' | 'ranked';
 type PlayTab = 'match' | 'ai';
 /** Pages that are reached from another page and return to it (Garage from the lobby goes back to the lobby). */
 const SIDE_PAGES: Page[] = ['garage', 'controls', 'rules', 'settings'];
-const PAGE_LABEL: Record<Page, string> = { home: 'home', solo: 'solo setup', garage: 'the garage', controls: 'controls', rules: 'rules', settings: 'settings', multiplayer: 'the lobby', ranked: 'ranked' };
+const PAGE_LABEL: Record<Page, string> = { home: 'home', solo: 'solo setup', leaderboard: 'leaderboard', garage: 'the garage', controls: 'controls', rules: 'rules', settings: 'settings', multiplayer: 'the lobby', ranked: 'ranked' };
 
 function load(): Partial<GameSettings> | null {
   try {
@@ -208,7 +211,7 @@ function dropPlanner(s: GameSettings & { autoPlan?: unknown }, season: SeasonDef
   if (s.autoRoutine === 'custom' || !season.autoRoutines.some((x) => x.id === s.autoRoutine)) s.autoRoutine = season.autoRoutines[0]?.id ?? 'none';
 }
 
-export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => void, opts: { lobby?: LobbyController; page?: Page } = {}): void {
+export function showMenu(container: HTMLElement, onStart: (s: GameSettings, ghosts?: GhostRace[]) => void, opts: { lobby?: LobbyController; page?: Page } = {}): void {
   const stored = load();
   let season = getSeason(stored?.seasonId ?? SEASONS[0].id);
   let s: GameSettings = { ...defaultSettings(season), ...(stored ?? {}) };
@@ -487,7 +490,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
         <div class="panel-head"><span>Match setup</span><span class="dim">${esc(seasonLabel(season))} · ${formatClock(matchLength())} match</span></div>
         <div class="settings-grid">
           ${group('Alliance', `<div class="seg">${opt('data-alliance="blue"', 'Blue', s.alliance === 'blue', 'solid blue', '<span class="dot"></span>')}${opt('data-alliance="red"', 'Red', s.alliance === 'red', 'solid red', '<span class="dot"></span>')}</div>`)}
-          ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, '3 vs 3 adds two AI teammates and three opponents who collect and score.')}
+          ${group('AI opponents', `<div class="seg">${opt('data-ai="1"', '3 vs 3', s.aiOpponents !== false)}${opt('data-ai="0"', 'Solo practice', s.aiOpponents === false)}</div>`, s.aiOpponents !== false ? '3 vs 3 adds two AI teammates and three opponents who collect and score.' : boardRobotFor(season, s.robot) ? 'Your score goes on this robot\u2019s leaderboard.' : 'Custom builds aren\u2019t ranked: pick a stock robot in the Garage to go on the leaderboard.')}
           ${group('Camera', `<div class="seg">${CAMERAS.map(([id, label]) => opt(`data-camera="${id}"`, label, s.camera === id)).join('')}</div>`, '', 'wide')}
           ${group('Human player', `<div class="seg">${opt('data-hp="1"', 'Auto', s.autoHumanPlayer)}${opt('data-hp="0"', 'Manual (H)', !s.autoHumanPlayer)}</div>`, hpHint, 'wide')}
           ${group('Practice options', `<div class="seg">${opt('data-toggle="manualAuto"', 'Drive in AUTO', s.manualAuto)}${opt('data-toggle="autoIntake"', 'Auto-intake', s.autoIntake)}${opt('data-toggle="shadows"', 'Shadows', s.shadows)}</div>`, 'None of these change scoring.', 'wide')}
@@ -654,25 +657,51 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     if (SIDE_PAGES.includes(p) && !SIDE_PAGES.includes(page)) backTo = page;
     capturing = null;
     leavePrompt = false;
+    pendingRace = undefined;
+    if (p === 'leaderboard') invalidateLeaderboard();
     page = p;
     render();
   };
-  const launch = () => {
+  const launch = (ghosts?: GhostRace[]) => {
     save(s);
     document.removeEventListener('keydown', onKey);
     live?.dispose();
     pickerPreviews?.dispose();
     thumbObserver?.disconnect();
     el.remove();
-    onStart(s);
+    onStart(s, ghosts);
   };
+  /** The leaderboard's Race button: this board's robot, alone on the field, with the picked ghosts. */
+  let pendingRace: GhostRace[] | undefined;
+  const leaderboardContext = (): LeaderboardContext => ({
+    season,
+    current: s.robot,
+    secret: () => lobby?.rankedSecret() ?? '',
+    // Boards arrive while the driver may be typing: keep the field they're in.
+    rerender: () => {
+      const typing = document.activeElement instanceof HTMLInputElement && el.contains(document.activeElement) ? document.activeElement : null;
+      const field = typing?.matches('[data-lb-search]') ? '[data-lb-search]' : typing?.matches('[data-lb-name]') ? '[data-lb-name]' : null;
+      const text = typing?.value;
+      render();
+      const input = field ? el.querySelector<HTMLInputElement>(field) : null;
+      if (input) { input.value = text!; input.focus(); }
+    },
+    race: (config, ghosts) => {
+      const teamNumber = s.robot.teamNumber;
+      s.robot = cloneConfig(config);
+      s.robot.teamNumber = teamNumber;
+      s.aiOpponents = false;
+      pendingRace = ghosts;
+      start();
+    },
+  });
   /** Start a solo match, asking first if that would drop the room the player is in. */
   const start = () => {
     if (activity() && !leavePrompt) {
       leavePrompt = true;
       return render();
     }
-    launch();
+    launch(pendingRace);
   };
 
   const render = () => {
@@ -702,6 +731,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const titles: Record<Page, { h1: string; sub: string }> = {
       home: { h1: '', sub: '' },
       solo: { h1: 'Solo match', sub: 'Set up your match, then press Start.' },
+      leaderboard: { h1: 'Leaderboard', sub: `Best Solo practice scores in ${season.name}, one board per robot. Race anyone's ghost.` },
       garage: { h1: 'Garage', sub: 'Build the robot you drive.' },
       controls: { h1: 'Controls', sub: 'Driving is field-oriented from your driver station. Press V in a match to switch cameras.' },
       rules: { h1: `${season.name} rules`, sub: season.summary },
@@ -728,10 +758,13 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     const onlineTabs = inOnline && lobby && !(lobby.status === 'lobby' && lobby.lobby) && !(lobby.status === 'lobby' && lobby.client.room)
       ? `<div class="subtabs" role="tablist">${([['multiplayer', 'Lobbies'], ['ranked', 'Ranked']] as [Page, string][]).map(([id, label]) => `<button class="subtab ${page === id ? 'on' : ''}" role="tab" aria-selected="${page === id}" data-page="${id}">${label}</button>`).join('')}</div>`
       : '';
-    const modeNav = nav('home', 'Home') + nav('solo', 'Solo') + (lobby ? navOnline : '') + nav('garage', 'Garage');
+    const modeNav = nav('home', 'Home') + nav('solo', 'Solo') + nav('leaderboard', 'Leaderboard') + (lobby ? navOnline : '') + nav('garage', 'Garage');
     const backLabel = `Back to ${SIDE_PAGES.includes(page) ? PAGE_LABEL[backTo === 'multiplayer' && act?.page !== 'multiplayer' ? 'home' : backTo] : 'home'}`;
+    const board = page === 'leaderboard' ? leaderboardPage(leaderboardContext()) : null;
     const footer = mp
       ? mp.footer
+      : board
+        ? board.footer
       : page === 'home'
         ? ''
         : page === 'solo'
@@ -750,7 +783,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
       </header>
       <main class="main ${page === 'home' ? 'is-home' : ''}">
         ${page === 'home' ? '' : `<div class="titlebar"><h1 class="title">${esc(t.h1)}${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</h1>${page === 'solo' ? (s.aiOpponents !== false ? playTabs : '') : onlineTabs}</div>`}
-        ${mp ? mp.body : page === 'home' ? homePage() : page === 'solo' ? soloPage() : page === 'garage' ? garagePage() : page === 'controls' ? controlsPage() : page === 'settings' ? settingsPage() : rulesPage()}
+        ${mp ? mp.body : board ? board.body : page === 'home' ? homePage() : page === 'solo' ? soloPage() : page === 'garage' ? garagePage() : page === 'controls' ? controlsPage() : page === 'settings' ? settingsPage() : rulesPage()}
       </main>
       ${footer ? `<footer class="bar-bottom">${footer}</footer>` : ''}
       ${leavePrompt && act ? `<div class="modal-back" data-modal="cancel"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-h"><h3 id="modal-h">Leave ${esc(act.detail)}?</h3><p>Starting a solo match takes you out of ${esc(act.detail)}. To keep playing online, go back to it instead.</p><div class="modal-actions"><button class="bbtn" data-modal="cancel">Stay</button><button class="bbtn primary" data-modal="confirm">Leave &amp; start solo</button></div></div></div>` : ''}`;
@@ -815,7 +848,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     all('[data-page]').forEach((b) => (b.onclick = () => go(b.dataset.page as Page)));
     all('[data-k="quick"]').forEach((b) => (b.onclick = start));
     all('[data-modal="cancel"]').forEach((b) => (b.onclick = (e) => { if (e.target === b) ((leavePrompt = false), render()); }));
-    all('[data-modal="confirm"]').forEach((b) => (b.onclick = launch));
+    all('[data-modal="confirm"]').forEach((b) => (b.onclick = () => launch(pendingRace)));
     const seasonSel = el.querySelector<HTMLSelectElement>('[data-k="season"]')!;
     seasonSel.onchange = () => {
       switchSeason(seasonSel.value);
@@ -936,6 +969,7 @@ export function showMenu(container: HTMLElement, onStart: (s: GameSettings) => v
     }
     const startBtn = el.querySelector<HTMLButtonElement>('[data-k="start"]');
     if (startBtn) startBtn.onclick = start;
+    if (page === 'leaderboard') bindLeaderboard(el, leaderboardContext());
     if ((page === 'multiplayer' || page === 'ranked') && lobby) bindMultiplayer(el, lobby, { s, season, page: page as 'multiplayer' | 'ranked', robotName: robotName(), rerender: render, goto: (p) => go(p) });
   };
 

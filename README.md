@@ -170,6 +170,12 @@ when FUEL launched from outside your zone actually enters your HUB — feeding i
 (slightly undersized collider to model squish); no air drag; G408 (catching hub FUEL) and other
 referee-judgement rules are not enforced.
 
+## Solo leaderboards
+
+Every stock robot has its own leaderboard for each game. Play Solo practice on it and your best score goes up with a
+ghost: on the Leaderboard page, pick up to three ghosts to race, or race your own best automatically. See
+[docs/LEADERBOARD.md](docs/LEADERBOARD.md).
+
 ## Multiplayer
 
 Menu → **Multiplayer** → *Create room* and share the 4-letter code; friends *Join*, pick a driver
