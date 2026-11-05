@@ -79,8 +79,8 @@ export interface SoloRun {
   ghosts: GhostRace[];
   /** Is this a ranked run? Otherwise ghosts just play along. */
   record: boolean;
-  /** The match finished clean: `slot` is a space in the results card for the outcome. */
-  onRun(run: GhostRun, slot: HTMLElement): void;
+  /** The match finished clean: `slot` is a space in the results card for the outcome, `penalties` what fouls took off. */
+  onRun(run: GhostRun, slot: HTMLElement, penalties: number): void;
 }
 
 export { AI_SPEED, AI_AIM } from '../ai/matchSetup';
@@ -720,7 +720,7 @@ export class Game {
     const fadeStart = performance.now();
     this.updateFader(dt);
     this.timings.faderMs += (performance.now() - fadeStart - this.timings.faderMs) * 0.05;
-    if (this.ghosts && this.player) this.ghosts.update(this.clock.started ? this.clock.elapsed : 0, this.score.total(this.player.alliance));
+    if (this.ghosts && this.player) this.ghosts.update(this.clock.started ? this.clock.elapsed : 0, this.score.soloScore(this.player.alliance));
     this.updateHud(dt);
     const renderStart = performance.now();
     this.renderer.render();
@@ -1207,7 +1207,7 @@ export class Game {
       { label: 'Main menu', onClick: () => this.callbacks.onExit() },
       ...this.logButton(),
     ]);
-    if (run) this.solo?.onRun(run, this.hud.root.querySelector<HTMLElement>('[data-solo-run]')!);
+    if (run) this.solo?.onRun(run, this.hud.root.querySelector<HTMLElement>('[data-solo-run]')!, this.score.penalties(run.alliance));
   }
 
   /** Finish the match log and store it (once); also runs when a match is abandoned. */

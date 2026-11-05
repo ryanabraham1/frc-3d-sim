@@ -10,7 +10,7 @@ export const GHOST_HZ = 15;
 export const POSE_STRIDE = 7;
 /** t, x, y, z, vx, vy, vz per launched piece. */
 export const SHOT_STRIDE = 7;
-/** t, alliance total per score change. */
+/** t, leaderboard score per score change. */
 export const SCORE_STRIDE = 2;
 /** Encoded (gzip + base64) size limit; a full match is about 15-40 KB. */
 export const MAX_GHOST_CHARS = 400_000;
@@ -22,7 +22,7 @@ export interface GhostRun {
   hz: number;
   /** The alliance it was driven on: playback flips it onto the viewer's side. */
   alliance: 'red' | 'blue';
-  /** Final alliance score. */
+  /** Final leaderboard score: alliance total less penalties. */
   score: number;
   poses: number[];
   shots: number[];
@@ -135,7 +135,7 @@ export function ghostProblem(run: GhostRun, score: number): string | null {
   return null;
 }
 
-/** The alliance total the run had at match time `t` (`scores` is sorted by time). */
+/** The leaderboard score the run had at match time `t` (`scores` is sorted by time). */
 export function ghostScoreAt(run: GhostRun, t: number): number {
   let lo = 0, hi = run.scores.length / SCORE_STRIDE;
   while (lo < hi) {

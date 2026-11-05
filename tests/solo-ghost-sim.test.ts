@@ -17,7 +17,7 @@ import { getSeason } from '../src/seasons';
 beforeAll(() => RAPIER.init());
 
 /** REBUILT with every period cut to a sliver, driven forward for the whole match. */
-function play(boost: boolean): { run: GhostRun | null; seconds: number; x0: number; x1: number; world: MatchWorld } {
+function play(boost: boolean, foul = false): { run: GhostRun | null; seconds: number; x0: number; x1: number; world: MatchWorld } {
   const full = getSeason('2026-rebuilt');
   const season = { ...full, timeline: full.timeline.map((p) => ({ ...p, duration: p.duration / 40 })) };
   const settings = { ...defaultSettings(season), seed: 3, aiOpponents: false, robot: cloneConfig(boardRobots(full)[0].config) };
@@ -29,6 +29,10 @@ function play(boost: boolean): { run: GhostRun | null; seconds: number; x0: numb
   if (boost) sim.setBoost(world.player, true);
   sim.setBoost(world.player, false);
   const x0 = world.player!.body.translation().x;
+  if (foul) {
+    world.score.add(world.player!.alliance, 'test', 40);
+    world.score.foul({ t: 0, alliance: world.player!.alliance, kind: 'major', rule: 'T1', robotId: world.player!.id });
+  }
   while (!finished) sim.step(sim.dt, { command: () => ({ ...IDLE_COMMAND, vx: 1.5 }), humanPlayer: [] });
   return { run, seconds: world.clock.elapsed, x0, x1: world.player!.body.translation().x, world };
 }
@@ -44,7 +48,18 @@ it('records the driver on the match clock and hands the run over before the resu
   // The recording follows the world-frame body, from the start of the match to its end.
   expect(Math.abs(r.poses[0] - x0)).toBeLessThan(0.5);
   expect(Math.abs(r.poses[(n - 1) * POSE_STRIDE] - x1)).toBeLessThan(0.5);
-  expect(r.score).toBe(world.score.total(world.player!.alliance));
+  expect(r.score).toBe(world.score.soloScore(world.player!.alliance));
+  world.free();
+});
+
+it('a run\'s score and timeline have penalties taken off', () => {
+  const { run, world } = play(false, true);
+  const r = run! as GhostRun;
+  const alliance = world.player!.alliance;
+  const major = world.score.foulValues.major;
+  expect(world.score.penalties(alliance)).toBe(major);
+  expect(r.score).toBe(world.score.total(alliance) - major);
+  expect(r.scores[r.scores.length - 1]).toBe(r.score);
   world.free();
 });
 

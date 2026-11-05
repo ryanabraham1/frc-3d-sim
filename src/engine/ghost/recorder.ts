@@ -34,7 +34,7 @@ export class GhostRecorder {
     this.scores.push(t, score);
   }
 
-  /** `score` is the final alliance total, which can include points assessed at the buzzer. */
+  /** `score` is the final leaderboard score, which can include points assessed at the buzzer. */
   finish(t: number, score: number): GhostRun {
     this.noteScore(t, score);
     return { v: GHOST_VERSION, hz: GHOST_HZ, alliance: this.alliance, score, poses: this.poses, shots: this.shots, scores: this.scores };

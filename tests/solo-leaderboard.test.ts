@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { boardRobotFor, boardRobotForMatch, boardRobots } from '../src/engine/ghost/board';
 import { decodeGhost, encodeGhost, GHOST_HZ, ghostProblem, ghostScoreAt, MAX_SCORE, POSE_STRIDE, type GhostRun } from '../src/engine/ghost/format';
 import { GhostRecorder } from '../src/engine/ghost/recorder';
+import { Scoreboard } from '../src/engine/match/scoreboard';
 import { cloneConfig } from '../src/engine/robot/config';
 import { SEASONS } from '../src/seasons';
 import { UploadLimiter } from '../server/matchLogCore';
@@ -65,6 +66,20 @@ describe('ghost format', () => {
     const faked = run();
     faked.scores = [];
     expect(ghostProblem(faked, 150)).toMatch(/timeline/);
+  });
+});
+
+describe('solo score', () => {
+  it('takes penalties off the alliance total, never below zero', () => {
+    const s = new Scoreboard({ minor: 5, major: 15 });
+    s.add('blue', 'fuel', 40);
+    s.foul({ t: 1, alliance: 'blue', kind: 'minor', rule: 'G1', robotId: 0 });
+    s.foul({ t: 2, alliance: 'blue', kind: 'major', rule: 'G2', robotId: 0 });
+    expect(s.penalties('blue')).toBe(20);
+    expect(s.soloScore('blue')).toBe(20);
+    s.foul({ t: 3, alliance: 'blue', kind: 'major', rule: 'G2', robotId: 0 });
+    s.foul({ t: 4, alliance: 'blue', kind: 'major', rule: 'G2', robotId: 0 });
+    expect(s.soloScore('blue')).toBe(0);
   });
 });
 

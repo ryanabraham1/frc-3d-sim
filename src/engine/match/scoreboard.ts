@@ -149,6 +149,16 @@ export class Scoreboard {
     return this.earned(alliance) + this.foulPointsFor(alliance);
   }
 
+  /** Foul points an alliance gave away (they go to the opponent). */
+  penalties(alliance: Alliance): number {
+    return this.foulPointsFor(opponent(alliance));
+  }
+
+  /** Solo leaderboard score: the alliance total less its penalties, never below zero. */
+  soloScore(alliance: Alliance): number {
+    return Math.max(0, this.total(alliance) - this.penalties(alliance));
+  }
+
   winner(): Alliance | 'tie' {
     const r = this.total('red');
     const b = this.total('blue');

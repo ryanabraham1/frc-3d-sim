@@ -5,7 +5,8 @@ One leaderboard per real team robot in a season: every `teamRobots` entry (`boar
 
 ## What counts
 
-A run is a full **Solo practice** match (AI opponents off) on a team robot. Its score is the driver's alliance total.
+A run is a full **Solo practice** match (AI opponents off) on a team robot. Its score is the driver's alliance total minus penalties (`Scoreboard.soloScore`): the foul points the driver gave
+away, never below zero. The live ghost gap uses the same number, and the results card shows what penalties took off.
 Nothing else is on the field, so the score comes down to the driver and the robot.
 
 These don't count: 3 v 3 matches, archetypes and custom builds (`boardRobotFor` compares the build, ignoring team number), matches

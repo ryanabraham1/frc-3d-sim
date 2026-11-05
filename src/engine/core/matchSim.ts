@@ -240,7 +240,7 @@ export class MatchSim {
     this.matchLog?.step();
     if (this.ghost && this.state === 'running' && this.ghost.due(this.clock.elapsed)) {
       const p = world.player!;
-      this.ghost.sample(p.body.translation(), p.body.rotation(), world.score.total(p.alliance), this.clock.elapsed);
+      this.ghost.sample(p.body.translation(), p.body.rotation(), world.score.soloScore(p.alliance), this.clock.elapsed);
     }
     this.simTime += dt;
   }
@@ -257,7 +257,7 @@ export class MatchSim {
     const res = rules.results();
     Object.assign(res, buildPlayerResults(res, score, setup.robots.map((rs) => ({ id: rs.id, alliance: rs.alliance, name: rs.name, team: rs.config.teamNumber })), this.season.foulValues, 'Game pieces'));
     this.results = res;
-    if (this.ghost && !this.boosted) this.events.ghost?.(this.ghost.finish(this.clock.elapsed, score.total(this.world.player!.alliance)));
+    if (this.ghost && !this.boosted) this.events.ghost?.(this.ghost.finish(this.clock.elapsed, score.soloScore(this.world.player!.alliance)));
     this.events.results(res);
   }
 

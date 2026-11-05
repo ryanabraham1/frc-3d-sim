@@ -152,7 +152,7 @@ async function soloRun(settings: GameSettings, season: ReturnType<EngineModules[
   return {
     ghosts: picked?.length ? picked : best ? [{ name: 'Your best', run: best }] : [],
     record: true,
-    onRun: (run, slot) => void recordRun(season.id, robot.id, run, lobby.rankedSecret()).then((outcome) => showRunOutcome(slot, robot.label, outcome, lobby.rankedSecret())),
+    onRun: (run, slot, penalties) => void recordRun(season.id, robot.id, run, lobby.rankedSecret()).then((outcome) => showRunOutcome(slot, robot.label, outcome, penalties, lobby.rankedSecret())),
   };
 }
 

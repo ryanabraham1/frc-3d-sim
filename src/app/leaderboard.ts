@@ -202,12 +202,12 @@ export function bindLeaderboard(el: HTMLElement, ctx: LeaderboardContext): void 
 }
 
 /** The result of a leaderboard run, in the results card. */
-export function showRunOutcome(slot: HTMLElement, robot: string, o: RunOutcome, secret: string): void {
+export function showRunOutcome(slot: HTMLElement, robot: string, o: RunOutcome, penalties: number, secret: string): void {
   if (!slot.isConnected) return;
   const best = o.previous === null || o.score > o.previous;
   const headline = o.previous === null ? 'First score' : best ? `New best · +${o.score - o.previous}` : `${o.previous - o.score} off your best`;
   const place = o.rank === null ? 'Saved on this device' : `#${o.rank} of ${o.total}`;
-  slot.innerHTML = `<div class="solo-run-card ${best ? 'best' : ''}"><div><small>${esc(robot)}</small><b>${esc(headline)}</b></div><div class="solo-run-place"><b>${o.score}</b><small>${esc(place)}</small></div></div>
+  slot.innerHTML = `<div class="solo-run-card ${best ? 'best' : ''}"><div><small>${esc(robot)}</small><b>${esc(headline)}</b></div><div class="solo-run-place"><b>${o.score}</b><small>${penalties ? `After \u2212${penalties} penalties · ` : ''}${esc(place)}</small></div></div>
     ${best && !driverName() ? '<label class="solo-run-name"><span>Name on the leaderboard</span><input maxlength="24" placeholder="Player" spellcheck="false" /></label>' : ''}`;
   const input = slot.querySelector('input');
   if (input) input.onchange = () => {
