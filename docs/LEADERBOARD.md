@@ -41,12 +41,13 @@ whether the current setup is ranked.
 The frontend degrades gracefully, so order doesn't matter, but online boards need both of these:
 
 1. Run `supabase/solo_scores.sql` in the project the relay uses (RLS on, no policies: only the service key can reach it).
-2. `npm run cloudflare:deploy`. Redeploying can end live rooms, so pick a quiet moment.
+2. `npm run cloudflare:deploy`. The endpoint is served by the stateless Worker entry, so it is live at once and rooms
+   on the coordinator aren't touched.
 
 ## Cheating
 
 The sim runs in the browser, so the relay can't prove a score. `ghostProblem` rejects what can't be real (wrong match
-length, teleporting, off the field, a score the timeline doesn't reach) and writes are limited to 30 per IP per hour.
+length, teleporting, off the field, a score the timeline doesn't reach) and writes are limited to 30 per IP per hour (per Worker isolate, so treat that as a loose limit).
 A determined cheat can still forge a plausible run. Removing a score is a row delete in `solo_scores`.
 
 Boards aren't tied to a robot's tuning: if a robot's stats change, its old scores stay. Clear that robot's rows if a

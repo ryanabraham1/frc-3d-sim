@@ -82,13 +82,11 @@ export class RelayCoordinator extends DurableObject<Env> {
   private relay: Relay | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly uploads = new UploadLimiter();
-  private readonly soloWrites = new UploadLimiter();
 
   async fetch(request: Request): Promise<WorkerResponse> {
     const path = new URL(request.url).pathname;
     if (path === '/healthz') return Response.json({ ok: true, rooms: this.relay?.roomCount() ?? 0, peers: this.hub?.clients.size ?? 0, colo: await this.colo() });
     if (path === '/api/match-logs') return this.matchLog(request);
-    if (path === '/api/solo-scores') return this.soloScores(request);
     if (path !== '/ws') return new Response('Not found', { status: 404 });
     if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('WebSocket required', { status: 426 });
     const origin = request.headers.get('Origin');
@@ -139,15 +137,6 @@ export class RelayCoordinator extends DurableObject<Env> {
     return this.coloName;
   }
 
-  /** Solo leaderboards (docs/LEADERBOARD.md), kept in the same Supabase project as ranked play. */
-  private async soloScores(request: Request): Promise<WorkerResponse> {
-    const { SUPABASE_URL: url, SUPABASE_SERVICE_KEY: key } = this.env;
-    if (!url || !key) return new Response('leaderboards not configured', { status: 503, headers: { 'access-control-allow-origin': '*' } });
-    const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-    const res = await handleSoloScoreRequest(request as unknown as globalThis.Request, new SupabaseSoloScoreStore(url, key), this.soloWrites, ip, (msg) => console.log(`[solo-scores] ${msg}`));
-    return res as unknown as WorkerResponse;
-  }
-
   /** Browsers upload finished match logs here (docs/MATCH-LOGS.md); stored in Supabase like on the Node server. */
   private async matchLog(request: Request): Promise<WorkerResponse> {
     const { SUPABASE_URL: url, SUPABASE_SERVICE_KEY: key } = this.env;
@@ -160,9 +149,26 @@ export class RelayCoordinator extends DurableObject<Env> {
   }
 }
 
+const soloWrites = new UploadLimiter();
+
+/**
+ * Solo leaderboards (docs/LEADERBOARD.md), in the same Supabase project as ranked play. Served here rather than by the
+ * coordinator: boards need no relay state, and a deploy reaches this at once while the coordinator stays on its old code
+ * until its sockets close. The write limit is per isolate, so it is looser than the coordinator's would be.
+ */
+async function soloScores(request: Request, env: Env): Promise<WorkerResponse> {
+  const { SUPABASE_URL: url, SUPABASE_SERVICE_KEY: key } = env;
+  if (!url || !key) return new Response('leaderboards not configured', { status: 503, headers: { 'access-control-allow-origin': '*' } });
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+  const res = await handleSoloScoreRequest(request as unknown as globalThis.Request, new SupabaseSoloScoreStore(url, key), soloWrites, ip, (msg) => console.log(`[solo-scores] ${msg}`));
+  return res as unknown as WorkerResponse;
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<WorkerResponse> {
-    if (new URL(request.url).pathname === '/ice') return iceServers(env);
+    const path = new URL(request.url).pathname;
+    if (path === '/ice') return iceServers(env);
+    if (path === '/api/solo-scores') return soloScores(request, env);
     return env.RELAY.get(env.RELAY.idFromName('public-relay-v1')).fetch(request);
   },
 };
