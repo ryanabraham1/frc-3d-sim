@@ -1,4 +1,4 @@
-import { compressCheckpoint, decompressCheckpoint } from '@engine/net/recovery';
+import { compressCheckpoint, decompressCheckpoint, type CompressedCheckpoint } from '@engine/net/recovery';
 import type { GameRecovery } from '@engine/core/game';
 import { fillBotStations } from '@engine/ai/matchSetup';
 import { seasonLabel, type AiSkill, type GameSettings } from '@engine/core/season';
@@ -51,7 +51,7 @@ interface RoomRecovery {
   lobby: LobbyState;
   choices: [string, PlayerChoice][];
   setup: MatchSetup | null;
-  game: GameRecovery | null;
+  game: GameRecovery | CompressedCheckpoint | null;
 }
 
 export type LobbyStatus = 'idle' | 'connecting' | 'lobby';
@@ -117,7 +117,8 @@ export class LobbyController {
   playerName = '';
   /** Host: the running match's setup (sent to anyone who joins mid-match so they can spectate). */
   private liveSetup: MatchSetup | null = null;
-  private recoveryGame: GameRecovery | null = null;
+  /** The newest checkpoint: as the match made it, or already compressed by the simulation worker. */
+  private recoveryGame: GameRecovery | CompressedCheckpoint | null = null;
   private publishingRecovery = false;
   private pendingRecovery: { room: string; json: string } | null = null;
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -937,7 +938,7 @@ export class LobbyController {
     this.onToLobby();
   }
 
-  updateRecovery(state: GameRecovery): void {
+  updateRecovery(state: GameRecovery | CompressedCheckpoint): void {
     this.recoveryGame = state;
     this.publishRecovery();
   }
@@ -970,6 +971,13 @@ export class LobbyController {
     } finally { this.publishingRecovery = false; }
   }
 
+  /** The simulation worker died mid-match: carry on from `state` on this page; guests rebuild from the new stream. */
+  resumeOnPage(state?: GameRecovery): void {
+    if (!this.isHost || !this.liveSetup) return;
+    this.onRecover(this.liveSetup, 'host', state);
+    this.sendResume();
+  }
+
   private sendResume(to?: string): void {
     if (!this.liveSetup) return;
     this.client.send({ t: 'resume', setup: this.liveSetup } satisfies HostMsg, to);
@@ -980,8 +988,10 @@ export class LobbyController {
     const room = this.client.room;
     let saved: RoomRecovery | undefined;
     if (this.isHost) {
-      try { saved = await decompressCheckpoint(ev.checkpoint) as RoomRecovery; }
-      catch { this.error = 'Unable to read the host recovery checkpoint'; this.leave(); return; }
+      try {
+        saved = await decompressCheckpoint(ev.checkpoint) as RoomRecovery;
+        if (saved) saved.game = await decompressCheckpoint(saved.game) as GameRecovery | null;
+      } catch { this.error = 'Unable to read the host recovery checkpoint'; this.leave(); return; }
       // Another handoff or a deliberate leave can supersede the asynchronous decompression.
       if (!this.client.connected || this.client.room !== room || !this.isHost || this.client.hostId !== ev.hostId) return;
       if (!saved || saved.version !== 1) { this.error = 'Unable to recover the host'; this.leave(); return; }
@@ -1011,7 +1021,7 @@ export class LobbyController {
     } else this.onChange();
     if (this.isHost) {
       if (this.lobby.inMatch && this.liveSetup) {
-        this.onRecover(this.liveSetup, 'host', this.recoveryGame ?? undefined);
+        this.onRecover(this.liveSetup, 'host', (this.recoveryGame as GameRecovery | null) ?? undefined);
         this.sendResume();
       } else {
         this.client.send({ t: 'to-lobby' } satisfies HostMsg);

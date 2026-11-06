@@ -119,13 +119,13 @@ function showLoadError(err: unknown, retry: () => void): void {
 }
 
 /** `setup` is the match's robot lineup when known (network); otherwise it is derived from the settings. */
-async function loadEngine(settings: GameSettings, setup: MatchSetup | undefined, status: (text: string) => void) {
+async function loadEngine(settings: GameSettings, setup: MatchSetup | undefined, status: (text: string) => void, simulates = !setup) {
   // Physics (Rapier WASM) and the renderer load on demand so the menu appears instantly.
   status('LOADING PHYSICS\u2026');
   const { R, Game, localSetup, getSeason } = await withTimeout(loadEngineModules(), ENGINE_LOAD_TIMEOUT_MS, 'Engine load');
   // Only fetch/decode the CAD models of robots actually in this match (the full set is ~130 MB).
   const lineup = setup ?? localSetup(settings, getSeason(settings.seasonId));
-  if (!setup) warmSimulationWorker(lineup.robots.map((r) => r.config.model));
+  if (simulates) warmSimulationWorker(lineup.robots.map((r) => r.config.model));
   status('LOADING FIELD\u2026');
   await withTimeout(getSeason(settings.seasonId).prepareAssets?.() ?? Promise.resolve(), CAD_LOAD_TIMEOUT_MS, 'Field load').catch(() => undefined);
   status('LOADING ROBOTS\u2026');
@@ -189,7 +189,7 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client', recovery
   const ranked = !!lobby.lobby?.ranked;
   let engine: Awaited<ReturnType<typeof loadEngine>>;
   try {
-    engine = await loadEngine(settings, setup, (t) => { loading.textContent = t; });
+    engine = await loadEngine(settings, setup, (t) => { loading.textContent = t; }, role === 'host');
   } catch (err) {
     if (gen === generation) showLoadError(err, () => void startNetGame(setup, role, recovery));
     return;
@@ -210,6 +210,7 @@ async function startNetGame(setup: MatchSetup, role: 'host' | 'client', recovery
       onRestart: () => {},
       ...(ranked ? {} : { onPlayAgain: () => { lobby.backToLobby(); lobby.beginPlacement(); }, onBackToLobby: () => lobby.backToLobby() }),
       onResults: (res, scores) => lobby.reportResult(res.winner, scores.red, scores.blue),
+      onSimLost: (state) => lobby.resumeOnPage(state),
     },
     { role, client: lobby.client, setup, recovering: !!recovery, onCheckpoint: state => lobby.updateRecovery(state) },
   );

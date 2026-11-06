@@ -36,10 +36,27 @@ station, bring their own robot config, and the host starts the match.
 | Client sim | Clients **don't step physics**. They render snapshots with ~100 ms interpolation. Own robot: optional prediction (stage M8). | Simple + correct first; prediction is an add-on. |
 | Commands | Client sends its `RobotCommand` (already field-frame, camera-relative conversion done locally) ~30 Hz + on button change. Host holds last command per robot. | `RobotCommand` was designed as the multiplayer seam. |
 | Snapshots | Binary, 30 Hz (every 3rd 90 Hz step): all robots (pose, turret, held, climb) + only **moved** FUEL (int16 mm) + a JSON "meta" tail (clock, game state, piece state changes, score/rules when changed). Keyframe (everything) on start and when a client reports `ready`. | ~1–2 KB/snapshot → ~50 KB/s per client. Relay is reliable+ordered so deltas are safe. |
-| Host timing | Host sim is driven by a **Web Worker ticker** (not rAF) so the match keeps running if the host tab is in the background; rendering stays on rAF. | rAF stops in hidden tabs → would freeze everyone. |
+| Host timing | Host sim runs in the **simulation worker** (`src/engine/sim/worker.ts`, the same one solo uses), so the match keeps running if the host tab is in the background and rendering can't delay a physics step. The page keeps a worker ticker for input and link state; rendering stays on rAF. `?worker=0` runs the match on the page. | rAF stops in hidden tabs → would freeze everyone; sharing the main thread with rendering made snapshot timing jitter for every guest on a slow host. |
 | Lobby | Host-authoritative lobby state (players, slots, options) broadcast on change. Robot configs travel with `lobby-set`. | Host already the authority. |
 | Season contract | Add optional `SeasonRules.netState()/applyNetState()`, `SeasonContext.humanPlayerIsAuto(a)`, and a `robot` arg to `ctx.toast` (targeted toasts). | Minimal, year-agnostic. Future seasons implement the two state hooks. |
 | Singleplayer | Unchanged behaviour: `role='local'`, rAF loop, one robot. | Don't regress. |
+
+### 2.0 Host simulation worker
+
+`RTCPeerConnection` isn't available in Chrome workers, so `NetClient` and `HostSync` (readiness, peers, message handling) stay on the page. The worker runs `MatchSim` on a `lightweight` world and `HostStream` (`src/engine/sim/hostStream.ts`), which holds remote drivers' commands and uses `SnapshotEncoder` (`src/engine/net/snapshotEncoder.ts`).
+
+| Direction | What |
+|---|---|
+| page → worker | Remote commands (robot id, cmd, seq; stale ones are filtered on the page), dropped drivers, human-player presses, keyframe requests, pause/resume, `allReady`, link state, checkpoint requests, checkpoint restore |
+| worker → page | Encoded snapshots (ArrayBuffer, transferred; the page sends them), `SimFrame`s for the host's own view, toasts and cues as events (the page routes them to peers), compressed checkpoints |
+
+- **Back-pressure:** a skipped snapshot keeps its deltas. The worker skips while the socket is backed up (`link`), and while the page hasn't sent 2 snapshots or applied 3 frames, so a busy page never collects stale messages ahead of newer ones.
+- **Piece changes:** `pool.takeChanges()` has one reader, so `HostStream` splits it between frames and snapshots.
+- **Early messages:** anything the page sends before the world has loaded is held and replayed.
+- **Checkpoints** are captured, serialized and gzipped in the worker. The room checkpoint carries `game` already compressed; `recoverHost` unpacks it.
+- **If the worker fails:** before the first frame, the match starts on the page. Mid-match, the host rebuilds on the page from its last checkpoint (`Game` → `onSimLost` → `lobby.resumeOnPage`) and guests rebuild through `resume`, as in a host handoff.
+
+The page still sends every snapshot, so a long main-thread task can still delay one by up to that task's length.
 
 ### 2.1 Relay protocol (`src/engine/net/relayProtocol.ts`, server `server/relay.ts`)
 

@@ -1,25 +1,8 @@
-import type { GamePiecePool, PieceState } from '../gamepiece/pool';
-import type { MatchClock } from '../match/clock';
-import type { Scoreboard } from '../match/scoreboard';
 import type { Robot, RobotCommand } from '../robot/robot';
-import type { MatchResults, SeasonRules } from '../core/season';
 import type { NetClient } from './netClient';
-import {
-  encodeSnapshot,
-  quantize,
-  quantizeRot,
-  CLOCK_EVERY,
-  ROT_QUANTUM,
-  unpackCommand,
-  type ClientMsg,
-  type HostMsg,
-  type MatchSetup,
-  type NetGameState,
-  type PieceStateEntry,
-  type SnapshotMeta,
-} from './protocol';
+import { unpackCommand, type ClientMsg, type HostMsg, type MatchSetup } from './protocol';
+import { SnapshotEncoder, type SnapshotSource } from './snapshotEncoder';
 
-const STATE_CODE: Record<PieceState, number> = { field: 0, held: 1, reserve: 2 };
 /**
  * Skip a snapshot while this much is still queued on the socket (slow uplink) — deltas stay queued for the
  * next one. Everything queued here is latency every client sees, so allow roughly one keyframe.
@@ -29,15 +12,14 @@ const MAX_BUFFERED = 16 * 1024;
 export const COMMAND_TIMEOUT_MS = 1000;
 
 /** What the host sync reads from the running Game. */
-export interface HostSyncSource {
-  readonly pool: GamePiecePool;
-  readonly robots: Robot[];
-  readonly clock: MatchClock;
-  readonly score: Scoreboard;
-  readonly rules: SeasonRules;
-  readonly netState: NetGameState;
-  readonly countdownLeft: number;
-  readonly lastResults: MatchResults | null;
+export type HostSyncSource = SnapshotSource;
+
+/** The simulation worker, when the match runs there: what the page's HostSync hears goes on to it (see HostStream). */
+export interface HostSimLink {
+  command(robotId: number, cmd: RobotCommand, seq: number): void;
+  /** Forget one robot's command, or everyone's. */
+  dropCommands(robotId?: number): void;
+  requestKeyframe(): void;
 }
 
 export interface HostSyncHooks {
@@ -49,21 +31,16 @@ export interface HostSyncHooks {
 }
 
 /**
- * Host side of a networked match: collects client commands, tracks readiness, and streams snapshots
- * (robots every time; only moved pieces; piece state/score/rules only when changed).
+ * Host side of a networked match, on the page (the network lives here): collects client commands, tracks readiness, and
+ * streams snapshots (robots every time; only moved pieces; piece state/score/rules only when changed). When the match
+ * runs in the simulation worker, `link` carries commands there and encoded snapshots come back through `sendEncoded`.
  */
 export class HostSync {
   private readonly cmds = new Map<number, { cmd: RobotCommand; seq: number; at: number }>();
   private readonly waitingFor: Set<string>;
-  private readonly lastQ: Int16Array;
-  private readonly lastRot: Int16Array;
-  private lastScore = '';
-  private lastRules = '';
-  /** JSON of each top-level rules key as last sent (for `rulesPatch`). */
-  private readonly lastRulesKeys = new Map<string, string>();
-  private seq = 0;
-  private lastClockPhase = '';
-  private forceKey = true;
+  private readonly encoder: SnapshotEncoder;
+  /** Set while the match runs in the simulation worker. */
+  link: HostSimLink | null = null;
   private readyFired = false;
   private readonly offs: (() => void)[] = [];
   private readyTimer: ReturnType<typeof setTimeout>;
@@ -81,16 +58,15 @@ export class HostSync {
     /** Even a connected peer that never finishes loading is left behind after this long. */
     private readonly readyHardCapMs = 120000,
   ) {
-    this.lastQ = new Int16Array(src.pool.count * 3).fill(-32768);
-    this.lastRot = new Int16Array(src.pool.count * 4).fill(-32768);
+    this.encoder = new SnapshotEncoder(src);
     this.waitingFor = new Set(setup.peers.filter((p) => p !== client.peerId));
     this.offs.push(client.on('msg', ({ from, data }) => this.onMsg(from, data as ClientMsg)));
     this.offs.push(client.on('peer-left', ({ peerId }) => this.onPeerLeft(peerId)));
     // A dropped driver's robot goes idle at once; when they resume they get a full keyframe.
     this.offs.push(client.on('peer-lost', ({ peerId }) => this.onPeerLost(peerId)));
-    this.offs.push(client.on('peer-back', ({ peerId }) => { this.lost.delete(peerId); this.forceKey = true; }));
-    this.offs.push(client.on('reconnecting', () => this.cmds.clear()));
-    this.offs.push(client.on('reconnected', () => (this.forceKey = true)));
+    this.offs.push(client.on('peer-back', ({ peerId }) => { this.lost.delete(peerId); this.requestKeyframe(); }));
+    this.offs.push(client.on('reconnecting', () => { this.cmds.clear(); this.link?.dropCommands(); }));
+    this.offs.push(client.on('reconnected', () => this.requestKeyframe()));
     this.readyTimer = setTimeout(() => this.readyTimeout(), readyTimeoutMs);
     queueMicrotask(() => this.checkReady());
   }
@@ -117,14 +93,15 @@ export class HostSync {
 
   /** Force the next snapshot to carry everything (e.g. a client just (re)built its world). */
   requestKeyframe(): void {
-    this.forceKey = true;
+    this.encoder.requestKeyframe();
+    this.link?.requestKeyframe();
   }
 
   private onMsg(from: string, m: ClientMsg): void {
     if (!m || typeof m !== 'object') return;
     switch (m.t) {
       case 'ready':
-        this.forceKey = true;
+        this.requestKeyframe();
         this.waitingFor.delete(from);
         this.checkReady();
         break;
@@ -136,26 +113,32 @@ export class HostSync {
         const seq = Number(m.s) || 0;
         if (prev && seq <= prev.seq) return; // stale
         this.cmds.set(r.id, { cmd, seq, at: performance.now() });
+        this.link?.command(r.id, cmd, seq);
         break;
       }
       case 'hp':
         this.hooks.humanPlayer(this.robotForPeer(from), from, Number(m.n) || 1);
         break;
       case 'resync':
-        this.forceKey = true;
+        this.requestKeyframe();
         break;
     }
   }
 
+  private dropCommand(robot: Robot | null): void {
+    if (!robot) return;
+    this.cmds.delete(robot.id);
+    this.link?.dropCommands(robot.id);
+  }
+
   private onPeerLost(peerId: string): void {
     this.lost.add(peerId);
-    const robot = this.robotForPeer(peerId);
-    if (robot) this.cmds.delete(robot.id);
+    this.dropCommand(this.robotForPeer(peerId));
   }
 
   private onPeerLeft(peerId: string): void {
     const robot = this.robotForPeer(peerId);
-    if (robot) this.cmds.delete(robot.id);
+    this.dropCommand(robot);
     this.waitingFor.delete(peerId);
     this.hooks.peerLeft(peerId, robot);
     this.checkReady();
@@ -186,116 +169,21 @@ export class HostSync {
     this.hooks.allReady();
   }
 
-  /** Build + send one snapshot. `time` = host sim time (s). */
-  sendSnapshot(time: number): void {
-    if (!this.client.connected || this.client.relaySnapshotBacklog > MAX_BUFFERED) return;
-    const { pool, robots, score, rules, clock } = this.src;
-    const key = this.forceKey;
-    this.forceKey = false;
-
-    const changed = pool.takeChanges();
-    const changedSet = key ? null : new Set(changed);
-    const pieces: PieceStateEntry[] = [];
-    const list = key ? Array.from({ length: pool.count }, (_, i) => i) : changed;
-    for (const i of list) pieces.push([i, STATE_CODE[pool.state[i]], pool.owner[i], pool.tag[i]]);
-
-    const pieceIdx: number[] = [];
-    const piecePos: number[] = [];
-    const rotations: [number, number, number, number, number][] = [];
-    const { lastQ, lastRot } = this;
-    for (let i = 0; i < pool.count; i++) {
-      if (pool.state[i] !== 'field') continue;
-      const body = pool.bodies[i];
-      const fresh = key || changedSet!.has(i);
-      // Every field piece is compared with what was last sent (never skipped as "asleep": that flag is not
-      // proof a body hasn't moved), so clients always see pieces where the host has them.
-      const p = body.translation();
-      const qx = quantize(p.x);
-      const qy = quantize(p.y);
-      const qz = quantize(p.z);
-      const k = i * 3;
-      let moved = fresh || lastQ[k] !== qx || lastQ[k + 1] !== qy || lastQ[k + 2] !== qz;
-      let rot: [number, number, number, number, number] | null = null;
-      if (pool.specAt(i).shape === 'tube') {
-        // Tubes (not round) also need their orientation — but only when it changed.
-        const q = body.rotation();
-        const r = i * 4;
-        const a = quantizeRot(q.x);
-        const b = quantizeRot(q.y);
-        const c = quantizeRot(q.z);
-        const d = quantizeRot(q.w);
-        if (fresh || lastRot[r] !== a || lastRot[r + 1] !== b || lastRot[r + 2] !== c || lastRot[r + 3] !== d) {
-          lastRot[r] = a;
-          lastRot[r + 1] = b;
-          lastRot[r + 2] = c;
-          lastRot[r + 3] = d;
-          rot = [i, a * ROT_QUANTUM, b * ROT_QUANTUM, c * ROT_QUANTUM, d * ROT_QUANTUM];
-          moved = true;
-        }
-      }
-      if (!moved) continue;
-      lastQ[k] = qx;
-      lastQ[k + 1] = qy;
-      lastQ[k + 2] = qz;
-      pieceIdx.push(i);
-      piecePos.push(p.x, p.y, p.z);
-      if (rot) rotations.push(rot);
-    }
-
-    const meta: SnapshotMeta = { st: this.src.netState, cd: this.src.countdownLeft };
-    const ck = clock.snapshot();
-    const phase = `${ck.i}:${ck.s}:${ck.f}`;
-    if (key || phase !== this.lastClockPhase || (this.seq + 1) % CLOCK_EVERY === 0) {
-      meta.clock = { ...ck, ep: Math.round(ck.ep * 1000) / 1000, e: Math.round(ck.e * 1000) / 1000 };
-      this.lastClockPhase = phase;
-    }
-    if (rotations.length) meta.rotations = rotations;
-    if (key) meta.key = true;
-    if (pieces.length) meta.pieces = pieces;
-    const sc = score.snapshot();
-    const scJson = JSON.stringify(sc);
-    if (key || scJson !== this.lastScore) {
-      meta.score = sc;
-      this.lastScore = scJson;
-    }
-    if (rules.netState) this.addRules(meta, rules.netState(), key);
-    if (this.src.netState === 'results' && this.src.lastResults) meta.results = this.src.lastResults;
-
-    const buf = encodeSnapshot({
-      seq: ++this.seq,
-      time,
-      robots: robots.map((r) => r.netState(this.cmds.get(r.id)?.seq ?? 0)),
-      pieceIdx,
-      piecePos,
-      meta,
-    });
-    this.bytesSent += buf.byteLength;
-    this.client.sendBinary(buf);
+  /** Is the link taking snapshots right now? (A skip keeps pending deltas for the next one.) */
+  get linkClear(): boolean {
+    return this.client.connected && this.client.relaySnapshotBacklog <= MAX_BUFFERED;
   }
 
-  /**
-   * Season rules state: a plain object is diffed per top-level key so a constantly-changing field (e.g. a
-   * swinging cage) doesn't resend the rest (e.g. every scored piece) 30 times a second.
-   */
-  private addRules(meta: SnapshotMeta, rs: unknown, key: boolean): void {
-    if (!rs || typeof rs !== 'object' || Array.isArray(rs)) {
-      const json = JSON.stringify(rs);
-      if (key || json !== this.lastRules) meta.rules = rs;
-      this.lastRules = json;
-      return;
-    }
-    const patch: Record<string, unknown> = {};
-    let changed = false;
-    for (const [k, v] of Object.entries(rs)) {
-      const json = JSON.stringify(v);
-      if (key || this.lastRulesKeys.get(k) !== json) {
-        patch[k] = v;
-        this.lastRulesKeys.set(k, json);
-        changed = true;
-      }
-    }
-    if (key) meta.rules = rs;
-    else if (changed) meta.rulesPatch = patch;
+  /** Build + send one snapshot. `time` = host sim time (s). */
+  sendSnapshot(time: number): void {
+    if (!this.linkClear) return;
+    this.sendEncoded(this.encoder.encode(time, (id) => this.cmds.get(id)?.seq ?? 0));
+  }
+
+  /** Send a snapshot that is already encoded (by the simulation worker). */
+  sendEncoded(buf: ArrayBuffer): void {
+    this.bytesSent += buf.byteLength;
+    this.client.sendBinary(buf);
   }
 
   dispose(): void {

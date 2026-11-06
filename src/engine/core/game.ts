@@ -9,6 +9,7 @@ import { DEFAULT_CONTROLS_HELP, DriverInput, InputManager } from '../input/input
 import type { MatchClock, PeriodChange } from '../match/clock';
 import type { Scoreboard } from '../match/scoreboard';
 import { ClientSync } from '../net/clientSync';
+import { decompressCheckpoint, type CompressedCheckpoint } from '../net/recovery';
 import { HostSync } from '../net/hostSync';
 import { Predictor } from '../net/prediction';
 import { LocalPieces } from '../net/localPieces';
@@ -36,6 +37,7 @@ import type { GamePiecePool as Pool } from '../gamepiece/pool';
 import { MatchWorld } from './matchWorld';
 import { MatchSim, PRE_MATCH_COUNTDOWN, botSettings, type SimRecovery } from './matchSim';
 import { FrameHealth } from '../render/frameHealth';
+import { IDLE_SNAPSHOT_MS, SNAPSHOT_EVERY_STEPS } from '../sim/hostStream';
 import { WorkerSim } from '../sim/workerSim';
 import type { SimEvent } from '../sim/protocol';
 import { Mesh } from 'three';
@@ -57,7 +59,8 @@ export interface GameNet {
   setup: MatchSetup;
   /** A replacement host uses logical inventory, independent of the departing host's hopper bodies. */
   recovering?: boolean;
-  onCheckpoint?: (state: GameRecovery) => void;
+  /** A recovery checkpoint: the match's state, or that state already compressed by the simulation worker. */
+  onCheckpoint?: (state: GameRecovery | CompressedCheckpoint) => void;
 }
 
 export interface GameCallbacks {
@@ -71,6 +74,8 @@ export interface GameCallbacks {
   onBackToLobby?: () => void;
   /** Multiplayer: the match ended (host and clients both call this once). Used to report ranked results. */
   onResults?: (res: MatchResults, scores: Record<Alliance, number>) => void;
+  /** Multiplayer host: the simulation worker died mid-match. Carry on from this checkpoint (if there was one yet) on the page. */
+  onSimLost?: (state?: GameRecovery) => void;
 }
 
 /** A solo match that counts for the leaderboard (see docs/LEADERBOARD.md). */
@@ -86,8 +91,6 @@ export interface SoloRun {
 export { AI_SPEED, AI_AIM } from '../ai/matchSetup';
 /** Minimum ms between rendered frames (~60 fps; the 2 ms slack keeps a 60 Hz display drawing every refresh). */
 const MIN_FRAME_MS = 1000 / 60 - 2;
-/** Host streams a snapshot every N physics steps (90 Hz / 3 = 30 Hz). */
-const SNAPSHOT_EVERY_STEPS = 3;
 /** Host recovery checkpoints share the socket with snapshots, so each is a burst every guest can feel: keep them rare. */
 const CHECKPOINT_EVERY_MS = 5000;
 
@@ -143,7 +146,7 @@ export class Game {
   readonly world: MatchWorld;
   /** The match authority on this page (multiplayer host, or single player without the worker); null otherwise. */
   sim: MatchSim | null = null;
-  /** Single player: the match runs in a worker and this page draws its frames (null = in-page, or multiplayer). */
+  /** Single player and multiplayer host: the match runs in a worker and this page draws its frames (null = in-page, or a client). */
   remote: WorkerSim | null = null;
   readonly hud: Hud;
   get frame(): FieldFrame { return this.world.frame; }
@@ -212,6 +215,11 @@ export class Game {
   private stepsSinceSnap = 0;
   private lastIdleSnap = 0;
   private lastCheckpoint = -Infinity;
+  /** Worker mode: the newest checkpoint, to carry on from if the worker dies. */
+  private savedCheckpoint: unknown = null;
+  /** Worker mode: a checkpoint to apply here if the worker fails before it can. */
+  private pendingRecovery: GameRecovery | null = null;
+  private driversReady = false;
   private lastPredict = 0;
   /** Host: fraction of wall time spent simulating, measured over ~0.5 s windows. */
   private simLoad = 0;
@@ -270,7 +278,7 @@ export class Game {
     // Local AI fills the other stations; network matches retain their human drivers.
     const mine = net ? this.setup.robots.find((r) => r.peerId === net.client.peerId) : this.setup.robots[0];
     const self = this;
-    const worker = this.role === 'local' && workerAllowed();
+    const worker = this.role !== 'client' && workerAllowed();
     this.world = new MatchWorld(R, season, this.setup, {
       scene: this.renderer.scene,
       playerId: mine?.id ?? null,
@@ -339,28 +347,24 @@ export class Game {
     } else this.startSim();
 
     if (this.role === 'host') {
-      this.state = 'waiting';
+      if (this.sim) this.sim.state = 'waiting';
       this.hostSync = new HostSync(net!.client, this.setup, this, {
         humanPlayer: (robot, _peer, button) => {
-          if (robot && this.state === 'running' && button <= (this.season.humanPlayerButtons ?? 1)) this.rules.humanPlayerAction(robot.alliance, button);
+          if (!robot || this.state !== 'running' || button > (this.season.humanPlayerButtons ?? 1)) return;
+          if (this.remote) this.remote.humanPlayer(robot.alliance, button);
+          else this.rules.humanPlayerAction(robot.alliance, button);
         },
         allReady: () => {
-          const sim = this.sim!;
-          if (sim.state === 'paused' && sim.pausedFrom === 'waiting') {
-            sim.pausedFrom = 'countdown';
-            sim.countdown = PRE_MATCH_COUNTDOWN;
-            return;
-          }
-          if (this.state !== 'waiting') return;
-          this.state = 'countdown';
-          this.countdown = PRE_MATCH_COUNTDOWN;
-          this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
+          this.driversReady = true;
+          if (this.remote) this.remote.allReady();
+          else if (this.sim!.allReady()) this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
         },
         peerLeft: (peerId, robot) => {
           const rs = this.setup.robots.find((r) => r.peerId === peerId);
           if (rs && robot) this.toast(`${rs.name} (${robot.config.teamNumber}) disconnected — robot idle`, 'warn');
         },
       });
+      this.hostSync.link = this.remote;
     }
 
     if (this.net) {
@@ -386,7 +390,10 @@ export class Game {
         this.net.client.on('closed', ({ reason }) => {
           if (this.disposed) return;
           this.clientModal = 'closed';
-          if (this.state !== 'results') this.state = 'paused';
+          if (this.state !== 'results') {
+            if (this.remote) this.remote.pause();
+            else this.state = 'paused';
+          }
           this.hud.showModal('Disconnected', `<p>${reason}.</p>`, [{ label: 'Main menu', primary: true, onClick: () => this.callbacks.onExit() }]);
         }),
       );
@@ -455,7 +462,8 @@ export class Game {
 
   /**
    * Run the match in the simulation worker; this page's world becomes a replica posed from its frames. If the worker
-   * can't start (no module workers, a model that differs), the match runs on this page as before.
+   * can't start (no module workers, a model that differs), the match runs on this page as before. A multiplayer host
+   * keeps its sockets here and passes the worker's snapshots and checkpoints on.
    */
   private startWorker(R: RapierModule): void {
     for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true);
@@ -463,10 +471,11 @@ export class Game {
     // `?hopper=all|player|none` overrides the device tier's choice of real-body hoppers; `?hopper=mech` puts the robots
     // with mechanism hooks on the separate-world mechanism hopper (MechHopper) instead of StowBay.
     const asked = new URLSearchParams(location.search).get('hopper');
-    const hopper = asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'mech' ? 'all' : this.quality.hopperWorker;
+    const host = this.role === 'host';
+    const hopper = host ? 'none' : asked === 'all' || asked === 'player' || asked === 'none' ? asked : asked === 'mech' ? 'all' : this.quality.hopperWorker;
     const hopperMode = asked === 'mech' ? 'mech' as const : 'stowbay' as const;
     this.remote = new WorkerSim(this.world, {
-      settings: this.settings, setup: this.setup, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, ghost: this.recording, speed: this.simSpeed,
+      settings: this.settings, setup: this.setup, role: host ? 'host' : 'local', playerId: this.player?.id ?? null, hopper, hopperMode, activeMax: this.quality.activeMax, log: this.logging, ghost: this.recording, speed: this.simSpeed,
       cadDetail: new URLSearchParams(location.search).get('cadDetail') === 'full' ? 'full' : 'match',
     }, (e) => this.onSimEvent(e), (reason) => {
       if (this.disposed) return;
@@ -474,6 +483,11 @@ export class Game {
       workerBroken = true;
       if (this.remote && this.remote.frames > 0) {
         // Mid-match: this page's world is a replica of the worker's by now, so start the match again on the page.
+        // A host carries on from its last checkpoint (the stopped worker stays in place until the new Game replaces this one).
+        if (host) {
+          void decompressCheckpoint(this.savedCheckpoint).then((state) => this.callbacks.onSimLost?.((state as GameRecovery | null) ?? undefined));
+          return;
+        }
         this.remote = null;
         this.callbacks.onRestart(this.settings);
         return;
@@ -482,22 +496,39 @@ export class Game {
       for (const r of this.robots) r.body.setBodyType(R.RigidBodyType.Dynamic, true);
       this.startSim();
       this.acc = 0;
+      if (host) {
+        this.sim!.state = 'waiting';
+        this.hostSync!.link = null;
+        if (this.driversReady && this.sim!.allReady()) this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
+        if (this.pendingRecovery) this.restoreRecovery(this.pendingRecovery);
+      }
     }, () => {
       const m = new Mesh(piece.geometry, piece.material);
       m.castShadow = true;
       return m;
-    });
+    }, host ? {
+      snapshot: (buf) => { if (!this.disposed) this.hostSync?.sendEncoded(buf); },
+      checkpoint: (data) => {
+        if (this.disposed) return;
+        this.savedCheckpoint = data;
+        this.net?.onCheckpoint?.(data as GameRecovery | CompressedCheckpoint);
+      },
+    } : undefined);
     if (this.logging) installConsoleHelpers();
   }
 
   private onSimEvent(e: SimEvent): void {
-    const p = this.player;
-    if (e.k === 'toast') { if (e.robot === undefined || e.robot === p?.id) this.hud.toast(e.msg, e.kind, e.alliance); }
-    else if (e.k === 'cue') { if (e.robot === p?.id) this.hud.showBanner(e.text, CUE_SECONDS, e.cls); }
+    if (e.k === 'toast') this.toast(e.msg, e.kind, e.alliance, e.robot === undefined ? undefined : this.world.robot(e.robot));
+    else if (e.k === 'cue') { const r = this.world.robot(e.robot); if (r) this.cue(r, e.text, e.cls); }
     else if (e.k === 'period') this.onPeriodChange(e.ch);
     else if (e.k === 'ghost') this.ghostRun = e.run;
     else if (e.k === 'results') { this.remoteResults = e.res; this.showResults(e.res); }
     else if (e.k === 'radio') radioFor(this.ctx).messages.push(e.m);
+    else if (e.k === 'countdown') this.hud.showBanner('ROBOTS READY', PRE_MATCH_COUNTDOWN);
+    else if (e.k === 'restored') {
+      this.pendingRecovery = null;
+      if (e.paused) this.showPauseMenu();
+    }
   }
 
   /** Full gameplay state, independent of rendering and the local driver's camera/input. */
@@ -506,11 +537,18 @@ export class Game {
   }
 
   restoreRecovery(state: GameRecovery): void {
+    this.hud.hideModal();
+    this.hud.showBanner('HOST RECOVERED', 2);
+    if (this.remote) {
+      // The worker answers with a 'restored' event, and results or a pause menu if that's where the match was.
+      this.pendingRecovery = state;
+      this.remote.restore(state);
+      return;
+    }
+    this.pendingRecovery = null;
     const sim = this.sim!;
     sim.restoreRecovery(state);
     this.acc = 0;
-    this.hud.hideModal();
-    this.hud.showBanner('HOST RECOVERED', 2);
     this.hostSync?.requestKeyframe();
     if (sim.state === 'paused') {
       sim.state = sim.pausedFrom;
@@ -649,6 +687,12 @@ export class Game {
     }
     if (this.remote) {
       this.remoteTick(inp);
+      const hs = this.hostSync;
+      if (hs) {
+        const client = this.net!.client;
+        this.remote.link(client.connected, hs.linkClear);
+        if (this.checkpointDue(now)) this.remote.checkpoint();
+      }
       return;
     }
 
@@ -676,15 +720,20 @@ export class Game {
       }
       if (steps === maxSteps) this.acc = 0;
       this.simBusyMs += performance.now() - t0;
-    } else if (this.hostSync && now - this.lastIdleSnap > 200) {
+    } else if (this.hostSync && now - this.lastIdleSnap > IDLE_SNAPSHOT_MS) {
       // Waiting / paused / results: keep clients in sync at a low rate.
       this.lastIdleSnap = now;
       this.hostSync.sendSnapshot(this.sim!.simTime);
     }
-    if (this.hostSync && this.net?.onCheckpoint && this.net.client.connected && this.net.client.buffered < 16 * 1024 && now - this.lastCheckpoint >= CHECKPOINT_EVERY_MS) {
-      this.lastCheckpoint = now;
-      this.net.onCheckpoint(this.recoveryState());
-    }
+    if (this.checkpointDue(now)) this.net!.onCheckpoint!(this.recoveryState());
+  }
+
+  /** Host: time for a recovery checkpoint, and the socket has room for one? */
+  private checkpointDue(now: number): boolean {
+    const client = this.net?.client;
+    if (!this.hostSync || !this.net?.onCheckpoint || !client?.connected || client.buffered >= 16 * 1024 || now - this.lastCheckpoint < CHECKPOINT_EVERY_MS) return false;
+    this.lastCheckpoint = now;
+    return true;
   }
 
   private draw(now: number): void {
@@ -1256,7 +1305,7 @@ export class Game {
       missedSnapshots: this.clientSync?.missed ?? 0,
       interpDelayMs: Math.round((this.clientSync?.delay ?? 0) * 1000),
       jitterMs: Math.round((this.clientSync?.jitter ?? 0) * 1000),
-      hostSimLoad: Math.round(this.simLoad * 100) / 100,
+      hostSimLoad: Math.round((this.remote?.perf.load ?? this.simLoad) * 100) / 100,
       pixelRatio: this.renderer.currentPixelRatio,
       drawCalls: this.renderer.renderer.info.render.calls,
       triangles: this.renderer.renderer.info.render.triangles,
@@ -1265,8 +1314,11 @@ export class Game {
       workerStepMs: Math.round((this.remote?.perf.stepMs ?? 0) * 100) / 100,
       workerFrameMs: Math.round((this.remote?.perf.frameMs ?? 0) * 100) / 100,
       workerFrames: this.remote?.frames ?? 0,
+      workerTickMs: Math.round((this.remote?.perf.tickMs ?? 0) * 100) / 100,
+      workerTickMaxMs: Math.round((this.remote?.perf.tickMaxMs ?? 0) * 100) / 100,
+      workerCheckpointMs: Math.round((this.remote?.perf.checkpointMs ?? 0) * 100) / 100,
       shadows: Number(this.renderer.shadowsOn),
-      simTime: this.sim?.simTime ?? 0,
+      simTime: this.sim?.simTime ?? this.remote?.simTime ?? 0,
     };
   }
 
@@ -1277,6 +1329,7 @@ export class Game {
     if (this.remote) {
       // Quitting mid-match still keeps the demonstration: fetch the worker's log before stopping it.
       const remote = this.remote;
+      remote.detachView();
       if (this.logging && remote.frames > 300 && !this.savedLog) {
         const stop = setTimeout(() => remote.dispose(), 3000);
         void this.persistLog().finally(() => { clearTimeout(stop); remote.dispose(); });

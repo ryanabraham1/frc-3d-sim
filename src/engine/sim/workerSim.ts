@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { takeSimulationWorker } from './workerBoot';
 import type { MatchWorld } from '../core/matchWorld';
 import type { GameSettings } from '../core/season';
+import type { Alliance } from '../coords';
+import type { SimRecovery } from '../core/matchSim';
+import type { HostSimLink } from '../net/hostSync';
 import type { MatchSetup, NetGameState } from '../net/protocol';
 import type { RobotCommand } from '../robot/robot';
 import { RobotMirror, type RobotVisualFrame } from './robotMirror';
@@ -22,6 +25,8 @@ interface Kept {
 export interface WorkerSimInit {
   settings: GameSettings;
   setup: MatchSetup;
+  role: 'local' | 'host';
+  playerId: number | null;
   cadDetail?: 'full' | 'match';
   hopper: HopperPhysics;
   hopperMode?: 'mech' | 'stowbay';
@@ -31,19 +36,28 @@ export interface WorkerSimInit {
   speed: number;
 }
 
+/** Multiplayer host: where the worker's network output goes. */
+export interface WorkerSimHost {
+  snapshot(buf: ArrayBuffer): void;
+  checkpoint(data: unknown): void;
+}
+
 /**
  * Page side of the simulation worker: starts it, forwards the driver's input, and poses the page's replica world from
  * the frames it sends — robot models node by node, pieces, clock, score and rules — drawing a moment behind the newest
- * frame so motion is blended between two physics steps.
+ * frame so motion is blended between two physics steps. On a multiplayer host it also carries the network's traffic to
+ * and from the match, because the sockets stay on the page.
  */
-export class WorkerSim {
+export class WorkerSim implements HostSimLink {
   state: NetGameState = 'countdown';
   countdown = 0;
   boost = false;
   /** Frames received (for stats). */
   frames = 0;
   lastFrameAt = 0;
-  perf = { stepMs: 0, frameMs: 0, realHoppers: 0 };
+  /** Sim time of the newest frame. */
+  simTime = 0;
+  perf: SimFrame['perf'] = { stepMs: 0, frameMs: 0, tickMs: 0, tickMaxMs: 0, checkpointMs: 0, load: 0, realHoppers: 0 };
   readonly mirrors: RobotMirror[];
   private readonly worker: Worker;
   private readonly ring: Kept[] = [];
@@ -63,7 +77,9 @@ export class WorkerSim {
     private readonly onEvent: (e: SimEvent) => void,
     private readonly onFail: (reason: string) => void,
     makeToken?: () => THREE.Object3D,
+    private readonly host?: WorkerSimHost,
   ) {
+    if (host) this.state = 'waiting';
     this.mirrors = world.robots.map((r) => new RobotMirror(r, makeToken));
     this.speed = init.speed;
     this.worker = takeSimulationWorker();
@@ -111,6 +127,23 @@ export class WorkerSim {
   pause(): void { this.send({ t: 'pause' }); this.state = 'paused'; }
   resume(): void { this.send({ t: 'resume' }); }
 
+  // Multiplayer host.
+  command(robot: number, cmd: RobotCommand, seq: number): void { this.send({ t: 'remoteCmd', robot, cmd, seq }); }
+  dropCommands(robot?: number): void { this.send({ t: 'dropCmds', robot }); }
+  humanPlayer(alliance: Alliance, button: number): void { this.send({ t: 'remoteHp', alliance, button }); }
+  requestKeyframe(): void { this.send({ t: 'keyframe' }); }
+  allReady(): void { this.send({ t: 'allReady' }); }
+  checkpoint(): void { this.send({ t: 'checkpoint' }); }
+  restore(state: SimRecovery): void { this.send({ t: 'restore', state }); }
+  private linkKey = '';
+  /** Tell the worker what the socket can take (it decides when to encode a snapshot; a skip keeps its deltas). */
+  link(connected: boolean, clear: boolean): void {
+    const key = `${connected}:${clear}`;
+    if (key === this.linkKey) return;
+    this.linkKey = key;
+    this.send({ t: 'link', connected, clear });
+  }
+
   /** Finish the worker's match log and fetch it. */
   finishLog(totals?: Record<string, number>): Promise<{ text: string; frames: number }> {
     return new Promise((resolve) => {
@@ -119,8 +152,21 @@ export class WorkerSim {
     });
   }
 
+  /** The view is gone (its world is freed) but the worker lives on briefly to hand over its log: only that matters now. */
+  detachView(): void {
+    this.detached = true;
+  }
+  private detached = false;
+
   private receive(m: FromWorker): void {
-    if (m.t === 'frame') this.applyFrame(m);
+    if (this.detached && m.t !== 'log') return;
+    if (m.t === 'frame') {
+      this.applyFrame(m);
+      if (this.host) this.send({ t: 'frameDone' });
+    } else if (m.t === 'snapshot') {
+      this.host?.snapshot(m.buf);
+      this.send({ t: 'snapshotSent' });
+    } else if (m.t === 'checkpoint') this.host?.checkpoint(m.data);
     else if (m.t === 'log') { this.logWaiter?.(m); this.logWaiter = null; }
     else if (m.t === 'error') this.fail(m.message);
   }
@@ -134,6 +180,7 @@ export class WorkerSim {
     this.countdown = f.cd;
     this.boost = f.boost;
     this.perf = f.perf;
+    this.simTime = f.time;
     world.clock.restore(f.clock);
     if (f.score) world.score.restore(f.score);
     if (f.rules !== undefined) world.rules.applyNetState?.(f.rules);

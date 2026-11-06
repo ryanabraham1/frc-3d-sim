@@ -134,6 +134,19 @@ export class MatchSim {
     return true;
   }
 
+  /** Multiplayer: everyone expected has loaded (or timed out). True if that started the countdown just now. */
+  allReady(): boolean {
+    if (this.state === 'paused' && this.pausedFrom === 'waiting') {
+      this.pausedFrom = 'countdown';
+      this.countdown = PRE_MATCH_COUNTDOWN;
+      return false;
+    }
+    if (this.state !== 'waiting') return false;
+    this.state = 'countdown';
+    this.countdown = PRE_MATCH_COUNTDOWN;
+    return true;
+  }
+
   /** Is the clock (and so the physics) advancing? */
   get stepping(): boolean {
     return this.state === 'countdown' || this.state === 'running';
