@@ -7,6 +7,7 @@ import { Alliance, FieldFrame, FieldPoint, FieldPose, yawFromQuat } from '../coo
 import { collisionGroups, Group, GROUPS, PhysicsWorld } from '../physics/world';
 import { clamp, lerp, smoothstep, wrapAngle } from '../units';
 import { Rng } from '../random';
+import { DumperStream } from './dumperStream';
 import { DEFAULT_WHEEL_COF, FUEL_PACK_RADIUS, RobotConfig, loadedRobotHeight, hopperNetArea, netDomeLift, netDomeShape, footprint, groundSideSign, launcherExitOffsets, stationSideSign } from './config';
 import { FREE_SPEED_RATIO, swerveSpeedScale, limitWheelForce, wheelLoadShares, ROLLING_RESISTANCE, STALL_RATIO, type WheelModel } from './drivetrain';
 import { bumperFabric, bumperNumber } from '../render/bumper';
@@ -2600,16 +2601,20 @@ export class Robot {
     // The drawn feed lane nearest where the ball actually left.
     this.lastShotExit = ballSide === null ? this.exitIndex % offsets.length
       : offsets.reduce((best, o, k) => (Math.abs(o - ballSide!) < Math.abs(offsets[best] - ballSide!) ? k : best), 0);
-    this.exitIndex += c.unevenFeed && !c.turret && offsets.length > 1 ? rng.int(1, offsets.length) : 1;
+    // A wide drum empties as one rope of side-by-side clumps (DumperStream); other shooters take single balls.
+    const rope = c.unevenFeed && !c.turret && offsets.length > 1;
+    if (rope && this.burstTime <= 0) this.dumperStream.reset();
+    const ball = rope ? this.dumperStream.next(rng, offsets.length, c.spread, c.speedError, c.rate, this.held.length / Math.max(1, c0.hopperCapacity)) : null;
+    this.exitIndex = ball ? ball.nextLane : this.exitIndex + 1;
     this.burstTime = BURST_HOLD_S;
     this.anim.firing = 1;
-    const yawN = aimYaw + rng.gauss(0, c.spread);
-    const pitchN = theta + rng.gauss(0, c.spread);
-    const sN = speed * (1 + rng.gauss(0, c.speedError));
+    const yawN = aimYaw + (ball ? ball.yawError : rng.gauss(0, c.spread));
+    const pitchN = theta + (ball ? ball.pitchError : rng.gauss(0, c.spread));
+    const sN = speed * (1 + (ball ? ball.speedError : rng.gauss(0, c.speedError)));
     const horiz = sN * Math.cos(pitchN);
     // Loose fuel arrives in clumps, with gaps as the hopper settles. The bounded interval has mean 1/rate;
-    // aim/spread stays independent, and the physical hopper can still delay a shot until a ball arrives.
-    const interval = (c.unevenFeed ? rng.range(.45, 1.55) : 1) / c.rate;
+    // the physical hopper can still delay a shot until a ball arrives.
+    const interval = ball ? ball.interval : (c.unevenFeed ? rng.range(.45, 1.55) : 1) / c.rate;
     const feedDelay = this.packLimit ? Math.max(interval, 2.1 * this._projectile.radius / Math.max(.5, horiz)) : interval;
     // Carry at most one frame of overshoot into the next interval so uneven timing does not reduce average BPS.
     this.fireCooldown = feedDelay + (c.unevenFeed ? Math.min(0, this.fireCooldown) : 0);
@@ -2627,6 +2632,7 @@ export class Robot {
 
   /** Next exit a multi-exit dumper fires from. */
   private exitIndex = 0;
+  private readonly dumperStream = new DumperStream();
   private lastShotExit: number | null = null;
 
   /** Hood angle of the most recent shot (for visuals/HUD). */
@@ -2859,6 +2865,7 @@ export class Robot {
     this.scoringSimulated = false;
     this.fireCooldown = 0;
     this.exitIndex = 0;
+    this.dumperStream.reset();
     this.lastShotExit = null;
     this.bay?.clear();
     this.mech?.clear();

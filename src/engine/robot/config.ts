@@ -187,8 +187,9 @@ export interface RobotConfig {
     turret: boolean;
     /**
      * Number of side-by-side exits across the front of the robot (default 1). A "dumper" has a shooter as wide as the
-     * robot with several exits (e.g. 4). `unevenFeed` varies their order and cadence. `rate` is the
-     * total shots/s across all exits, so throughput is unchanged. Incompatible with a turret.
+     * robot with several exits (e.g. 4). With `unevenFeed` it empties as one rope of side-by-side clumps (`DumperStream`).
+     * `rate` is the total shots/s across all exits while the hopper is full; the last of the load feeds slower.
+     * Incompatible with a turret.
      */
     exits?: number;
     /** Loose hopper feed: uneven shot spacing and exit order, with the same mean feed interval. */

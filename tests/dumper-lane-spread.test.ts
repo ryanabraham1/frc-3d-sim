@@ -14,7 +14,7 @@ it('a dumper with its load slumped against one wall still fires across all of it
   const sim = new HeadlessSim(season, R, { robot: config, alliance: 'blue', pose: { x: 3, y: 4, yaw: 0 } });
   try {
     sim.rules.stage();
-    sim.load(32);
+    sim.load(56);
     const robot = sim.robot;
     for (let i = 0; i < 60; i++) sim.step();
     robot.shootWhileTracking = true;
@@ -30,11 +30,12 @@ it('a dumper with its load slumped against one wall still fires across all of it
       if (shot) sides.push(shot.pos.z - robot.body.translation().z);
       return shot;
     };
-    for (let frame = 0; frame < 600 && sides.length < 30; frame++) sim.step({ ...IDLE_COMMAND, shoot: true });
-    expect(sides.length).toBeGreaterThanOrEqual(24);
+    for (let frame = 0; frame < 900 && sides.length < 50; frame++) sim.step({ ...IDLE_COMMAND, shoot: true });
+    expect(sides.length).toBeGreaterThanOrEqual(40);
     const lanes = launcherExitOffsets(robot.config), halfLane = Math.abs(lanes[1] - lanes[0]) / 2;
-    expect(sides.filter(z => z > halfLane).length).toBeGreaterThan(4);
-    expect(sides.filter(z => z < -halfLane).length).toBeGreaterThan(4);
+    // The rope dwells on neighbouring lanes, so it takes most of a load to cover the drum.
+    expect(sides.filter(z => z > halfLane).length).toBeGreaterThan(6);
+    expect(sides.filter(z => z < -halfLane).length).toBeGreaterThan(6);
     // Nothing leaves past the outer lanes, out of the edge of the drum.
     expect(Math.max(...sides.map(Math.abs))).toBeLessThanOrEqual(Math.max(...lanes.map(Math.abs)) + halfLane / 2 + 1e-6);
   } finally { sim.dispose(); }

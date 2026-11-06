@@ -123,8 +123,11 @@ shooter)*, *AMP + TRAP specialist*. See [CRESCENDO.md](CRESCENDO.md#robot-archet
 - **Dumpers**: the shooter spans the whole front of the robot and FUEL leaves in several parallel streams (derived
   from Chief Delphi build threads; e.g. Team 9072 "Sandstorm": a 4-ball-wide shooter, 75-ball hopper, ~19 balls/s,
   and Team 7769's 2.75-ball-wide shooter). Throughput is the total balls/s, so the streams only widen the footprint
-  of the shot (easier to hit the HUB opening, no turret). Modelled as `launcher.exits` / `launcher.exitSpan`: shots
-  rotate through the exits, `rate` stays the total. Never combined with a turret.
+  of the shot (easier to hit the HUB opening, no turret). Modelled as `launcher.exits` / `launcher.exitSpan`, with
+  `rate` as the total while the hopper is full. Never combined with a turret. The stream follows Team 2910's test clip
+  (`src/engine/robot/dumperStream.ts`, constants `[EST]`): one rope of touching two- and three-ball clumps in adjacent
+  lanes, aim error mostly shared along the rope so it stays tight off the robot and opens near the top of the arc, and a
+  thinner tail over the last 30 % of the load.
 - **Trench-capable (≤ 22¼ in)** robots take the short path under the TRENCH. Taller robots with bigger hoppers
   must cross the BUMPs.
 - **OUTPOST-fed** robots (no ground intake) depend on the human player's CHUTE.
