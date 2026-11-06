@@ -88,6 +88,8 @@ export { AI_SPEED, AI_AIM } from '../ai/matchSetup';
 const MIN_FRAME_MS = 1000 / 60 - 2;
 /** Host streams a snapshot every N physics steps (90 Hz / 3 = 30 Hz). */
 const SNAPSHOT_EVERY_STEPS = 3;
+/** Host recovery checkpoints share the socket with snapshots, so each is a burst every guest can feel: keep them rare. */
+const CHECKPOINT_EVERY_MS = 5000;
 
 /** Singleplayer: the driver plus five AI robots, or a solo practice field. */
 export function localSetup(s: GameSettings, season: SeasonDefinition): MatchSetup {
@@ -679,7 +681,7 @@ export class Game {
       this.lastIdleSnap = now;
       this.hostSync.sendSnapshot(this.sim!.simTime);
     }
-    if (this.hostSync && this.net?.onCheckpoint && this.net.client.connected && this.net.client.buffered < 16 * 1024 && now - this.lastCheckpoint >= 2000) {
+    if (this.hostSync && this.net?.onCheckpoint && this.net.client.connected && this.net.client.buffered < 16 * 1024 && now - this.lastCheckpoint >= CHECKPOINT_EVERY_MS) {
       this.lastCheckpoint = now;
       this.net.onCheckpoint(this.recoveryState());
     }

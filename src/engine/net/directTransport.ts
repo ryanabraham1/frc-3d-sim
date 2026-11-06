@@ -39,7 +39,8 @@ export class DirectTransport {
   constructor(
     private readonly signal: (peer: string, signal: DirectSignal) => void,
     private readonly receive: (peer: string, data: string | ArrayBuffer) => void,
-    private readonly changed: (peer: string) => void,
+    /** `wasOpen`: the link had been carrying traffic (false for an attempt that never connected). */
+    private readonly changed: (peer: string, wasOpen: boolean) => void,
     private iceServers: RTCIceServer[] = DEFAULT_ICE_SERVERS,
   ) {
     this.available = typeof RTCPeerConnection !== 'undefined' &&
@@ -89,7 +90,7 @@ export class DirectTransport {
     channel.onopen = () => {
       if (this.links.get(peer) !== link) return;
       clearTimeout(link.timer);
-      this.changed(peer);
+      this.changed(peer, true);
     };
     channel.onclose = channel.onerror = () => { if (this.links.get(peer) === link) this.drop(peer); };
     channel.onmessage = e => {
@@ -195,6 +196,7 @@ export class DirectTransport {
   drop(peer: string): void {
     const link = this.links.get(peer);
     if (!link) return;
+    const wasOpen = link.channel?.readyState === 'open';
     this.links.delete(peer);
     clearTimeout(link.timer);
     if (link.grace) clearTimeout(link.grace);
@@ -205,7 +207,7 @@ export class DirectTransport {
       channel.close();
     }
     link.pc.close();
-    this.changed(peer);
+    this.changed(peer, wasOpen);
   }
 
   close(): void {

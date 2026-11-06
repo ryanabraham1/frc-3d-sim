@@ -2,13 +2,13 @@ import type { RigidBody } from '@dimforge/rapier3d-compat';
 /** Portable gameplay checkpoints. Only explicitly named fields can be restored. */
 export type RecoveryFields = Record<string, string>;
 
-function replacer(_key: string, value: unknown): unknown {
-  if (value === undefined || typeof value === 'function') throw new Error('Checkpoint field contains a runtime reference');
+function replacer(key: string, value: unknown): unknown {
+  if (value === undefined || typeof value === 'function') throw new Error(`Checkpoint field "${key}" contains a runtime reference`);
   if (typeof value === 'number' && !Number.isFinite(value)) return { $number: String(value) };
   if (value instanceof Map) return { $map: [...value] };
   if (value instanceof Set) return { $set: [...value] };
   if (value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) {
-    throw new Error('Checkpoint field contains a runtime object');
+    throw new Error(`Checkpoint field "${key}" contains a runtime object`);
   }
   return value;
 }
@@ -51,8 +51,16 @@ export function restorePilot(target: object, state: RecoveryFields): void {
   restoreFields(target, Object.keys(capturePilot(target)).filter(key => typeof state[key] === 'string'), state);
 }
 
+/** 0.1 mm / 0.1 mm/s is far below what a restored pile can show. Full-precision floats barely gzip: they were most of a checkpoint. */
+const round4 = (n: number) => Math.round(n * 1e4) / 1e4 + 0; // + 0: no -0, which JSON would turn into 0
+const roundVec = <T extends { x: number; y: number; z: number; w?: number }>(v: T): T => {
+  const out = { ...v, x: round4(v.x), y: round4(v.y), z: round4(v.z) };
+  if (v.w !== undefined) out.w = round4(v.w);
+  return out;
+};
+
 export function bodyState(body: RigidBody) {
-  return { p: body.translation(), q: body.rotation(), v: body.linvel(), w: body.angvel(),
+  return { p: roundVec(body.translation()), q: roundVec(body.rotation()), v: roundVec(body.linvel()), w: roundVec(body.angvel()),
     type: body.bodyType(), enabled: body.isEnabled(), sleeping: body.isSleeping(),
     colliders: Array.from({ length: body.numColliders() }, (_, i) => {
       const c = body.collider(i);

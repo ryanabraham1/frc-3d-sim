@@ -109,7 +109,7 @@ export class RebuiltRules implements SeasonRules {
   /** G403: opponent contacts already called after a robot crossed the CENTER LINE in AUTO. */
   private g403Contacts = new Set<string>();
   /** G408: FUEL the HUB just released that nothing has touched yet, and whether it was last seen dropping into a hopper. */
-  private hubDrops = new Map<number, { t: number; grounded: boolean; into?: number }>();
+  private hubDrops = new Map<number, { t: number; grounded: boolean; into?: number | null }>();
   /** G408: pool indices of FUEL the HUB released moments ago that has not yet touched the carpet (bots keep clear of it). */
   freshHubFuel(): number[] {
     const out: number[] = [];
@@ -538,7 +538,7 @@ export class RebuiltRules implements SeasonRules {
       if (pool.state[idx] !== 'field' || age > 1.5) { this.hubDrops.delete(idx); continue; }
       const p = pool.position(idx);
       if (p.y < pool.radius * 1.3) d.grounded = true;
-      d.into = pool.velocity(idx).y < 0 ? robots.find((r) => this.overHopper(r, p))?.id : undefined;
+      d.into = pool.velocity(idx).y < 0 ? (robots.find((r) => this.overHopper(r, p))?.id ?? null) : null; // null, not undefined: checkpoints refuse undefined
     }
     for (const [rid, c] of this.catches) {
       if (t - c.last <= 1.2) continue;

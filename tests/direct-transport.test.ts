@@ -55,6 +55,19 @@ beforeEach(() => {
 afterEach(() => { transport.close(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('direct host connections', () => {
+  it('reports whether a dropped link had ever opened, so a failed attempt costs no keyframe', async () => {
+    const seen: boolean[] = [];
+    const t = new DirectTransport(() => {}, () => {}, (_peer, wasOpen) => seen.push(wasOpen));
+    await t.offer('never');
+    t.drop('never');
+    expect(seen).toEqual([false]);
+    await t.offer('live');
+    PC.instances[PC.instances.length - 1].channel.open();
+    t.drop('live');
+    expect(seen.slice(-2)).toEqual([true, true]);
+    t.close();
+  });
+
   it('uses relay until open, sends SDP before ICE, and falls back immediately after failure', async () => {
     await transport.offer('guest');
     expect(transport.send('guest', 'cmd')).toBe(false);

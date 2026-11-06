@@ -6,7 +6,7 @@ import type { NetClient } from '../src/engine/net/netClient';
 function fakeNet() {
   const handlers = new Map<string, ((e: unknown) => void)[]>();
   const net = {
-    peerId: 'host', buffered: 0, connected: true,
+    peerId: 'host', buffered: 0, relaySnapshotBacklog: 0, connected: true,
     on(ev: string, fn: (e: unknown) => void) { handlers.set(ev, [...(handlers.get(ev) ?? []), fn]); return () => {}; },
     send() {}, sendBinary() {},
   };

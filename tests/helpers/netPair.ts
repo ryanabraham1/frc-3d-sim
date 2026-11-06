@@ -26,6 +26,7 @@ function fakeNet(peerId: string) {
   const net = {
     peerId,
     buffered: 0,
+    relaySnapshotBacklog: 0,
     connected: true,
     rttMs: 0,
     on(ev: string, fn: Listener) {

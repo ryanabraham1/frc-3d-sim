@@ -27,6 +27,25 @@ function source(sim: HeadlessSim) {
 }
 
 describe('authority recovery checkpoints', () => {
+  it('2026-rebuilt: a checkpoint survives FUEL leaving the HUB and stays small enough not to stall snapshots', async () => {
+    const sim = world('2026-rebuilt');
+    try {
+      // A ball the HUB dropped, rising (no robot under it): `into` used to be undefined, which threw on every checkpoint.
+      const rules = sim.rules as unknown as { hubDrops: Map<number, { t: number; grounded: boolean; into?: number | null }> };
+      const piece = sim.pool.indices('field')[0];
+      sim.pool.bodies[piece].setTranslation({ x: 5, y: 1.5, z: 3 }, true);
+      sim.pool.bodies[piece].setLinvel({ x: 0, y: 2, z: 0 }, true);
+      rules.hubDrops.set(piece, { t: 0, grounded: false });
+      sim.run(0.05, IDLE_COMMAND);
+      expect(rules.hubDrops.get(piece)?.into).toBeNull();
+      const state = MatchSim.prototype.recoveryState.call(source(sim) as unknown as MatchSim);
+      for (let i = 0; i < sim.pool.count; i++) sim.pool.bodies[i].setLinvel({ x: Math.random(), y: Math.random(), z: Math.random() }, true);
+      const moving = MatchSim.prototype.recoveryState.call(source(sim) as unknown as MatchSim);
+      expect(state.pool).toBeTruthy();
+      expect(JSON.stringify(await compressCheckpoint(JSON.stringify(moving))).length).toBeLessThan(40000);
+    } finally { sim.dispose(); }
+  });
+
   for (const id of ['2026-rebuilt', '2025-reefscape', '2024-crescendo', 'wcp-hero-heist']) {
     it(`${id}: preserves inventory, rule queues, velocities, score, clock and random sequence`, async () => {
       const host = world(id);

@@ -152,6 +152,17 @@ class PC {
 describe('direct links', () => {
   beforeEach(() => { PC.instances = []; vi.stubGlobal('RTCPeerConnection', PC); });
 
+  it('relay backlog only holds snapshots while a peer depends on the relay', () => {
+    const client = new NetClient() as unknown as { peers: Set<string>; direct: { isOpen(p: string): boolean }; ws: { bufferedAmount: number }; relaySnapshotBacklog: number };
+    client.ws = { bufferedAmount: 70000 };
+    client.peers.add('a');
+    client.peers.add('b');
+    client.direct.isOpen = (p) => p === 'a';
+    expect(client.relaySnapshotBacklog).toBe(70000);
+    client.direct.isOpen = () => true;
+    expect(client.relaySnapshotBacklog).toBe(0);
+  });
+
   it('maps the relay socket to its ICE endpoint', () => {
     expect(iceUrl('wss://relay.example.dev/ws')).toBe('https://relay.example.dev/ice');
     expect(iceUrl('ws://localhost:5173/ws?x=1')).toBe('http://localhost:5173/ice');

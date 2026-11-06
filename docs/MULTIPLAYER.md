@@ -192,12 +192,12 @@ Debug: append `?perf&fps` for the CPU/network panel, or inspect `game.netStats()
 
 ## 7a. Known limitations / next steps
 - **Host is a player's browser.** Casual rooms transfer authority to an online peer when the host leaves.
-  The relay stores a compressed checkpoint every two seconds, including score, clock, piece identity and
+  The relay stores a compressed checkpoint every five seconds, including score, clock, piece identity and
   velocities, inventory, mechanism/climb progress, AUTO progress, RNG, season queues, and referee timers.
   The promoted host sends the recovered setup to clients so they rebuild their snapshot baselines.
   Held FUEL becomes logical inventory instead of inheriting the previous host's physical hopper bodies;
   bot alliance strategy references are rebuilt in the new world. Handoff briefly reloads the field and can
-  roll back up to the most recent uploaded checkpoint (normally about two seconds, longer on a poor link).
+  roll back up to the most recent uploaded checkpoint (normally up to five seconds, longer on a poor link).
   Relay restarts lose rooms and checkpoints; this is not a persistent or server-authoritative simulation.
   Ranked rooms keep their existing disconnect adjudication. A future server authority would remove the
   remaining dependence on a player's simulation performance.

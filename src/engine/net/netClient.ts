@@ -85,8 +85,9 @@ export class NetClient extends Emitter<NetClientEvents> {
         } catch { /* malformed direct message */ }
       }
     },
-    (peer) => {
-      if (this.room && !this.isHost) this.raw({ op: 'send', data: { t: 'resync' } });
+    (peer, wasOpen) => {
+      // Behind a strict NAT every retry fails: asking for a 12 KB keyframe each time only slowed the relay stream it stays on.
+      if (wasOpen && this.room && !this.isHost) this.raw({ op: 'send', data: { t: 'resync' } });
       if (this.isHost) this.scheduleDirectRetry(peer);
       this.emit('transport', { directPeers: this.direct.peers.length });
     },
@@ -464,6 +465,14 @@ export class NetClient extends Emitter<NetClientEvents> {
   /** Bytes queued but not yet sent (back-pressure hint for the host). */
   get buffered(): number {
     return this.ws?.bufferedAmount ?? 0;
+  }
+
+  /**
+   * Bytes queued ahead of the next relayed snapshot. Zero when every peer is on a direct link: a checkpoint going up the
+   * relay socket must not hold back snapshots that don't use it (direct channels have their own back-pressure).
+   */
+  get relaySnapshotBacklog(): number {
+    return [...this.peers].some(peer => !this.direct.isOpen(peer)) || !this.peers.size ? this.buffered : 0;
   }
 
   /** Leave deliberately: the relay frees the seat at once instead of holding it for a reconnect. */

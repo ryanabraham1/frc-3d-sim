@@ -188,7 +188,7 @@ export class HostSync {
 
   /** Build + send one snapshot. `time` = host sim time (s). */
   sendSnapshot(time: number): void {
-    if (!this.client.connected || this.client.buffered > MAX_BUFFERED) return;
+    if (!this.client.connected || this.client.relaySnapshotBacklog > MAX_BUFFERED) return;
     const { pool, robots, score, rules, clock } = this.src;
     const key = this.forceKey;
     this.forceKey = false;

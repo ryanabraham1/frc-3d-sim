@@ -73,8 +73,10 @@ npm run cloudflare:smoke -- http://localhost:8787
 
 The Multiplayer lobby shows direct/relay connections. Append `?relayOnly` to a player's URL to
 force relay use and check a mixed room. Set `VITE_DIRECT_CONNECTIONS=false` at build time to disable
-direct connections for a deployment. WebRTC uses public STUN for discovery; restricted networks
-fall back to Cloudflare WebSockets, so a separate TURN service is not required. Only host/client
+direct connections for a deployment. WebRTC uses public STUN for discovery. Players behind symmetric NAT
+(Cloudflare WARP and other VPNs, many school and carrier networks) can't connect with STUN alone: without
+`TURN_KEY_ID` / `TURN_KEY_API_TOKEN` they play the whole match over the TCP relay, where one lost packet stalls the
+stream. Those secrets are what give them a UDP path; check `/ice` lists a `turn:` server after setting them. Only host/client
 links are negotiated; clients cannot signal to other clients or peers in other rooms.
 
 Driver command sequence numbers discard controls delayed by a switch between transports. Client

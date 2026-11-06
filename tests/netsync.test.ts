@@ -29,6 +29,7 @@ function fakeNet() {
   const net = {
     peerId: 'host',
     buffered: 0,
+    relaySnapshotBacklog: 0,
     connected: true,
     on(ev: string, fn: Listener) {
       if (ev === 'msg') listeners.push(fn);
@@ -163,11 +164,11 @@ describe('HostSync snapshots', () => {
     const h = host(sim);
     h.hs.sendSnapshot(0);
     const i = sim.pool.indices('field')[0];
-    h.net.buffered = 10 * 1024 * 1024;
+    h.net.relaySnapshotBacklog = 10 * 1024 * 1024;
     sim.pool.reserve(i, 'test');
     h.hs.sendSnapshot(0.03);
     expect(h.frames.length).toBe(1);
-    h.net.buffered = 0;
+    h.net.relaySnapshotBacklog = 0;
     h.hs.sendSnapshot(0.06);
     expect(h.last().meta.pieces?.some(([k, st, , tag]) => k === i && st === 2 && tag === 'test')).toBe(true);
     h.hs.dispose();
