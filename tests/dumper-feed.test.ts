@@ -15,8 +15,7 @@ function sample(exits: number, unevenFeed: boolean, turret = false) {
   const robot = sim.robot;
   robot.shootWhileTracking = true;
   robot.packLimit = false;
-  // A full hopper: the last of a load feeds slower (see the rope tests).
-  for (let i = 0; i < config.hopperCapacity; i++) robot.held.push(0);
+  robot.held.push(0);
   const lanes: number[] = [], intervals: number[] = [];
   for (let i = 0; i < 400; i++) {
     robot.fireCooldown = 0;

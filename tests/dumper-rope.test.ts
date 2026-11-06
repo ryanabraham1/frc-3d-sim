@@ -36,7 +36,7 @@ it('balls leave in touching clumps from side-by-side lanes, with gaps between cl
   expect(new Set(lanes).size).toBe(LANES);
 });
 
-it('a full hopper averages the rated feed and keeps the configured error per ball', () => {
+it('the stream averages the rated feed and keeps the configured error per ball', () => {
   const { balls } = stream(20000);
   expect(balls.length / balls.reduce((t, b) => t + b.interval, 0) / RATE).toBeCloseTo(1, 1);
   expect(sd(balls.map(b => b.yawError)) / SPREAD).toBeCloseTo(1, 1);
@@ -50,28 +50,32 @@ it('neighbouring balls fly together and distant ones do not', () => {
   expect(Math.abs(correlation(yaw.slice(0, -60), yaw.slice(60)))).toBeLessThan(0.1);
 });
 
-it('the last of the load comes slower and in singles', () => {
+it('the last of the load comes in singles at the same feed rate', () => {
   const full = stream(6000).balls, tail = stream(6000, 0.03).balls;
   const mean = (b: DumperBall[]) => b.reduce((t, x) => t + x.interval, 0) / b.length;
-  expect(mean(tail) / mean(full)).toBeGreaterThan(1.7);
+  expect(mean(tail) / mean(full)).toBeCloseTo(1, 1);
   expect(tail.filter(b => b.interval < 0.01).length).toBeLessThan(full.filter(b => b.interval < 0.01).length / 4);
 });
 
-it('2910 empties a full hopper in about the time it does on video, thinning at the end', () => {
-  const config = season.teamRobots!.find(r => r.team === 2910)!.config;
-  const sim = new HeadlessSim(season, RAPIER, { robot: config, alliance: 'blue', pose: { x: C.HUB_CENTER.x - 2.6, y: C.HUB_CENTER.y, yaw: 0 } });
-  try {
-    sim.rules.stage();
-    sim.load(config.hopperCapacity);
-    const robot = sim.robot;
-    sim.run(1);
-    const times: number[] = [], launch = robot.launch.bind(robot);
-    let frame = 0;
-    robot.launch = (target, rng) => { const shot = launch(target, rng); if (shot) times.push(frame * sim.physics.dt); return shot; };
-    for (; frame < 900 && robot.held.length > 0; frame++) sim.step({ ...IDLE_COMMAND, shoot: true });
-    const third = Math.floor(times.length / 3), span = (a: number, b: number) => times[b] - times[a];
-    expect(span(0, times.length - 1)).toBeGreaterThan(1.5);
-    expect(span(0, times.length - 1)).toBeLessThan(2.3);
-    expect(span(times.length - 1 - third, times.length - 1)).toBeGreaterThan(span(0, third) * 1.2);
-  } finally { sim.dispose(); }
-}, 60000);
+it.each([2910, 254, 581])('team %s holds its rated BPS through a whole dump', (team) => {
+  const config = season.teamRobots!.find(r => r.team === team)!.config;
+  let balls = 0, seconds = 0;
+  // One dump varies by about 10 % with its clumps, so average a few.
+  for (let seed = 1; seed <= 5; seed++) {
+    const sim = new HeadlessSim(season, RAPIER, { robot: config, alliance: 'blue', seed, pose: { x: C.HUB_CENTER.x - 2.6, y: C.HUB_CENTER.y, yaw: 0 } });
+    try {
+      sim.rules.stage();
+      sim.load(config.hopperCapacity);
+      const robot = sim.robot;
+      sim.run(1);
+      const times: number[] = [], launch = robot.launch.bind(robot);
+      let frame = 0;
+      robot.launch = (target, rng) => { const shot = launch(target, rng); if (shot) times.push(frame * sim.physics.dt); return shot; };
+      for (; frame < 900 && robot.held.length > 0; frame++) sim.step({ ...IDLE_COMMAND, shoot: true });
+      balls += times.length - 1;
+      seconds += times.at(-1)! - times[0];
+    } finally { sim.dispose(); }
+  }
+  expect(balls / seconds / config.launcher.rate).toBeGreaterThan(0.96);
+  expect(balls / seconds / config.launcher.rate).toBeLessThan(1.06);
+}, 120000);

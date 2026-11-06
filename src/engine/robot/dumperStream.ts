@@ -7,11 +7,12 @@ import type { Rng } from '../random';
  *    spaced single balls. The drum takes whatever the rollers push against it at that moment.
  *  - Neighbouring balls fly together: the rope is tight off the robot and only opens into a cloud near the top of the arc,
  *    so most of the aim error is shared by balls leaving at about the same time and drifts slowly along the stream.
- *  - The rope stays dense while the hopper is full, then thins to pairs and singles for the last third of the load, once
- *    the pile no longer presses against the drum: about half the feed rate at the end.
+ *  - The rope is clumped while the hopper is full, then thins to singles for the last third of the load, once the pile no
+ *    longer presses against the drum. (The clip's tail also feeds slower; the sim keeps `rate` there: user decision
+ *    2026-11-05, a robot's BPS doesn't change with its load.)
  *
- * Total yaw, pitch and speed error per ball stay at `spread` / `speedError`, and a full hopper still averages `rate`
- * balls/s, so the accuracy settings keep their meaning. Only how the error and timing are grouped changes.
+ * Total yaw, pitch and speed error per ball stay at `spread` / `speedError`, and the stream averages `rate` balls/s at
+ * every hopper level, so the accuracy and rate settings keep their meaning. Only how they are grouped changes.
  */
 
 /** Time between the balls of one clump (s): one physics step, so they leave nearly together. */
@@ -24,10 +25,8 @@ const SHARED_VARIANCE = 0.75;
 const DRIFT_TIME = 0.25;
 /** Chance the next clump comes from anywhere on the drum, instead of beside the last one. */
 const LANE_JUMP = 0.35;
-/** Hopper fill below which the rope starts to thin. */
+/** Hopper fill below which clumps start giving way to singles. */
 const TAIL_FILL = 0.3;
-/** Extra feed time on the very last ball (1 = twice the interval). */
-const TAIL_SLOWDOWN = 1.2;
 
 export interface DumperBall {
   /** Lane the next ball leaves from. */
@@ -62,7 +61,7 @@ export class DumperStream {
     if (this.left <= 0) this.startClump(rng, lanes, tail);
     this.left--;
     const interval = this.left > 0 ? CLUMP_GAP
-      : Math.max(CLUMP_GAP, this.size / rate * (1 + TAIL_SLOWDOWN * (1 - tail)) * rng.range(0.6, 1.4) - (this.size - 1) * CLUMP_GAP);
+      : Math.max(CLUMP_GAP, this.size / rate * rng.range(0.6, 1.4) - (this.size - 1) * CLUMP_GAP);
     const own = Math.sqrt(1 - SHARED_VARIANCE), shared = Math.sqrt(SHARED_VARIANCE);
     const ball = {
       nextLane: this.lane,

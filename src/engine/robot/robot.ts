@@ -113,6 +113,8 @@ export const ALLIANCE_COLORS: Record<Alliance, number> = { red: 0xd32f2f, blue: 
 const G = 9.81;
 /** A firing burst stays "locked on" this long after each shot (longer than the slowest launcher's shot interval). */
 const BURST_HOLD_S = 0.6;
+/** Feed time a dumper can make up after waiting on a ball (s). */
+const ROPE_CATCH_UP_S = 0.05;
 
 export class Robot {
   /**
@@ -2652,7 +2654,9 @@ export class Robot {
   tick(dt: number): void {
     const launcher = this.config.launcher;
     const uneven = launcher.unevenFeed;
-    this.fireCooldown = Math.max(uneven ? -dt : 0, this.fireCooldown - dt);
+    // A clump held up waiting for a ball makes the time back, so a dumper keeps its rated BPS.
+    const catchUp = uneven && !launcher.turret && (launcher.exits ?? 1) > 1 ? ROPE_CATCH_UP_S : dt;
+    this.fireCooldown = Math.max(uneven ? -catchUp : 0, this.fireCooldown - dt);
     this.burstTime = Math.max(0, this.burstTime - dt);
     for (const [i, t] of this.launchedRecently) {
       if (t <= dt) this.launchedRecently.delete(i);
