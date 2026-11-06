@@ -88,6 +88,8 @@ export function leaderboardPage(ctx: LeaderboardContext): { body: string; footer
   const best = (r: BoardRobot) => Math.max(summaryOf(r.id)?.top ?? -1, localOf(r.id)?.score ?? -1);
   const robots = boardRobots(ctx.season).sort((a, b) => best(b) - best(a));
   const selected = robots.find((r) => r.id === view.robotId) ?? robots[0];
+  // The Garage robot may have no board (archetype / custom build): the board shown is the one Play uses.
+  if (selected && selected.id !== view.robotId) { view.robotId = selected.id; refreshBoard(ctx); }
   const row = (r: BoardRobot) => {
     const top = summaryOf(r.id), pb = localOf(r.id);
     const hidden = !shown(r, view.query, view.mine, !!pb);
