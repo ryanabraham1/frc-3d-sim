@@ -21,7 +21,7 @@ export interface SimEvents {
   periodChange(ch: PeriodChange): void;
   /** The match ended; `results` is final. */
   results(results: MatchResults): void;
-  /** A recorded leaderboard run, sent just before `results` (never after the practice boost was used). */
+  /** A recorded leaderboard run, sent just before `results`. */
   ghost?(run: GhostRun): void;
 }
 
@@ -55,8 +55,6 @@ export class MatchSim {
   matchLog: MatchLogger | null = null;
   /** Records the driver for the solo leaderboard. */
   private ghost: GhostRecorder | null = null;
-  /** The practice boost was on at some point: this match can't be a leaderboard run. */
-  private boosted = false;
   private boostOn = false;
   private boostBase: { cap: number; rate: number; spread: number; speedError: number; intake: number | undefined } | null = null;
 
@@ -100,7 +98,6 @@ export class MatchSim {
     const c = player?.config;
     if (!c || this.season.id !== '2026-rebuilt') return;
     this.boostOn = on;
-    if (on) this.boosted = true;
     if (on && !this.boostBase) {
       this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate, spread: c.launcher.spread, speedError: c.launcher.speedError, intake: c.intake.rate };
       c.hopperCapacity = this.boostBase.cap * 3;
@@ -270,7 +267,7 @@ export class MatchSim {
     const res = rules.results();
     Object.assign(res, buildPlayerResults(res, score, setup.robots.map((rs) => ({ id: rs.id, alliance: rs.alliance, name: rs.name, team: rs.config.teamNumber })), this.season.foulValues, 'Game pieces'));
     this.results = res;
-    if (this.ghost && !this.boosted) this.events.ghost?.(this.ghost.finish(this.clock.elapsed, score.soloScore(this.world.player!.alliance)));
+    if (this.ghost) this.events.ghost?.(this.ghost.finish(this.clock.elapsed, score.soloScore(this.world.player!.alliance)));
     this.events.results(res);
   }
 
