@@ -101,7 +101,7 @@ export class MatchSim {
     if (on && !this.boostBase) {
       this.boostBase = { cap: c.hopperCapacity, rate: c.launcher.rate, spread: c.launcher.spread, speedError: c.launcher.speedError, intake: c.intake.rate };
       c.hopperCapacity = this.boostBase.cap * 3;
-      c.launcher.rate = this.boostBase.rate * 3;
+      c.launcher.rate = c.teamNumber === 1678 ? Math.min(this.boostBase.rate * 3, 35) : this.boostBase.rate * 3;
       c.launcher.spread = 0;
       c.launcher.speedError = 0;
       player!.packLimit = true;
