@@ -616,6 +616,10 @@ export class StowBay {
    * intake it drops back to the field, same body, same motion, passing through the robot until it is clear of the frame.
    */
   private dropOut(i: number, p: THREE.Vector3, cav: Cavity): void {
+    // The intake only captures while the robot has room for the ball, so a ball it could not seat at the mouth (the pile
+    // there is heaped to the net) goes on the lowest free spot of the pile instead of back to the field: otherwise a
+    // nearly full hopper sheds balls at the mouth while its far end is still empty, and never reaches its capacity.
+    if (this.insertOnPile(i, cav)) return;
     const fp = this.robot.footprint, r = this.radius;
     if (Math.abs(p.x) < fp.length / 2 - r * 0.25 && Math.abs(p.z) < fp.width / 2 - r * 0.25) { this.dropIn(i, cav); return; }
     const k = this.robot.held.lastIndexOf(i);
@@ -623,6 +627,42 @@ export class StowBay {
     this.pool.releaseToField(i);
     this.pool.releaseGhost(i, () => spawnClearance(this.robot, this.pool.position(i), this.radius, this.pool.colliderHalfHeight) > 0.02, 1);
     this.robot.noteLaunch(i);
+  }
+
+  /**
+   * Seat a held ball on the lowest free spot of the pile: a grid over the cavity, each spot resting on the balls beneath
+   * it and under the roof / net there. False when nothing fits (the hopper is physically full).
+   */
+  private insertOnPile(i: number, cav: Cavity): boolean {
+    this.frame();
+    const rs = this.radius * this.ballScale, step = rs * 1.6;
+    const cx = (cav.min.x + cav.max.x) / 2, cz = (cav.min.z + cav.max.z) / 2;
+    const hx = (cav.max.x - cav.min.x) / 2 - rs, hz = (cav.max.z - cav.min.z) / 2 - rs;
+    if (hx <= 0 || hz <= 0) return false;
+    const ceilingAt = this.robot.hopperCeilingFn(), floorAt = this.robot.hopperFloorFn();
+    const balls: THREE.Vector3[] = [];
+    for (const j of this.stowed) if (j !== i) balls.push(this.toLocal(this.pool.bodies[j].translation(), new THREE.Vector3()));
+    const nx = Math.max(1, Math.round(hx * 2 / step)), nz = Math.max(1, Math.round(hz * 2 / step));
+    const probe = new THREE.Vector3();
+    let best: THREE.Vector3 | null = null;
+    for (let a = 0; a <= nx; a++) for (let b = 0; b <= nz; b++) {
+      const x = cx - hx + (a / nx) * 2 * hx, z = cz - hz + (b / nz) * 2 * hz;
+      let y = Math.max(cav.min.y + this.floorLift, floorAt(x, z)) + rs + SKIN;
+      for (const q of balls) {
+        const d2 = (q.x - x) ** 2 + (q.z - z) ** 2, reach = 4 * rs * rs;
+        if (d2 < reach) y = Math.max(y, q.y + Math.sqrt(reach - d2) + SKIN);
+      }
+      if (y > (cav.open ? cav.max.y : Math.min(cav.max.y, ceilingAt(x, z))) - rs) continue;
+      if (best && y >= best.y) continue;
+      probe.set(x, y, z);
+      if (clearFuelKeepouts(probe, rs, cav.keepouts ?? [], cav) || clearHopperChamfer(probe, rs, cav.chamfer) || clearFuelOutline(probe, rs, cav.outline)) continue;
+      best = new THREE.Vector3(x, y, z);
+    }
+    if (!best) return false;
+    this.place(i, best);
+    this.stowed.add(i);
+    this.pool.setStowed(i, GROUPS.stowed, this.ballScale);
+    return true;
   }
 
   /** Called once per rendered frame, after the physics steps: undo any pop through a wall before it is drawn. */
