@@ -12,6 +12,7 @@ import { autoBestGhost, localGhost, recordRun } from './app/soloScores';
 import { showRunOutcome } from './app/leaderboard';
 import { prepareCadModels } from '@engine/robot/cadModels';
 import { discardSimulationWorker, warmSimulationWorker } from '@engine/sim/workerBoot';
+import { startUpdateCheck } from './app/updateCheck';
 import { inject } from '@vercel/analytics';
 
 // Initialize Vercel Web Analytics
@@ -41,6 +42,8 @@ startPresence({
     await lobby.join(room, name);
   },
 });
+
+startUpdateCheck(() => !!game || !!lobby.lobby);
 
 function stopGame(): void {
   generation++;

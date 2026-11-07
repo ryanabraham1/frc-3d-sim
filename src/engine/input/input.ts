@@ -96,6 +96,7 @@ export class InputManager {
   }
 
   justPressed(code: string): boolean { return this.pressed.has(code); }
+  isHeld(code: string): boolean { return this.keys.has(code); }
 
   /** Is any key bound to this action held? Bindings are read live, so menu changes apply immediately. */
   private k(action: ActionId): boolean {
@@ -130,7 +131,7 @@ export class InputManager {
     const precision = this.k('precision');
     let levelUp = this.edge('levelUp');
     let levelDown = this.edge('levelDown');
-    let targetStep = (this.edge('targetNext') ? 1 : 0) - (this.edge('targetPrev') ? 1 : 0);
+    let targetStep = (this.edge('targetNext') && !this.keys.has('Quote') ? 1 : 0) - (this.edge('targetPrev') ? 1 : 0);
     const targetAuto = this.edge('targetAuto');
     let setLevel: number | null = this.edge('level1') ? 1 : this.edge('level2') ? 2 : this.edge('level3') ? 3 : this.edge('level4') ? 4 : null;
     let cameraNext = this.edge('cameraNext');

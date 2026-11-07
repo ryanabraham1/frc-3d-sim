@@ -1,10 +1,22 @@
 import { defineConfig } from 'vitest/config';
+import type { Plugin } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { relayPlugin } from './server/vitePlugin';
 
+// Unique per build; the page compares it with /version.json to spot a newer deploy (see src/app/updateCheck.ts).
+const BUILD_ID = String(Date.now());
+const versionPlugin = (): Plugin => ({
+  name: 'build-version',
+  apply: 'build',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ id: BUILD_ID }) });
+  },
+});
+
 export default defineConfig({
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   // Multiplayer relay at /ws on `npm run dev` / `npm run preview` (see docs/MULTIPLAYER.md).
-  plugins: [relayPlugin()],
+  plugins: [relayPlugin(), versionPlugin()],
   resolve: {
     alias: {
       '@engine': fileURLToPath(new URL('./src/engine', import.meta.url)),

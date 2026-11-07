@@ -168,7 +168,9 @@ export class Game {
   private readonly fadeTargets = [new Vector3(), new Vector3()];
   readonly input = new InputManager();
   private applyBoost(): void {
-    if (!this.input.justPressed('Period')) return;
+    // Boost is the `.` + `'` chord (plain `.` is Next shot target).
+    const i = this.input;
+    if (!((i.justPressed('Period') && i.isHeld('Quote')) || (i.justPressed('Quote') && i.isHeld('Period')))) return;
     if (this.sim) this.sim.setBoost(this.player, !this.sim.boost);
     else if (this.remote) this.boostWanted = !this.remote.boost;
   }
