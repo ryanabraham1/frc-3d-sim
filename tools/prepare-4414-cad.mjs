@@ -1,5 +1,6 @@
-/** Lossless import of the user-supplied 4414 clone. Only bumper lettering changes. */
+/** Lossless geometry import of the supplied 4414 clone, with team finishes and articulated mechanisms. */
 import fs from 'node:fs/promises';
+import {createRipcurrentRig} from './ripcurrent-cad-rig.mjs';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshoptCompression } from '@gltf-transform/extensions';
 import { dedup, prune, weld, join, reorder, getBounds } from '@gltf-transform/functions';
@@ -23,12 +24,11 @@ for (const p of foam.getMesh().listPrimitives()) if(p.getMaterial().getBaseColor
 if (replacedFaces!==12) throw new Error(`Expected 12 donor digit faces, found ${replacedFaces}`);
 const axes = new Matrix4().set(0,1,0,0, 0,0,1,.0127, 1,0,0,0, 0,0,0,1);
 const originalNodes = root.listNodes();
-const groups = new Map(['frame','turret'].map(name=>[name,doc.createNode(name)]));
+const rig = createRipcurrentRig(doc), groups=rig.groups;
 for(const n of originalNodes) {
  if(!n.getMesh()) continue;
- const ancestors=[];for(let a=n.getParentNode();a;a=a.getParentNode())ancestors.push(a.getName());
+ const group=rig.classify(n);
  const matrix=axes.clone().multiply(new Matrix4().fromArray(n.getWorldMatrix()));
- const group=ancestors.includes('Pancake Top Assembly <1>')?'turret':'frame';
  n.getParentNode()?.removeChild(n); n.setMatrix(matrix.toArray());groups.get(group).addChild(n);
 }
 for(const n of scene.listChildren())scene.removeChild(n);
@@ -52,11 +52,11 @@ const mesh=doc.createMesh('4414-bumper-print').addPrimitive(doc.createPrimitive(
 for(const [name,at,yaw] of [ ['left',[-.055,.1143,.4947],0],['right',[-.055,.1143,-.4947],Math.PI],['front',[.3996,.1143,0],Math.PI/2] ]){
  scene.addChild(doc.createNode(`bumper-number-4414-${name}`).setMesh(mesh).setTranslation(at).setRotation([0,Math.sin(yaw/2),0,Math.cos(yaw/2)]));
 }
-// Consolidate draw calls without simplifying surfaces or changing CAD materials.
+// Consolidate each rigid group without simplifying any CAD surfaces.
 await doc.transform(prune(),dedup(),weld(),join(),weld(),prune(),reorder({encoder:MeshoptEncoder,target:'size'}));
 doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({method:EXTMeshoptCompression.EncoderMethod.FILTER});
 const out='public/models/robots/2026/ripcurrent-4414.glb';
 await io.write(out,doc);
 await fs.copyFile(out,'public/models/robots/2026/match/ripcurrent-4414.glb');
-const report={id:'ripcurrent-4414',sourceFile:'Top Assembly.glb',inputBytes:(await fs.stat(source)).size,outputBytes:(await fs.stat(out)).size,inputTriangles,outputTriangles:triangles(),replacedDigitFaces:replacedFaces,number:'4414',numberedFaces:3,geometry:'No simplification; original CAD triangle surfaces retained. Lossless meshopt compression.',axes:'source (Y,Z+0.0127,X) -> game (forward,up,right); wheels sit on ground',bounds:getBounds(scene),groups:['frame','turret']};
+const report={id:'ripcurrent-4414',sourceFile:'Top Assembly.glb',inputBytes:(await fs.stat(source)).size,outputBytes:(await fs.stat(out)).size,inputTriangles,outputTriangles:triangles(),replacedDigitFaces:replacedFaces,number:'4414',numberedFaces:3,geometry:'No simplification; original CAD triangle surfaces retained. Lossless meshopt compression.',axes:'source (Y,Z+0.0127,X) -> game (forward,up,right); wheels sit on ground',bounds:getBounds(scene),groups:[...groups.keys()],finish:'4414 teal structure, smoked panels, black mechanisms; alliance-colored bumpers at runtime',rigSource:'frc6995/Offseasonbot-2026-public RobotVisualizer.java and subsystem constants'};
 await fs.writeFile(out.replace('.glb','.report.json'),JSON.stringify(report,null,2)+'\n');console.log(report);

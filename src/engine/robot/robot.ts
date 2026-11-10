@@ -2278,6 +2278,8 @@ export class Robot {
    */
   private hoodHeldDown(): boolean {
     if (this.overheadLimit === Infinity || !this.hasHood) { this.hoodLatched = null; return false; }
+    // CAD models with a measured closed stop can identify parking directly: their rim need not equal config.height.
+    if (this.hoodRoots.length && this.hoodRoots.every(h => h.userData.hoodParked === true)) this.hoodLatched = false;
     // Lowering is always allowed. Once stowed, discard the raised entry latch even if the robot has never
     // left the overhead region; pressing shoot again under the beam must not drive the hood up into it.
     if (this.hoodLatched && this.hoodTop < this.overheadLimit - 0.01) this.hoodLatched = false;

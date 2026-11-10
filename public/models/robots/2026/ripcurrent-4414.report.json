@@ -2,7 +2,7 @@
   "id": "ripcurrent-4414",
   "sourceFile": "Top Assembly.glb",
   "inputBytes": 168243392,
-  "outputBytes": 32537500,
+  "outputBytes": 32545896,
   "inputTriangles": 4012946,
   "outputTriangles": 4013090,
   "replacedDigitFaces": 12,
@@ -12,18 +12,48 @@
   "axes": "source (Y,Z+0.0127,X) -> game (forward,up,right); wheels sit on ground",
   "bounds": {
     "min": [
-      -0.6203834712505342,
-      -2.1266937211272818e-8,
+      -0.620383496163413,
+      1.5348195457620672e-10,
       -0.4947000291824341
     ],
     "max": [
       0.3996000063419342,
-      0.67134597260952,
+      0.6713459541672695,
       0.4947
     ]
   },
   "groups": [
     "frame",
-    "turret"
-  ]
+    "fixed-cameras",
+    "turret",
+    "shooter-frame",
+    "hood",
+    "hood-supports",
+    "flywheel",
+    "hood-drive",
+    "hood-feeder",
+    "dye-rotor",
+    "intake-slide",
+    "index-wheel-0",
+    "index-wheel-1",
+    "index-wheel-2",
+    "index-wheel-3",
+    "index-wheel-4",
+    "index-wheel-5",
+    "intake-roller-0",
+    "intake-roller-1",
+    "intake-roller-2",
+    "intake-roller-3",
+    "intake-roller-4",
+    "intake-roller-5",
+    "drive-wheel-0",
+    "drive-wheel-1",
+    "drive-wheel-2",
+    "drive-wheel-3",
+    "shooter-feed-0.381",
+    "shooter-feed-0.352",
+    "shooter-feed-0.324"
+  ],
+  "finish": "4414 teal structure, smoked panels, black mechanisms; alliance-colored bumpers at runtime",
+  "rigSource": "frc6995/Offseasonbot-2026-public RobotVisualizer.java and subsystem constants"
 }

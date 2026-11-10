@@ -5,12 +5,12 @@ import { cadRobotModelBuilder, decodeCadModel, setCadAnimationEnabled } from '..
 import { SEASONS } from '../src/seasons';
 import { cloneConfig } from '../src/engine/robot/config';
 
-it.each(['', 'match/'])('4414 supplied CAD %s decodes and replaces the procedural robot without altering its finishes', async detail => {
+it.each(['', 'match/'])('4414 supplied CAD %s decodes and replaces the procedural robot retains CAD geometry with team finishes and independent moving mechanisms', async detail => {
   const bytes = readFileSync(`public/models/robots/2026/${detail}ripcurrent-4414.glb`);
   await decodeCadModel('ripcurrent-4414', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const config = cloneConfig(SEASONS.find(s=>s.id==='2026-rebuilt')!.teamRobots!.find(t=>t.team===4414)!.config);
   const visual = new THREE.Group(), turret = new THREE.Group(); visual.add(turret);
-  const kit = {config,visual,turret,alliance:'blue' as const,fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1 as const,stationSide:-1 as const,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}};
+  const kit = {config,visual,turret,alliance:'blue' as const,fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1 as const,stationSide:-1 as const,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial({color:0x245cce})}};
   const model = cadRobotModelBuilder('ripcurrent-4414')!(kit);
   expect(model.replaces).toContain('bumpers');
   const root = visual.getObjectByName('cad-ripcurrent-4414')!;
@@ -27,9 +27,57 @@ it.each(['', 'match/'])('4414 supplied CAD %s decodes and replaces the procedura
   expect(triangles).toBe(report.outputTriangles);
   expect(triangles).toBeGreaterThanOrEqual(report.inputTriangles);
   expect(white).toBe(true);
-  setCadAnimationEnabled(true);turret.rotation.y=.8;
-  const state={dt:0,time:0,enabled:true,intaking:true,firing:1,passing:false,aiming:true,hood:.9,fill:.5,climb:0,blocker:0,place:null,vx:0,vz:0,omega:0};
-  model.update(state);expect(head.rotation.y).toBe(.8);
+  const materials=new Map<string,THREE.MeshStandardMaterial>();
+  root.traverse(o=>{if(o instanceof THREE.Mesh)for(const m of Array.isArray(o.material)?o.material:[o.material])materials.set(m.name,m);});
+  const teal=materials.get('4414-teal-structure')!.color;
+  expect(teal.g).toBeGreaterThan(teal.r*3);expect(teal.b).toBeGreaterThan(teal.r*3);
+  expect(materials.get('4414-smoked-hopper')!.transparent).toBe(true);
+  expect(materials.get('4414-bumper-fabric')!.color.getHex()).toBe(0x245cce);
+  const cameras=root.getObjectByName('fixed-cameras')!;
+  expect(cameras).toBeDefined();visual.updateMatrixWorld(true);
+  const fixed=cameras.matrixWorld.clone();
+  const cameraBounds=new THREE.Box3().setFromObject(cameras,true);
+  const hood=root.getObjectByName('cad-hood-pivot')!,rotor=root.getObjectByName('cad-dye-rotor-pivot')!;
+  const intake=root.getObjectByName('cad-intake-slide-pivot')!,flywheel=root.getObjectByName('cad-flywheel-pivot')!;
+  const turretJoint=root.getObjectByName('cad-turret-pivot')!;
+  const shooterMount=root.getObjectByName('cad-shooter-frame-pivot')!;
+  expect(hood.parent).toBe(shooterMount);expect(flywheel.parent).toBe(shooterMount);
+  expect(hood.userData.hoodRotor).toBe(shooterMount);
+  const state={dt:0,time:0,enabled:true,intaking:true,firing:1,passing:false,aiming:true,hood:1.45,fill:.5,climb:0,blocker:0,place:null,vx:1,vz:.5,omega:.2};
+  setCadAnimationEnabled(true);turret.rotation.y=.8;model.update(state);
+  expect(root.getObjectByName('hood')!.userData.hoodBeltCount).toBe(2);
+  expect(root.getObjectByName('cad-hood-drive-pivot')!.parent).toBe(hood);
+  const upperFeeder=root.getObjectByName('cad-hood-feeder-pivot')!;
+  const supports=root.getObjectByName('cad-hood-supports-pivot')!;
+  expect(supports.parent).toBe(hood);
+  expect(upperFeeder.parent).toBe(hood);visual.updateMatrixWorld(true);
+  const highSupportBounds=new THREE.Box3().setFromObject(supports,true);
+  const highRollerCenter=upperFeeder.getWorldPosition(new THREE.Vector3());
+  const high=hood.quaternion.clone();
+  for(let i=0;i<47;i++){model.update({...state,dt:1/60,time:i/60,hood:.5});visual.updateMatrixWorld(true);}
+  expect(high.angleTo(hood.quaternion)).toBeGreaterThan(.6);
+  expect(new THREE.Box3().setFromObject(supports,true).max.distanceTo(highSupportBounds.max)).toBeGreaterThan(.05);
+  expect(upperFeeder.getWorldPosition(new THREE.Vector3()).distanceTo(highRollerCenter)).toBeGreaterThan(.05);
+  const localRollerCenter=upperFeeder.position.clone();
+  model.update({...state,dt:0,hood:1.45});
+  expect(upperFeeder.position.equals(localRollerCenter)).toBe(true);
+  expect(rotor.quaternion.angleTo(new THREE.Quaternion())).toBeGreaterThan(.1);
+  expect(flywheel.quaternion.angleTo(new THREE.Quaternion())).toBeGreaterThan(.1);
+  expect(turretJoint.rotation.y).toBeCloseTo(.8-1.198,4);
+  expect(cameras.matrixWorld.elements).toEqual(fixed.elements);
+  expect(new THREE.Box3().setFromObject(cameras,true).equals(cameraBounds)).toBe(true);
+  expect(root.getObjectByName('cad-drive-wheel-0-pivot')!.quaternion.angleTo(new THREE.Quaternion())).toBeGreaterThan(.1);
   expect(model.flow!.feed!().every(p=>p.toArray().every(Number.isFinite))).toBe(true);
-  setCadAnimationEnabled(false);model.update(state);expect(head.rotation.y).toBe(0);setCadAnimationEnabled(true);
+  model.update({...state,dt:0,enabled:false,deployed:false,fill:0});
+  expect(intake.position.x).toBeCloseTo(.31,5);
+  model.update({...state,dt:0,enabled:true});expect(intake.position.x).toBe(0);
+  root.traverse(o=>expect(o.matrixWorld.elements.every(Number.isFinite)).toBe(true));
+  setCadAnimationEnabled(false);model.update(state);
+  expect(turretJoint.rotation.y).toBe(0);expect(hood.quaternion.angleTo(new THREE.Quaternion())).toBe(0);
+  setCadAnimationEnabled(true);
+  // Alliance fabric changes independently, leaving teal anodizing and number print unchanged.
+  const redVisual=new THREE.Group(),redTurret=new THREE.Group();redVisual.add(redTurret);
+  cadRobotModelBuilder('ripcurrent-4414')!({...kit,visual:redVisual,turret:redTurret,alliance:'red',mats:{...kit.mats,bumper:new THREE.MeshStandardMaterial({color:0xd52c35})}});
+  redVisual.traverse(o=>{if(o instanceof THREE.Mesh)for(const m of Array.isArray(o.material)?o.material:[o.material])if(m.name==='4414-bumper-fabric')expect(m.color.getHex()).toBe(0xd52c35);});
+
 });

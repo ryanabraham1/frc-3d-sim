@@ -265,6 +265,12 @@ export function createLivePreview(season: SeasonDefinition, config: RobotConfig,
       r.enabled = t > 1.2 && t < 4.2;
       r.lastCommand = { ...IDLE_COMMAND, intake: r.enabled };
       r.held.length = 0;
+      if(cur.config.model==='ripcurrent-4414'){
+        // Demonstrate the actual mechanism joints while the existing camera turntable keeps orbiting.
+        const shooting=t>2.4&&t<4.2;
+        r.applyNetDiscrete({...r.netState(),held:0,enabled:r.enabled,act:(r.enabled?1:0)|(shooting?8:0),
+          turretYaw:Math.sin(clock*.8)*1.15,hood:.88+.48*Math.sin(clock*1.5)});
+      }
       r.syncVisual(dt);
       frame(cam, built.scale, az, tilt, zoom, rect.width / rect.height);
       renderer!.render(built.scene, cam);
