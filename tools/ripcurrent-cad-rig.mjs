@@ -30,6 +30,7 @@ export function createRipcurrentRig(doc) {
  group('hood-feeder',{pivot:[.01594008,.65547754,-.04084865],axis:[.9316,0,.3635],parent:'hood',kind:'index'});
  group('dye-rotor',{pivot:[0,.123825,0],axis:[0,1,0],parent:'frame',kind:'rotor'});
  group('intake-slide',{pivot:[0,0,0],axis:[1,0,0],parent:'frame',kind:'slide'});
+ group('intake-rails',{pivot:[0,0,0],axis:[1,0,0],parent:'intake-slide',kind:'slideAttachment'});
  const omniGroups=new Map(),driveGroups=new Map(),rollerGroups=new Map();
  return {groups,classify(n){
   const name=n.getName(),anc=[];for(let a=n.getParentNode();a;a=a.getParentNode())anc.push(a);
@@ -67,8 +68,9 @@ export function createRipcurrentRig(doc) {
    const omni=anc.find(a=>/^GoBuilda, Omni, 32mm </.test(a.getName()));
    if(omni){if(!omniGroups.has(omni))omniGroups.set(omni,wheelRig(`index-wheel-${omniGroups.size}`,bounds(omni),'frame','index'));destination=omniGroups.get(omni);}
   } else if(intake){
-   const moving=b.min[1]<-.45 && !/Rack Outer|Hardstop Main/.test(name);
-   destination=moving?'intake-slide':'frame';
+   const rail=/Lintake (?:Rack (?:Inner|Outer)|(?:Main Hardstop|Hardstop Main)|Corner Stop)/.test(name);
+   const moving=b.min[1]<-.45 || rail;
+   destination=rail?'intake-rails':moving?'intake-slide':'frame';
    if(/Tube, Polycarb, (?:3''|1''|1\.5'') OD|Roller Cap, Intake Idler|Idler Roller Intake/.test(name)){
     const key=`${c[1].toFixed(2)}:${c[2].toFixed(2)}`;
     if(!rollerGroups.has(key))rollerGroups.set(key,group(`intake-roller-${rollerGroups.size}`,{pivot:map([0,c[1],c[2]]),axis:[0,0,1],parent:moving?'intake-slide':'frame',kind:'intakeRoller'}));
@@ -100,6 +102,7 @@ export function createRipcurrentRig(doc) {
    }
    if(m)p.setMaterial(m);
   }
+  if(destination==='intake-rails'){const rails=groups.get('intake-rails');rails.setExtras({...rails.getExtras(),intakeRailCount:(rails.getExtras().intakeRailCount??0)+1});}
   if(name==='Plate, Alu, gear rack'){const rack=groups.get('hood-racks');rack.setExtras({...rack.getExtras(),rackPlateCount:(rack.getExtras().rackPlateCount??0)+1});}
   if(/^77T 5M 6mm Wide Belt/.test(name)){const h=groups.get('hood');h.setExtras({...h.getExtras(),hoodBeltCount:(h.getExtras().hoodBeltCount??0)+1});}
   return destination;

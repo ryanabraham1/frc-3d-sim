@@ -9,7 +9,8 @@ import { hopperNetCeiling } from './config';
  * The ELP cameras, net-support plates and gearbox remain fixed; the central Limelight
  * follows the turret. The intake export is at full extension.
  */
-export const RIPCURRENT_EXPORT_YAW = 1.198;
+// The CAD shoots toward (-cos(1.198), 0, +sin(1.198)), opposite the old reference.
+export const RIPCURRENT_EXPORT_YAW = 1.198 - Math.PI;
 export function buildRipcurrentCad(root: THREE.Group, k: ModelKit, isAnimated: () => boolean): RobotModel {
   type Rig = {pivot:[number,number,number];axis:[number,number,number];parent:string;kind:string};
   const joints = new Map<string,{node:THREE.Group;axis:THREE.Vector3;rig:Rig;angle:number;steer?:THREE.Group}>();
@@ -35,6 +36,8 @@ export function buildRipcurrentCad(root: THREE.Group, k: ModelKit, isAnimated: (
     if(m instanceof THREE.MeshStandardMaterial&&m.name==='4414-bumper-fabric')m.color.copy((k.mats.bumper as THREE.MeshStandardMaterial).color);
   }});
   const turret=joints.get('turret')!.node,hood=joints.get('hood')!,slide=joints.get('intake-slide')!;
+  // Start aligned even before the first animation frame; CAD-pose mode still keeps the export heading.
+  if(isAnimated())turret.rotation.y=k.turret.rotation.y-RIPCURRENT_EXPORT_YAW;
   k.visual.userData.fuelKeepouts = [
     {x:0,z:0,radius:.09,bottom:.28,top:.34},
     {x:0,z:0,radius:.19,bottom:.34,top:.68},
@@ -59,7 +62,7 @@ export function buildRipcurrentCad(root: THREE.Group, k: ModelKit, isAnimated: (
   tip.position.set(-.59, .10, 0); root.add(tip);root.updateMatrixWorld(true);slide.node.attach(tip);
   const point = (x: number, y: number, z = 0) => {
     k.visual.updateMatrixWorld(true);
-    return k.visual.worldToLocal(turret.localToWorld(new THREE.Vector3(x,y,z)));
+    return k.visual.worldToLocal(joints.get('shooter-frame')!.node.localToWorld(new THREE.Vector3(x,y,z)));
   };
   let deploy=0,hoodAngle=0,rotorSpeed=0;
   const spin=(j:typeof hood,rate:number,dt:number)=>{j.angle=(j.angle+rate*dt)%(Math.PI*2);j.node.quaternion.setFromAxisAngle(j.axis,j.angle);};
@@ -69,7 +72,7 @@ export function buildRipcurrentCad(root: THREE.Group, k: ModelKit, isAnimated: (
     flow: {
       intake: () => {k.visual.updateMatrixWorld(true);return [k.visual.worldToLocal(tip.getWorldPosition(new THREE.Vector3())),new THREE.Vector3(-.28,.22,0)];},
       stow: () => new THREE.Vector3(-.25,.27,0),
-      feed: () => [new THREE.Vector3(0,.25,0),point(0,.34),point(.08,.52)],
+      feed: () => [point(0,.25),point(-.018275,.43,.066485),point(-.018275-.08*Math.cos(1.198),.56,.066485+.08*Math.sin(1.198))],
     },
     update(s) {
       pile.set(s.fill);
