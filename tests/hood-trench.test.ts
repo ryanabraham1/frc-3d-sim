@@ -6,6 +6,7 @@ import { cloneConfig, loadedRobotHeight, type RobotConfig } from '../src/engine/
 import { HeadlessSim } from '../src/engine/testing/headless';
 import { IDLE_COMMAND } from '../src/engine/robot/robot';
 import * as C from '../src/seasons/2026-rebuilt/constants';
+import { setCadModelsEnabled } from '../src/engine/robot/cadModels';
 import { loadCad2026 } from './helpers/cad2026';
 
 const season = SEASONS.find((s) => s.id === '2026-rebuilt')!;
@@ -253,8 +254,11 @@ it.each(trenchApproaches)('4414 recovers from hood contact at row $hubX lane $y 
 });
 
 
-it('4414 parks its entire shooter flush with the net, including the fixed side plates', () => {
+it('4414 procedural fallback parks its entire shooter flush with the net, including the fixed side plates', () => {
+  // The supplied CAD deliberately retains its exported hood pose. This check covers the fallback rig.
+  setCadModelsEnabled(false);
   const s = sim(team(4414));
+  setCadModelsEnabled(true);
   s.run(0.5, IDLE_COMMAND);
   const head = s.robot.visual.getObjectByName('hightide-pancake-shooter')!;
   expect(head).toBeDefined();

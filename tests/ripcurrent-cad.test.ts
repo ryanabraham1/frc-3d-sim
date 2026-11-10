@@ -1,0 +1,35 @@
+import { readFileSync } from 'node:fs';
+import { expect, it } from 'vitest';
+import * as THREE from 'three';
+import { cadRobotModelBuilder, decodeCadModel, setCadAnimationEnabled } from '../src/engine/robot/cadModels';
+import { SEASONS } from '../src/seasons';
+import { cloneConfig } from '../src/engine/robot/config';
+
+it.each(['', 'match/'])('4414 supplied CAD %s decodes and replaces the procedural robot without altering its finishes', async detail => {
+  const bytes = readFileSync(`public/models/robots/2026/${detail}ripcurrent-4414.glb`);
+  await decodeCadModel('ripcurrent-4414', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const config = cloneConfig(SEASONS.find(s=>s.id==='2026-rebuilt')!.teamRobots!.find(t=>t.team===4414)!.config);
+  const visual = new THREE.Group(), turret = new THREE.Group(); visual.add(turret);
+  const kit = {config,visual,turret,alliance:'blue' as const,fp:{length:config.frameLength,width:config.frameWidth},groundSide:-1 as const,stationSide:-1 as const,mats:{dark:new THREE.MeshStandardMaterial(),alu:new THREE.MeshStandardMaterial(),bumper:new THREE.MeshStandardMaterial()}};
+  const model = cadRobotModelBuilder('ripcurrent-4414')!(kit);
+  expect(model.replaces).toContain('bumpers');
+  const root = visual.getObjectByName('cad-ripcurrent-4414')!;
+  expect(root.getObjectByName('frame')).toBeDefined();
+  const head = root.getObjectByName('turret')!;
+  expect(head).toBeDefined();
+  const bounds = new THREE.Box3().setFromObject(root,true);
+  expect(bounds.min.y).toBeCloseTo(0,5);
+  expect(bounds.max.y).toBeCloseTo(.671346,5);
+  expect(bounds.max.z-bounds.min.z).toBeCloseTo(.9894,4);
+  let triangles=0,white=false;
+  root.traverse(o=>{if(o instanceof THREE.Mesh){triangles+=(o.geometry.index?.count??o.geometry.getAttribute('position').count)/3; const materials=Array.isArray(o.material)?o.material:[o.material]; for(const m of materials) if(m.name==='4414-white-print'){white=true;expect(m.color.toArray()).toEqual([1,1,1]);}}});
+  const report=JSON.parse(readFileSync('public/models/robots/2026/ripcurrent-4414.report.json','utf8'));
+  expect(triangles).toBe(report.outputTriangles);
+  expect(triangles).toBeGreaterThanOrEqual(report.inputTriangles);
+  expect(white).toBe(true);
+  setCadAnimationEnabled(true);turret.rotation.y=.8;
+  const state={dt:0,time:0,enabled:true,intaking:true,firing:1,passing:false,aiming:true,hood:.9,fill:.5,climb:0,blocker:0,place:null,vx:0,vz:0,omega:0};
+  model.update(state);expect(head.rotation.y).toBe(.8);
+  expect(model.flow!.feed!().every(p=>p.toArray().every(Number.isFinite))).toBe(true);
+  setCadAnimationEnabled(false);model.update(state);expect(head.rotation.y).toBe(0);setCadAnimationEnabled(true);
+});

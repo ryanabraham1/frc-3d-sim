@@ -30,6 +30,7 @@ it('4414 net follows local ball pressure instead of inflating empty pockets from
   for (let i = 0; i < 120; i++) r.syncVisual(1/60);
   const net = r.visual.getObjectByName('stretching-hopper-net') as THREE.LineSegments;
   const p = net.geometry.getAttribute('position');
+  const rim = net.userData.rim ?? c.height;
   let near = 0, far = 0;
   for (let i = 0; i < p.count; i++) {
     const distance = Math.hypot(p.getX(i)-contact.x, p.getZ(i)-contact.z);
@@ -37,7 +38,7 @@ it('4414 net follows local ball pressure instead of inflating empty pockets from
     if (distance > .4) far = Math.max(far, p.getY(i));
   }
   expect(near).toBeGreaterThan(c.height + .08);
-  expect(far).toBeLessThanOrEqual(c.height + .001);
+  expect(far).toBeLessThanOrEqual(rim + .001);
   // One contact must fall continuously toward the rim. Extending the sphere's equator outside its radius
   // created vertical steps at the tension cutoff, visible as spikes around a full load.
   for(let i=0;i<p.count;i+=2) {
@@ -46,15 +47,15 @@ it('4414 net follows local ball pressure instead of inflating empty pockets from
   }
   r.bay!.forEachLocal = () => {};
   for (let i = 0; i < 120; i++) r.syncVisual(1/60);
-  for (let i = 0; i < p.count; i++) expect(p.getY(i)).toBeLessThanOrEqual(c.height + .001);
+  for (let i = 0; i < p.count; i++) expect(p.getY(i)).toBeLessThanOrEqual(rim + .001);
 });
 for(const team of [254,581,6800,9470,1323,4414])it(`${team}: a full physical load pushes its net above the rim and conserves the balls`,()=>{
   const sim=make(team),r=sim.robot,c=r.config;
   r.syncVisual(.05);sim.load(20); // a part load: the pile stays in the rigid hopper
   for(let i=0;i<60;i++){sim.step();r.syncVisual(1/60);}
   const slack=r.visual.getObjectByName('stretching-hopper-net') as THREE.LineSegments;
-  const slackPoints=slack.geometry.getAttribute('position');
-  for(let i=0;i<slackPoints.count;i++)expect(slackPoints.getY(i)).toBeLessThanOrEqual(c.height+.025); // slack: resting at the rim (heaped balls just touch it)
+  const slackPoints=slack.geometry.getAttribute('position'), rim=slack.userData.rim ?? c.height;
+  for(let i=0;i<slackPoints.count;i++)expect(slackPoints.getY(i)).toBeLessThanOrEqual(rim+.025); // slack: resting at the rim (heaped balls just touch it)
   sim.load(c.hopperCapacity-20);
   const ids=r.held.slice();
   for(let i=0;i<120;i++){sim.step();r.syncVisual(1/60);}
@@ -63,9 +64,9 @@ for(const team of [254,581,6800,9470,1323,4414])it(`${team}: a full physical loa
   let top=0;
   for(let i=0;i<p.count;i++){
     top=Math.max(top,p.getY(i));
-    if(Math.abs(grid[i*3])===1||Math.abs(grid[i*3+2])===1)expect(p.getY(i)).toBeCloseTo(c.height,3);
+    if(Math.abs(grid[i*3])===1||Math.abs(grid[i*3+2])===1)expect(p.getY(i)).toBeCloseTo(rim,3);
   }
-  expect(top).toBeGreaterThan(c.height+.04);
+  expect(top).toBeGreaterThan(rim+.04);
   expect(top).toBeLessThanOrEqual(.762+.006); // the dome's middle may peak past fullHeight, never past the 30 in limit
   expect(r.held).toEqual(ids);
   // Gallery/replica piles must agree visibly with the real match load, using the same conserved count.
@@ -76,7 +77,7 @@ for(const team of [254,581,6800,9470,1323,4414])it(`${team}: a full physical loa
   r.visual.traverse(o=>{const surface=o.userData.fuelSurface?.();if(surface)drawn+=surface.count;});
   expect(drawn).toBe(c.hopperCapacity);
   // Preview FUEL packs at 0.9 of its radius (foam squish), so a load sized for full-radius packing may sit under the rim.
-  expect(previewTop).toBeGreaterThanOrEqual(c.height-.001);
+  expect(previewTop).toBeGreaterThanOrEqual(rim-.001);
 
 
 });

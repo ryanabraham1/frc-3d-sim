@@ -20,6 +20,8 @@ for (const year of ['2024', '2025', '2026', 'wcp-hero-heist']) {
   await fs.mkdir(`${dir}/match`, { recursive: true });
   for (const file of await fs.readdir(dir)) {
     if (!file.endsWith('.glb') || /supplied-parts/.test(file) || (process.argv[2] && year !== process.argv[2] && !file.includes(process.argv[2]))) continue;
+    // User requested exact CAD surfaces for 4414; match and workshop retain the same mesh.
+    const lossless = year === '2026' && file === 'ripcurrent-4414.glb';
     const doc = await io.read(`${dir}/${file}`);
     let before = 0, after = 0;
     for (const mesh of doc.getRoot().listMeshes()) for (const p of mesh.listPrimitives()) {
@@ -27,7 +29,7 @@ for (const year of ['2024', '2025', '2026', 'wcp-hero-heist']) {
       const n = p.getIndices()?.getCount() ?? p.getAttribute('POSITION').getCount();
       before += n / 3;
       // 2025 CAD is already reduced at import. Preserve its rails, pockets and rollers.
-      if (year !== '2025' && n > 600) simplifyPrimitive(p, { simplifier, ratio: .20, error: .001 });
+      if (year !== '2025' && !lossless && n > 600) simplifyPrimitive(p, { simplifier, ratio: .20, error: .001 });
       after += (p.getIndices()?.getCount() ?? p.getAttribute('POSITION').getCount()) / 3;
     }
     if (year === '2025') await repairCadNormals(doc);
@@ -35,7 +37,7 @@ for (const year of ['2024', '2025', '2026', 'wcp-hero-heist']) {
     doc.createExtension(EXTMeshoptCompression).setRequired(true).setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.FILTER });
     const out = `${dir}/match/${file}`;
     await io.write(out, doc);
-    const entry = { id: path.basename(file, '.glb'), year, before, after, bytes: (await fs.stat(out)).size };
+    const entry = { id: path.basename(file, '.glb'), year, before, after, bytes: (await fs.stat(out)).size, ...(lossless ? {lossless:true} : {}) };
     const old = report.findIndex(r => r.id === entry.id && r.year === entry.year);
     if (old >= 0) report[old] = entry;
     else report.push(entry);

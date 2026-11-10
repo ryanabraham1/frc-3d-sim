@@ -1,0 +1,29 @@
+{
+  "id": "ripcurrent-4414",
+  "sourceFile": "Top Assembly.glb",
+  "inputBytes": 168243392,
+  "outputBytes": 32537500,
+  "inputTriangles": 4012946,
+  "outputTriangles": 4013090,
+  "replacedDigitFaces": 12,
+  "number": "4414",
+  "numberedFaces": 3,
+  "geometry": "No simplification; original CAD triangle surfaces retained. Lossless meshopt compression.",
+  "axes": "source (Y,Z+0.0127,X) -> game (forward,up,right); wheels sit on ground",
+  "bounds": {
+    "min": [
+      -0.6203834712505342,
+      -2.1266937211272818e-8,
+      -0.4947000291824341
+    ],
+    "max": [
+      0.3996000063419342,
+      0.67134597260952,
+      0.4947
+    ]
+  },
+  "groups": [
+    "frame",
+    "turret"
+  ]
+}

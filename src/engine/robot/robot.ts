@@ -438,7 +438,7 @@ export class Robot {
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x141516 }));
+    this.hopperNet = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial(this.visual.userData.hopperNetProfile ? { color: 0x25282b, transparent: true, opacity: .78 } : {color:0x141516}));
     this.hopperNet.name = 'stretching-hopper-net';
     this.hopperNet.userData.mirrorGeometry = true;
     this.hopperNet.userData.segments = segments;
@@ -446,7 +446,7 @@ export class Robot {
     this.hopperNet.userData.heights = new Float32Array(positions.length/3);
     // Sewn reinforcement cords give the flexible roof a readable silhouette against dark CAD and yellow FUEL.
     // Two soft seams follow the same contact surface; they never lift into a separate cage above the balls.
-    const cords = new THREE.InstancedMesh(new THREE.CylinderGeometry(.002, .002, 1, 5),
+    const cords = new THREE.InstancedMesh(new THREE.CylinderGeometry(this.visual.userData.hopperNetProfile ? .0012 : .002, this.visual.userData.hopperNetProfile ? .0012 : .002, 1, 5),
       new THREE.MeshStandardMaterial({ color: 0x25282d, roughness: .9 }), 2 * segments);
     cords.name = 'stretching-hopper-cords';
     cords.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -482,7 +482,9 @@ export class Robot {
     const net = this.hopperNet;
     if (!net) return;
     const c = this.config;
-    this.netLift ??= netDomeLift(c, c.height);
+    const rim = this.visual.userData.hopperNetProfile?.rim ?? c.height;
+    net.userData.rim = rim;
+    this.netLift ??= netDomeLift(c, rim);
     // The pile may rise into the whole dome: how far the net actually bulges is decided by the balls under it.
     for (const mesh of this.fuelPiles) {
       const ceiling = mesh.userData.fuelCeiling;
@@ -496,11 +498,11 @@ export class Robot {
     const tops: { x: number; z: number; y: number }[] = [];
     this.visual.updateMatrixWorld(true);
     const point = new THREE.Vector3();
-    let highest = c.height;
+    let highest = rim;
     // Buried layers cannot touch the net; only balls near the rim are draped over.
     const addTop = (x: number, y: number, z: number) => {
       highest = Math.max(highest, y);
-      if (y >= c.height - .06) tops.push({ x, z, y });
+      if (y >= rim - .06) tops.push({ x, z, y });
     };
     this.bay?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
     this.mech?.forEachLocal((x, y, z) => addTop(x, y + Robot.NET_FUEL_R, z));
@@ -527,7 +529,7 @@ export class Robot {
       const clipped=chamfer && chamfer.fixedSide*px+Math.abs(pz)>chamfer.hx+chamfer.hz-chamfer.cut;
       if(clipped)px=chamfer.fixedSide*(chamfer.hx+chamfer.hz-chamfer.cut-Math.abs(pz));
       // Slack, the fabric dips a little below the rim between its ties.
-      let y = c.height - 0.012 * netDomeShape(x, z);
+      let y = rim - 0.012 * netDomeShape(x, z);
       for (const t of tops) {
         const d2 = (px - t.x) ** 2 + (pz - t.z) ** 2, reach = R + (t.y - y + sag) / slope;
         if (d2 >= reach * reach) continue;
@@ -536,8 +538,8 @@ export class Robot {
         y = Math.max(y, cap) + h * h * k * 0.25;
       }
       const edge = Math.max(0, Math.min((1 - Math.abs(x)) * sx, (1 - Math.abs(z)) * sz));
-      y = Math.min(y, c.height + this.netLift(x, z), c.height + 1.6 * edge);
-      if(clipped)y=c.height;
+      y = Math.min(y, rim + this.netLift(x, z), rim + 1.6 * edge);
+      if(clipped)y=rim;
       // Fabric follows contact changes with damping instead of snapping to each particle on each frame.
       const heights=net.userData.heights as Float32Array;
       const previous = heights[i];
@@ -548,10 +550,12 @@ export class Robot {
     const openings = this.visual.userData.fuelKeepouts as {x:number;z:number;radius:number;bottom:number;top:number}[] | undefined;
     if (openings) for (let i=0;i<p.count;i+=2) {
       const ax=p.getX(i),az=p.getZ(i),bx=p.getX(i+1),bz=p.getZ(i+1);
-      for (const o of openings) {
-        if (o.top < c.height || o.bottom > c.height) continue;
+      for (const opening of openings) {
+        const o = opening;
+        const radius = Math.max(o.radius, this.visual.userData.hopperNetProfile?.openingRadius ?? 0);
+        if (o.top < rim || o.bottom > rim) continue;
         const dx=bx-ax,dz=bz-az,t=THREE.MathUtils.clamp(((o.x-ax)*dx+(o.z-az)*dz)/(dx*dx+dz*dz||1),0,1);
-        if (Math.hypot(ax+t*dx-o.x,az+t*dz-o.z)>=o.radius) continue;
+        if (Math.hypot(ax+t*dx-o.x,az+t*dz-o.z)>=radius) continue;
         // Collapse segments intersecting the aperture; no fabric covers the moving turret.
         const rimB=Math.abs(grid[(i+1)*3])===1||Math.abs(grid[(i+1)*3+2])===1;
         if(rimB)p.setXYZ(i,bx,p.getY(i+1),bz);
@@ -1033,6 +1037,8 @@ export class Robot {
    * whole opening it is tied round.
    */
   liveNetArea(): { cx: number; sx: number; sz: number } {
+    const cadArea = this.visual.userData.hopperNetProfile?.area;
+    if (cadArea) return cadArea;
     const c = this.config, area = hopperNetArea(c), bin = c.hopperExpansion?.area && this.fuelPiles[0]?.userData.fuelBin;
     const extension = this.visual.userData.netIntakeExtension;
     if (bin) return { cx: bin.x, sx: bin.length / 2, sz: bin.width / 2 };
@@ -1049,13 +1055,14 @@ export class Robot {
   netCeilingFn(): ((x: number, z: number) => number) | null {
     if (!this.hopperNet) return null;
     const c = this.config, { cx, sx, sz } = this.liveNetArea();
-    this.netLift ??= netDomeLift(c, c.height);
+    const rim = this.visual.userData.hopperNetProfile?.rim ?? c.height;
+    this.netLift ??= netDomeLift(c, rim);
     const lift = this.netLift;
     return (x, z) => {
       const u = (x - cx) / sx, v = z / sz;
-      if (Math.abs(u) >= 1 || Math.abs(v) >= 1) return c.height;
+      if (Math.abs(u) >= 1 || Math.abs(v) >= 1) return rim;
       const edge = Math.min((1 - Math.abs(u)) * sx, (1 - Math.abs(v)) * sz);
-      return Math.min(c.height + lift(u, v), c.height + 1.6 * edge);
+      return Math.min(rim + lift(u, v), rim + 1.6 * edge);
     };
   }
 

@@ -12,9 +12,9 @@ import { RobotMirror } from '../src/engine/sim/robotMirror';
 
 beforeAll(() => RAPIER.init());
 it('match CAD preserves 2025 detail and keeps each articulated scene compatible with its original', async () => {
-  const report = JSON.parse(readFileSync('public/models/robots/match-cad-report.json', 'utf8')) as { id: string; year: string; before: number; after: number }[];
+  const report = JSON.parse(readFileSync('public/models/robots/match-cad-report.json', 'utf8')) as { id: string; year: string; before: number; after: number; lossless?: boolean }[];
   for (const year of ['2024', '2025', '2026', 'wcp-hero-heist']) {
-    const rows = report.filter(r => r.year === year);
+    const rows = report.filter(r => r.year === year && !r.lossless);
     const before = rows.reduce((n, r) => n + r.before, 0), after = rows.reduce((n, r) => n + r.after, 0);
     if (year === '2025') expect(after).toBe(before);
     else expect(after).toBeLessThan(before * .6);

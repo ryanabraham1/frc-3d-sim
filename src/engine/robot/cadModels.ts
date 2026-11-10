@@ -19,6 +19,7 @@ import { build7769Cad } from './chunkCadModel';
 import { build1987Cad } from './cycloneCadModel';
 import { build9496Cad } from './matterhornCadModel';
 import { buildAimbotCad } from './aimbotCadModel';
+import { buildRipcurrentCad } from './ripcurrentCadModel';
 import { finishReefscapeCad } from './reefscapeCadFinishes';
 
 export const HERO_CAD_MODEL_IDS = ['hero-constantine-1318','hero-sentinel-1923','hero-mantis-6800','hero-multiclass-6731','hero-fireweed-1540', 'hero-multiclass-5800', 'hero-multiclass-5800-gadgeteer', 'hero-nomad-6995','hero-poofs-254','hero-gadgeteer-9408','hero-mystic-498'] as const;
@@ -27,11 +28,11 @@ const CAD_ALIASES: Record<string, string> = { 'hero-multiclass-5800-gadgeteer': 
 const setAsset = (id: string, scene: THREE.Group) => { assets.set(id, scene); for (const [alias, target] of Object.entries(CAD_ALIASES)) if (target === id) assets.set(alias, scene); };
 export const CAD_2024_MODEL_IDS = ['doppler-1690','typhoon-2910','twister-118','gold-rush-27','domotron-604','roti-5940','presto-6328','snoopy-6036','nik-1678','riot-1706','surge-3005','ultraviolet-3847','nocturne-3467'] as const;
 export const CAD_2025_MODEL_IDS = ['spectre-2910','whisper-1690','wildstang-111','firefly-118','sublime-1678','zuma-581','quixilver-604-2025','subzero-1778','taiyaki-5940','wisp-422','singularity-1706','relay-3005','redundancy-190'] as const;
-export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114', 'roman-6329', 'mirage-1706', 'chunk-7769', 'cyclone-1987', 'matterhorn-9496', 'aimbot-3256'] as const;
-export const ADAPTED_CAD_MODEL_IDS = ['overload-254', 'sandspit-3476', 'ripcurrent-4414', 'madtown-2026-1323', 'kepler-1690', 'croquembouche-5940'] as const;
+export const CAD_MODEL_IDS = ['reblitz-2910', 'toploader-604', 'limestone-1678', 'rubble-581', 'ctrl-alt-defeat-9470', 'downpour-6800', 'mixtape-971', 'simbot-tim-1114', 'roman-6329', 'mirage-1706', 'chunk-7769', 'cyclone-1987', 'matterhorn-9496', 'aimbot-3256', 'ripcurrent-4414'] as const;
+export const ADAPTED_CAD_MODEL_IDS = ['overload-254', 'sandspit-3476', 'madtown-2026-1323', 'kepler-1690', 'croquembouche-5940'] as const;
 export const CAD_DONOR_DEPENDENCIES: Record<string, readonly string[]> = {
   'overload-254': ['shooter-581-donor'], 'sandspit-3476': ['shooter-581-donor'],
-  'ripcurrent-4414': ['rotor-604-donor','mixtape-971'], 'madtown-2026-1323': ['rotor-604-donor','mixtape-971'],
+  'madtown-2026-1323': ['rotor-604-donor','mixtape-971'],
   'kepler-1690': ['mixtape-971'], 'croquembouche-5940': ['mixtape-971'],
 };
 const assets = new Map<string, THREE.Group>();
@@ -90,7 +91,7 @@ export function cadRobotModelBuilder(id: string | undefined): RobotModelBuilder 
 }
 
 function buildCadModel(id: string, k: ModelKit): RobotModel {
-  const root = ownedClone(assets.get(id)!, (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? id : undefined);
+  const root = ownedClone(assets.get(id)!, (CAD_2025_MODEL_IDS as readonly string[]).includes(id) ? id : undefined, id === 'ripcurrent-4414');
   root.name = `cad-${id}`;
   root.userData.cadModel = id;
   k.visual.add(root);
@@ -111,6 +112,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   if (id === 'chunk-7769') return build7769Cad(root,k,()=>animated);
   if (id === 'cyclone-1987') return build1987Cad(root,k,()=>animated);
   if (id === 'matterhorn-9496') return build9496Cad(root,k,()=>animated);
+  if (id === 'ripcurrent-4414') return buildRipcurrentCad(root,k,()=>animated);
   if (id === 'aimbot-3256') return buildAimbotCad(root,k,()=>animated);
   const get = (name: string) => root.getObjectByName(name);
   const pivot = (name: string, at: [number, number, number], parent: THREE.Object3D = root): THREE.Group => {
@@ -190,7 +192,7 @@ function buildCadModel(id: string, k: ModelKit): RobotModel {
   };
 }
 
-function ownedClone<T extends THREE.Object3D>(source:T, reefscapeId?: string):T {
+function ownedClone<T extends THREE.Object3D>(source:T, reefscapeId?: string, preserveAppearance = false):T {
   const clone=source.clone(true) as T;
   clone.traverse(o => {
     const m = o as THREE.Mesh;
@@ -206,9 +208,9 @@ function ownedClone<T extends THREE.Object3D>(source:T, reefscapeId?: string):T 
           finishReefscapeCad(copy, reefscapeId, group.name);
         }
         // Onshape's exported CAD swatches need a darker, matte finish under the game's bright field lighting.
-        if (copy.name !== 'rubber') copy.color.convertSRGBToLinear();
+        if (!preserveAppearance && copy.name !== 'rubber') copy.color.convertSRGBToLinear();
         if (copy.userData.cadSheet && !copy.userData.cadSmoothSheet) copy.flatShading = true;
-        copy.envMap = getRobotEnvironment(); copy.envMapIntensity = .25;
+        if (!preserveAppearance) { copy.envMap = getRobotEnvironment(); copy.envMapIntensity = .25; }
       }
       return copy;
     });
