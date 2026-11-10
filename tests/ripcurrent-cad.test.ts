@@ -48,14 +48,21 @@ it.each(['', 'match/'])('4414 supplied CAD %s decodes and replaces the procedura
   expect(root.getObjectByName('hood')!.userData.hoodBeltCount).toBe(2);
   expect(root.getObjectByName('cad-hood-drive-pivot')!.parent).toBe(hood);
   const upperFeeder=root.getObjectByName('cad-hood-feeder-pivot')!;
+  const rackJoint=root.getObjectByName('cad-hood-racks-pivot')!;
+  expect(rackJoint.parent).toBe(hood);
+  expect(root.getObjectByName('hood-racks')!.userData.rackPlateCount).toBe(4);
+  // No toothed rack plates may remain upright in the stationary shooter frame.
+  expect(new THREE.Box3().setFromObject(root.getObjectByName('shooter-frame')!,true).max.y).toBeLessThan(.57);
   const supports=root.getObjectByName('cad-hood-supports-pivot')!;
   expect(supports.parent).toBe(hood);
   expect(upperFeeder.parent).toBe(hood);visual.updateMatrixWorld(true);
+  const highRackBounds=new THREE.Box3().setFromObject(rackJoint,true);
   const highSupportBounds=new THREE.Box3().setFromObject(supports,true);
   const highRollerCenter=upperFeeder.getWorldPosition(new THREE.Vector3());
   const high=hood.quaternion.clone();
   for(let i=0;i<47;i++){model.update({...state,dt:1/60,time:i/60,hood:.5});visual.updateMatrixWorld(true);}
   expect(high.angleTo(hood.quaternion)).toBeGreaterThan(.6);
+  expect(new THREE.Box3().setFromObject(rackJoint,true).max.distanceTo(highRackBounds.max)).toBeGreaterThan(.05);
   expect(new THREE.Box3().setFromObject(supports,true).max.distanceTo(highSupportBounds.max)).toBeGreaterThan(.05);
   expect(upperFeeder.getWorldPosition(new THREE.Vector3()).distanceTo(highRollerCenter)).toBeGreaterThan(.05);
   const localRollerCenter=upperFeeder.position.clone();

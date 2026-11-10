@@ -23,6 +23,7 @@ export function createRipcurrentRig(doc) {
  group('frame');group('fixed-cameras');group('turret',{pivot:[0,0,0],axis:[0,1,0],parent:'frame',kind:'turret'});
  group('shooter-frame',{pivot:[0,0,0],axis:[0,1,0],parent:'turret',kind:'mount'});
  group('hood',{pivot:[-.018275,.5207,.066485],axis:[.9316,0,.3635],parent:'shooter-frame',kind:'hood'});
+ group('hood-racks',{pivot:[-.018275,.5207,.066485],axis:[.9316,0,.3635],parent:'hood',kind:'hoodSupport'});
  group('hood-supports',{pivot:[-.018275,.5207,.066485],axis:[.9316,0,.3635],parent:'hood',kind:'hoodSupport'});
  group('flywheel',{pivot:[-.018275,.5207,.066485],axis:[.9316,0,.3635],parent:'shooter-frame',kind:'flywheel'});
  group('hood-drive',{pivot:[-.024935,.55245,.06389],axis:[.9316,0,.3635],parent:'hood',kind:'index'});
@@ -41,6 +42,7 @@ export function createRipcurrentRig(doc) {
    if(b.min[2]>.55 || /hood (?:left|right)$|Hood ballpath|Hood(?:Left|Right) Echain|bird plate/i.test(name))destination='hood';
    else if(/^(?:3" Steel Flywheel|Flywheel \(For 3"|3" Stealth Wheel|7\.938 in\. Rounded Hex Shaft)/.test(name))destination='flywheel';
    if(/bird plate/i.test(name))destination='hood-supports';
+   if(name==='Plate, Alu, gear rack')destination='hood-racks';
    // Both 77T feeder belts and their powertrain supports rotate with the hood.
    // Their lower ends are below the old height cutoff, so a height-only split left them standing upright.
    if(/^77T 5M 6mm Wide Belt|hood powertrain/i.test(name))destination='hood';
@@ -98,6 +100,7 @@ export function createRipcurrentRig(doc) {
    }
    if(m)p.setMaterial(m);
   }
+  if(name==='Plate, Alu, gear rack'){const rack=groups.get('hood-racks');rack.setExtras({...rack.getExtras(),rackPlateCount:(rack.getExtras().rackPlateCount??0)+1});}
   if(/^77T 5M 6mm Wide Belt/.test(name)){const h=groups.get('hood');h.setExtras({...h.getExtras(),hoodBeltCount:(h.getExtras().hoodBeltCount??0)+1});}
   return destination;
  }};
